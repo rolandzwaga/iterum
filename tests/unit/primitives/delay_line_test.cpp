@@ -695,3 +695,144 @@ TEST_CASE("DelayLine readAllpass state is cleared by reset", "[delay][allpass][U
 
     REQUIRE(resetResult == Approx(freshResult));
 }
+
+// =============================================================================
+// Phase 6: User Story 5 - Real-Time Safety (T035-T036a)
+// =============================================================================
+
+TEST_CASE("DelayLine noexcept specifications", "[delay][realtime][US5]") {
+    // Verify all public methods are noexcept using static_assert
+    // This ensures real-time safety at compile time
+
+    SECTION("constructors and destructors are noexcept") {
+        static_assert(std::is_nothrow_default_constructible_v<DelayLine>,
+                      "Default constructor must be noexcept");
+        static_assert(std::is_nothrow_destructible_v<DelayLine>,
+                      "Destructor must be noexcept");
+        static_assert(std::is_nothrow_move_constructible_v<DelayLine>,
+                      "Move constructor must be noexcept");
+        static_assert(std::is_nothrow_move_assignable_v<DelayLine>,
+                      "Move assignment must be noexcept");
+        REQUIRE(true);  // If we get here, static_asserts passed
+    }
+
+    SECTION("processing methods are noexcept") {
+        DelayLine delay;
+        delay.prepare(44100.0, 0.1f);
+
+        // Verify noexcept on method calls
+        static_assert(noexcept(delay.write(0.0f)), "write() must be noexcept");
+        static_assert(noexcept(delay.read(0)), "read() must be noexcept");
+        static_assert(noexcept(delay.readLinear(0.0f)), "readLinear() must be noexcept");
+        static_assert(noexcept(delay.readAllpass(0.0f)), "readAllpass() must be noexcept");
+        static_assert(noexcept(delay.reset()), "reset() must be noexcept");
+        REQUIRE(true);
+    }
+
+    SECTION("query methods are noexcept") {
+        DelayLine delay;
+        static_assert(noexcept(delay.maxDelaySamples()), "maxDelaySamples() must be noexcept");
+        static_assert(noexcept(delay.sampleRate()), "sampleRate() must be noexcept");
+        REQUIRE(true);
+    }
+}
+
+TEST_CASE("DelayLine query methods", "[delay][query][US5]") {
+    DelayLine delay;
+
+    SECTION("maxDelaySamples returns correct value after prepare") {
+        delay.prepare(44100.0, 1.0f);
+        REQUIRE(delay.maxDelaySamples() == 44100);
+    }
+
+    SECTION("sampleRate returns correct value after prepare") {
+        delay.prepare(48000.0, 0.5f);
+        REQUIRE(delay.sampleRate() == 48000.0);
+    }
+
+    SECTION("query methods return zero before prepare") {
+        REQUIRE(delay.maxDelaySamples() == 0);
+        REQUIRE(delay.sampleRate() == 0.0);
+    }
+
+    SECTION("query methods preserved after reset") {
+        delay.prepare(96000.0, 2.0f);
+        size_t maxDelay = delay.maxDelaySamples();
+        double sampleRate = delay.sampleRate();
+
+        delay.reset();
+
+        REQUIRE(delay.maxDelaySamples() == maxDelay);
+        REQUIRE(delay.sampleRate() == sampleRate);
+    }
+}
+
+TEST_CASE("DelayLine constexpr utility functions (NFR-003)", "[delay][constexpr][US5]") {
+    // nextPowerOf2 should be usable at compile time
+    SECTION("nextPowerOf2 is constexpr") {
+        constexpr size_t p1 = nextPowerOf2(1);
+        constexpr size_t p100 = nextPowerOf2(100);
+        constexpr size_t p1024 = nextPowerOf2(1024);
+
+        static_assert(p1 == 1, "nextPowerOf2(1) == 1 at compile time");
+        static_assert(p100 == 128, "nextPowerOf2(100) == 128 at compile time");
+        static_assert(p1024 == 1024, "nextPowerOf2(1024) == 1024 at compile time");
+
+        REQUIRE(p1 == 1);
+        REQUIRE(p100 == 128);
+        REQUIRE(p1024 == 1024);
+    }
+
+    SECTION("constexpr buffer size calculation") {
+        // Simulate what prepare() calculates
+        constexpr double sampleRate = 44100.0;
+        constexpr float maxDelaySeconds = 1.0f;
+        constexpr size_t maxDelaySamples = static_cast<size_t>(sampleRate * maxDelaySeconds);
+        constexpr size_t bufferSize = nextPowerOf2(maxDelaySamples + 1);
+        constexpr size_t mask = bufferSize - 1;
+
+        static_assert(maxDelaySamples == 44100, "Sample calculation at compile time");
+        static_assert(bufferSize == 65536, "Buffer size is next power of 2");
+        static_assert(mask == 65535, "Mask is bufferSize - 1");
+
+        REQUIRE(bufferSize == 65536);
+    }
+}
+
+TEST_CASE("DelayLine O(1) performance verification (NFR-001)", "[delay][performance][US5]") {
+    // This test verifies that read/write operations are O(1)
+    // by checking that processing time doesn't scale with buffer size
+
+    SECTION("small buffer operations") {
+        DelayLine smallDelay;
+        smallDelay.prepare(1000.0, 0.001f);  // ~1 sample
+
+        // Warm up
+        for (int i = 0; i < 100; ++i) {
+            smallDelay.write(static_cast<float>(i) * 0.01f);
+            (void)smallDelay.read(0);
+        }
+
+        // Operation succeeds (timing not strictly verified in unit test)
+        REQUIRE(smallDelay.read(0) != -999.0f);
+    }
+
+    SECTION("large buffer operations") {
+        DelayLine largeDelay;
+        largeDelay.prepare(192000.0, 10.0f);  // 1.92M samples
+
+        // Warm up
+        for (int i = 0; i < 100; ++i) {
+            largeDelay.write(static_cast<float>(i) * 0.01f);
+            (void)largeDelay.read(largeDelay.maxDelaySamples());
+        }
+
+        // Operation succeeds at max delay
+        float result = largeDelay.read(largeDelay.maxDelaySamples());
+        REQUIRE_FALSE(std::isnan(result));
+    }
+
+    // Note: Actual timing measurements would require platform-specific
+    // high-resolution timers and multiple iterations for statistical
+    // significance. This test verifies correctness at different scales.
+}

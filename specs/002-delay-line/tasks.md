@@ -208,30 +208,30 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 6.1 Pre-Implementation (MANDATORY)
 
-- [ ] T034 [US5] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T034 [US5] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 6.2 Tests for User Story 5 (Verification)
 
-- [ ] T035 [US5] Write real-time safety tests in tests/unit/primitives/delay_line_test.cpp
+- [x] T035 [US5] Write real-time safety tests in tests/unit/primitives/delay_line_test.cpp
   - Verify all public methods are noexcept (static_assert or compile test)
   - Test no allocations during write/read sequence (if allocation detector available)
-- [ ] T036 [US5] Add query method tests
+- [x] T036 [US5] Add query method tests
   - Test maxDelaySamples() returns correct value
   - Test sampleRate() returns configured rate
-- [ ] T036a [US5] Add constexpr compile-time test (NFR-003) in tests/unit/primitives/delay_line_test.cpp
+- [x] T036a [US5] Add constexpr compile-time test (NFR-003) in tests/unit/primitives/delay_line_test.cpp
   - Verify constexpr construction where applicable
   - Test compile-time evaluation of utility functions
 
 ### 6.3 Implementation for User Story 5
 
-- [ ] T037 [US5] Implement maxDelaySamples() query method in src/dsp/primitives/delay_line.h
-- [ ] T038 [US5] Implement sampleRate() query method in src/dsp/primitives/delay_line.h
-- [ ] T039 [US5] Verify all noexcept specifications are correct
-- [ ] T040 [US5] Verify all US5 tests pass
+- [x] T037 [US5] Implement maxDelaySamples() query method in src/dsp/primitives/delay_line.h
+- [x] T038 [US5] Implement sampleRate() query method in src/dsp/primitives/delay_line.h
+- [x] T039 [US5] Verify all noexcept specifications are correct
+- [x] T040 [US5] Verify all US5 tests pass
 
 ### 6.4 Commit (MANDATORY)
 
-- [ ] T041 [US5] **Commit completed User Story 5 work**
+- [x] T041 [US5] **Commit completed User Story 5 work**
 
 **Checkpoint**: All methods verified real-time safe
 
