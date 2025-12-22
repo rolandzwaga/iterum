@@ -5,6 +5,99 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2025-12-23
+
+### Added
+
+- **Layer 1 DSP Primitive: Parameter Smoother** (`src/dsp/primitives/smoother.h`)
+  - Three smoother types for different modulation characteristics:
+    - `OnePoleSmoother` - Exponential approach (RC filter behavior)
+    - `LinearRamp` - Constant rate change (tape-like pitch effects)
+    - `SlewLimiter` - Maximum rate limiting with separate rise/fall rates
+  - Sub-sample accurate transitions for artifact-free automation
+  - Real-time safe: `noexcept`, zero allocations in `process()`
+  - Configurable smoothing time (0.1ms - 1000ms)
+  - Completion detection with configurable threshold (0.0001 default)
+  - Denormal flushing (< 1e-15 → 0)
+  - NaN/Infinity protection (NaN → 0, Inf → clamped)
+  - Cross-platform NOINLINE macro for /fp:fast compatibility
+
+- **Smoother characteristics**:
+  - `OnePoleSmoother`: 99% convergence at specified time, exponential decay
+  - `LinearRamp`: Fixed-duration transitions regardless of distance
+  - `SlewLimiter`: Asymmetric rise/fall rates for envelope-like behavior
+
+- **Comprehensive test suite** (5,320 assertions across 57 test cases)
+  - All user stories covered (US1-US5)
+  - Exponential convergence verification
+  - Linear ramp timing accuracy
+  - Slew rate limiting behavior
+  - NaN/Infinity edge case handling
+  - Completion detection with threshold
+  - Reset and snap-to-target functionality
+
+### Changed
+
+- **Constitution v1.6.0**: Added Principle XIV (Pre-Implementation Research / ODR Prevention)
+  - Mandatory codebase search before creating new classes
+  - Diagnostic checklist for ODR symptoms (garbage values, test failures)
+  - Lesson learned from 005-parameter-smoother incident
+
+- **Planning templates**: Added mandatory codebase research gates
+  - `spec-template.md`: "Existing Codebase Components" section
+  - `plan-template.md`: Full "Codebase Research" section with search tables
+
+- **CLAUDE.md**: Added "Pre-Implementation Research" section with ODR prevention checklist
+
+### Fixed
+
+- Removed duplicate `constexprExp` and `isNaN` functions from `smoother.h` (ODR violation)
+- Updated `test_approvals_main.cpp` to use new OnePoleSmoother API
+
+### Technical Details
+
+- **Smoothing formulas**:
+  - One-pole: `y = target + coeff * (y - target)` where `coeff = exp(-5000 / (timeMs * sampleRate))`
+  - Linear: `y += increment` where `increment = delta / (timeMs * sampleRate / 1000)`
+  - Slew: `y += clamp(target - y, -maxFall, +maxRise)`
+- **Time constant**: Specified time is to 99% (5 tau), not 63% (1 tau)
+- **Namespace**: `Iterum::DSP` (Layer 1 DSP primitives)
+- **Dependencies**: `dsp/core/db_utils.h` for shared math utilities
+- **Constitution compliance**: Principles II (RT Safety), III (Modern C++), IX (Layered Architecture), X (DSP Constraints), XII (Test-First), XIV (ODR Prevention)
+
+### Usage
+
+```cpp
+#include "dsp/primitives/smoother.h"
+
+using namespace Iterum::DSP;
+
+// One-pole smoother for filter cutoff
+OnePoleSmoother cutoffSmoother;
+cutoffSmoother.configure(10.0f, 44100.0f);  // 10ms to 99%
+cutoffSmoother.setTarget(2000.0f);
+
+// In processBlock()
+for (size_t i = 0; i < numSamples; ++i) {
+    float smoothedCutoff = cutoffSmoother.process();
+    filter.setCutoff(smoothedCutoff);
+    output[i] = filter.process(input[i]);
+}
+
+// Linear ramp for delay time (tape effect)
+LinearRamp delayRamp;
+delayRamp.configure(100.0f, 44100.0f);  // Always 100ms transitions
+delayRamp.setTarget(newDelayMs);
+
+// Slew limiter for envelope follower
+SlewLimiter envelope;
+envelope.configure(10.0f, 100.0f, 44100.0f);  // Fast attack, slow release
+envelope.setTarget(inputLevel);
+float smoothedEnvelope = envelope.process();
+```
+
+---
+
 ## [0.0.4] - 2025-12-22
 
 ### Added
