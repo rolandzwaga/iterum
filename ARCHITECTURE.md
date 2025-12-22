@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-22 (003-lfo)
+**Last Updated**: 2025-12-22 (004-biquad-filter)
 
 ---
 
@@ -318,6 +318,167 @@ lfo.setNoteValue(Iterum::DSP::NoteValue::Quarter,
 
 ---
 
+### Biquad Filter
+
+| | |
+|---|---|
+| **Purpose** | Second-order IIR filter (TDF2) with 8 filter types, cascading, and smoothed coefficient updates |
+| **Location** | [src/dsp/primitives/biquad.h](src/dsp/primitives/biquad.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.4 (004-biquad-filter) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Filter type enumeration
+    enum class FilterType : uint8_t {
+        Lowpass, Highpass, Bandpass, Notch,
+        Allpass, LowShelf, HighShelf, Peak
+    };
+
+    // Filter coefficients (normalized: a0=1)
+    struct BiquadCoefficients {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;  // Feedforward
+        float a1 = 0.0f, a2 = 0.0f;              // Feedback
+
+        [[nodiscard]] static constexpr BiquadCoefficients calculate(
+            FilterType type, float freq, float Q, float gainDb, float sampleRate
+        ) noexcept;
+
+        [[nodiscard]] static constexpr BiquadCoefficients calculateConstexpr(
+            FilterType type, float freq, float Q, float gainDb, float sampleRate
+        ) noexcept;
+
+        [[nodiscard]] bool isStable() const noexcept;
+        [[nodiscard]] bool isBypass() const noexcept;
+    };
+
+    // Single biquad stage (12 dB/oct)
+    class Biquad {
+    public:
+        void configure(FilterType type, float freq, float Q, float gainDb,
+                       float sampleRate) noexcept;
+        void setCoefficients(const BiquadCoefficients& coeffs) noexcept;
+        [[nodiscard]] float process(float input) noexcept;
+        void processBlock(float* buffer, size_t numSamples) noexcept;
+        void reset() noexcept;
+    };
+
+    // Multi-stage cascade (N * 12 dB/oct)
+    template<size_t NumStages>
+    class BiquadCascade {
+    public:
+        void setButterworth(FilterType type, float freq, float sampleRate) noexcept;
+        void setLinkwitzRiley(FilterType type, float freq, float sampleRate) noexcept;
+        [[nodiscard]] float process(float input) noexcept;
+        void processBlock(float* buffer, size_t numSamples) noexcept;
+        void reset() noexcept;
+        [[nodiscard]] static constexpr size_t numStages() noexcept;
+        [[nodiscard]] static constexpr float slopeDbPerOctave() noexcept;
+    };
+
+    // Type aliases for common slopes
+    using Biquad12dB = Biquad;               // 12 dB/oct (2-pole)
+    using Biquad24dB = BiquadCascade<2>;     // 24 dB/oct (4-pole)
+    using Biquad36dB = BiquadCascade<3>;     // 36 dB/oct (6-pole)
+    using Biquad48dB = BiquadCascade<4>;     // 48 dB/oct (8-pole)
+
+    // Click-free filter modulation
+    class SmoothedBiquad {
+    public:
+        void setSmoothingTime(float milliseconds, float sampleRate) noexcept;
+        void setTarget(FilterType type, float freq, float Q, float gainDb,
+                       float sampleRate) noexcept;
+        void snapToTarget() noexcept;
+        [[nodiscard]] float process(float input) noexcept;
+        void processBlock(float* buffer, size_t numSamples) noexcept;
+        [[nodiscard]] bool isSmoothing() const noexcept;
+        void reset() noexcept;
+    };
+
+    // Constants
+    constexpr float kMinFilterFrequency = 1.0f;
+    constexpr float kMinQ = 0.1f;
+    constexpr float kMaxQ = 30.0f;
+    constexpr float kButterworthQ = 0.7071067811865476f;
+
+    // Q helper functions
+    [[nodiscard]] constexpr float butterworthQ() noexcept;
+    [[nodiscard]] constexpr float linkwitzRileyQ() noexcept;
+}
+```
+
+**Filter Types**:
+
+| Type | Description | Uses gainDb |
+|------|-------------|-------------|
+| `Lowpass` | 12 dB/oct rolloff above cutoff | No |
+| `Highpass` | 12 dB/oct rolloff below cutoff | No |
+| `Bandpass` | Peak at center, rolloff both sides | No |
+| `Notch` | Null at center frequency | No |
+| `Allpass` | Flat magnitude, phase shift only | No |
+| `LowShelf` | Boost/cut below shelf frequency | Yes |
+| `HighShelf` | Boost/cut above shelf frequency | Yes |
+| `Peak` | Parametric EQ bell curve | Yes |
+
+**Behavior**:
+- `configure()` - Calculates and applies new coefficients (may click if called during audio)
+- `process()` - TDF2 processing: y = b0*x + s0; s0 = b1*x - a1*y + s1; s1 = b2*x - a2*y
+- `setButterworth()` - Maximally flat passband, configures all cascade stages with appropriate Q
+- `setLinkwitzRiley()` - Sums to unity power at crossover (LP²+HP²=1), uses Butterworth Q per stage
+- `SmoothedBiquad::setTarget()` - Sets target coefficients (smoothly transitions over time)
+- `SmoothedBiquad::snapToTarget()` - Immediately applies target (use at init or after silence)
+- Denormal flushing: State values below 1e-15 are flushed to zero (prevents CPU spikes)
+- NaN protection: NaN input returns 0 and resets state
+
+**When to use**:
+
+| Use Case | Class | Configuration |
+|----------|-------|---------------|
+| Simple LP/HP filtering | `Biquad` | `configure()` once |
+| Parametric EQ | `Biquad` | FilterType::Peak with gainDb |
+| Steep crossover | `Biquad24dB` | `setLinkwitzRiley()` |
+| Rumble removal | `Biquad48dB` | `setButterworth(Highpass, 30Hz)` |
+| LFO filter sweep | `SmoothedBiquad` | Update `setTarget()` per block |
+| Static compile-time EQ | `Biquad(coeffs)` | `BiquadCoefficients::calculateConstexpr()` |
+| Feedback path filtering | `Biquad` | Configure once, process in loop |
+
+**Example**:
+```cpp
+#include "dsp/primitives/biquad.h"
+
+using namespace Iterum::DSP;
+
+// Basic lowpass
+Biquad lpf;
+lpf.configure(FilterType::Lowpass, 1000.0f, butterworthQ(), 0.0f, 44100.0f);
+float out = lpf.process(input);
+
+// Steep 24 dB/oct highpass
+Biquad24dB hp;
+hp.setButterworth(FilterType::Highpass, 80.0f, 44100.0f);
+hp.processBlock(buffer, numSamples);
+
+// Click-free filter modulation
+SmoothedBiquad modFilter;
+modFilter.setSmoothingTime(10.0f, 44100.0f);  // 10ms smoothing
+modFilter.setTarget(FilterType::Lowpass, 1000.0f, butterworthQ(), 0.0f, 44100.0f);
+modFilter.snapToTarget();
+
+// In audio callback - smoothly modulate cutoff
+float cutoff = baseCutoff + lfo.process() * modAmount;
+modFilter.setTarget(FilterType::Lowpass, cutoff, butterworthQ(), 0.0f, 44100.0f);
+modFilter.processBlock(buffer, numSamples);
+
+// Compile-time coefficients
+constexpr auto staticEQ = BiquadCoefficients::calculateConstexpr(
+    FilterType::Peak, 3000.0f, 2.0f, 6.0f, 44100.0f);
+Biquad eq(staticEQ);
+```
+
+---
+
 ### Buffer Operations
 
 | | |
@@ -513,6 +674,13 @@ Quick lookup by functionality:
 | Set LFO waveform | `LFO::setWaveform()` | primitives/lfo.h |
 | Enable tempo sync | `LFO::setTempoSync()` | primitives/lfo.h |
 | Retrigger LFO | `LFO::retrigger()` | primitives/lfo.h |
+| Filter audio (LP/HP/BP/etc) | `Iterum::DSP::Biquad` | primitives/biquad.h |
+| Calculate filter coefficients | `BiquadCoefficients::calculate()` | primitives/biquad.h |
+| Steep filter slope (24+ dB/oct) | `Iterum::DSP::BiquadCascade<N>` | primitives/biquad.h |
+| Linkwitz-Riley crossover | `BiquadCascade::setLinkwitzRiley()` | primitives/biquad.h |
+| Click-free filter modulation | `Iterum::DSP::SmoothedBiquad` | primitives/biquad.h |
+| Compile-time filter coeffs | `BiquadCoefficients::calculateConstexpr()` | primitives/biquad.h |
+| Check filter stability | `BiquadCoefficients::isStable()` | primitives/biquad.h |
 | Apply gain to buffer | `Iterum::DSP::applyGain()` | dsp_utils.h |
 | Mix two buffers | `Iterum::DSP::mix()` | dsp_utils.h |
 | Smooth parameter changes | `Iterum::DSP::OnePoleSmoother` | dsp_utils.h |
