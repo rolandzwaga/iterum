@@ -380,6 +380,39 @@ parameters.addParameter(STR16("New Param"), ...);
 
 6. **Add UI control** in `resources/editor.uidesc`
 
+### Pre-Implementation Research (ODR Prevention)
+
+**CRITICAL**: Before creating ANY new class, struct, or component, you MUST search the codebase for existing implementations:
+
+```bash
+# Search for existing class with the same name
+grep -r "class ClassName" src/
+grep -r "struct StructName" src/
+
+# Check common utility files
+cat src/dsp/dsp_utils.h | grep -A 20 "class"
+```
+
+**Why This Matters**: C++ has the One Definition Rule (ODR). Two classes with the same name in the same namespace cause **undefined behavior**, even if in different files. The compiler silently picks one definition, leading to:
+- Garbage memory values (e.g., `-107374176.0f` = `0xCCCCCCCC` debug fill)
+- Members that appear uninitialized despite correct constructors
+- Tests that mysteriously fail with no apparent logic error
+
+**Mandatory Checklist Before Creating New Components**:
+1. [ ] Search codebase: `grep -r "class NewClassName" src/`
+2. [ ] Check `src/dsp/dsp_utils.h` for simple utilities
+3. [ ] Check layer-appropriate directory (primitives/, processors/, etc.)
+4. [ ] Read ARCHITECTURE.md for existing component inventory
+
+**Diagnostic Checklist for Strange Test Failures**:
+If you see garbage values or "uninitialized" data in tests:
+1. Are values like `-107374176.0f` (MSVC debug pattern) appearing?
+2. Does one member work while an adjacent member has garbage?
+3. Did the class recently get added to a new file?
+→ **First action**: Search for duplicate class definitions before debugging logic
+
+**Lesson Learned**: In spec 005-parameter-smoother, a new `OnePoleSmoother` was created in `smoother.h` while an older version existed in `dsp_utils.h`. Both were in namespace `Iterum::DSP`. The old class had 2 members, the new had 5. Tests accessed the 5-member layout but got the 2-member class, causing the 3rd-5th members to read uninitialized memory.
+
 ### Adding DSP Processing
 
 1. Create pure function in `src/dsp/`:

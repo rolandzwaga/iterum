@@ -2,27 +2,19 @@
 ================================================================================
 SYNC IMPACT REPORT
 ================================================================================
-Version Change: 1.4.0 → 1.5.0
+Version Change: 1.5.0 → 1.6.0
 Modified Principles: None
 Added Sections:
-  - Cross-Platform Compatibility significantly expanded with:
-    - Denormalized numbers (FTZ/DAZ)
-    - Signed integer overflow
-    - SIMD alignment requirements
-    - Cross-platform SIMD (SSE/AVX/NEON)
-    - Apple Silicon considerations
-    - Thread priority mechanisms
-    - Atomic operations and lock-freedom
-    - Memory ordering (x86 vs ARM)
-    - Spinlock warnings
-    - ABI compatibility
-    - Runtime libraries
-    - File path encoding (UTF-8/UTF-16)
-    - State persistence (endianness)
-    - Plugin validation (pluginval)
+  - Principle XIV: Pre-Implementation Research (ODR Prevention)
+    - Mandatory codebase search before creating new classes
+    - Check ARCHITECTURE.md and common files for existing implementations
+    - Diagnostic checklist for strange test failures (garbage values, ODR symptoms)
+    - Lesson learned from 005-parameter-smoother incident
 Removed Sections: None
-Templates Requiring Updates: None
-Follow-up TODOs: None
+Templates Requiring Updates:
+  - spec-template.md should reference Principle XIV in research phase
+Follow-up TODOs:
+  - Update /speckit.specify to include codebase search step
 ================================================================================
 -->
 
@@ -374,6 +366,26 @@ The project MUST maintain an `ARCHITECTURE.md` file that serves as a living inve
 
 **Rationale:** A living architecture document prevents reinventing existing functionality, enables proper composition of components, and provides a single source of truth for what exists in the codebase.
 
+### XIV. Pre-Implementation Research (ODR Prevention)
+
+Before implementing ANY new class, struct, or significant component, the codebase MUST be searched for existing implementations to prevent One Definition Rule (ODR) violations and duplicate functionality.
+
+**Non-Negotiable Rules:**
+- **Search Before Creating**: Before writing a new class/struct, ALWAYS search the codebase: `grep -r "class ClassName" src/`
+- **Check ARCHITECTURE.md**: Read the architecture document to identify existing components that may already provide the needed functionality
+- **Check dsp_utils.h and Common Files**: Legacy utility files often contain simple implementations that may conflict with new ones
+- **Same Namespace = ODR Violation**: Two classes with the same name in the same namespace cause undefined behavior, even if in different files
+- **Symptoms of ODR Violations**: Garbage memory values, uninitialized-looking data, tests that mysteriously fail - these often indicate duplicate definitions rather than logic errors
+- **When in Doubt, Search First**: If implementing something that sounds generic (Smoother, Filter, Buffer, etc.), assume it may already exist
+
+**Diagnostic Checklist for Strange Test Failures:**
+1. Are you seeing garbage values (e.g., `0xCCCCCCCC` = -107374176.0f) that suggest uninitialized memory?
+2. Does one member work correctly while an adjacent member has garbage?
+3. Did a "simple" class suddenly break after adding a new file?
+→ **First action**: Search for duplicate class definitions before debugging logic
+
+**Rationale:** ODR violations cause silent, hard-to-diagnose bugs. A simple grep search before creating new types prevents hours of debugging. The 005-parameter-smoother incident demonstrated that debugging NaN handling for hours was wasted when the real issue was a duplicate `OnePoleSmoother` class discoverable with a 5-second search.
+
 ## Governance
 
 ### Constitution Authority
@@ -483,4 +495,4 @@ All implementation work MUST follow test-first methodology. Testing guidance MUS
 
 **Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied.
 
-**Version**: 1.5.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-22
+**Version**: 1.6.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-22
