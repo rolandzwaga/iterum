@@ -13,6 +13,10 @@ concurrency:
 
 env:
   BUILD_TYPE: Release
+  # ccache settings
+  CCACHE_MAXSIZE: 500M
+  CCACHE_COMPRESS: true
+  CCACHE_COMPRESSLEVEL: 6
 
 jobs:
   build-windows:
@@ -26,24 +30,46 @@ jobs:
           submodules: recursive
 
       - name: Setup MSVC
-        uses: microsoft/setup-msbuild@v2
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Cache ccache data (works with Ninja generator)
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: windows-msvc-${{ env.BUILD_TYPE }}
+          max-size: ${{ env.CCACHE_MAXSIZE }}
+          variant: sccache
+
+      # Cache CMake FetchContent downloads
+      - name: Cache FetchContent
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('tests/CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-${{ runner.os }}-
 
       - name: Configure CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        # Use Ninja for faster builds and ccache/sccache support
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+        run: cmake --build build --parallel
 
       - name: Run Tests
         run: |
-          $env:PATH = "${{ github.workspace }}\build\bin\${{ env.BUILD_TYPE }};$env:PATH"
+          $env:PATH = "${{ github.workspace }}\build\bin;$env:PATH"
           ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
 
       - name: Upload Plugin Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Iterum-Windows-x64
-          path: build/VST3/${{ env.BUILD_TYPE }}/Iterum.vst3
+          path: build/VST3/Iterum.vst3
           if-no-files-found: warn
 
   build-macos:
@@ -56,12 +82,29 @@ jobs:
         with:
           submodules: recursive
 
+      # Cache ccache data
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-clang-${{ env.BUILD_TYPE }}
+          max-size: ${{ env.CCACHE_MAXSIZE }}
+
+      # Cache CMake FetchContent downloads
+      - name: Cache FetchContent
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('tests/CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-${{ runner.os }}-
+
       - name: Configure CMake
-        # Use Xcode generator for proper Objective-C++ support (required by VSTGUI)
+        # Xcode generator required for Objective-C++ (VSTGUI)
+        # ccache doesn't work with Xcode generator, but FetchContent cache helps
         run: cmake -S . -B build -G Xcode
 
       - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} -- -jobs $(sysctl -n hw.ncpu)
 
       - name: Run Tests
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
@@ -84,31 +127,42 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libx11-dev \
-            libxcb1-dev \
-            libxkbcommon-x11-dev \
-            libx11-xcb-dev \
-            libxcb-util1 \
-            libxcb-util-dev \
-            libxcb-keysyms1-dev \
-            libxcb-cursor-dev \
-            libxcb-xkb-dev \
-            libxkbcommon-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libcairo2-dev \
-            libgtkmm-3.0-dev \
-            libsqlite3-dev
+      # Cache apt packages
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: >-
+            ninja-build libx11-dev libxcb1-dev libxkbcommon-x11-dev libx11-xcb-dev
+            libxcb-util1 libxcb-util-dev libxcb-keysyms1-dev libxcb-cursor-dev
+            libxcb-xkb-dev libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
+            libcairo2-dev libgtkmm-3.0-dev libsqlite3-dev
+          version: 1.0
+
+      # Cache ccache data
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-gcc-${{ env.BUILD_TYPE }}
+          max-size: ${{ env.CCACHE_MAXSIZE }}
+
+      # Cache CMake FetchContent downloads
+      - name: Cache FetchContent
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('tests/CMakeLists.txt') }}
+          restore-keys: |
+            fetchcontent-${{ runner.os }}-
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+        run: cmake --build build --parallel
 
       - name: Run Tests
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
@@ -117,5 +171,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Iterum-Linux-x64
-          path: build/VST3/${{ env.BUILD_TYPE }}/Iterum.vst3
+          path: build/VST3/Iterum.vst3
           if-no-files-found: warn
