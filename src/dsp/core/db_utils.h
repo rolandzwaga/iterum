@@ -15,6 +15,8 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
+#include <type_traits>
 
 namespace Iterum {
 namespace DSP {
@@ -27,6 +29,114 @@ namespace DSP {
 /// Represents approximately 24-bit dynamic range (6.02 dB/bit * 24 = ~144 dB).
 /// Used as the return value when gain is zero, negative, or NaN.
 constexpr float kSilenceFloorDb = -144.0f;
+
+namespace detail {
+
+/// Constexpr-safe NaN check that works in both compile-time and runtime contexts
+/// Uses std::isnan at runtime (reliable), !(x==x) pattern at compile-time
+constexpr bool isNaN(float x) noexcept {
+    if (std::is_constant_evaluated()) {
+        // Compile-time: use the IEEE 754 property that NaN != NaN
+        return !(x == x);
+    } else {
+        // Runtime: use std::isnan which is always reliable
+        return std::isnan(x);
+    }
+}
+
+/// Natural log of 10, used in dB conversions
+constexpr float kLn10 = 2.302585093f;
+
+/// 1 / ln(10), used for log10 calculation
+constexpr float kInvLn10 = 0.434294482f;
+
+/// Constexpr natural logarithm using series expansion
+/// Uses the identity: ln(x) = 2 * sum((z^(2n+1))/(2n+1)) where z = (x-1)/(x+1)
+/// Valid for x > 0
+constexpr float constexprLn(float x) noexcept {
+    if (isNaN(x)) return std::numeric_limits<float>::quiet_NaN();
+    if (x <= 0.0f) return -std::numeric_limits<float>::infinity();
+    if (x == std::numeric_limits<float>::infinity()) return std::numeric_limits<float>::infinity();
+    if (x == 1.0f) return 0.0f;
+
+    // Reduce x to range [0.5, 2] for better convergence
+    // ln(x * 2^n) = ln(x) + n * ln(2)
+    constexpr float kLn2 = 0.693147181f;
+    int exponent = 0;
+    float mantissa = x;
+
+    // Limit iterations to prevent infinite loops (max 150 for float range)
+    for (int iter = 0; iter < 150 && mantissa > 2.0f; ++iter) {
+        mantissa *= 0.5f;
+        exponent++;
+    }
+    for (int iter = 0; iter < 150 && mantissa < 0.5f; ++iter) {
+        mantissa *= 2.0f;
+        exponent--;
+    }
+
+    // Series expansion: ln(x) = 2 * (z + z^3/3 + z^5/5 + z^7/7 + ...)
+    // where z = (x-1)/(x+1)
+    float z = (mantissa - 1.0f) / (mantissa + 1.0f);
+    float z2 = z * z;
+    float term = z;
+    float sum = z;
+
+    // 12 terms gives good accuracy for float
+    for (int i = 1; i <= 12; ++i) {
+        term *= z2;
+        sum += term / (2.0f * static_cast<float>(i) + 1.0f);
+    }
+
+    return 2.0f * sum + static_cast<float>(exponent) * kLn2;
+}
+
+/// Constexpr log10 using natural log
+constexpr float constexprLog10(float x) noexcept {
+    return constexprLn(x) * kInvLn10;
+}
+
+/// Constexpr exponential function using Taylor series
+/// exp(x) = 1 + x + x^2/2! + x^3/3! + ...
+constexpr float constexprExp(float x) noexcept {
+    // Handle special cases
+    if (isNaN(x)) return std::numeric_limits<float>::quiet_NaN();
+    if (x == 0.0f) return 1.0f;
+    if (x > 88.0f) return std::numeric_limits<float>::infinity();
+    if (x < -88.0f) return 0.0f;
+
+    // Reduce x to range [-1, 1] for better convergence
+    // exp(x) = exp(x/n)^n, use powers of 2 for efficiency
+    constexpr float kLn2 = 0.693147181f;
+    int k = static_cast<int>(x / kLn2);
+    float r = x - static_cast<float>(k) * kLn2;
+
+    // Taylor series for exp(r) where |r| <= ln(2)/2
+    float term = 1.0f;
+    float sum = 1.0f;
+
+    for (int i = 1; i <= 16; ++i) {
+        term *= r / static_cast<float>(i);
+        sum += term;
+        if (term < 1e-10f && term > -1e-10f) break;
+    }
+
+    // Multiply by 2^k (bounded to prevent infinite loops)
+    if (k >= 0) {
+        for (int i = 0; i < k && i < 150; ++i) sum *= 2.0f;
+    } else {
+        for (int i = 0; i > k && i > -150; --i) sum *= 0.5f;
+    }
+
+    return sum;
+}
+
+/// Constexpr pow(10, x) = exp(x * ln(10))
+constexpr float constexprPow10(float x) noexcept {
+    return constexprExp(x * kLn10);
+}
+
+} // namespace detail
 
 // ==============================================================================
 // Functions
@@ -49,11 +159,11 @@ constexpr float kSilenceFloorDb = -144.0f;
 /// @example   dbToGain(+20.0f)  -> 10.0f    (+20 dB)
 ///
 [[nodiscard]] constexpr float dbToGain(float dB) noexcept {
-    // NaN check: NaN != NaN (works in constexpr context unlike std::isnan)
-    if (dB != dB) {
+    // NaN check using helper function
+    if (detail::isNaN(dB)) {
         return 0.0f;
     }
-    return std::pow(10.0f, dB / 20.0f);
+    return detail::constexprPow10(dB / 20.0f);
 }
 
 /// Convert linear gain to decibels.
@@ -73,11 +183,11 @@ constexpr float kSilenceFloorDb = -144.0f;
 /// @example     gainToDb(-1.0f)  -> -144.0f   (invalid -> floor)
 ///
 [[nodiscard]] constexpr float gainToDb(float gain) noexcept {
-    // NaN or non-positive check
-    if (gain != gain || gain <= 0.0f) {
+    // NaN or non-positive check using helper function
+    if (detail::isNaN(gain) || gain <= 0.0f) {
         return kSilenceFloorDb;
     }
-    float result = 20.0f * std::log10(gain);
+    float result = 20.0f * detail::constexprLog10(gain);
     return (result < kSilenceFloorDb) ? kSilenceFloorDb : result;
 }
 

@@ -181,3 +181,109 @@ TEST_CASE("dbToGain and gainToDb are inverse operations", "[dsp][core][db_utils]
         REQUIRE(backToDb == Approx(dB).margin(0.0001f));
     }
 }
+
+// ==============================================================================
+// User Story 4: Compile-Time Evaluation Tests
+// ==============================================================================
+// Verify functions work in constexpr context for compile-time constant initialization
+// Reference: specs/001-db-conversion/spec.md US4
+
+TEST_CASE("dbToGain is constexpr", "[dsp][core][db_utils][US4][constexpr]") {
+
+    SECTION("T032: constexpr dbToGain compiles and equals runtime result") {
+        // Compile-time evaluation
+        constexpr float gain = dbToGain(-6.0f);
+
+        // Runtime evaluation for comparison
+        float runtimeGain = dbToGain(-6.0f);
+
+        // Verify they match
+        REQUIRE(gain == runtimeGain);
+        REQUIRE(gain == Approx(0.501187f).margin(0.0001f));
+    }
+
+    SECTION("constexpr dbToGain with 0 dB") {
+        constexpr float unity = dbToGain(0.0f);
+        REQUIRE(unity == 1.0f);
+    }
+
+    SECTION("constexpr dbToGain with -20 dB") {
+        constexpr float tenth = dbToGain(-20.0f);
+        REQUIRE(tenth == Approx(0.1f));
+    }
+}
+
+TEST_CASE("gainToDb is constexpr", "[dsp][core][db_utils][US4][constexpr]") {
+
+    SECTION("T033: constexpr gainToDb compiles and equals runtime result") {
+        // Compile-time evaluation
+        constexpr float dB = gainToDb(0.5f);
+
+        // Runtime evaluation for comparison
+        float runtimeDb = gainToDb(0.5f);
+
+        // Verify they match (use Approx for floating-point comparison)
+        REQUIRE(dB == Approx(runtimeDb).margin(0.0001f));
+        REQUIRE(dB == Approx(-6.0206f).margin(0.01f));
+    }
+
+    SECTION("constexpr gainToDb with unity") {
+        constexpr float zeroDB = gainToDb(1.0f);
+        REQUIRE(zeroDB == 0.0f);
+    }
+
+    SECTION("constexpr gainToDb with silence") {
+        constexpr float floor = gainToDb(0.0f);
+        REQUIRE(floor == kSilenceFloorDb);
+    }
+}
+
+TEST_CASE("constexpr array initialization", "[dsp][core][db_utils][US4][constexpr]") {
+
+    SECTION("T034: std::array with constexpr converted values compiles") {
+        // This MUST compile - constexpr array initialization
+        constexpr std::array<float, 5> gains = {
+            dbToGain(-40.0f),  // 0.01
+            dbToGain(-20.0f),  // 0.1
+            dbToGain(-6.0f),   // ~0.5
+            dbToGain(0.0f),    // 1.0
+            dbToGain(20.0f)    // 10.0
+        };
+
+        // Verify values are correct
+        REQUIRE(gains[0] == Approx(0.01f));
+        REQUIRE(gains[1] == Approx(0.1f));
+        REQUIRE(gains[2] == Approx(0.501187f).margin(0.0001f));
+        REQUIRE(gains[3] == 1.0f);
+        REQUIRE(gains[4] == Approx(10.0f));
+    }
+
+    SECTION("constexpr dB lookup table") {
+        // Pre-computed dB values at compile time
+        constexpr std::array<float, 4> dbValues = {
+            gainToDb(0.1f),   // -20 dB
+            gainToDb(0.5f),   // ~-6 dB
+            gainToDb(1.0f),   // 0 dB
+            gainToDb(2.0f)    // ~+6 dB
+        };
+
+        REQUIRE(dbValues[0] == Approx(-20.0f));
+        REQUIRE(dbValues[1] == Approx(-6.0206f).margin(0.01f));
+        REQUIRE(dbValues[2] == 0.0f);
+        REQUIRE(dbValues[3] == Approx(6.0206f).margin(0.01f));
+    }
+}
+
+TEST_CASE("kSilenceFloorDb is constexpr", "[dsp][core][db_utils][US4][constexpr]") {
+
+    SECTION("Can be used in constexpr context") {
+        constexpr float floor = kSilenceFloorDb;
+        REQUIRE(floor == -144.0f);
+    }
+
+    SECTION("Can initialize constexpr array") {
+        constexpr std::array<float, 2> floors = {kSilenceFloorDb, kSilenceFloorDb + 6.0f};
+        REQUIRE(floors[0] == -144.0f);
+        REQUIRE(floors[1] == -138.0f);
+    }
+}
