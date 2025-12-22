@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <string>
 
-namespace VSTWork {
+namespace Iterum {
 
 // ==============================================================================
 // IPluginBase
@@ -241,4 +241,4 @@ void Controller::willClose(VSTGUI::VST3Editor* editor) {
     (void)editor;
 }
 
-} // namespace VSTWork
+} // namespace Iterum

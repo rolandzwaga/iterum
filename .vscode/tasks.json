@@ -44,7 +44,7 @@
             "args": [
                 "--build", "${workspaceFolder}/build",
                 "--config", "Debug",
-                "--target", "VSTWork"
+                "--target", "Iterum"
             ],
             "group": "build",
             "problemMatcher": "$msCompile"
@@ -103,8 +103,8 @@
             "command": "xcopy",
             "args": [
                 "/E", "/I", "/Y",
-                "${workspaceFolder}\\build\\VST3\\Debug\\VSTWork.vst3",
-                "C:\\Program Files\\Common Files\\VST3\\VSTWork.vst3\\"
+                "${workspaceFolder}\\build\\VST3\\Debug\\Iterum.vst3",
+                "C:\\Program Files\\Common Files\\VST3\\Iterum.vst3\\"
             ],
             "group": "build",
             "problemMatcher": []

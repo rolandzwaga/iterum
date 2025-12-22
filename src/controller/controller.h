@@ -17,7 +17,7 @@
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "vstgui/plugin-bindings/vst3editor.h"
 
-namespace VSTWork {
+namespace Iterum {
 
 // ==============================================================================
 // Controller Class
@@ -119,4 +119,4 @@ private:
     // These are saved in getState/setState but don't affect audio
 };
 
-} // namespace VSTWork
+} // namespace Iterum

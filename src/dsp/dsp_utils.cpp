@@ -7,11 +7,11 @@
 
 #include "dsp_utils.h"
 
-namespace VSTWork {
+namespace Iterum {
 namespace DSP {
 
 // Currently all functions are inline in the header.
 // Add non-inline implementations here as needed.
 
 } // namespace DSP
-} // namespace VSTWork
+} // namespace Iterum

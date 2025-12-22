@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace VSTWork {
+namespace Iterum {
 
 // ==============================================================================
 // Constructor
@@ -268,4 +268,4 @@ void Processor::processParameterChanges(Steinberg::Vst::IParameterChanges* chang
     }
 }
 
-} // namespace VSTWork
+} // namespace Iterum

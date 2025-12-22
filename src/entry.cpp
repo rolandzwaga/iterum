@@ -21,7 +21,7 @@
 // Plugin Factory Definition
 // ==============================================================================
 
-#define stringPluginName "VSTWork"
+#define stringPluginName "Iterum"
 
 BEGIN_FACTORY_DEF(
     stringCompanyName,      // Vendor name
@@ -33,22 +33,22 @@ BEGIN_FACTORY_DEF(
     // Processor Component Registration
     // ==========================================================================
     DEF_CLASS2(
-        INLINE_UID_FROM_FUID(VSTWork::kProcessorUID),
+        INLINE_UID_FROM_FUID(Iterum::kProcessorUID),
         PClassInfo::kManyInstances,           // cardinality
         kVstAudioEffectClass,                 // component category
         stringPluginName,                     // plugin name
         Steinberg::Vst::kDistributable,       // Constitution: enable separation
-        VSTWork::kSubCategories,              // subcategories
+        Iterum::kSubCategories,              // subcategories
         FULL_VERSION_STR,                     // version
         kVstVersionString,                    // SDK version
-        VSTWork::Processor::createInstance    // factory function
+        Iterum::Processor::createInstance    // factory function
     )
 
     // ==========================================================================
     // Controller Component Registration
     // ==========================================================================
     DEF_CLASS2(
-        INLINE_UID_FROM_FUID(VSTWork::kControllerUID),
+        INLINE_UID_FROM_FUID(Iterum::kControllerUID),
         PClassInfo::kManyInstances,           // cardinality
         kVstComponentControllerClass,         // component category
         stringPluginName "Controller",        // controller name
@@ -56,7 +56,7 @@ BEGIN_FACTORY_DEF(
         "",                                   // unused for controller
         FULL_VERSION_STR,                     // version
         kVstVersionString,                    // SDK version
-        VSTWork::Controller::createInstance   // factory function
+        Iterum::Controller::createInstance   // factory function
     )
 
 END_FACTORY

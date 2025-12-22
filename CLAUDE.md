@@ -266,7 +266,7 @@ std::atomic<float> gain_;
 constexpr float kDefaultGain = 1.0f;
 
 // Namespaces: PascalCase
-namespace VSTWork { namespace DSP { ... } }
+namespace Iterum { namespace DSP { ... } }
 
 // Parameter IDs: kDescriptiveNameId
 enum ParameterIDs : Steinberg::Vst::ParamID {
@@ -386,7 +386,7 @@ parameters.addParameter(STR16("New Param"), ...);
 ```cpp
 // src/dsp/my_effect.h
 #pragma once
-namespace VSTWork::DSP {
+namespace Iterum::DSP {
     inline void myEffect(float* buffer, size_t numSamples, float param) noexcept {
         // Implementation
     }
@@ -397,7 +397,7 @@ namespace VSTWork::DSP {
 ```cpp
 TEST_CASE("myEffect processes correctly", "[dsp]") {
     std::array<float, 4> buffer = {1.0f, 0.5f, -0.5f, -1.0f};
-    VSTWork::DSP::myEffect(buffer.data(), buffer.size(), 0.5f);
+    Iterum::DSP::myEffect(buffer.data(), buffer.size(), 0.5f);
     REQUIRE(buffer[0] == Approx(expected));
 }
 ```
@@ -434,7 +434,7 @@ Steinberg::tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
 #pragma once
 #include "dsp/core/fast_math.h"  // OK: Layer 0 dependency
 
-namespace VSTWork::DSP {
+namespace Iterum::DSP {
     class MyPrimitive {
     public:
         void prepare(double sampleRate, size_t maxBlockSize) noexcept;
@@ -578,7 +578,7 @@ TEST_CASE("Function does X", "[dsp][category]") {
     std::array<float, N> expected = {...};
 
     // Act
-    VSTWork::DSP::function(input.data(), input.size(), params);
+    Iterum::DSP::function(input.data(), input.size(), params);
 
     // Assert
     for (size_t i = 0; i < N; ++i) {

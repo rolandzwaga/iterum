@@ -67,6 +67,7 @@ add_executable(dsp_tests
     unit/test_dsp_utils.cpp
     unit/core/db_utils_test.cpp
     unit/primitives/delay_line_test.cpp
+    unit/primitives/lfo_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -141,20 +142,20 @@ catch_discover_tests(approval_tests)
 # Custom target to validate the built plugin
 if(TARGET validator)
     # Path to the built plugin
-    set(PLUGIN_PATH "${CMAKE_BINARY_DIR}/VST3/$<CONFIG>/VSTWork.vst3")
+    set(PLUGIN_PATH "${CMAKE_BINARY_DIR}/VST3/$<CONFIG>/Iterum.vst3")
 
     add_custom_target(validate_plugin
         COMMAND $<TARGET_FILE:validator> "${PLUGIN_PATH}"
-        DEPENDS VSTWork validator
-        COMMENT "Running VST3 validator on VSTWork.vst3"
+        DEPENDS Iterum validator
+        COMMENT "Running VST3 validator on Iterum.vst3"
         VERBATIM
     )
 
     # Also add a quick validation (basic tests only)
     add_custom_target(validate_plugin_quick
         COMMAND $<TARGET_FILE:validator> "${PLUGIN_PATH}" -q
-        DEPENDS VSTWork validator
-        COMMENT "Running quick VST3 validation on VSTWork.vst3"
+        DEPENDS Iterum validator
+        COMMENT "Running quick VST3 validation on Iterum.vst3"
         VERBATIM
     )
 endif()

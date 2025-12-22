@@ -35,13 +35,13 @@ cmake --build build --config Debug --target validate_plugin
 cmake --build build --config Debug --target validate_plugin_quick
 
 # Or run validator directly
-build\bin\Debug\validator.exe "build\VST3\Debug\VSTWork.vst3"
+build\bin\Debug\validator.exe "build\VST3\Debug\Iterum.vst3"
 
 # Show all validator options
 build\bin\Debug\validator.exe --help
 
 # Run extensive tests (may take a long time)
-build\bin\Debug\validator.exe -e "build\VST3\Debug\VSTWork.vst3"
+build\bin\Debug\validator.exe -e "build\VST3\Debug\Iterum.vst3"
 ```
 
 ### Run Specific Tests

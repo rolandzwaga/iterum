@@ -13,7 +13,7 @@
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/vst/vsttypes.h"
 
-namespace VSTWork {
+namespace Iterum {
 
 // Processor Component ID
 // The audio processing component (runs on audio thread)
@@ -41,7 +41,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
 // Plugin Metadata
 // ==============================================================================
 
-constexpr const char* kPluginName = "VSTWork";
+constexpr const char* kPluginName = "Iterum";
 constexpr const char* kVendorName = "Your Company";
 constexpr const char* kVendorURL = "https://yourcompany.com";
 constexpr const char* kVendorEmail = "info@yourcompany.com";
@@ -51,4 +51,4 @@ constexpr const char* kVersionString = "1.0.0";
 // Examples: "Fx", "Instrument", "Analyzer", "Delay", "Reverb", etc.
 constexpr const char* kSubCategories = "Fx";
 
-} // namespace VSTWork
+} // namespace Iterum

@@ -73,7 +73,7 @@ To enable inline editing in Debug builds:
                 class="CTextLabel"
                 origin="20, 20"
                 size="360, 30"
-                title="VSTWork"
+                title="Iterum"
                 font="title-font"
                 font-color="text"
                 text-alignment="center"

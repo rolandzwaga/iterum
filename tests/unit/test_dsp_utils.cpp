@@ -21,8 +21,7 @@ int main(int argc, char* argv[]) {
 #include <array>
 #include <cmath>
 
-using namespace VSTWork::DSP;
-using namespace Iterum::DSP;  // New dB/linear conversion API
+using namespace Iterum::DSP;
 using Catch::Approx;
 
 // ==============================================================================

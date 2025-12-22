@@ -20,7 +20,7 @@
 #include <array>
 #include <atomic>
 
-namespace VSTWork {
+namespace Iterum {
 
 // ==============================================================================
 // Processor Class
@@ -119,4 +119,4 @@ private:
     // Example: std::vector<float> delayBuffer_;
 };
 
-} // namespace VSTWork
+} // namespace Iterum

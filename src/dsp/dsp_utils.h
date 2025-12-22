@@ -21,7 +21,7 @@
 // Layer 0 Core Utilities - dB/linear conversion
 #include "core/db_utils.h"
 
-namespace VSTWork {
+namespace Iterum {
 namespace DSP {
 
 // ==============================================================================
@@ -184,4 +184,4 @@ private:
 }
 
 } // namespace DSP
-} // namespace VSTWork
+} // namespace Iterum

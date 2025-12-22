@@ -41,7 +41,7 @@
 #include <iomanip>
 
 using namespace TestHelpers;
-using namespace VSTWork::DSP;
+using namespace Iterum::DSP;
 using Catch::Approx;
 
 // ==============================================================================
