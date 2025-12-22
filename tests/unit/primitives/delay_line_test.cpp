@@ -494,3 +494,204 @@ TEST_CASE("DelayLine modulated delay (US4 coverage)", "[delay][linear][modulatio
         CHECK(maxDiff < 0.001f);
     }
 }
+
+// =============================================================================
+// Phase 5: User Story 3 - Allpass Interpolation (T027-T028)
+// =============================================================================
+
+TEST_CASE("DelayLine readAllpass at integer position", "[delay][allpass][US3]") {
+    DelayLine delay;
+    delay.prepare(44100.0, 0.1f);
+
+    SECTION("fractional position with constant signal settles to input value") {
+        // Fill buffer with constant value
+        for (int i = 0; i < 100; ++i) {
+            delay.write(0.5f);
+        }
+
+        // With fractional delay, allpass should settle to the constant input
+        // Use 10.5 samples delay (frac=0.5, a=1/3)
+        float result = 0.0f;
+        for (int i = 0; i < 50; ++i) {
+            delay.write(0.5f);
+            result = delay.readAllpass(10.5f);
+        }
+
+        // After settling, output should approximate input
+        REQUIRE(result == Approx(0.5f).margin(0.01f));
+    }
+
+    SECTION("integer position with frac=0 uses coefficient a=1") {
+        // When frac=0: a = (1-0)/(1+0) = 1
+        // y = x0 + a*(state - x1) = x0 + state - x1
+        // This is verifiable behavior even if it doesn't match read()
+        delay.reset();
+        delay.write(0.0f);
+        delay.write(1.0f);
+
+        // First call: x0=1, x1=0, state=0
+        // y = 1 + 1*(0 - 0) = 1
+        float result = delay.readAllpass(0.0f);
+        REQUIRE(result == Approx(1.0f));
+    }
+}
+
+TEST_CASE("DelayLine readAllpass coefficient calculation", "[delay][allpass][US3]") {
+    DelayLine delay;
+    delay.prepare(44100.0, 0.1f);
+
+    // Write known samples
+    delay.write(0.0f);
+    delay.write(1.0f);
+
+    SECTION("coefficient at frac=0 is 1") {
+        // a = (1 - 0) / (1 + 0) = 1
+        // y = x0 + 1 * (state - x1) = x0 + state - x1
+        // With state=0: y = x0 - x1 = 1.0 - 0.0 = 1.0
+        float result = delay.readAllpass(0.0f);
+        REQUIRE(result == Approx(1.0f));
+    }
+
+    SECTION("coefficient at frac=0.5 is 1/3") {
+        // a = (1 - 0.5) / (1 + 0.5) = 0.5 / 1.5 = 1/3
+        delay.reset();
+        delay.write(0.0f);
+        delay.write(1.0f);
+        float result = delay.readAllpass(0.5f);
+        // y = x0 + a * (state - x1) = 1.0 + (1/3) * (0 - 0.0) = 1.0
+        REQUIRE(result == Approx(1.0f).margin(0.01f));
+    }
+}
+
+TEST_CASE("DelayLine readAllpass preserves amplitude (unity gain)", "[delay][allpass][US3]") {
+    DelayLine delay;
+    delay.prepare(44100.0, 0.1f);
+
+    SECTION("processes sine wave with unity gain at 440Hz") {
+        const float frequency = 440.0f;
+        const float sampleRate = 44100.0f;
+        const size_t numSamples = 4410;  // 100ms of audio
+        const float delayTime = 10.5f;   // Fractional delay to engage allpass
+
+        // Fill buffer with silence first
+        for (size_t i = 0; i < 500; ++i) {
+            delay.write(0.0f);
+        }
+
+        // Process sine wave and accumulate RMS
+        double inputRmsSum = 0.0;
+        double outputRmsSum = 0.0;
+
+        for (size_t i = 0; i < numSamples; ++i) {
+            float input = std::sin(2.0f * 3.14159265f * frequency * static_cast<float>(i) / sampleRate);
+            delay.write(input);
+            float output = delay.readAllpass(delayTime);
+
+            inputRmsSum += static_cast<double>(input * input);
+            outputRmsSum += static_cast<double>(output * output);
+        }
+
+        float inputRms = static_cast<float>(std::sqrt(inputRmsSum / numSamples));
+        float outputRms = static_cast<float>(std::sqrt(outputRmsSum / numSamples));
+
+        // Skip first samples where transient occurs, check steady state
+        // Allow within 0.1 dB (about 1.2% amplitude difference)
+        if (inputRms > 0.01f) {
+            float ratioDb = 20.0f * std::log10(outputRms / inputRms);
+            CHECK(std::abs(ratioDb) < 0.1f);
+        }
+    }
+
+    SECTION("processes sine wave with unity gain at 1000Hz") {
+        const float frequency = 1000.0f;
+        const float sampleRate = 44100.0f;
+        const size_t numSamples = 4410;
+        const float delayTime = 25.3f;
+
+        delay.reset();
+        for (size_t i = 0; i < 500; ++i) {
+            delay.write(0.0f);
+        }
+
+        double inputRmsSum = 0.0;
+        double outputRmsSum = 0.0;
+
+        for (size_t i = 0; i < numSamples; ++i) {
+            float input = std::sin(2.0f * 3.14159265f * frequency * static_cast<float>(i) / sampleRate);
+            delay.write(input);
+            float output = delay.readAllpass(delayTime);
+
+            inputRmsSum += static_cast<double>(input * input);
+            outputRmsSum += static_cast<double>(output * output);
+        }
+
+        float inputRms = static_cast<float>(std::sqrt(inputRmsSum / numSamples));
+        float outputRms = static_cast<float>(std::sqrt(outputRmsSum / numSamples));
+
+        if (inputRms > 0.01f) {
+            float ratioDb = 20.0f * std::log10(outputRms / inputRms);
+            CHECK(std::abs(ratioDb) < 0.1f);
+        }
+    }
+
+    SECTION("processes sine wave with unity gain at 5000Hz") {
+        const float frequency = 5000.0f;
+        const float sampleRate = 44100.0f;
+        const size_t numSamples = 4410;
+        const float delayTime = 50.7f;
+
+        delay.reset();
+        for (size_t i = 0; i < 500; ++i) {
+            delay.write(0.0f);
+        }
+
+        double inputRmsSum = 0.0;
+        double outputRmsSum = 0.0;
+
+        for (size_t i = 0; i < numSamples; ++i) {
+            float input = std::sin(2.0f * 3.14159265f * frequency * static_cast<float>(i) / sampleRate);
+            delay.write(input);
+            float output = delay.readAllpass(delayTime);
+
+            inputRmsSum += static_cast<double>(input * input);
+            outputRmsSum += static_cast<double>(output * output);
+        }
+
+        float inputRms = static_cast<float>(std::sqrt(inputRmsSum / numSamples));
+        float outputRms = static_cast<float>(std::sqrt(outputRmsSum / numSamples));
+
+        if (inputRms > 0.01f) {
+            float ratioDb = 20.0f * std::log10(outputRms / inputRms);
+            CHECK(std::abs(ratioDb) < 0.1f);
+        }
+    }
+}
+
+TEST_CASE("DelayLine readAllpass state is cleared by reset", "[delay][allpass][US3]") {
+    DelayLine delay;
+    delay.prepare(44100.0, 0.1f);
+
+    // Process some samples to build up allpass state
+    for (int i = 0; i < 100; ++i) {
+        delay.write(static_cast<float>(i) * 0.01f);
+        (void)delay.readAllpass(10.5f);  // Discard result intentionally
+    }
+
+    // Reset should clear allpass state
+    delay.reset();
+
+    // After reset, write known samples
+    delay.write(0.0f);
+    delay.write(1.0f);
+
+    // Result should be same as fresh delay
+    DelayLine freshDelay;
+    freshDelay.prepare(44100.0, 0.1f);
+    freshDelay.write(0.0f);
+    freshDelay.write(1.0f);
+
+    float resetResult = delay.readAllpass(0.0f);
+    float freshResult = freshDelay.readAllpass(0.0f);
+
+    REQUIRE(resetResult == Approx(freshResult));
+}

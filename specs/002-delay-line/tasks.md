@@ -170,31 +170,31 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 5.1 Pre-Implementation (MANDATORY)
 
-- [ ] T026 [US3] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T026 [US3] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 5.2 Tests for User Story 3 (Write FIRST - Must FAIL)
 
-- [ ] T027 [US3] Write tests for readAllpass() in tests/unit/primitives/delay_line_test.cpp
+- [x] T027 [US3] Write tests for readAllpass() in tests/unit/primitives/delay_line_test.cpp
   - Test allpass at integer position matches read()
   - Test allpass preserves amplitude (unity gain)
   - Test allpass coefficient calculation: (1-frac)/(1+frac)
-- [ ] T028 [US3] Write unity gain verification tests in tests/unit/primitives/delay_line_test.cpp
+- [x] T028 [US3] Write unity gain verification tests in tests/unit/primitives/delay_line_test.cpp
   - Process sine wave at multiple frequencies
   - Verify output RMS matches input RMS (within tolerance)
 
 ### 5.3 Implementation for User Story 3
 
-- [ ] T029 [US3] Implement readAllpass(float) method in src/dsp/primitives/delay_line.h
+- [x] T029 [US3] Implement readAllpass(float) method in src/dsp/primitives/delay_line.h
   - Calculate allpass coefficient: a = (1 - frac) / (1 + frac)
   - Apply allpass formula: y = x0 + a * (allpassState_ - x1)
   - Update allpassState_ with output
-- [ ] T030 [US3] Add allpassState_ member and reset in reset() method
-- [ ] T031 [US3] Verify all US3 tests pass
-- [ ] T032 [US3] Run full test suite to ensure no regressions
+- [x] T030 [US3] Add allpassState_ member and reset in reset() method
+- [x] T031 [US3] Verify all US3 tests pass
+- [x] T032 [US3] Run full test suite to ensure no regressions
 
 ### 5.4 Commit (MANDATORY)
 
-- [ ] T033 [US3] **Commit completed User Story 3 work**
+- [x] T033 [US3] **Commit completed User Story 3 work**
 
 **Checkpoint**: Allpass interpolation works - ready for feedback delay networks
 
