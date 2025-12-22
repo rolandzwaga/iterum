@@ -35,6 +35,7 @@
 
 // DSP code to test
 #include "dsp/dsp_utils.h"
+#include "dsp/primitives/smoother.h"
 
 #include <array>
 #include <sstream>
@@ -112,8 +113,8 @@ TEST_CASE("softClip transfer function matches approved", "[regression][dsp][clip
 
 TEST_CASE("OnePoleSmoother convergence matches approved", "[regression][dsp][smoother]") {
     OnePoleSmoother smoother;
-    smoother.setTime(0.01f, 44100.0f);  // 10ms smoothing time
-    smoother.reset(0.0f);
+    smoother.configure(10.0f, 44100.0f);  // 10ms smoothing time
+    smoother.reset();  // Sets both current and target to 0.0f
 
     // Use 5 decimal places for cross-platform consistency
     std::ostringstream oss;
@@ -129,9 +130,10 @@ TEST_CASE("OnePoleSmoother convergence matches approved", "[regression][dsp][smo
     for (int i = 0; i < 1000; i += 50) {
         // Process samples to reach this point
         float value = 0.0f;
-        smoother.reset(0.0f);
+        smoother.reset();  // Sets both current and target to 0.0f
+        smoother.setTarget(1.0f);
         for (int j = 0; j <= i; ++j) {
-            value = smoother.process(1.0f);
+            value = smoother.process();
         }
         oss << i << ", " << value << "\n";
     }

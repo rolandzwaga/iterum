@@ -20,12 +20,13 @@
 #pragma once
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <numbers>
+
+// Layer 0 dependency for shared math utilities
+#include "dsp/core/db_utils.h"
 
 namespace Iterum {
 namespace DSP {
@@ -66,37 +67,9 @@ inline constexpr float kDenormalThreshold = 1e-15f;
 // =============================================================================
 // Math Helpers (Internal)
 // =============================================================================
+// Note: constexprExp and isNaN are provided by dsp/core/db_utils.h (Layer 0)
 
 namespace detail {
-
-/// @brief Constexpr-capable exponential function using Taylor series.
-/// Required because std::exp is not constexpr in MSVC.
-/// Uses 16 terms for float precision.
-/// @param x The exponent
-/// @return e^x
-[[nodiscard]] constexpr float constexprExp(float x) noexcept {
-    // Taylor series: e^x = 1 + x + x²/2! + x³/3! + ...
-    float sum = 1.0f;
-    float term = 1.0f;
-    for (int i = 1; i <= 16; ++i) {
-        term *= x / static_cast<float>(i);
-        sum += term;
-    }
-    return sum;
-}
-
-/// @brief Platform-independent NaN check using bit manipulation.
-/// Required because std::isnan can be optimized away by -ffast-math.
-/// Uses memcpy for bit extraction (works with any optimization level).
-/// @note The calling function should be marked noinline to prevent branch elimination.
-/// @param x Value to check
-/// @return true if x is NaN
-[[nodiscard]] inline bool isNaN(float x) noexcept {
-    std::uint32_t bits;
-    std::memcpy(&bits, &x, sizeof(bits));
-    // NaN: exponent = 0xFF (all 1s), mantissa != 0
-    return ((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0);
-}
 
 /// @brief Platform-independent infinity check using bit manipulation.
 /// Uses memcpy for bit extraction (works with any optimization level).
