@@ -1,4 +1,4 @@
-# CLAUDE.md - VST Plugin Development Guidelines
+﻿# CLAUDE.md - VST Plugin Development Guidelines
 
 This file provides guidance for AI assistants working on this VST3 plugin project. All code contributions must comply with the project constitution at `.specify/memory/constitution.md`.
 
@@ -79,6 +79,127 @@ case kGainId:
     gain_.store(static_cast<float>(normalizedValue * 2.0), // denormalize
                std::memory_order_relaxed);
 ```
+
+## Cross-Platform Compatibility (CRITICAL)
+
+This project runs CI on Windows (MSVC), macOS (Clang), and Linux (GCC). The following platform differences MUST be considered during specification and implementation. See constitution section "Cross-Platform Compatibility" for the complete reference.
+
+### Floating-Point Behavior
+
+**NaN Detection:**
+
+The VST3 SDK enables `-ffast-math` globally (see `SMTG_PlatformToolset.cmake`), which causes `std::isnan()`, `__builtin_isnan()`, and even bit manipulation to be optimized away.
+
+```cpp
+// WRONG - optimized away by -ffast-math
+if (x != x) { /* NaN */ }
+if (std::isnan(x)) { /* NaN */ }  // Also optimized away!
+if (__builtin_isnan(x)) { /* NaN */ }  // Also optimized away!
+
+// CORRECT - bit manipulation WITH -fno-fast-math on the source file
+constexpr bool isNaN(float x) noexcept {
+    const auto bits = std::bit_cast<std::uint32_t>(x);
+    return ((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0);
+}
+```
+
+**Critical:** Source files using NaN detection MUST disable fast-math:
+```cmake
+# In CMakeLists.txt - follows VSTGUI's pattern (see uijsonpersistence.cpp)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(my_file.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only")
+endif()
+```
+
+**Floating-Point Precision:**
+- MSVC and Clang differ at 7th-8th decimal places
+- Approval tests: Use `std::setprecision(6)` or less
+- Unit tests: Use `Approx().margin()` for comparisons
+
+**Denormalized Numbers (Performance Killer):**
+- IIR filters decay into denormals when fed silence → 100x CPU slowdown
+- ARM NEON auto-flushes to zero; x86 requires explicit FTZ/DAZ
+- Solution: Enable FTZ/DAZ in audio thread or add tiny DC offset (~1e-15)
+```cpp
+// Enable FTZ/DAZ on x86 (in setupProcessing or setActive)
+_MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+_MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+```
+
+**Constexpr Math:**
+- `std::pow`, `std::log10`, `std::exp` are NOT constexpr in MSVC
+- Use custom Taylor series (see `src/dsp/core/db_utils.h`)
+
+### SIMD and Memory Alignment
+
+**Alignment Requirements:**
+- SSE: 16-byte; AVX: 32-byte; AVX-512: 64-byte
+- Unaligned SSE access crashes; unaligned AVX is slow
+```cpp
+// Stack/static allocation
+alignas(32) std::array<float, 256> buffer;
+
+// Dynamic allocation (C++17)
+auto* buffer = static_cast<float*>(std::aligned_alloc(32, size * sizeof(float)));
+// Or use _mm_malloc/_mm_free for portability
+```
+
+**Cross-Platform SIMD (SSE/AVX vs NEON):**
+- x86: SSE/AVX intrinsics; ARM: NEON with different API
+- Use abstraction library (sse2neon, SIMDe) for portability
+- Apple Silicon (M1/M2/M3/M4): NEON native; x86 via Rosetta 2 (with overhead)
+- Build universal binaries for macOS: `CMAKE_OSX_ARCHITECTURES="x86_64;arm64"`
+
+### Threading and Atomics
+
+**Real-Time Thread Priority:**
+- Don't manually set thread priority in plugins; let host manage it
+- Windows: MMCSS; macOS: THREAD_TIME_CONSTRAINT_POLICY; Linux: SCHED_FIFO
+
+**Atomic Operations:**
+- Only `std::atomic_flag` is guaranteed lock-free everywhere
+- Verify with `is_lock_free()` for other types (especially `std::atomic<double>`)
+- MSVC may silently use mutex for 128-bit atomics
+
+**Memory Ordering:**
+- x86: Strong model (acquire/release nearly free)
+- ARM: Weak model (seq_cst is expensive)
+- Use `memory_order_relaxed` for counters, `acquire`/`release` for sync
+
+**Spinlocks:**
+- NEVER block-wait on audio thread
+- Use `try_lock()` with fallback, not spin loops
+
+### Build System
+
+**CMake:**
+- macOS: Use `-G Xcode` for Objective-C++ (VSTGUI)
+- FetchContent: Use URL + SHA256, not git clone (CI rate limits)
+
+**ABI Compatibility:**
+- Use MSVC on Windows, Clang on macOS, GCC on Linux
+- Mixing compilers can cause vtable/exception handling crashes
+
+**Runtime Libraries (Windows):**
+- Link CRT statically (`/MT`) or ship VCRUNTIME redistributable
+
+### File System
+
+**Path Encoding:**
+- Windows: UTF-16 (`wchar_t` = 2 bytes); macOS/Linux: UTF-8 (`wchar_t` = 4 bytes)
+- Use UTF-8 internally; convert to UTF-16 for Windows file APIs
+- Prefer `std::filesystem` (C++17) for cross-platform paths
+
+**State Persistence:**
+- Use explicit byte order (little-endian preferred)
+- State saved on Windows must load on macOS and vice versa
+
+### Plugin Validation
+
+- Use [pluginval](https://www.tracktion.com/develop/pluginval) at strictness level 5+
+- Test in multiple DAWs (scanning behavior varies)
+- CI should run validation on all platforms before release
 
 ## Code Style
 
@@ -465,6 +586,56 @@ TEST_CASE("Function does X", "[dsp][category]") {
     }
 }
 ```
+
+## Test-First Development Enforcement (MANDATORY)
+
+**CRITICAL**: This section describes non-negotiable workflow requirements for ALL implementation tasks.
+
+### Pre-Task Context Check
+
+Before starting ANY implementation task, you MUST:
+
+1. **Check if `specs/TESTING-GUIDE.md` is in your current context window**
+2. **If NOT in context**: Read the file IMMEDIATELY before proceeding
+3. This check MUST appear as an explicit todo item: "Verify TESTING-GUIDE.md is in context (ingest if needed)"
+
+This is REQUIRED because context compaction may have removed the testing guide from your working memory.
+
+### Test-First Workflow
+
+For every implementation task, the todo list MUST include these explicit items IN ORDER:
+
+```
+1. [ ] Verify TESTING-GUIDE.md is in context (ingest if needed)
+2. [ ] Write failing tests for [feature name]
+3. [ ] Implement [feature name] to make tests pass
+4. [ ] Verify all tests pass
+5. [ ] Commit completed work
+```
+
+**NEVER skip steps 1, 2, or 5.** These are checkpoints, not optional guidelines.
+
+### Why This Matters
+
+- **Step 1** ensures testing patterns are fresh in context
+- **Step 2** (tests first) catches design issues early and documents expected behavior
+- **Step 5** (commit) creates save points and ensures work isn't lost
+
+### Example Todo List for DSP Feature
+
+```
+1. [x] Verify TESTING-GUIDE.md is in context (ingest if needed)
+2. [ ] Write failing tests for dbToGain function
+3. [ ] Implement dbToGain to make tests pass
+4. [ ] Write failing tests for gainToDb function
+5. [ ] Implement gainToDb to make tests pass
+6. [ ] Verify all tests pass
+7. [ ] Commit completed work
+```
+
+### Enforcement
+
+If you find yourself writing implementation code without corresponding test files already created, STOP and write the tests first. This is a constitution-level requirement (Principle XII).
 
 ## Build Commands
 

@@ -7,14 +7,14 @@
 // Edit CMakeLists.txt to change version numbers.
 // ==============================================================================
 
-#define MAJOR_VERSION_STR "0"
-#define MAJOR_VERSION_INT 0
+#define MAJOR_VERSION_STR "@PROJECT_VERSION_MAJOR@"
+#define MAJOR_VERSION_INT @PROJECT_VERSION_MAJOR@
 
-#define SUB_VERSION_STR "0"
-#define SUB_VERSION_INT 0
+#define SUB_VERSION_STR "@PROJECT_VERSION_MINOR@"
+#define SUB_VERSION_INT @PROJECT_VERSION_MINOR@
 
-#define RELEASE_NUMBER_STR "1"
-#define RELEASE_NUMBER_INT 1
+#define RELEASE_NUMBER_STR "@PROJECT_VERSION_PATCH@"
+#define RELEASE_NUMBER_INT @PROJECT_VERSION_PATCH@
 
 #define BUILD_NUMBER_STR "1"
 #define BUILD_NUMBER_INT 1
@@ -23,9 +23,9 @@
 
 #define VERSION_STR MAJOR_VERSION_STR "." SUB_VERSION_STR "." RELEASE_NUMBER_STR
 
-#define stringPluginName "Iterum"
-#define stringOriginalFilename "Iterum.vst3"
-#define stringFileDescription "Iterum VST3 Delay Plugin"
+#define stringPluginName "@PROJECT_NAME@"
+#define stringOriginalFilename "@PROJECT_NAME@.vst3"
+#define stringFileDescription "@PROJECT_DESCRIPTION@"
 #define stringCompanyName "Your Company"
 #define stringVendorURL "https://yourcompany.com"
 #define stringVendorEmail "info@yourcompany.com"

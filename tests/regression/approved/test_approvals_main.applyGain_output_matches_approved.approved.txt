@@ -1,0 +1,14 @@
+# applyGain(sine_440Hz, gain=0.5)
+# Sample Rate: 44100 Hz
+# Buffer Size: 64 samples
+#
+# Index, Value
+0, 0.00000
+8, 0.24038
+16, 0.42155
+24, 0.49890
+32, 0.45338
+40, 0.29619
+48, 0.06606
+56, -0.18035
+

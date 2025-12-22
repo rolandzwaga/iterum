@@ -8,9 +8,37 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: This project follows TEST-FIRST methodology (Constitution Principle XII). Tests MUST be written before implementation.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+---
+
+## ⚠️ MANDATORY: Test-First Development Workflow
+
+**CRITICAL**: Every implementation task MUST follow this workflow. These are not guidelines - they are requirements.
+
+### Required Steps for EVERY Task
+
+Before starting ANY implementation task, include these as EXPLICIT todo items:
+
+1. **Context Check**: Verify `specs/TESTING-GUIDE.md` is in context window. If not, READ IT FIRST.
+2. **Write Failing Tests**: Create test file and write tests that FAIL (no implementation yet)
+3. **Implement**: Write code to make tests pass
+4. **Verify**: Run tests and confirm they pass
+5. **Commit**: Commit the completed work
+
+### Example Todo List Structure
+
+```
+[ ] Verify TESTING-GUIDE.md is in context (ingest if needed)
+[ ] Write failing tests for [feature]
+[ ] Implement [feature] to make tests pass
+[ ] Verify all tests pass
+[ ] Commit completed work
+```
+
+**DO NOT** skip the context check or commit steps. These appear as checkboxes because they MUST be tracked.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -79,23 +107,31 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### 3.1 Pre-Implementation (MANDATORY)
 
-> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
+- [ ] T010 [US1] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+### 3.2 Tests for User Story 1 (Write FIRST - Must FAIL)
 
-### Implementation for User Story 1
+> **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T011 [P] [US1] Unit tests for [Entity1] in tests/unit/test_[entity1].cpp
+- [ ] T012 [P] [US1] Unit tests for [Entity2] in tests/unit/test_[entity2].cpp
+- [ ] T013 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].cpp
 
-**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
+### 3.3 Implementation for User Story 1
+
+- [ ] T014 [P] [US1] Create [Entity1] in src/[layer]/[entity1].h
+- [ ] T015 [P] [US1] Create [Entity2] in src/[layer]/[entity2].h
+- [ ] T016 [US1] Implement [Service] in src/[layer]/[service].h (depends on T014, T015)
+- [ ] T017 [US1] Verify all tests pass
+- [ ] T018 [US1] Add validation and error handling (if needed)
+
+### 3.4 Commit (MANDATORY)
+
+- [ ] T019 [US1] **Commit completed User Story 1 work**
+
+**Checkpoint**: User Story 1 should be fully functional, tested, and committed
 
 ---
 
@@ -105,19 +141,29 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### 4.1 Pre-Implementation (MANDATORY)
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T020 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
-### Implementation for User Story 2
+### 4.2 Tests for User Story 2 (Write FIRST - Must FAIL)
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T023 [US2] Integrate with User Story 1 components (if needed)
+> **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
+- [ ] T021 [P] [US2] Unit tests for [Entity] in tests/unit/test_[entity].cpp
+- [ ] T022 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].cpp
+
+### 4.3 Implementation for User Story 2
+
+- [ ] T023 [P] [US2] Create [Entity] in src/[layer]/[entity].h
+- [ ] T024 [US2] Implement [Service] in src/[layer]/[service].h
+- [ ] T025 [US2] Verify all tests pass
+- [ ] T026 [US2] Integrate with User Story 1 components (if needed)
+
+### 4.4 Commit (MANDATORY)
+
+- [ ] T027 [US2] **Commit completed User Story 2 work**
+
+**Checkpoint**: User Stories 1 AND 2 should both work independently and be committed
 
 ---
 
@@ -127,18 +173,28 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### 5.1 Pre-Implementation (MANDATORY)
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T028 [US3] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
-### Implementation for User Story 3
+### 5.2 Tests for User Story 3 (Write FIRST - Must FAIL)
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+> **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-**Checkpoint**: All user stories should now be independently functional
+- [ ] T029 [P] [US3] Unit tests for [Entity] in tests/unit/test_[entity].cpp
+- [ ] T030 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].cpp
+
+### 5.3 Implementation for User Story 3
+
+- [ ] T031 [P] [US3] Create [Entity] in src/[layer]/[entity].h
+- [ ] T032 [US3] Implement [Service] in src/[layer]/[service].h
+- [ ] T033 [US3] Verify all tests pass
+
+### 5.4 Commit (MANDATORY)
+
+- [ ] T034 [US3] **Commit completed User Story 3 work**
+
+**Checkpoint**: All user stories should now be independently functional and committed
 
 ---
 
@@ -146,7 +202,7 @@ Examples of foundational tasks (adjust based on your project):
 
 ---
 
-## Phase N: Polish & Cross-Cutting Concerns
+## Phase N-1: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
@@ -156,6 +212,29 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+
+---
+
+## Phase N: Final Documentation (MANDATORY)
+
+**Purpose**: Update living architecture documentation before spec completion
+
+> **Constitution Principle XIII**: Every spec implementation MUST update ARCHITECTURE.md as a final task
+
+### N.1 Architecture Documentation Update
+
+- [ ] TXXX **Update ARCHITECTURE.md** with new components added by this spec:
+  - Add new component entries to appropriate layer section
+  - Include: purpose, public API summary, file location, "when to use this"
+  - Add usage examples if applicable
+  - Verify no duplicate functionality was introduced
+
+### N.2 Final Commit
+
+- [ ] TXXX **Commit ARCHITECTURE.md updates**
+- [ ] TXXX Verify all spec work is committed to feature branch
+
+**Checkpoint**: Spec implementation complete - ARCHITECTURE.md reflects all new functionality
 
 ---
 
@@ -178,10 +257,13 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests (if included) MUST be written and FAIL before implementation
-- Models before services
+- **TESTING-GUIDE check**: FIRST task - verify testing guide is in context
+- **Tests FIRST**: Tests MUST be written and FAIL before implementation (Principle XII)
+- Models/entities before services
 - Services before endpoints
 - Core implementation before integration
+- **Verify tests pass**: After implementation
+- **Commit**: LAST task - commit completed work
 - Story complete before moving to next priority
 
 ### Parallel Opportunities
@@ -245,7 +327,9 @@ With multiple developers:
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing
-- Commit after each task or logical group
+- **MANDATORY**: Check TESTING-GUIDE.md is in context FIRST
+- **MANDATORY**: Write tests that FAIL before implementing (Principle XII)
+- **MANDATORY**: Commit work at end of each user story
+- **MANDATORY**: Update ARCHITECTURE.md before spec completion (Principle XIII)
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence

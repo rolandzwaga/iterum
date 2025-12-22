@@ -6,6 +6,7 @@
     // ---------------------------------------------------------------------------
     // CMake Configuration
     // ---------------------------------------------------------------------------
+    "cmake.cmakePath": "C:\\Program Files\\CMake\\bin\\cmake.exe",
     "cmake.configureOnOpen": true,
     "cmake.buildDirectory": "${workspaceFolder}/build",
     "cmake.generator": "Visual Studio 17 2022",

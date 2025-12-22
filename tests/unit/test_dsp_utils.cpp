@@ -22,60 +22,61 @@ int main(int argc, char* argv[]) {
 #include <cmath>
 
 using namespace VSTWork::DSP;
+using namespace Iterum::DSP;  // New dB/linear conversion API
 using Catch::Approx;
 
 // ==============================================================================
-// Gain Conversion Tests
+// Gain Conversion Tests (using Iterum::DSP API)
 // ==============================================================================
 
-TEST_CASE("dBToLinear converts correctly", "[dsp][gain]") {
+TEST_CASE("dbToGain converts correctly", "[dsp][gain]") {
     SECTION("0 dB equals unity gain") {
-        REQUIRE(dBToLinear(0.0f) == Approx(1.0f));
+        REQUIRE(dbToGain(0.0f) == Approx(1.0f));
     }
 
     SECTION("-6 dB is approximately half") {
-        REQUIRE(dBToLinear(-6.0206f) == Approx(0.5f).margin(0.001f));
+        REQUIRE(dbToGain(-6.0206f) == Approx(0.5f).margin(0.001f));
     }
 
     SECTION("+6 dB is approximately double") {
-        REQUIRE(dBToLinear(6.0206f) == Approx(2.0f).margin(0.001f));
+        REQUIRE(dbToGain(6.0206f) == Approx(2.0f).margin(0.001f));
     }
 
     SECTION("-20 dB equals 0.1") {
-        REQUIRE(dBToLinear(-20.0f) == Approx(0.1f));
+        REQUIRE(dbToGain(-20.0f) == Approx(0.1f));
     }
 
     SECTION("+20 dB equals 10") {
-        REQUIRE(dBToLinear(20.0f) == Approx(10.0f));
+        REQUIRE(dbToGain(20.0f) == Approx(10.0f));
     }
 }
 
-TEST_CASE("linearToDb converts correctly", "[dsp][gain]") {
+TEST_CASE("gainToDb converts correctly", "[dsp][gain]") {
     SECTION("Unity gain equals 0 dB") {
-        REQUIRE(linearToDb(1.0f) == Approx(0.0f));
+        REQUIRE(gainToDb(1.0f) == Approx(0.0f));
     }
 
     SECTION("Half gain is approximately -6 dB") {
-        REQUIRE(linearToDb(0.5f) == Approx(-6.0206f).margin(0.01f));
+        REQUIRE(gainToDb(0.5f) == Approx(-6.0206f).margin(0.01f));
     }
 
     SECTION("Double gain is approximately +6 dB") {
-        REQUIRE(linearToDb(2.0f) == Approx(6.0206f).margin(0.01f));
+        REQUIRE(gainToDb(2.0f) == Approx(6.0206f).margin(0.01f));
     }
 
     SECTION("Zero/silence returns floor value") {
-        REQUIRE(linearToDb(0.0f) == -80.0f);
-        REQUIRE(linearToDb(1e-10f) == -80.0f);
+        REQUIRE(gainToDb(0.0f) == kSilenceFloorDb);
+        REQUIRE(gainToDb(1e-10f) == kSilenceFloorDb);
     }
 }
 
-TEST_CASE("dB and linear are inverse operations", "[dsp][gain]") {
+TEST_CASE("dB and gain are inverse operations", "[dsp][gain]") {
     const float testValues[] = {0.01f, 0.1f, 0.5f, 1.0f, 2.0f, 10.0f};
 
-    for (float linear : testValues) {
-        float dB = linearToDb(linear);
-        float backToLinear = dBToLinear(dB);
-        REQUIRE(backToLinear == Approx(linear).margin(0.0001f));
+    for (float gain : testValues) {
+        float dB = gainToDb(gain);
+        float backToGain = dbToGain(dB);
+        REQUIRE(backToGain == Approx(gain).margin(0.0001f));
     }
 }
 

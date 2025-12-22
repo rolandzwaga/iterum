@@ -18,6 +18,9 @@
 #include <algorithm>
 #include <array>
 
+// Layer 0 Core Utilities - dB/linear conversion
+#include "core/db_utils.h"
+
 namespace VSTWork {
 namespace DSP {
 
@@ -27,28 +30,14 @@ namespace DSP {
 
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kTwoPi = 2.0f * kPi;
-constexpr float kSilenceThreshold = 1e-8f;
 
 // ==============================================================================
-// Gain Utilities
+// Gain Utilities - Use Iterum::DSP (core/db_utils.h)
 // ==============================================================================
-
-/// Convert decibels to linear gain
-/// @param dB Decibel value
-/// @return Linear gain multiplier
-[[nodiscard]] inline float dBToLinear(float dB) noexcept {
-    return std::pow(10.0f, dB / 20.0f);
-}
-
-/// Convert linear gain to decibels
-/// @param linear Linear gain value (must be > 0)
-/// @return Decibel value
-[[nodiscard]] inline float linearToDb(float linear) noexcept {
-    if (linear <= kSilenceThreshold) {
-        return -80.0f;  // Silence floor
-    }
-    return 20.0f * std::log10(linear);
-}
+// dB/linear conversion functions are in src/dsp/core/db_utils.h:
+//   - Iterum::DSP::dbToGain(float dB) -> linear gain
+//   - Iterum::DSP::gainToDb(float gain) -> dB value
+//   - Iterum::DSP::kSilenceFloorDb -> -144 dB floor (24-bit dynamic range)
 
 // ==============================================================================
 // Buffer Operations

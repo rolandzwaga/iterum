@@ -3,9 +3,9 @@ cmake_minimum_required(VERSION 3.20)
 # ==============================================================================
 # Project Configuration
 # ==============================================================================
-project(VSTWork
-    VERSION 1.0.0
-    DESCRIPTION "VST3 Plugin Project"
+project(Iterum
+    VERSION 0.0.1
+    DESCRIPTION "Iterum VST3 Delay Plugin"
     LANGUAGES CXX
 )
 
@@ -34,19 +34,30 @@ endif()
 
 # SDK Options
 set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES ON CACHE BOOL "" FORCE)  # Enables vstvalidator
 set(SMTG_ENABLE_VSTGUI_SUPPORT ON CACHE BOOL "" FORCE)
 set(SMTG_CXX_STANDARD "20" CACHE STRING "" FORCE)
 set(SMTG_CREATE_PLUGIN_LINK OFF CACHE BOOL "" FORCE)  # We use our own copy step
+set(SMTG_RUN_VST_VALIDATOR OFF CACHE BOOL "" FORCE)   # Don't auto-run on every build
 
 # Add VST3 SDK
 add_subdirectory(${vst3sdk_SOURCE_DIR} ${PROJECT_BINARY_DIR}/vst3sdk)
 smtg_enable_vst3_sdk()
 
 # ==============================================================================
+# Version Header Generation
+# ==============================================================================
+# Generate version.h from template - single source of truth for version
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h"
+    @ONLY
+)
+
+# ==============================================================================
 # Plugin Target
 # ==============================================================================
-set(PLUGIN_NAME "VSTWork")
+set(PLUGIN_NAME "${PROJECT_NAME}")
 
 smtg_add_vst3plugin(${PLUGIN_NAME}
     # Plugin Entry
