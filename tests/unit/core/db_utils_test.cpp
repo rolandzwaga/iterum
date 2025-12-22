@@ -287,3 +287,81 @@ TEST_CASE("kSilenceFloorDb is constexpr", "[dsp][core][db_utils][US4][constexpr]
         REQUIRE(floors[1] == -138.0f);
     }
 }
+
+// ==============================================================================
+// Migration Equivalence Tests (T039 - MR-004 Compliance)
+// ==============================================================================
+// Document behavioral differences between old VSTWork::DSP and new Iterum::DSP
+
+TEST_CASE("Migration: silence floor changed from -80dB to -144dB", "[dsp][core][db_utils][migration]") {
+
+    SECTION("Old behavior: -80dB floor (documented for reference)") {
+        // OLD: VSTWork::DSP::linearToDb returned -80.0f for silence
+        // This test documents the expected behavior change
+        constexpr float oldFloor = -80.0f;
+        constexpr float newFloor = kSilenceFloorDb;  // -144.0f
+
+        REQUIRE(newFloor < oldFloor);
+        REQUIRE(newFloor == -144.0f);
+    }
+
+    SECTION("New behavior provides 24-bit dynamic range") {
+        // 24-bit audio: 6.02 dB/bit * 24 bits = ~144 dB dynamic range
+        // Old -80dB floor only covered ~13 bits of dynamic range
+        constexpr float bitsAt80dB = 80.0f / 6.02f;   // ~13.3 bits
+        constexpr float bitsAt144dB = 144.0f / 6.02f; // ~23.9 bits
+
+        REQUIRE(bitsAt144dB > 23.0f);  // Supports 24-bit audio
+        REQUIRE(bitsAt80dB < 14.0f);   // Old floor was limited
+    }
+
+    SECTION("Very quiet signals now report accurate dB values") {
+        // Signal at -100 dB (quieter than old floor, valid for new floor)
+        constexpr float veryQuietGain = 0.00001f;  // -100 dB
+        float result = gainToDb(veryQuietGain);
+
+        // Old behavior: would return -80.0f (floor)
+        // New behavior: returns accurate -100 dB value
+        REQUIRE(result == Approx(-100.0f).margin(0.1f));
+        REQUIRE(result < -80.0f);  // More accurate than old floor
+    }
+
+    SECTION("Signals at or below new floor are clamped") {
+        // Signal below the new -144dB floor
+        constexpr float extremelyQuiet = 1e-10f;  // -200 dB
+        float result = gainToDb(extremelyQuiet);
+
+        // Clamped to new floor
+        REQUIRE(result == kSilenceFloorDb);
+        REQUIRE(result == -144.0f);
+    }
+}
+
+TEST_CASE("Migration: function naming changes", "[dsp][core][db_utils][migration]") {
+
+    SECTION("dbToGain replaces dBToLinear (same formula)") {
+        // Both use: gain = 10^(dB/20)
+        // Only the name changed (dB -> db, Linear -> Gain)
+        REQUIRE(dbToGain(0.0f) == 1.0f);
+        REQUIRE(dbToGain(-20.0f) == Approx(0.1f));
+    }
+
+    SECTION("gainToDb replaces linearToDb (formula same, floor different)") {
+        // Both use: dB = 20 * log10(gain)
+        // But floor changed from -80 to -144
+        REQUIRE(gainToDb(1.0f) == 0.0f);
+        REQUIRE(gainToDb(0.1f) == Approx(-20.0f));
+    }
+}
+
+TEST_CASE("Migration: namespace changed from VSTWork to Iterum", "[dsp][core][db_utils][migration]") {
+
+    SECTION("New functions are in Iterum::DSP namespace") {
+        // Using fully qualified names to verify namespace
+        float gain = Iterum::DSP::dbToGain(-6.0f);
+        float dB = Iterum::DSP::gainToDb(0.5f);
+
+        REQUIRE(gain == Approx(0.501187f).margin(0.001f));
+        REQUIRE(dB == Approx(-6.0206f).margin(0.01f));
+    }
+}

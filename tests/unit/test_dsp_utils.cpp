@@ -64,8 +64,9 @@ TEST_CASE("linearToDb converts correctly", "[dsp][gain]") {
     }
 
     SECTION("Zero/silence returns floor value") {
-        REQUIRE(linearToDb(0.0f) == -80.0f);
-        REQUIRE(linearToDb(1e-10f) == -80.0f);
+        // NOTE: Floor changed from -80 dB to -144 dB after migration to Iterum::DSP
+        REQUIRE(linearToDb(0.0f) == -144.0f);
+        REQUIRE(linearToDb(1e-10f) == -144.0f);
     }
 }
 
