@@ -21,17 +21,20 @@ include(FetchContent)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 # Catch2 - Unit testing framework
+# Using URL download instead of git clone for CI reliability
 FetchContent_Declare(
     Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.5.0
+    URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.5.0.tar.gz
+    URL_HASH SHA256=f6d4f8d78a9b59ec72a81d49f58d18eb317372ac07f8d9432710a079e69fd66a
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 # ApprovalTests.cpp - Golden master / approval testing
+# Note: Hash may need updating if download fails
 FetchContent_Declare(
     ApprovalTests
-    GIT_REPOSITORY https://github.com/approvals/ApprovalTests.cpp.git
-    GIT_TAG v.10.13.0
+    URL https://github.com/approvals/ApprovalTests.cpp/archive/refs/tags/v.10.13.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
 FetchContent_MakeAvailable(Catch2 ApprovalTests)

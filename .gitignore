@@ -44,3 +44,6 @@
 
 # Generated files
 /src/version.h
+
+# Approval test artifacts (received files are generated, approved files are committed)
+*.received.txt
