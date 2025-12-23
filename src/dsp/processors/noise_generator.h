@@ -46,11 +46,12 @@ enum class NoiseType : uint8_t {
     TapeHiss,       ///< Signal-dependent tape hiss with high-frequency emphasis
     VinylCrackle,   ///< Impulsive clicks/pops with optional surface noise
     Asperity,       ///< Tape head contact noise varying with signal level
-    Brown           ///< -6dB/octave brown/red noise (integrated white noise)
+    Brown,          ///< -6dB/octave brown/red noise (integrated white noise)
+    Blue            ///< +3dB/octave blue noise (differentiated white noise)
 };
 
 /// @brief Number of noise types available
-constexpr size_t kNumNoiseTypes = 6;
+constexpr size_t kNumNoiseTypes = 7;
 
 // =============================================================================
 // PinkNoiseFilter (Internal)
@@ -235,6 +236,9 @@ public:
 
         // Reset brown noise integrator
         brownPrevious_ = 0.0f;
+
+        // Reset blue noise differentiator
+        bluePrevious_ = 0.0f;
     }
 
     // =========================================================================
@@ -475,6 +479,22 @@ private:
             sample += brownNoise * brownGain;
         }
 
+        // Blue noise (US8) - differentiated pink noise (+3dB/octave)
+        // Pink has -3dB/octave, differentiation adds +6dB/octave, net = +3dB/octave
+        float blueGain = levelSmoothers_[static_cast<size_t>(NoiseType::Blue)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::Blue)]) {
+            // Differentiate pink noise for +3dB/octave
+            float blueNoise = pinkNoise - bluePrevious_;
+            bluePrevious_ = pinkNoise;
+
+            // Scale and clamp to [-1, 1] range
+            // Differentiator increases high frequencies, so apply normalization
+            blueNoise *= 0.7f;
+            blueNoise = std::clamp(blueNoise, -1.0f, 1.0f);
+
+            sample += blueNoise * blueGain;
+        }
+
         // Apply master level
         float masterGain = masterSmoother_.process();
         return sample * masterGain;
@@ -500,9 +520,9 @@ private:
     // Per-noise-type configuration
     std::array<float, kNumNoiseTypes> noiseLevels_ = {
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
-        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb
+        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb
     };
-    std::array<bool, kNumNoiseTypes> noiseEnabled_ = {false, false, false, false, false, false};
+    std::array<bool, kNumNoiseTypes> noiseEnabled_ = {false, false, false, false, false, false, false};
     std::array<OnePoleSmoother, kNumNoiseTypes> levelSmoothers_;
 
     // Master level
@@ -535,6 +555,9 @@ private:
 
     // Brown noise state (leaky integrator)
     float brownPrevious_ = 0.0f;
+
+    // Blue noise state (differentiator)
+    float bluePrevious_ = 0.0f;
 };
 
 } // namespace DSP
