@@ -1,0 +1,352 @@
+// ==============================================================================
+// Layer 2: DSP Processor - Noise Generator
+// ==============================================================================
+// Generates various noise types for analog character and lo-fi effects:
+// - White noise (flat spectrum)
+// - Pink noise (-3dB/octave)
+// - Tape hiss (signal-dependent)
+// - Vinyl crackle (impulsive)
+// - Asperity noise (tape head contact)
+//
+// Constitution Compliance:
+// - Principle II: Real-Time Safety (noexcept, no allocations in process)
+// - Principle III: Modern C++ (C++20, RAII, constexpr)
+// - Principle IX: Layer 2 (depends only on Layer 0/1)
+// - Principle X: DSP Constraints (sample-accurate processing)
+// - Principle XII: Test-First Development
+//
+// Reference: specs/013-noise-generator/spec.md
+// ==============================================================================
+
+#pragma once
+
+#include "dsp/core/db_utils.h"
+#include "dsp/core/random.h"
+#include "dsp/primitives/biquad.h"
+#include "dsp/primitives/smoother.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace Iterum {
+namespace DSP {
+
+// =============================================================================
+// NoiseType Enumeration
+// =============================================================================
+
+/// @brief Noise generation algorithm types
+enum class NoiseType : uint8_t {
+    White = 0,      ///< Flat spectrum white noise
+    Pink,           ///< -3dB/octave pink noise (Paul Kellet filter)
+    TapeHiss,       ///< Signal-dependent tape hiss with high-frequency emphasis
+    VinylCrackle,   ///< Impulsive clicks/pops with optional surface noise
+    Asperity        ///< Tape head contact noise varying with signal level
+};
+
+/// @brief Number of noise types available
+constexpr size_t kNumNoiseTypes = 5;
+
+// =============================================================================
+// NoiseGenerator Class
+// =============================================================================
+
+/// @brief Layer 2 DSP Processor - Multi-type noise generator
+///
+/// Generates various noise types for analog character and lo-fi effects.
+/// Supports independent level control per noise type, signal-dependent
+/// modulation for tape hiss and asperity, and real-time safe processing.
+///
+/// @par Layer Dependencies
+/// - Layer 0: db_utils (dbToGain, gainToDb), random (Xorshift32)
+/// - Layer 1: Biquad (tape hiss shaping), OnePoleSmoother (level smoothing)
+///
+/// @par Real-Time Safety
+/// - No memory allocation in process()
+/// - All buffers pre-allocated in prepare()
+/// - Lock-free parameter updates via smoothing
+///
+/// @par Constitution Compliance
+/// - Principle II: Real-Time Safety
+/// - Principle III: Modern C++ (C++20)
+/// - Principle IX: Layer 2 (depends only on Layer 0/1)
+/// - Principle XII: Test-First Development
+///
+/// @par Usage
+/// @code
+/// NoiseGenerator noise;
+/// noise.prepare(44100.0f, 512);
+/// noise.setNoiseEnabled(NoiseType::White, true);
+/// noise.setNoiseLevel(NoiseType::White, -20.0f);
+/// noise.process(outputBuffer, numSamples);
+/// @endcode
+class NoiseGenerator {
+public:
+    // =========================================================================
+    // Constants
+    // =========================================================================
+
+    static constexpr float kMinLevelDb = -96.0f;
+    static constexpr float kMaxLevelDb = 12.0f;
+    static constexpr float kDefaultLevelDb = -20.0f;
+    static constexpr float kMinCrackleDensity = 0.1f;
+    static constexpr float kMaxCrackleDensity = 20.0f;
+    static constexpr float kDefaultCrackleDensity = 3.0f;
+    static constexpr float kMinSensitivity = 0.0f;
+    static constexpr float kMaxSensitivity = 2.0f;
+    static constexpr float kDefaultSensitivity = 1.0f;
+
+    // =========================================================================
+    // Lifecycle
+    // =========================================================================
+
+    /// @brief Default constructor
+    NoiseGenerator() noexcept = default;
+
+    /// @brief Destructor
+    ~NoiseGenerator() = default;
+
+    // Non-copyable, movable
+    NoiseGenerator(const NoiseGenerator&) = delete;
+    NoiseGenerator& operator=(const NoiseGenerator&) = delete;
+    NoiseGenerator(NoiseGenerator&&) noexcept = default;
+    NoiseGenerator& operator=(NoiseGenerator&&) noexcept = default;
+
+    /// @brief Prepare processor for given sample rate and block size
+    /// @param sampleRate Audio sample rate in Hz (44100-192000)
+    /// @param maxBlockSize Maximum samples per process() call (up to 8192)
+    /// @pre sampleRate >= 44100.0f
+    /// @pre maxBlockSize > 0 && maxBlockSize <= 8192
+    void prepare(float sampleRate, size_t maxBlockSize) noexcept {
+        sampleRate_ = sampleRate;
+        maxBlockSize_ = maxBlockSize;
+
+        // Initialize smoothers for all noise levels
+        const float smoothTimeMs = 5.0f; // 5ms smoothing for click-free level changes
+        for (size_t i = 0; i < kNumNoiseTypes; ++i) {
+            levelSmoothers_[i].prepare(static_cast<double>(sampleRate), maxBlockSize);
+            levelSmoothers_[i].setSmoothingTime(smoothTimeMs);
+            levelSmoothers_[i].setTarget(0.0f); // All disabled by default
+        }
+
+        // Master level smoother
+        masterSmoother_.prepare(static_cast<double>(sampleRate), maxBlockSize);
+        masterSmoother_.setSmoothingTime(smoothTimeMs);
+        masterSmoother_.setTarget(1.0f); // 0 dB default
+
+        reset();
+    }
+
+    /// @brief Clear all internal state and reseed random generator
+    /// @post All noise channels produce fresh sequences
+    void reset() noexcept {
+        // Reseed RNG with new seed based on current state
+        // This ensures different instances have uncorrelated sequences
+        rng_.seed(rng_.next() ^ 0xDEADBEEF);
+
+        // Reset pink noise filter state
+        for (float& s : pinkState_) {
+            s = 0.0f;
+        }
+
+        // Reset crackle state
+        crackleCounter_ = 0.0f;
+        crackleAmplitude_ = 0.0f;
+
+        // Reset biquad filters
+        tapeHissFilter_.reset();
+    }
+
+    // =========================================================================
+    // Configuration - Level Control
+    // =========================================================================
+
+    /// @brief Set output level for a specific noise type
+    /// @param type Noise type to configure
+    /// @param dB Level in decibels [-96, +12]
+    void setNoiseLevel(NoiseType type, float dB) noexcept {
+        const size_t idx = static_cast<size_t>(type);
+        if (idx < kNumNoiseTypes) {
+            dB = std::clamp(dB, kMinLevelDb, kMaxLevelDb);
+            noiseLevels_[idx] = dB;
+            updateLevelTarget(type);
+        }
+    }
+
+    /// @brief Get current level for a noise type
+    /// @param type Noise type to query
+    /// @return Level in decibels
+    [[nodiscard]] float getNoiseLevel(NoiseType type) const noexcept {
+        const size_t idx = static_cast<size_t>(type);
+        return (idx < kNumNoiseTypes) ? noiseLevels_[idx] : kMinLevelDb;
+    }
+
+    /// @brief Enable or disable a specific noise type
+    /// @param type Noise type to configure
+    /// @param enabled True to enable, false to disable
+    void setNoiseEnabled(NoiseType type, bool enabled) noexcept {
+        const size_t idx = static_cast<size_t>(type);
+        if (idx < kNumNoiseTypes) {
+            noiseEnabled_[idx] = enabled;
+            updateLevelTarget(type);
+        }
+    }
+
+    /// @brief Check if a noise type is enabled
+    /// @param type Noise type to query
+    /// @return True if enabled
+    [[nodiscard]] bool isNoiseEnabled(NoiseType type) const noexcept {
+        const size_t idx = static_cast<size_t>(type);
+        return (idx < kNumNoiseTypes) ? noiseEnabled_[idx] : false;
+    }
+
+    /// @brief Set master output level
+    /// @param dB Master level in decibels [-96, +12]
+    void setMasterLevel(float dB) noexcept {
+        dB = std::clamp(dB, kMinLevelDb, kMaxLevelDb);
+        masterLevelDb_ = dB;
+        masterSmoother_.setTarget(dbToGain(dB));
+    }
+
+    /// @brief Get master output level
+    /// @return Master level in decibels
+    [[nodiscard]] float getMasterLevel() const noexcept {
+        return masterLevelDb_;
+    }
+
+    // =========================================================================
+    // Configuration - Type-Specific Parameters
+    // =========================================================================
+
+    /// @brief Configure tape hiss parameters
+    /// @param floorDb Minimum noise floor in dB [-96, 0]
+    /// @param sensitivity Modulation sensitivity [0, 2]
+    void setTapeHissParams(float floorDb, float sensitivity) noexcept {
+        tapeHissFloorDb_ = std::clamp(floorDb, kMinLevelDb, 0.0f);
+        tapeHissSensitivity_ = std::clamp(sensitivity, kMinSensitivity, kMaxSensitivity);
+    }
+
+    /// @brief Configure asperity noise parameters
+    /// @param floorDb Minimum noise floor in dB [-96, 0]
+    /// @param sensitivity Modulation sensitivity [0, 2]
+    void setAsperityParams(float floorDb, float sensitivity) noexcept {
+        asperityFloorDb_ = std::clamp(floorDb, kMinLevelDb, 0.0f);
+        asperitySensitivity_ = std::clamp(sensitivity, kMinSensitivity, kMaxSensitivity);
+    }
+
+    /// @brief Configure vinyl crackle parameters
+    /// @param density Clicks per second [0.1, 20]
+    /// @param surfaceNoiseDb Continuous surface noise level [-96, 0]
+    void setCrackleParams(float density, float surfaceNoiseDb) noexcept {
+        crackleDensity_ = std::clamp(density, kMinCrackleDensity, kMaxCrackleDensity);
+        surfaceNoiseDb_ = std::clamp(surfaceNoiseDb, kMinLevelDb, 0.0f);
+    }
+
+    // =========================================================================
+    // Processing (to be implemented in US1-US6)
+    // =========================================================================
+
+    /// @brief Generate noise without sidechain input
+    /// @param output Output buffer to fill with noise
+    /// @param numSamples Number of samples to generate
+    void process(float* output, size_t numSamples) noexcept {
+        // Stub - will be implemented in User Story phases
+        for (size_t i = 0; i < numSamples; ++i) {
+            output[i] = 0.0f;
+        }
+    }
+
+    /// @brief Generate noise with sidechain input
+    /// @param input Sidechain input buffer (for envelope following)
+    /// @param output Output buffer to fill with noise
+    /// @param numSamples Number of samples to process
+    void process(const float* input, float* output, size_t numSamples) noexcept {
+        // Stub - will be implemented in User Story phases
+        (void)input;
+        for (size_t i = 0; i < numSamples; ++i) {
+            output[i] = 0.0f;
+        }
+    }
+
+    /// @brief Add generated noise to existing signal
+    /// @param input Input buffer (also used as sidechain)
+    /// @param output Output buffer (input + noise mixed)
+    /// @param numSamples Number of samples to process
+    void processMix(const float* input, float* output, size_t numSamples) noexcept {
+        // Stub - will be implemented in User Story phases
+        if (input != output) {
+            for (size_t i = 0; i < numSamples; ++i) {
+                output[i] = input[i];
+            }
+        }
+    }
+
+    // =========================================================================
+    // Queries
+    // =========================================================================
+
+    /// @brief Check if any noise type is enabled
+    /// @return True if at least one noise type is enabled
+    [[nodiscard]] bool isAnyEnabled() const noexcept {
+        for (size_t i = 0; i < kNumNoiseTypes; ++i) {
+            if (noiseEnabled_[i]) return true;
+        }
+        return false;
+    }
+
+private:
+    // =========================================================================
+    // Internal Helpers
+    // =========================================================================
+
+    void updateLevelTarget(NoiseType type) noexcept {
+        const size_t idx = static_cast<size_t>(type);
+        if (idx < kNumNoiseTypes) {
+            float targetGain = noiseEnabled_[idx] ? dbToGain(noiseLevels_[idx]) : 0.0f;
+            levelSmoothers_[idx].setTarget(targetGain);
+        }
+    }
+
+    // =========================================================================
+    // State
+    // =========================================================================
+
+    // Core state
+    float sampleRate_ = 44100.0f;
+    size_t maxBlockSize_ = 512;
+    Xorshift32 rng_{12345};
+
+    // Per-noise-type configuration
+    std::array<float, kNumNoiseTypes> noiseLevels_ = {
+        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
+        kDefaultLevelDb, kDefaultLevelDb
+    };
+    std::array<bool, kNumNoiseTypes> noiseEnabled_ = {false, false, false, false, false};
+    std::array<OnePoleSmoother, kNumNoiseTypes> levelSmoothers_;
+
+    // Master level
+    float masterLevelDb_ = 0.0f;
+    OnePoleSmoother masterSmoother_;
+
+    // Pink noise filter state (Paul Kellet's 7-term filter)
+    std::array<float, 7> pinkState_ = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+    // Tape hiss parameters
+    float tapeHissFloorDb_ = -60.0f;
+    float tapeHissSensitivity_ = 1.0f;
+    Biquad tapeHissFilter_;
+
+    // Asperity parameters
+    float asperityFloorDb_ = -72.0f;
+    float asperitySensitivity_ = 1.0f;
+
+    // Vinyl crackle parameters and state
+    float crackleDensity_ = kDefaultCrackleDensity;
+    float surfaceNoiseDb_ = -42.0f;
+    float crackleCounter_ = 0.0f;
+    float crackleAmplitude_ = 0.0f;
+};
+
+} // namespace DSP
+} // namespace Iterum
