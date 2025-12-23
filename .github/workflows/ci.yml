@@ -13,11 +13,12 @@ concurrency:
 
 env:
   BUILD_TYPE: Release
-  # ccache settings (used by Linux build only)
-  # Windows/macOS can't use ccache due to PDB conflicts and Xcode generator requirements
+  # ccache settings (used by Linux build)
   CCACHE_MAXSIZE: 500M
   CCACHE_COMPRESS: true
   CCACHE_COMPRESSLEVEL: 6
+  # sccache settings (used by macOS build)
+  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
   build-windows:
@@ -73,6 +74,15 @@ jobs:
         with:
           submodules: recursive
 
+      # Install Ninja build system (faster than Xcode generator)
+      - name: Install Ninja
+        run: brew install ninja
+
+      # Setup sccache with native GitHub Actions cache backend
+      # sccache works with Ninja generator and supports Objective-C++ (VSTGUI)
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       # Cache CMake FetchContent downloads
       - name: Cache FetchContent
         uses: actions/cache@v4
@@ -82,22 +92,33 @@ jobs:
           restore-keys: |
             fetchcontent-${{ runner.os }}-
 
-      # Note: Xcode generator required for Objective-C++ (VSTGUI)
-      # ccache doesn't work with Xcode generator
+      # Use Ninja generator with sccache for compiler caching
+      # CMAKE_OBJCXX_COMPILER_LAUNCHER is supported in CMake 3.16+ for Objective-C++
       - name: Configure CMake
-        run: cmake -S . -B build -G Xcode
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_OBJC_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_OBJCXX_COMPILER_LAUNCHER=sccache
 
       - name: Build Tests
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests -- -jobs $(sysctl -n hw.ncpu)
+        run: cmake --build build --target dsp_tests approval_tests --parallel
 
       - name: Build Plugin and Validator
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target Iterum validator -- -jobs $(sysctl -n hw.ncpu)
+        run: cmake --build build --target Iterum validator --parallel
 
       - name: Run Tests
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure --exclude-regex "vst3_validator_extensive"
 
       - name: Run VST3 Validator (Extensive)
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure -R "vst3_validator_extensive"
+
+      # Show sccache statistics for debugging cache effectiveness
+      - name: Show sccache stats
+        if: always()
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Upload Plugin Artifact
         uses: actions/upload-artifact@v4
