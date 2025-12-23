@@ -5,6 +5,93 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] - 2025-12-23
+
+### Added
+
+- **Layer 2 DSP Processor: SaturationProcessor** (`src/dsp/processors/saturation_processor.h`)
+  - Analog-style saturation/waveshaping processor composing Layer 1 primitives
+  - 5 saturation algorithm types with distinct harmonic characteristics:
+    - `Tape` - tanh(x), symmetric odd harmonics, warm classic saturation
+    - `Tube` - Asymmetric polynomial (x + 0.3x² - 0.15x³), even harmonics, rich character
+    - `Transistor` - Hard-knee soft clip at 0.5 threshold, aggressive clipping
+    - `Digital` - Hard clip (clamp ±1.0), harsh all-harmonic distortion
+    - `Diode` - Asymmetric exp/linear curve, subtle warmth with even harmonics
+  - 2x oversampling via `Oversampler<2,1>` for alias-free nonlinear processing
+  - Automatic DC blocking (10Hz highpass biquad) after asymmetric saturation
+  - Input/output gain staging [-24dB, +24dB] for drive and makeup control
+  - Dry/wet mix control [0.0, 1.0] with efficiency bypass at 0%
+  - Parameter smoothing (5ms) via OnePoleSmoother for click-free modulation
+  - Block processing (`process()`) and sample processing (`processSample()`)
+  - Latency reporting for host delay compensation
+  - Real-time safe: `noexcept`, no allocations in `process()`
+
+- **Comprehensive test suite** (5,162 assertions across 28 test cases)
+  - All 7 user stories covered (US1-US7)
+  - DFT-based harmonic analysis for saturation verification
+  - THD (Total Harmonic Distortion) increases with drive
+  - Odd/even harmonic balance per saturation type
+  - Gain staging verification (input/output properly applied)
+  - Mix blending accuracy (dry/wet interpolation)
+  - DC blocking effectiveness verification
+  - Real-time safety verification (noexcept static_assert)
+  - Edge case coverage (NaN, infinity, denormals, max drive)
+
+### Technical Details
+
+- **Saturation formulas**:
+  - Tape: `y = tanh(x)`
+  - Tube: `y = tanh(x + 0.3x² - 0.15x³)` - polynomial creates even harmonics
+  - Transistor: Linear below 0.5, then `y = 0.5 + 0.5 * tanh((|x| - 0.5) / 0.5)`
+  - Digital: `y = clamp(x, -1, +1)`
+  - Diode: Forward `y = 1 - exp(-1.5x)`, Reverse `y = x / (1 - 0.5x)`
+- **Oversampling**: 2x factor using IIR anti-aliasing filters
+- **DC blocker**: 10Hz highpass biquad (Q=0.707) removes asymmetric DC offset
+- **Smoothing**: 5ms one-pole RC filter for input gain, output gain, and mix
+- **Constants**:
+  - `kMinGainDb = -24.0f`, `kMaxGainDb = +24.0f`
+  - `kDefaultSmoothingMs = 5.0f`
+  - `kDCBlockerCutoffHz = 10.0f`
+- **Namespace**: `Iterum::DSP` (Layer 2 DSP processors)
+- **Constitution compliance**: Principles II (RT Safety), III (Modern C++), IX (Layered Architecture), X (DSP Constraints), XII (Test-First), XV (Honest Completion)
+
+### Usage
+
+```cpp
+#include "dsp/processors/saturation_processor.h"
+
+using namespace Iterum::DSP;
+
+SaturationProcessor sat;
+
+// In prepare() - allocates buffers
+sat.prepare(44100.0, 512);
+sat.setType(SaturationType::Tape);
+sat.setInputGain(12.0f);   // +12 dB drive
+sat.setOutputGain(-6.0f);  // -6 dB makeup
+sat.setMix(1.0f);          // 100% wet
+
+// In processBlock() - real-time safe
+sat.process(buffer, numSamples);
+
+// Tube saturation for warmth
+sat.setType(SaturationType::Tube);
+sat.setInputGain(6.0f);  // Moderate drive for even harmonics
+
+// Parallel saturation (NY compression style)
+sat.setMix(0.5f);  // 50% wet blends with dry signal
+
+// Get latency for delay compensation
+size_t latency = sat.getLatency();
+
+// Sample-accurate processing (less efficient)
+for (size_t i = 0; i < numSamples; ++i) {
+    buffer[i] = sat.processSample(buffer[i]);
+}
+```
+
+---
+
 ## [0.0.9] - 2025-12-23
 
 ### Added
