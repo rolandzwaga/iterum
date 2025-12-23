@@ -78,6 +78,7 @@ add_executable(dsp_tests
     # Layer 2: DSP Processors
     unit/processors/multimode_filter_test.cpp
     unit/processors/saturation_processor_test.cpp
+    unit/processors/envelope_follower_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -117,6 +118,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # Layer 2: DSP Processors
         unit/processors/multimode_filter_test.cpp
         unit/processors/saturation_processor_test.cpp
+        unit/processors/envelope_follower_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

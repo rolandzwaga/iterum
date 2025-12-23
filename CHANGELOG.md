@@ -5,6 +5,91 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] - 2025-12-23
+
+### Added
+
+- **Layer 2 DSP Processor: EnvelopeFollower** (`src/dsp/processors/envelope_follower.h`)
+  - Amplitude envelope tracking processor for dynamics processing
+  - Three detection modes with distinct characteristics:
+    - `Amplitude` - Full-wave rectification + asymmetric smoothing (~0.637 for sine)
+    - `RMS` - Squared signal + blended smoothing + sqrt (~0.707 for sine, true RMS)
+    - `Peak` - Instant attack (at min), exponential release (~1.0 captures peaks)
+  - Configurable attack time [0.1-500ms] with one-pole smoothing
+  - Configurable release time [1-5000ms] with one-pole smoothing
+  - Optional sidechain highpass filter [20-500Hz] to reduce bass pumping
+  - Per-sample processing (`processSample()`) for real-time envelope tracking
+  - Block processing (`process()`) with envelope output buffer
+  - `getCurrentValue()` for reading envelope without advancing state
+  - Zero latency (Biquad TDF2 sidechain filter has no latency)
+  - Real-time safe: `noexcept`, no allocations in `process()`
+  - NaN/Infinity input handling (returns 0 for NaN, clamps Inf)
+  - Denormal flushing for consistent CPU performance
+
+- **Comprehensive test suite** (36 test cases covering all user stories)
+  - US1: Basic detection modes with waveform verification
+  - US2: Configurable attack/release timing accuracy
+  - US3: Sample and block processing API
+  - US4: Smooth parameter changes without discontinuities
+  - US5: Sidechain filter for bass-insensitive detection
+  - US6: Edge cases (NaN, Infinity, denormals, zero input)
+  - US7: Mode switching continuity (no pops/clicks)
+  - RMS accuracy within 1% of theoretical (0.707 for sine)
+  - Attack/release coefficient verification via exponential decay
+
+### Technical Details
+
+- **Detection formulas**:
+  - Amplitude: `rectified = |x|; env = rect + coeff * (env - rect)` (asymmetric)
+  - RMS: `squared = x²; sqEnv = sq + blendedCoeff * (sqEnv - sq); env = √sqEnv`
+  - Peak: Instant capture when `|x| > env`, exponential release otherwise
+- **RMS blended coefficient**: `rmsCoeff = attackCoeff * 0.25 + releaseCoeff * 0.75`
+  - Provides symmetric averaging while maintaining transient response
+  - Achieves true RMS (0.707) for sine wave within 1% tolerance
+- **Coefficient formula**: `coeff = exp(-1.0 / (timeMs * 0.001 * sampleRate))`
+- **Sidechain filter**: Biquad highpass (Butterworth Q=0.707) at configurable cutoff
+- **Dependencies**: db_utils.h (isNaN, isInf, flushDenormal, constexprExp), biquad.h
+- **Namespace**: `Iterum::DSP` (Layer 2 DSP processors)
+- **Constitution compliance**: Principles II (RT Safety), III (Modern C++), IX (Layered Architecture), X (DSP Constraints), XII (Test-First), XV (Honest Completion)
+
+### Usage
+
+```cpp
+#include "dsp/processors/envelope_follower.h"
+
+using namespace Iterum::DSP;
+
+EnvelopeFollower env;
+
+// In prepare() - recalculates coefficients
+env.prepare(44100.0, 512);
+env.setMode(DetectionMode::RMS);
+env.setAttackTime(10.0f);   // 10ms attack
+env.setReleaseTime(100.0f); // 100ms release
+
+// Enable sidechain filter to reduce bass pumping
+env.setSidechainEnabled(true);
+env.setSidechainCutoff(80.0f);  // 80Hz highpass
+
+// In processBlock() - per-sample tracking for compressor
+for (size_t i = 0; i < numSamples; ++i) {
+    float envelope = env.processSample(input[i]);
+    float gainReduction = calculateGainReduction(envelope);
+    output[i] = input[i] * gainReduction;
+}
+
+// Or block processing (envelope output buffer)
+std::vector<float> envelopeBuffer(numSamples);
+env.process(input, envelopeBuffer.data(), numSamples);
+
+// Gate trigger (Peak mode with fast attack)
+env.setMode(DetectionMode::Peak);
+env.setAttackTime(0.1f);  // Near-instant
+env.setReleaseTime(50.0f);
+```
+
+---
+
 ## [0.0.10] - 2025-12-23
 
 ### Added

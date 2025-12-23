@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-23 (008-multimode-filter)
+**Last Updated**: 2025-12-23 (010-envelope-follower)
 
 ---
 
@@ -1346,6 +1346,251 @@ filter.setDrive(12.0f);  // 12dB pre-filter saturation
 
 ---
 
+### SaturationProcessor
+
+| | |
+|---|---|
+| **Purpose** | Analog-style saturation/waveshaping with 5 algorithms, oversampling, and DC blocking |
+| **Location** | [src/dsp/processors/saturation_processor.h](src/dsp/processors/saturation_processor.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.10 (009-saturation-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Saturation algorithm selection
+    enum class SaturationType : uint8_t {
+        Tape,       // tanh(x) - symmetric, odd harmonics
+        Tube,       // Asymmetric polynomial - even harmonics
+        Transistor, // Hard-knee soft clip - aggressive
+        Digital,    // Hard clip (clamp) - harsh
+        Diode       // Soft asymmetric - subtle warmth
+    };
+
+    class SaturationProcessor {
+    public:
+        // Constants
+        static constexpr float kMinGainDb = -24.0f;
+        static constexpr float kMaxGainDb = +24.0f;
+        static constexpr float kDefaultSmoothingMs = 5.0f;
+        static constexpr float kDCBlockerCutoffHz = 10.0f;
+
+        // Lifecycle (call before audio processing)
+        void prepare(double sampleRate, size_t maxBlockSize) noexcept;
+        void reset() noexcept;
+
+        // Processing (real-time safe)
+        void process(float* buffer, size_t numSamples) noexcept;
+        [[nodiscard]] float processSample(float input) noexcept;
+
+        // Parameter setters (real-time safe, smoothed)
+        void setType(SaturationType type) noexcept;
+        void setInputGain(float dB) noexcept;   // [-24, +24] dB
+        void setOutputGain(float dB) noexcept;  // [-24, +24] dB
+        void setMix(float mix) noexcept;        // [0.0, 1.0]
+
+        // Parameter getters
+        [[nodiscard]] SaturationType getType() const noexcept;
+        [[nodiscard]] float getInputGain() const noexcept;
+        [[nodiscard]] float getOutputGain() const noexcept;
+        [[nodiscard]] float getMix() const noexcept;
+
+        // Query
+        [[nodiscard]] size_t getLatency() const noexcept;  // From oversampler
+    };
+}
+```
+
+**Saturation Types**:
+
+| Type | Description | Character | Harmonics |
+|------|-------------|-----------|-----------|
+| `Tape` | tanh(x) symmetric curve | Warm, smooth | Odd (3rd, 5th) |
+| `Tube` | Asymmetric polynomial | Rich, musical | Even (2nd, 4th) |
+| `Transistor` | Hard-knee soft clip | Aggressive, punchy | All |
+| `Digital` | Hard clip (clamp) | Harsh, edgy | All (aliased without OS) |
+| `Diode` | Soft asymmetric | Subtle warmth | Even (2nd) |
+
+**Behavior**:
+- `prepare()` - Allocates oversampled buffer, configures DC blocker (NOT real-time safe)
+- `reset()` - Clears filter/smoother states without reallocation
+- `process()` - 2x oversampled processing with DC blocking
+- All parameters are smoothed (5ms) to prevent clicks
+- When mix == 0.0, saturation is bypassed for efficiency
+- DC blocker (10Hz highpass) removes offset introduced by asymmetric saturation
+
+**Dependencies** (Layer 0/1 primitives):
+- `Oversampler<2,1>` - 2x mono oversampling for alias-free nonlinear processing
+- `Biquad` - DC blocking filter (10Hz highpass)
+- `OnePoleSmoother` - Parameter smoothing for input/output gain and mix
+- `dbToGain()` - dB to linear conversion (from db_utils.h)
+
+**When to use**:
+
+| Use Case | Type | Configuration |
+|----------|------|---------------|
+| Tape warmth | Tape | +6dB input, -3dB output |
+| Tube preamp | Tube | +12dB input, variable output |
+| Guitar amp crunch | Transistor | +18dB input, 0dB output |
+| Harsh digital distortion | Digital | High input gain |
+| Subtle analog color | Diode | +3dB input, mix 30-50% |
+| Parallel saturation | Any | mix < 1.0 for parallel blend |
+
+**Example**:
+```cpp
+#include "dsp/processors/saturation_processor.h"
+using namespace Iterum::DSP;
+
+SaturationProcessor sat;
+
+// In prepare() - allocates buffers
+sat.prepare(44100.0, 512);
+sat.setType(SaturationType::Tape);
+sat.setInputGain(12.0f);   // +12dB drive
+sat.setOutputGain(-6.0f);  // -6dB makeup
+sat.setMix(1.0f);          // Full wet
+
+// Report latency to host (from 2x oversampler)
+size_t latency = sat.getLatency();
+
+// In processBlock() - real-time safe
+sat.process(buffer, numSamples);
+
+// Parallel saturation (50% blend)
+sat.setMix(0.5f);
+sat.process(buffer, numSamples);
+```
+
+---
+
+### EnvelopeFollower
+
+| | |
+|---|---|
+| **Purpose** | Amplitude envelope tracking with configurable attack/release times and three detection modes |
+| **Location** | [src/dsp/processors/envelope_follower.h](src/dsp/processors/envelope_follower.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.11 (010-envelope-follower) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Detection algorithm selection
+    enum class DetectionMode : uint8_t {
+        Amplitude,  // Full-wave rectification + smoothing
+        RMS,        // Squared signal + smoothing + sqrt
+        Peak        // Instant attack, configurable release
+    };
+
+    class EnvelopeFollower {
+    public:
+        // Constants
+        static constexpr float kMinAttackMs = 0.1f;
+        static constexpr float kMaxAttackMs = 500.0f;
+        static constexpr float kMinReleaseMs = 1.0f;
+        static constexpr float kMaxReleaseMs = 5000.0f;
+        static constexpr float kMinSidechainHz = 20.0f;
+        static constexpr float kMaxSidechainHz = 500.0f;
+
+        // Lifecycle (call before audio processing)
+        void prepare(double sampleRate, size_t maxBlockSize) noexcept;
+        void reset() noexcept;
+
+        // Processing (real-time safe)
+        void process(const float* input, float* output, size_t numSamples) noexcept;
+        void process(float* buffer, size_t numSamples) noexcept;  // In-place
+        [[nodiscard]] float processSample(float input) noexcept;
+        [[nodiscard]] float getCurrentValue() const noexcept;
+
+        // Parameter setters (real-time safe)
+        void setMode(DetectionMode mode) noexcept;
+        void setAttackTime(float ms) noexcept;   // [0.1, 500]
+        void setReleaseTime(float ms) noexcept;  // [1, 5000]
+        void setSidechainEnabled(bool enabled) noexcept;
+        void setSidechainCutoff(float hz) noexcept;  // [20, 500]
+
+        // Parameter getters
+        [[nodiscard]] DetectionMode getMode() const noexcept;
+        [[nodiscard]] float getAttackTime() const noexcept;
+        [[nodiscard]] float getReleaseTime() const noexcept;
+        [[nodiscard]] bool isSidechainEnabled() const noexcept;
+        [[nodiscard]] float getSidechainCutoff() const noexcept;
+
+        // Query
+        [[nodiscard]] size_t getLatency() const noexcept;  // 0 (no latency)
+    };
+}
+```
+
+**Detection Modes**:
+
+| Mode | Description | Output for 0dB Sine |
+|------|-------------|---------------------|
+| `Amplitude` | Full-wave rectification + asymmetric smoothing | ~0.637 (average of |sin|) |
+| `RMS` | Squared signal + blended smoothing + sqrt | ~0.707 (sine RMS) |
+| `Peak` | Instant attack (at min), exponential release | ~1.0 (captures peaks) |
+
+**Behavior**:
+- `prepare()` - Recalculates attack/release coefficients for new sample rate
+- `reset()` - Clears envelope state to zero
+- `processSample()` - Returns envelope value for single input sample
+- `process()` - Block processing with envelope output
+- `getCurrentValue()` - Returns current envelope without advancing state
+- Asymmetric one-pole smoothing: attack coefficient when rising, release when falling
+- RMS mode uses blended coefficient for accurate RMS (within 1% of theoretical)
+- Optional sidechain highpass filter (Biquad) to reduce bass pumping
+
+**Dependencies** (Layer 0/1 primitives):
+- `detail::isNaN()` - NaN input handling (from db_utils.h)
+- `detail::isInf()` - Infinity input handling (from db_utils.h)
+- `detail::flushDenormal()` - Denormal flushing for real-time safety (from db_utils.h)
+- `detail::constexprExp()` - Coefficient calculation (from db_utils.h)
+- `Biquad` - Sidechain highpass filter (from biquad.h)
+
+**When to use**:
+
+| Use Case | Mode | Configuration |
+|----------|------|---------------|
+| Compressor/limiter sidechain | RMS | 10ms attack, 100ms release |
+| Gate trigger | Peak | 0.1ms attack, 50ms release |
+| Ducking (sidechain compression) | RMS + sidechain | 80Hz sidechain filter |
+| Envelope-based modulation | Amplitude | Fast attack (1ms), medium release |
+| Level metering display | RMS | 5ms attack, 300ms release |
+
+**Example**:
+```cpp
+#include "dsp/processors/envelope_follower.h"
+using namespace Iterum::DSP;
+
+EnvelopeFollower env;
+
+// In prepare() - recalculates coefficients
+env.prepare(44100.0, 512);
+env.setMode(DetectionMode::RMS);
+env.setAttackTime(10.0f);   // 10ms attack
+env.setReleaseTime(100.0f); // 100ms release
+
+// Enable sidechain filter to reduce bass pumping
+env.setSidechainEnabled(true);
+env.setSidechainCutoff(80.0f);  // 80Hz highpass
+
+// In processBlock() - per-sample tracking
+for (size_t i = 0; i < numSamples; ++i) {
+    float envelope = env.processSample(input[i]);
+    // Use envelope for compression, ducking, modulation...
+    float gainReduction = calculateGainReduction(envelope);
+    output[i] = input[i] * gainReduction;
+}
+
+// Or block processing
+std::vector<float> envelopeBuffer(numSamples);
+env.process(input, envelopeBuffer.data(), numSamples);
+```
+
+---
+
 ## Layer 3: System Components
 
 *No components yet. Future: Delay Engine, Feedback Network, Modulation Matrix*
@@ -1434,3 +1679,8 @@ Quick lookup by functionality:
 | Selectable filter slope | `MultimodeFilter::setSlope()` | processors/multimode_filter.h |
 | Click-free parameter changes | `MultimodeFilter::setSmoothingTime()` | processors/multimode_filter.h |
 | Pre-filter saturation | `MultimodeFilter::setDrive()` | processors/multimode_filter.h |
+| Track amplitude envelope | `Iterum::DSP::EnvelopeFollower` | processors/envelope_follower.h |
+| Set envelope mode | `EnvelopeFollower::setMode()` | processors/envelope_follower.h |
+| Set attack/release times | `EnvelopeFollower::setAttackTime()` | processors/envelope_follower.h |
+| Enable sidechain filter | `EnvelopeFollower::setSidechainEnabled()` | processors/envelope_follower.h |
+| Get current envelope value | `EnvelopeFollower::getCurrentValue()` | processors/envelope_follower.h |
