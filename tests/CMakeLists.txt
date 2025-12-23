@@ -174,6 +174,40 @@ if(TARGET validator)
         COMMENT "Running quick VST3 validation on Iterum.vst3"
         VERBATIM
     )
+
+    # -------------------------------------------------------------------------
+    # CTest Integration for CI
+    # -------------------------------------------------------------------------
+    # Runs the validator as a proper CTest test
+    # Usage: ctest -R vst3_validator (or runs with all tests)
+    # Note: Requires Iterum and validator targets to be built first
+    #       In CI, build these targets before running ctest
+
+    add_test(
+        NAME vst3_validator
+        COMMAND $<TARGET_FILE:validator> -q "${PLUGIN_PATH}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+    )
+
+    set_tests_properties(vst3_validator PROPERTIES
+        LABELS "integration;vst3;validator"
+        TIMEOUT 120
+        # This test requires the plugin to be built - mark as fixture
+        FIXTURES_REQUIRED "plugin_built"
+    )
+
+    # Extensive validator test (runs additional tests, slower)
+    add_test(
+        NAME vst3_validator_extensive
+        COMMAND $<TARGET_FILE:validator> -e "${PLUGIN_PATH}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+    )
+
+    set_tests_properties(vst3_validator_extensive PROPERTIES
+        LABELS "integration;vst3;validator;slow"
+        TIMEOUT 300
+        FIXTURES_REQUIRED "plugin_built"
+    )
 endif()
 
 # ==============================================================================
