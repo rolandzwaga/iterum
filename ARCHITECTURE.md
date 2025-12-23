@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-23 (006-oversampler)
+**Last Updated**: 2025-12-23 (007-fft-processor)
 
 ---
 
@@ -22,7 +22,7 @@ This document is the **living inventory** of all functional domains, components,
 │  (Filters, Saturation, Pitch Shifter, Diffuser, Envelope)   │
 ├─────────────────────────────────────────────────────────────┤
 │                  LAYER 1: DSP PRIMITIVES                    │
-│    (Delay Line, LFO, Biquad, Smoother, Oversampler)         │
+│  (Delay Line, LFO, Biquad, Smoother, Oversampler, FFT, STFT)│
 ├─────────────────────────────────────────────────────────────┤
 │                    LAYER 0: CORE UTILITIES                  │
 │      (Memory Pool, Lock-free Queue, Fast Math, SIMD)        │
@@ -113,6 +113,107 @@ namespace Iterum::DSP {
 - Oscillator frequency calculations
 - Filter coefficient calculations
 - Any trigonometric DSP operations
+
+---
+
+### Window Functions
+
+| | |
+|---|---|
+| **Purpose** | Window function generators for STFT analysis and spectral processing |
+| **Location** | [src/dsp/core/window_functions.h](src/dsp/core/window_functions.h) |
+| **Namespace** | `Iterum::DSP::Window` |
+| **Added** | 0.0.7 (007-fft-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Window type enumeration
+    enum class WindowType : uint8_t {
+        Hann,       // COLA at 50%/75% overlap
+        Hamming,    // COLA at 50%/75% overlap
+        Blackman,   // COLA at 50%/75% overlap
+        Kaiser      // Requires ~90% overlap for COLA
+    };
+
+    // Constants
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kTwoPi = 2.0f * kPi;
+    constexpr float kDefaultKaiserBeta = 9.0f;  // ~80dB sidelobe rejection
+    constexpr float kDefaultCOLATolerance = 1e-6f;
+
+    namespace Window {
+        // Modified Bessel function (for Kaiser window)
+        [[nodiscard]] float besselI0(float x) noexcept;
+
+        // In-place window generators (real-time safe if buffer pre-allocated)
+        void generateHann(float* output, size_t size) noexcept;
+        void generateHamming(float* output, size_t size) noexcept;
+        void generateBlackman(float* output, size_t size) noexcept;
+        void generateKaiser(float* output, size_t size, float beta) noexcept;
+
+        // COLA verification
+        [[nodiscard]] bool verifyCOLA(const float* window, size_t size,
+                                       size_t hopSize, float tolerance = 1e-6f) noexcept;
+
+        // Factory function (allocates)
+        [[nodiscard]] std::vector<float> generate(WindowType type, size_t size,
+                                                   float kaiserBeta = 9.0f);
+    }
+}
+```
+
+**Behavior**:
+- `generateHann()` - Periodic (DFT-even) variant: 0.5 - 0.5*cos(2πn/N)
+- `generateHamming()` - Periodic variant: 0.54 - 0.46*cos(2πn/N)
+- `generateBlackman()` - 3-term: 0.42 - 0.5*cos(2πn/N) + 0.08*cos(4πn/N)
+- `generateKaiser()` - Adjustable beta parameter controls sidelobe rejection
+- `verifyCOLA()` - Verifies overlapping windows sum to constant (required for perfect STFT reconstruction)
+- `besselI0()` - Modified Bessel function of first kind, order 0 (for Kaiser computation)
+
+**Window Properties**:
+
+| Window | Sidelobes | Mainlobe Width | Best For |
+|--------|-----------|----------------|----------|
+| Hann | -31 dB | Medium | General STFT analysis |
+| Hamming | -42 dB | Medium | Better sidelobe rejection |
+| Blackman | -58 dB | Wide | Low-leakage analysis |
+| Kaiser (β=9) | -80 dB | Adjustable | Precision spectral analysis |
+
+**COLA Overlap Requirements**:
+
+| Window | 50% Overlap | 75% Overlap | 90% Overlap |
+|--------|-------------|-------------|-------------|
+| Hann | ✓ Sum=1 | ✓ Sum=2 | ✓ Sum=4 |
+| Hamming | ✓ Sum≈1.08 | ✓ | ✓ |
+| Blackman | ✗ | ✓ | ✓ |
+| Kaiser | ✗ | ✗ | ✓ |
+
+**When to use**:
+
+| Use Case | Window | Overlap |
+|----------|--------|---------|
+| General spectral analysis | Hann | 50% |
+| Spectral modifications (pitch shift, time stretch) | Hann | 75% |
+| Low-leakage frequency measurement | Blackman | 75% |
+| Precision analysis with adjustable rejection | Kaiser | 90% |
+
+**Example**:
+```cpp
+#include "dsp/core/window_functions.h"
+using namespace Iterum::DSP;
+
+// Generate Hann window
+std::vector<float> window(1024);
+Window::generateHann(window.data(), window.size());
+
+// Verify COLA property
+bool canReconstruct = Window::verifyCOLA(window.data(), 1024, 512);  // 50% overlap
+
+// Factory usage
+auto kaiser = Window::generate(WindowType::Kaiser, 1024, 12.0f);  // High rejection
+```
 
 ---
 
@@ -607,6 +708,364 @@ oversampler.reset();
 
 ---
 
+### FFT (Fast Fourier Transform)
+
+| | |
+|---|---|
+| **Purpose** | Radix-2 DIT FFT for real-to-complex and complex-to-real transforms |
+| **Location** | [src/dsp/primitives/fft.h](src/dsp/primitives/fft.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.7 (007-fft-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Complex number for FFT operations
+    struct Complex {
+        float real = 0.0f;
+        float imag = 0.0f;
+
+        // Arithmetic
+        [[nodiscard]] constexpr Complex operator+(const Complex&) const noexcept;
+        [[nodiscard]] constexpr Complex operator-(const Complex&) const noexcept;
+        [[nodiscard]] constexpr Complex operator*(const Complex&) const noexcept;
+        [[nodiscard]] constexpr Complex conjugate() const noexcept;
+
+        // Polar
+        [[nodiscard]] float magnitude() const noexcept;  // |z| = sqrt(re² + im²)
+        [[nodiscard]] float phase() const noexcept;      // ∠z = atan2(im, re)
+    };
+
+    // Constants
+    constexpr size_t kMinFFTSize = 256;
+    constexpr size_t kMaxFFTSize = 8192;
+
+    class FFT {
+    public:
+        // Lifecycle (call before audio processing)
+        void prepare(size_t fftSize) noexcept;  // Power of 2, [256-8192]
+        void reset() noexcept;
+
+        // Processing (real-time safe, O(N log N))
+        void forward(const float* input, Complex* output) noexcept;  // N real → N/2+1 complex
+        void inverse(const Complex* input, float* output) noexcept;  // N/2+1 complex → N real
+
+        // Query
+        [[nodiscard]] size_t size() const noexcept;       // FFT size N
+        [[nodiscard]] size_t numBins() const noexcept;    // Output bins: N/2+1
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- `prepare()` - Generates bit-reversal LUT and precomputes twiddle factors (allocates memory)
+- `forward()` - Real-to-complex FFT: N real samples → N/2+1 complex bins (DC to Nyquist)
+- `inverse()` - Complex-to-real IFFT: N/2+1 complex bins → N real samples (normalized by 1/N)
+- DC bin (index 0) and Nyquist bin (index N/2) always have zero imaginary component
+- Negative frequency bins reconstructed from conjugate symmetry: X[N-k] = X[k]*
+
+**Complexity**: O(N log N) for both forward and inverse transforms.
+
+**Memory Footprint**: Working buffer uses 2N floats (within 3N float limit per NFR-003).
+
+**When to use**:
+
+| Use Case | Method |
+|----------|--------|
+| Analyze frequency content | `forward()` → examine bin magnitudes |
+| Spectral filtering | `forward()` → modify bins → `inverse()` |
+| Convolution (frequency domain) | `forward()` both signals → multiply → `inverse()` |
+| Pitch detection | `forward()` → find peak bin |
+
+**Example**:
+```cpp
+#include "dsp/primitives/fft.h"
+using namespace Iterum::DSP;
+
+FFT fft;
+
+// In prepare() - allocates LUTs
+fft.prepare(1024);
+
+// In processBlock() - real-time safe
+std::vector<Complex> spectrum(fft.numBins());  // 513 bins for N=1024
+fft.forward(input, spectrum.data());
+
+// Find dominant frequency bin
+size_t peakBin = 0;
+float maxMag = 0.0f;
+for (size_t i = 1; i < fft.numBins() - 1; ++i) {
+    float mag = spectrum[i].magnitude();
+    if (mag > maxMag) { maxMag = mag; peakBin = i; }
+}
+float peakFreq = peakBin * sampleRate / fft.size();
+
+// Round-trip reconstruction
+std::vector<float> output(fft.size());
+fft.inverse(spectrum.data(), output.data());
+// output ≈ input (< 0.0001% error)
+```
+
+---
+
+### SpectralBuffer
+
+| | |
+|---|---|
+| **Purpose** | Complex spectrum storage with magnitude/phase manipulation for spectral effects |
+| **Location** | [src/dsp/primitives/spectral_buffer.h](src/dsp/primitives/spectral_buffer.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.7 (007-fft-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class SpectralBuffer {
+    public:
+        // Lifecycle
+        void prepare(size_t fftSize) noexcept;  // Allocates N/2+1 bins
+        void reset() noexcept;                  // Clears all bins to zero
+
+        // Polar access (magnitude/phase)
+        [[nodiscard]] float getMagnitude(size_t bin) const noexcept;  // |X[k]|
+        [[nodiscard]] float getPhase(size_t bin) const noexcept;      // ∠X[k] (radians)
+        void setMagnitude(size_t bin, float magnitude) noexcept;      // Preserves phase
+        void setPhase(size_t bin, float phase) noexcept;              // Preserves magnitude
+
+        // Cartesian access
+        [[nodiscard]] float getReal(size_t bin) const noexcept;
+        [[nodiscard]] float getImag(size_t bin) const noexcept;
+        void setCartesian(size_t bin, float real, float imag) noexcept;
+
+        // Raw access (for FFT I/O)
+        [[nodiscard]] Complex* data() noexcept;
+        [[nodiscard]] const Complex* data() const noexcept;
+
+        // Query
+        [[nodiscard]] size_t numBins() const noexcept;  // N/2+1
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- `setMagnitude()` - Scales the bin to new magnitude while preserving phase angle
+- `setPhase()` - Rotates the bin to new phase while preserving magnitude
+- Bounds checking: Out-of-range bin indices return 0 or are ignored
+- Direct `data()` access for efficient FFT input/output operations
+
+**When to use**:
+
+| Use Case | Methods |
+|----------|---------|
+| Spectral gain (EQ) | `getMagnitude()` / `setMagnitude()` |
+| Phase vocoder (pitch shift) | `getPhase()` / `setPhase()` |
+| Spectral freeze | Copy buffer, reuse for subsequent frames |
+| Spectral gating | Set bins below threshold to 0 |
+
+**Example**:
+```cpp
+#include "dsp/primitives/spectral_buffer.h"
+using namespace Iterum::DSP;
+
+FFT fft;
+SpectralBuffer spectrum;
+
+fft.prepare(1024);
+spectrum.prepare(1024);
+
+// Analyze
+fft.forward(input, spectrum.data());
+
+// Apply spectral effect: boost 1kHz region
+float binFreq = sampleRate / 1024.0f;  // ~43 Hz per bin at 44.1kHz
+size_t targetBin = static_cast<size_t>(1000.0f / binFreq);
+for (size_t i = targetBin - 2; i <= targetBin + 2; ++i) {
+    float mag = spectrum.getMagnitude(i);
+    spectrum.setMagnitude(i, mag * 2.0f);  // +6 dB boost
+}
+
+// Resynthesize
+fft.inverse(spectrum.data(), output);
+```
+
+---
+
+### STFT (Short-Time Fourier Transform)
+
+| | |
+|---|---|
+| **Purpose** | Streaming spectral analysis with configurable windows and overlap |
+| **Location** | [src/dsp/primitives/stft.h](src/dsp/primitives/stft.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.7 (007-fft-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class STFT {
+    public:
+        // Lifecycle (call before audio processing)
+        void prepare(size_t fftSize, size_t hopSize,
+                    WindowType window = WindowType::Hann,
+                    float kaiserBeta = 9.0f) noexcept;
+        void reset() noexcept;
+
+        // Input (real-time safe)
+        void pushSamples(const float* input, size_t numSamples) noexcept;
+
+        // Analysis (real-time safe)
+        [[nodiscard]] bool canAnalyze() const noexcept;
+        void analyze(SpectralBuffer& output) noexcept;
+
+        // Query
+        [[nodiscard]] size_t fftSize() const noexcept;
+        [[nodiscard]] size_t hopSize() const noexcept;
+        [[nodiscard]] WindowType windowType() const noexcept;
+        [[nodiscard]] size_t latency() const noexcept;  // = fftSize
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- `prepare()` - Allocates circular input buffer, generates analysis window
+- `pushSamples()` - Accumulates input samples in circular buffer
+- `canAnalyze()` - Returns true when fftSize samples available
+- `analyze()` - Extracts frame, applies window, performs FFT, consumes hopSize samples
+- Continuous streaming: push small chunks, call analyze() when ready
+
+**Latency**: One FFT frame (fftSize samples). For 1024 samples at 44.1kHz = ~23ms.
+
+**When to use**:
+
+| Use Case | Configuration |
+|----------|---------------|
+| Real-time spectral display | Hann, 50% overlap |
+| Pitch shifting | Hann, 75% overlap |
+| Time stretching | Hann, 75% overlap |
+| Spectral freeze effect | Any window, analyze once |
+
+**Example**:
+```cpp
+#include "dsp/primitives/stft.h"
+using namespace Iterum::DSP;
+
+STFT stft;
+SpectralBuffer spectrum;
+
+// In prepare()
+stft.prepare(1024, 512, WindowType::Hann);  // 50% overlap
+spectrum.prepare(1024);
+
+// In processBlock() - streaming
+stft.pushSamples(inputBuffer, numSamples);
+
+while (stft.canAnalyze()) {
+    stft.analyze(spectrum);
+
+    // Process spectrum (e.g., spectral gate, EQ, freeze)
+    for (size_t i = 0; i < spectrum.numBins(); ++i) {
+        if (spectrum.getMagnitude(i) < threshold) {
+            spectrum.setCartesian(i, 0.0f, 0.0f);  // Gate
+        }
+    }
+
+    // Continue to synthesis...
+}
+```
+
+---
+
+### OverlapAdd
+
+| | |
+|---|---|
+| **Purpose** | Overlap-add synthesis for artifact-free STFT reconstruction |
+| **Location** | [src/dsp/primitives/stft.h](src/dsp/primitives/stft.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.7 (007-fft-processor) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class OverlapAdd {
+    public:
+        // Lifecycle (call before audio processing)
+        void prepare(size_t fftSize, size_t hopSize,
+                    WindowType window = WindowType::Hann,
+                    float kaiserBeta = 9.0f) noexcept;
+        void reset() noexcept;
+
+        // Synthesis (real-time safe)
+        void synthesize(const SpectralBuffer& input) noexcept;
+
+        // Output (real-time safe)
+        [[nodiscard]] size_t samplesAvailable() const noexcept;
+        void pullSamples(float* output, size_t numSamples) noexcept;
+
+        // Query
+        [[nodiscard]] size_t fftSize() const noexcept;
+        [[nodiscard]] size_t hopSize() const noexcept;
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- `prepare()` - Allocates output accumulator, computes COLA normalization factor
+- `synthesize()` - IFFT of spectrum, adds to accumulator with proper overlap
+- `pullSamples()` - Extracts output samples, shifts accumulator buffer
+- Automatic COLA normalization: Divides by window sum for unity-gain reconstruction
+
+**Important**: Window type in OverlapAdd MUST match the STFT analysis window for perfect reconstruction.
+
+**Round-Trip Accuracy**: STFT→OverlapAdd < 0.01% error when windows match and COLA is satisfied.
+
+**When to use**: Always paired with STFT for spectral processing that requires resynthesis.
+
+**Example**:
+```cpp
+#include "dsp/primitives/stft.h"
+using namespace Iterum::DSP;
+
+STFT stft;
+OverlapAdd ola;
+SpectralBuffer spectrum;
+
+// In prepare() - MUST use same window!
+stft.prepare(1024, 512, WindowType::Hann);
+ola.prepare(1024, 512, WindowType::Hann);
+spectrum.prepare(1024);
+
+// Report latency to host
+latency = stft.latency();  // = fftSize
+
+// In processBlock() - full STFT pipeline
+stft.pushSamples(input, numSamples);
+
+while (stft.canAnalyze()) {
+    stft.analyze(spectrum);
+
+    // Spectral processing (e.g., apply EQ, freeze, morph)
+    // ... modify spectrum ...
+
+    ola.synthesize(spectrum);
+}
+
+// Extract output
+if (ola.samplesAvailable() >= numSamples) {
+    ola.pullSamples(output, numSamples);
+}
+```
+
+---
+
 ### Buffer Operations
 
 | | |
@@ -820,3 +1279,12 @@ Quick lookup by functionality:
 | 4x oversample for heavy distortion | `Iterum::DSP::Oversampler4x` | primitives/oversampler.h |
 | Zero-latency oversampling | `Oversampler.prepare(..., ZeroLatency)` | primitives/oversampler.h |
 | Get oversampler latency | `Oversampler::getLatency()` | primitives/oversampler.h |
+| Generate window function | `Window::generateHann()` | core/window_functions.h |
+| Verify COLA property | `Window::verifyCOLA()` | core/window_functions.h |
+| Forward FFT (time→frequency) | `FFT::forward()` | primitives/fft.h |
+| Inverse FFT (frequency→time) | `FFT::inverse()` | primitives/fft.h |
+| Access spectrum magnitude | `SpectralBuffer::getMagnitude()` | primitives/spectral_buffer.h |
+| Modify spectrum magnitude | `SpectralBuffer::setMagnitude()` | primitives/spectral_buffer.h |
+| Streaming spectral analysis | `STFT::pushSamples()` / `analyze()` | primitives/stft.h |
+| Overlap-add synthesis | `OverlapAdd::synthesize()` | primitives/stft.h |
+| Full STFT→modify→ISTFT pipeline | STFT + SpectralBuffer + OverlapAdd | primitives/stft.h |

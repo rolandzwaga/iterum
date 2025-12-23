@@ -66,11 +66,15 @@ target_link_libraries(test_helpers
 add_executable(dsp_tests
     unit/test_dsp_utils.cpp
     unit/core/db_utils_test.cpp
+    unit/core/window_functions_test.cpp
     unit/primitives/delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
     unit/primitives/smoother_test.cpp
     unit/primitives/oversampler_test.cpp
+    unit/primitives/fft_test.cpp
+    unit/primitives/spectral_buffer_test.cpp
+    unit/primitives/stft_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -98,11 +102,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
         unit/test_dsp_utils.cpp
         unit/core/db_utils_test.cpp
+        unit/core/window_functions_test.cpp
         unit/primitives/smoother_test.cpp
         unit/primitives/oversampler_test.cpp
         unit/primitives/delay_line_test.cpp
         unit/primitives/lfo_test.cpp
         unit/primitives/biquad_test.cpp
+        unit/primitives/fft_test.cpp
+        unit/primitives/spectral_buffer_test.cpp
+        unit/primitives/stft_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
