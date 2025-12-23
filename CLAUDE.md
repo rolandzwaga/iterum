@@ -670,6 +670,85 @@ For every implementation task, the todo list MUST include these explicit items I
 
 If you find yourself writing implementation code without corresponding test files already created, STOP and write the tests first. This is a constitution-level requirement (Principle XII).
 
+## Completion Honesty Enforcement (MANDATORY)
+
+**CRITICAL**: This section describes non-negotiable requirements for claiming ANY spec is complete. Violation of these rules destroys user trust.
+
+### Before Claiming Completion
+
+Before you EVER claim a spec is "done" or "complete", you MUST:
+
+1. **Review EVERY FR-xxx requirement** in the spec and verify your implementation meets it
+2. **Review EVERY SC-xxx success criterion** and verify measurable targets are achieved
+3. **Search your implementation for cheating patterns**:
+   - `// placeholder` or `// TODO` comments
+   - Test thresholds that differ from spec requirements
+   - Features quietly removed from scope
+
+### Forbidden Cheating Patterns
+
+**You MUST NEVER do these and claim completion:**
+
+| Cheating Pattern | Example | Why It's Wrong |
+|-----------------|---------|----------------|
+| Relaxing test thresholds | Spec says "-3dB flatness", test accepts "-10dB" | Tests pass but requirement fails |
+| Placeholder values | "// FIR coefficients need proper design" | Implementation is incomplete |
+| Scope reduction without declaration | Removing 2 of 5 quality modes | User expects all modes |
+| Vague success claims | "Tests pass" when tests were weakened | Hides non-compliance |
+
+### Mandatory Compliance Table
+
+Every spec completion report MUST include this table:
+
+```markdown
+## Implementation Compliance
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| FR-001: [name] | ✅ MET | [Test name] verifies [what] |
+| FR-002: [name] | ❌ NOT MET | [Reason for failure] |
+| SC-001: [name] | ⚠️ PARTIAL | Achieves X of Y target |
+```
+
+**Status Definitions:**
+- ✅ MET: Fully satisfied with evidence
+- ❌ NOT MET: Not satisfied (honest failure)
+- ⚠️ PARTIAL: Partially met with documented gap
+- 🔄 DEFERRED: Moved to future work with explicit user approval
+
+### Self-Check Before Completion
+
+Ask yourself these questions. If ANY answer is "yes", you CANNOT claim completion:
+
+1. Did I change ANY test threshold from what the spec originally required?
+2. Are there ANY "placeholder", "stub", or "TODO" comments in new code?
+3. Did I remove ANY features from scope without telling the user?
+4. Would the spec author consider this "done"?
+5. If I were the user, would I feel cheated?
+
+### What To Do If Requirements Aren't Met
+
+If you cannot meet a requirement, be HONEST:
+
+```markdown
+## Honest Status Report
+
+**Completed:**
+- FR-001: Upsampling/downsampling pipeline ✅
+- FR-002: IIR mode (Economy quality) ✅
+
+**NOT Completed:**
+- FR-015: Passband flatness (-3dB spec) ❌
+  - Current: -10dB attenuation
+  - Reason: FIR coefficients are placeholder values
+  - Fix required: Proper Kaiser window coefficient design
+
+**Recommendation:** This spec is NOT complete. FIR filter design
+requires additional work to meet SC-003 (0.1dB flatness).
+```
+
+This is a constitution-level requirement (Principle XV).
+
 ## Build Commands
 
 ```bash

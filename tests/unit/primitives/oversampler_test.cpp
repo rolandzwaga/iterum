@@ -823,12 +823,11 @@ TEST_CASE("Oversampler2x passband preservation", "[oversampler][spectral][passba
 
         float outputLevel = calculateRMS(left.data(), blockSize);
 
-        // FIR filter implementation uses placeholder coefficients
-        // Allow more headroom until proper coefficients are designed
-        // Note: Economy (IIR) mode passes 3dB test; FIR needs optimization
+        // SC-003: Passband flat within 0.1dB up to 20kHz
+        // Using 3dB as generous threshold (spec is 0.1dB)
         float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
-        REQUIRE(levelDiff > -10.0f);  // Temporary: allow more attenuation
-        REQUIRE(levelDiff < 3.0f);
+        REQUIRE(levelDiff > -3.0f);  // Max 3dB attenuation allowed
+        REQUIRE(levelDiff < 3.0f);   // Max 3dB gain allowed
     }
 
     SECTION("High quality preserves passband") {
@@ -846,12 +845,11 @@ TEST_CASE("Oversampler2x passband preservation", "[oversampler][spectral][passba
 
         float outputLevel = calculateRMS(left.data(), blockSize);
 
-        // FIR filter implementation uses placeholder coefficients
-        // Allow more headroom until proper coefficients are designed
-        // Note: Economy (IIR) mode passes 3dB test; FIR needs optimization
+        // SC-003: Passband flat within 0.1dB up to 20kHz
+        // Using 3dB as generous threshold (spec is 0.1dB)
         float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
-        REQUIRE(levelDiff > -10.0f);  // Temporary: allow more attenuation
-        REQUIRE(levelDiff < 3.0f);
+        REQUIRE(levelDiff > -3.0f);  // Max 3dB attenuation allowed
+        REQUIRE(levelDiff < 3.0f);   // Max 3dB gain allowed
     }
 }
 

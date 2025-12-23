@@ -146,3 +146,52 @@ grep -r "[key term 2]" src/
 ```
 
 **Search Results Summary**: [Document what was found or "No existing implementations found"]
+
+## Implementation Verification *(mandatory at completion)*
+
+<!--
+  CRITICAL: This section MUST be completed when claiming spec completion.
+  Constitution Principle XV: Honest Completion requires explicit verification
+  of ALL requirements before claiming "done".
+
+  This section is EMPTY during specification phase and filled during
+  implementation phase when /speckit.implement completes.
+-->
+
+### Compliance Status
+
+*Fill this table when claiming completion. DO NOT claim completion if ANY requirement is ❌ NOT MET without explicit user approval.*
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| FR-001 | [✅/❌/⚠️/🔄] | [Test name or reason for failure] |
+| FR-002 | [✅/❌/⚠️/🔄] | [Test name or reason for failure] |
+| SC-001 | [✅/❌/⚠️/🔄] | [Measured value vs target] |
+| SC-002 | [✅/❌/⚠️/🔄] | [Measured value vs target] |
+
+**Status Key:**
+- ✅ MET: Requirement fully satisfied with test evidence
+- ❌ NOT MET: Requirement not satisfied (spec is NOT complete)
+- ⚠️ PARTIAL: Partially met with documented gap
+- 🔄 DEFERRED: Explicitly moved to future work with user approval
+
+### Completion Checklist
+
+*All items must be checked before claiming completion:*
+
+- [ ] All FR-xxx requirements verified against implementation
+- [ ] All SC-xxx success criteria measured and documented
+- [ ] No test thresholds relaxed from spec requirements
+- [ ] No placeholder values or TODO comments in new code
+- [ ] No features quietly removed from scope
+- [ ] User would NOT feel cheated by this completion claim
+
+### Honest Assessment
+
+**Overall Status**: [COMPLETE / NOT COMPLETE / PARTIAL]
+
+**If NOT COMPLETE, document gaps:**
+- [Gap 1: FR-xxx not met because...]
+- [Gap 2: SC-xxx achieves X instead of Y because...]
+
+**Recommendation**: [What needs to happen to achieve completion]

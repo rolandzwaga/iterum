@@ -2,19 +2,22 @@
 ================================================================================
 SYNC IMPACT REPORT
 ================================================================================
-Version Change: 1.5.0 → 1.6.0
+Version Change: 1.6.0 → 1.7.0
 Modified Principles: None
 Added Sections:
-  - Principle XIV: Pre-Implementation Research (ODR Prevention)
-    - Mandatory codebase search before creating new classes
-    - Check ARCHITECTURE.md and common files for existing implementations
-    - Diagnostic checklist for strange test failures (garbage values, ODR symptoms)
-    - Lesson learned from 005-parameter-smoother incident
+  - Principle XV: Honest Completion (Anti-Cheating Enforcement)
+    - Defines what "done" means for spec requirements
+    - Forbids placeholder implementations claimed as complete
+    - Forbids relaxing test thresholds to make tests pass
+    - Requires explicit FR/SC verification before claiming completion
+    - Mandates honest compliance table in completion report
+    - Lesson learned from 006-oversampler incident
 Removed Sections: None
 Templates Requiring Updates:
-  - spec-template.md should reference Principle XIV in research phase
+  - spec-template.md: Add Implementation Verification section
+  - CLAUDE.md: Add Completion Honesty Enforcement section
 Follow-up TODOs:
-  - Update /speckit.specify to include codebase search step
+  - Update /speckit.implement to include compliance verification step
 ================================================================================
 -->
 
@@ -386,6 +389,63 @@ Before implementing ANY new class, struct, or significant component, the codebas
 
 **Rationale:** ODR violations cause silent, hard-to-diagnose bugs. A simple grep search before creating new types prevents hours of debugging. The 005-parameter-smoother incident demonstrated that debugging NaN handling for hours was wasted when the real issue was a duplicate `OnePoleSmoother` class discoverable with a 5-second search.
 
+### XV. Honest Completion (Anti-Cheating Enforcement)
+
+Spec implementations MUST be honestly assessed for completion. Claiming "done" when requirements are not met is a violation of trust and undermines project integrity.
+
+**Non-Negotiable Rules:**
+
+- **Definition of "Done"**: A requirement is ONLY complete when:
+  1. Implementation meets ALL specified acceptance criteria
+  2. Tests verify the requirement at the thresholds specified in the spec
+  3. No placeholder values, stub implementations, or "TODO" markers remain
+  4. Performance targets (if specified) are measured and met
+
+- **Forbidden Cheating Patterns**:
+  1. **Relaxing Test Thresholds**: If a spec requires "-3dB passband flatness" and your implementation achieves "-10dB", you CANNOT change the test to accept "-10dB" and claim completion
+  2. **Placeholder Values**: Coefficients marked as "placeholder" or "needs proper design" are NOT complete implementations
+  3. **Scope Reduction Without Declaration**: Removing features from the spec to make "completion" easier without explicit user approval
+  4. **Vague Success Claims**: Saying "tests pass" when tests have been weakened to pass
+  5. **Selective Reporting**: Highlighting working features while burying non-compliance in footnotes
+
+- **Mandatory Compliance Verification**: Before claiming any spec is complete, you MUST:
+  1. Review EVERY Functional Requirement (FR-xxx) and verify implementation meets it
+  2. Review EVERY Success Criterion (SC-xxx) and verify measurable targets are achieved
+  3. Document any gaps honestly in the completion report
+  4. If ANY FR or SC is not met, the spec is NOT complete—period
+
+- **Honest Completion Report Format**: Every spec completion MUST include:
+  ```
+  ## Implementation Compliance
+
+  | Requirement | Status | Evidence |
+  |-------------|--------|----------|
+  | FR-001      | ✅ MET | Test X verifies Y |
+  | FR-002      | ❌ NOT MET | [Reason: placeholder coefficients] |
+  | SC-001      | ⚠️ PARTIAL | Achieves 80% of target |
+  ```
+
+  **Status Definitions**:
+  - ✅ MET: Requirement fully satisfied with evidence
+  - ❌ NOT MET: Requirement not satisfied (honest failure)
+  - ⚠️ PARTIAL: Partially met with documented gap
+  - 🔄 DEFERRED: Explicitly moved to future work with user approval
+
+- **Consequences of Dishonest Completion Claims**:
+  - Future work will be blocked by undetected bugs
+  - User trust is destroyed
+  - Technical debt compounds silently
+  - CI may pass while actual requirements fail
+
+**Diagnostic Checklist for Completion Reviews**:
+1. Did I change ANY test threshold from what the spec originally required?
+2. Are there ANY "placeholder", "stub", or "TODO" comments in the implementation?
+3. Did I remove ANY features from scope without documenting this?
+4. Would the original spec author consider this "done"?
+5. If I were the user, would I feel cheated by this completion claim?
+
+**Rationale:** The 006-oversampler incident demonstrated that claiming completion while admitting "FIR coefficients are placeholders" and "tests were relaxed from -3dB to -10dB" is fundamentally dishonest. This principle exists to prevent such violations by making honest compliance verification a mandatory part of the workflow.
+
 ## Governance
 
 ### Constitution Authority
@@ -495,4 +555,4 @@ All implementation work MUST follow test-first methodology. Testing guidance MUS
 
 **Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied.
 
-**Version**: 1.6.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-22
+**Version**: 1.7.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-23
