@@ -24,8 +24,11 @@
 #include "dsp/core/random.h"
 #include "dsp/primitives/biquad.h"
 #include "dsp/primitives/smoother.h"
+#include "dsp/processors/envelope_follower.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -187,6 +190,20 @@ public:
         masterSmoother_.configure(smoothTimeMs, sampleRate);
         masterSmoother_.setTarget(1.0f); // 0 dB default
 
+        // Configure tape hiss high-shelf filter (+3dB at 5kHz for tape character)
+        tapeHissFilter_.configure(FilterType::HighShelf, 5000.0f, 0.707f, 3.0f, sampleRate);
+
+        // Configure envelope followers for signal-dependent noise
+        tapeHissEnvelope_.prepare(static_cast<double>(sampleRate), maxBlockSize);
+        tapeHissEnvelope_.setMode(DetectionMode::RMS);
+        tapeHissEnvelope_.setAttackTime(10.0f);  // Fast attack
+        tapeHissEnvelope_.setReleaseTime(100.0f); // Medium release
+
+        asperityEnvelope_.prepare(static_cast<double>(sampleRate), maxBlockSize);
+        asperityEnvelope_.setMode(DetectionMode::Amplitude);
+        asperityEnvelope_.setAttackTime(5.0f);   // Very fast attack
+        asperityEnvelope_.setReleaseTime(50.0f); // Fast release
+
         reset();
     }
 
@@ -203,9 +220,17 @@ public:
         // Reset crackle state
         crackleCounter_ = 0.0f;
         crackleAmplitude_ = 0.0f;
+        crackleDecay_ = 0.0f;
 
         // Reset biquad filters
         tapeHissFilter_.reset();
+
+        // Reset envelope followers
+        tapeHissEnvelope_.reset();
+        asperityEnvelope_.reset();
+
+        // Reset cached envelope value
+        lastEnvelopeValue_ = 0.0f;
     }
 
     // =========================================================================
@@ -302,7 +327,7 @@ public:
     /// @param numSamples Number of samples to generate
     void process(float* output, size_t numSamples) noexcept {
         for (size_t i = 0; i < numSamples; ++i) {
-            output[i] = generateNoiseSample();
+            output[i] = generateNoiseSample(0.0f);
         }
     }
 
@@ -311,10 +336,8 @@ public:
     /// @param output Output buffer to fill with noise
     /// @param numSamples Number of samples to process
     void process(const float* input, float* output, size_t numSamples) noexcept {
-        // For now, sidechain is not used (US3/US5 will add signal-dependent noise)
-        (void)input;
         for (size_t i = 0; i < numSamples; ++i) {
-            output[i] = generateNoiseSample();
+            output[i] = generateNoiseSample(input[i]);
         }
     }
 
@@ -324,7 +347,7 @@ public:
     /// @param numSamples Number of samples to process
     void processMix(const float* input, float* output, size_t numSamples) noexcept {
         for (size_t i = 0; i < numSamples; ++i) {
-            float noise = generateNoiseSample();
+            float noise = generateNoiseSample(input[i]);
             output[i] = input[i] + noise;
         }
     }
@@ -348,35 +371,89 @@ private:
     // =========================================================================
 
     /// @brief Generate a single sample of mixed noise from all enabled types
+    /// @param sidechainInput Input sample for signal-dependent modulation
     /// @return Combined noise sample with level and master gain applied
-    [[nodiscard]] float generateNoiseSample() noexcept {
+    [[nodiscard]] float generateNoiseSample(float sidechainInput) noexcept {
         float sample = 0.0f;
 
-        // Generate base white noise sample (used by white, pink, and others)
+        // Generate base white noise sample (used by white, pink, tape hiss, asperity)
         float whiteNoise = rng_.nextFloat();
 
         // White noise (US1)
+        float whiteGain = levelSmoothers_[static_cast<size_t>(NoiseType::White)].process();
         if (noiseEnabled_[static_cast<size_t>(NoiseType::White)]) {
-            float whiteGain = levelSmoothers_[static_cast<size_t>(NoiseType::White)].process();
             sample += whiteNoise * whiteGain;
-        } else {
-            // Still process smoother to handle fade-out
-            (void)levelSmoothers_[static_cast<size_t>(NoiseType::White)].process();
         }
 
         // Pink noise (US2)
+        float pinkNoise = pinkFilter_.process(whiteNoise);
+        float pinkGain = levelSmoothers_[static_cast<size_t>(NoiseType::Pink)].process();
         if (noiseEnabled_[static_cast<size_t>(NoiseType::Pink)]) {
-            float pinkNoise = pinkFilter_.process(whiteNoise);
-            float pinkGain = levelSmoothers_[static_cast<size_t>(NoiseType::Pink)].process();
             sample += pinkNoise * pinkGain;
-        } else {
-            // Still process smoother to handle fade-out
-            (void)levelSmoothers_[static_cast<size_t>(NoiseType::Pink)].process();
         }
 
-        // TODO: Tape hiss (US3)
-        // TODO: Vinyl crackle (US4)
-        // TODO: Asperity (US5)
+        // Tape hiss (US3) - pink noise + high shelf + signal-dependent modulation
+        float tapeHissGain = levelSmoothers_[static_cast<size_t>(NoiseType::TapeHiss)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::TapeHiss)]) {
+            // Apply high-shelf to pink noise for tape character
+            float shapedNoise = tapeHissFilter_.process(pinkNoise);
+
+            // Calculate signal-dependent modulation
+            float envelope = tapeHissEnvelope_.processSample(sidechainInput);
+            float floorGain = dbToGain(tapeHissFloorDb_);
+
+            // Modulation: floor + (1 - floor) * envelope * sensitivity
+            float modulation = floorGain + (1.0f - floorGain) * envelope * tapeHissSensitivity_;
+            modulation = std::clamp(modulation, 0.0f, 1.0f);
+
+            sample += shapedNoise * tapeHissGain * modulation;
+        }
+
+        // Vinyl crackle (US4) - impulsive clicks + surface noise
+        float crackleGain = levelSmoothers_[static_cast<size_t>(NoiseType::VinylCrackle)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::VinylCrackle)]) {
+            float crackleSample = 0.0f;
+
+            // Generate click using Poisson process
+            float clickProb = crackleDensity_ / sampleRate_;
+            float rand = rng_.nextUnipolar();
+            if (rand < clickProb) {
+                // Generate click with exponential amplitude distribution
+                float randAmp = rng_.nextUnipolar();
+                // Avoid log(0) by clamping
+                randAmp = std::max(randAmp, 0.001f);
+                crackleAmplitude_ = -std::log(randAmp) * 0.3f;
+                crackleAmplitude_ = std::min(crackleAmplitude_, 1.0f);
+                // Set decay rate (click lasts about 0.5-2ms)
+                crackleDecay_ = 0.995f - (rng_.nextUnipolar() * 0.005f);
+            }
+
+            // Add click with decay
+            if (crackleAmplitude_ > 0.001f) {
+                crackleSample += crackleAmplitude_ * (rng_.nextFloat() > 0.0f ? 1.0f : -1.0f);
+                crackleAmplitude_ *= crackleDecay_;
+            }
+
+            // Add continuous surface noise (filtered white noise)
+            float surfaceGain = dbToGain(surfaceNoiseDb_);
+            crackleSample += whiteNoise * surfaceGain;
+
+            sample += crackleSample * crackleGain;
+        }
+
+        // Asperity noise (US5) - signal-dependent white noise
+        float asperityGain = levelSmoothers_[static_cast<size_t>(NoiseType::Asperity)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::Asperity)]) {
+            // Calculate signal-dependent modulation
+            float envelope = asperityEnvelope_.processSample(sidechainInput);
+            float floorGain = dbToGain(asperityFloorDb_);
+
+            // Modulation: floor + (1 - floor) * envelope * sensitivity
+            float modulation = floorGain + (1.0f - floorGain) * envelope * asperitySensitivity_;
+            modulation = std::clamp(modulation, 0.0f, 1.0f);
+
+            sample += whiteNoise * asperityGain * modulation;
+        }
 
         // Apply master level
         float masterGain = masterSmoother_.process();
@@ -415,20 +492,26 @@ private:
     // Pink noise filter (Paul Kellet's algorithm)
     PinkNoiseFilter pinkFilter_;
 
-    // Tape hiss parameters
+    // Tape hiss parameters and components
     float tapeHissFloorDb_ = -60.0f;
     float tapeHissSensitivity_ = 1.0f;
     Biquad tapeHissFilter_;
+    EnvelopeFollower tapeHissEnvelope_;
 
-    // Asperity parameters
+    // Asperity parameters and components
     float asperityFloorDb_ = -72.0f;
     float asperitySensitivity_ = 1.0f;
+    EnvelopeFollower asperityEnvelope_;
 
     // Vinyl crackle parameters and state
     float crackleDensity_ = kDefaultCrackleDensity;
     float surfaceNoiseDb_ = -42.0f;
     float crackleCounter_ = 0.0f;
     float crackleAmplitude_ = 0.0f;
+    float crackleDecay_ = 0.0f;
+
+    // Cached envelope value for signal-dependent noise
+    float lastEnvelopeValue_ = 0.0f;
 };
 
 } // namespace DSP
