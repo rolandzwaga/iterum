@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-22 (004-biquad-filter)
+**Last Updated**: 2025-12-23 (006-oversampler)
 
 ---
 
@@ -479,6 +479,134 @@ Biquad eq(staticEQ);
 
 ---
 
+### Oversampler
+
+| | |
+|---|---|
+| **Purpose** | Upsampling/downsampling primitive for anti-aliased nonlinear processing |
+| **Location** | [src/dsp/primitives/oversampler.h](src/dsp/primitives/oversampler.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.6 (006-oversampler) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Factor enumeration
+    enum class OversamplingFactor : uint8_t {
+        TwoX = 2,   // 44.1k -> 88.2k
+        FourX = 4   // 44.1k -> 176.4k
+    };
+
+    // Quality levels (affects stopband rejection)
+    enum class OversamplingQuality : uint8_t {
+        Economy,   // ~48dB, IIR, 0 latency
+        Standard,  // ~80dB, FIR, minimal latency
+        High       // ~100dB, FIR, more latency
+    };
+
+    // Latency modes
+    enum class OversamplingMode : uint8_t {
+        ZeroLatency,  // IIR filters (minimum-phase)
+        LinearPhase   // FIR filters (symmetric)
+    };
+
+    // Template class (Factor=2 or 4, NumChannels=1 or 2)
+    template<size_t Factor = 2, size_t NumChannels = 2>
+    class Oversampler {
+    public:
+        // Callback types
+        using StereoCallback = std::function<void(float*, float*, size_t)>;
+        using MonoCallback = std::function<void(float*, size_t)>;
+
+        // Lifecycle (call before audio processing)
+        void prepare(double sampleRate, size_t maxBlockSize,
+                    OversamplingQuality quality = OversamplingQuality::Economy,
+                    OversamplingMode mode = OversamplingMode::ZeroLatency) noexcept;
+        void reset() noexcept;
+
+        // Processing (real-time safe - callback runs at oversampled rate)
+        void process(float* left, float* right, size_t numSamples,
+                    const StereoCallback& callback) noexcept;
+        void process(float* buffer, size_t numSamples,
+                    const MonoCallback& callback) noexcept;
+
+        // Low-level access (for manual pipeline)
+        void upsample(const float* input, float* output, size_t numSamples, size_t channel = 0) noexcept;
+        void downsample(const float* input, float* output, size_t numSamples, size_t channel = 0) noexcept;
+        [[nodiscard]] float* getOversampledBuffer(size_t channel = 0) noexcept;
+
+        // Query
+        [[nodiscard]] size_t getFactor() const noexcept;
+        [[nodiscard]] size_t getLatency() const noexcept;
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+
+    // Type aliases for common configurations
+    using Oversampler2x = Oversampler<2, 2>;      // Stereo 2x
+    using Oversampler4x = Oversampler<4, 2>;      // Stereo 4x
+    using Oversampler2xMono = Oversampler<2, 1>;  // Mono 2x
+    using Oversampler4xMono = Oversampler<4, 1>;  // Mono 4x
+}
+```
+
+**Behavior**:
+- `prepare()` - Allocates buffers, configures anti-aliasing filters (NOT real-time safe)
+- `reset()` - Clears filter states without reallocation (call on transport stop)
+- `process()` - Upsamples, calls callback at higher rate, downsamples back (real-time safe)
+- `upsample()` / `downsample()` - Low-level access for custom pipelines
+- Anti-aliasing filters prevent imaging artifacts during upsampling and aliasing during downsampling
+- 4x oversampling is implemented as cascaded 2x stages for efficiency
+
+**Quality Comparison**:
+
+| Quality | Stopband | 2x Latency | 4x Latency | CPU | Use Case |
+|---------|----------|------------|------------|-----|----------|
+| Economy | ~48 dB | 0 | 0 | Lowest | Live monitoring, guitar amps |
+| Standard | ~80 dB | ~15 samp | ~30 samp | Medium | Mixing, general use |
+| High | ~100 dB | ~31 samp | ~62 samp | Highest | Mastering, critical listening |
+
+**When to use**:
+
+| Use Case | Configuration |
+|----------|---------------|
+| Subtle saturation (tape, tube) | `Oversampler2x` + Economy |
+| Standard waveshaping | `Oversampler2x` + Standard |
+| Heavy distortion (hard clipping) | `Oversampler4x` + Standard |
+| Guitar amp simulation (live) | `Oversampler2x` + ZeroLatency |
+| Mastering saturation | `Oversampler2x` + High + LinearPhase |
+
+**Important**: Only use oversampling before nonlinear processing. Linear operations (filtering, delay) don't benefit from oversampling.
+
+**Example**:
+```cpp
+#include "dsp/primitives/oversampler.h"
+using namespace Iterum::DSP;
+
+Oversampler2x oversampler;
+
+// In prepare() - allocates memory
+oversampler.prepare(44100.0, 512, OversamplingQuality::Standard);
+
+// Report latency to host
+size_t latency = oversampler.getLatency();
+
+// In process() - real-time safe
+oversampler.process(left, right, numSamples,
+    [](float* L, float* R, size_t n) {
+        // This callback runs at 2x sample rate (88.2kHz)
+        for (size_t i = 0; i < n; ++i) {
+            L[i] = std::tanh(L[i] * drive);
+            R[i] = std::tanh(R[i] * drive);
+        }
+    });
+
+// On transport stop
+oversampler.reset();
+```
+
+---
+
 ### Buffer Operations
 
 | | |
@@ -688,3 +816,7 @@ Quick lookup by functionality:
 | Add saturation | `Iterum::DSP::softClip()` | dsp_utils.h |
 | Measure RMS level | `Iterum::DSP::calculateRMS()` | dsp_utils.h |
 | Detect peak level | `Iterum::DSP::findPeak()` | dsp_utils.h |
+| Oversample for nonlinear DSP | `Iterum::DSP::Oversampler2x` | primitives/oversampler.h |
+| 4x oversample for heavy distortion | `Iterum::DSP::Oversampler4x` | primitives/oversampler.h |
+| Zero-latency oversampling | `Oversampler.prepare(..., ZeroLatency)` | primitives/oversampler.h |
+| Get oversampler latency | `Oversampler::getLatency()` | primitives/oversampler.h |

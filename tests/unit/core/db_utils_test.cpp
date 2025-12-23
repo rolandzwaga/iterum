@@ -365,3 +365,84 @@ TEST_CASE("Migration: namespace changed from VSTWork to Iterum", "[dsp][core][db
         REQUIRE(dB == Approx(-6.0206f).margin(0.01f));
     }
 }
+
+// ==============================================================================
+// SC-002: Conversion Accuracy Test (0.0001 dB tolerance)
+// ==============================================================================
+// Verify accuracy across the full audio range -144 dB to +24 dB
+
+TEST_CASE("Conversion accuracy within 0.0001 dB (SC-002)", "[dsp][core][db_utils][SC-002][accuracy]") {
+    // SC-002: Conversion accuracy is within 0.0001 dB of the mathematically
+    // correct value for typical audio range (-144 dB to +24 dB).
+
+    SECTION("dbToGain accuracy across audio range") {
+        // Test at various dB values across the audio range
+        const std::array<float, 10> testDbValues = {
+            -120.0f, -80.0f, -60.0f, -40.0f, -20.0f,
+            -6.0f, 0.0f, 6.0f, 12.0f, 24.0f
+        };
+
+        float maxDbError = 0.0f;
+
+        for (float dB : testDbValues) {
+            float gain = dbToGain(dB);
+            float backToDb = gainToDb(gain);
+
+            float dbError = std::abs(backToDb - dB);
+            maxDbError = std::max(maxDbError, dbError);
+
+            INFO("dB=" << dB << " gain=" << gain << " backToDb=" << backToDb
+                 << " error=" << dbError << " dB");
+
+            // SC-002: Within 0.0001 dB
+            CHECK(dbError < 0.0001f);
+        }
+
+        INFO("Maximum dB error: " << maxDbError);
+    }
+
+    SECTION("gainToDb accuracy at typical gain values") {
+        // Test at typical gain values musicians encounter
+        const std::array<float, 8> testGains = {
+            0.001f, 0.01f, 0.1f, 0.5f, 1.0f, 2.0f, 4.0f, 10.0f
+        };
+
+        float maxDbError = 0.0f;
+
+        for (float gain : testGains) {
+            float dB = gainToDb(gain);
+            float backToGain = dbToGain(dB);
+
+            // Calculate error in dB space
+            float dbOfOriginal = 20.0f * std::log10(gain);
+            float dbOfResult = 20.0f * std::log10(backToGain);
+            float dbError = std::abs(dbOfResult - dbOfOriginal);
+
+            maxDbError = std::max(maxDbError, dbError);
+
+            INFO("gain=" << gain << " dB=" << dB << " backToGain=" << backToGain
+                 << " error=" << dbError << " dB");
+
+            // SC-002: Within 0.0001 dB
+            CHECK(dbError < 0.0001f);
+        }
+
+        INFO("Maximum dB error: " << maxDbError);
+    }
+
+    SECTION("Constexpr accuracy matches runtime") {
+        // Verify constexpr implementation has same accuracy as std::pow
+        constexpr float constexprGain = dbToGain(-20.0f);
+        float stdGain = std::pow(10.0f, -20.0f / 20.0f);
+
+        float dbOfConstexpr = 20.0f * std::log10(constexprGain);
+        float dbOfStd = 20.0f * std::log10(stdGain);
+        float dbError = std::abs(dbOfConstexpr - dbOfStd);
+
+        INFO("constexpr gain: " << constexprGain);
+        INFO("std::pow gain: " << stdGain);
+        INFO("dB error: " << dbError);
+
+        CHECK(dbError < 0.0001f);
+    }
+}

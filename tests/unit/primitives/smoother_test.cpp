@@ -569,6 +569,31 @@ TEST_CASE("LinearRamp overshoot prevention", "[smoother][linearramp][US4]") {
     REQUIRE(ramp.getCurrentValue() == 1.0f);
 }
 
+TEST_CASE("LinearRamp timing accuracy (SC-001)", "[smoother][linearramp][SC-001]") {
+    // SC-001: All smoother types reach 99% within specified time (±5%)
+    LinearRamp ramp;
+    const float rampTimeMs = 10.0f;
+    const float sampleRate = 44100.0f;
+    ramp.configure(rampTimeMs, sampleRate);
+
+    ramp.setTarget(1.0f);
+
+    // LinearRamp should reach 100% (not 99%) exactly at rampTimeMs
+    const int expectedSamples = static_cast<int>(rampTimeMs * 0.001f * sampleRate);
+    int actualSamples = 0;
+
+    while (!ramp.isComplete() && actualSamples < expectedSamples * 2) {
+        ramp.process();
+        ++actualSamples;
+    }
+
+    // Should complete within 5% of expected samples
+    const float tolerance = 0.05f;
+    REQUIRE(actualSamples >= static_cast<int>(expectedSamples * (1.0f - tolerance)));
+    REQUIRE(actualSamples <= static_cast<int>(expectedSamples * (1.0f + tolerance)));
+    REQUIRE(ramp.getCurrentValue() == 1.0f);
+}
+
 TEST_CASE("LinearRamp isComplete, snapToTarget, snapTo, reset", "[smoother][linearramp][US4]") {
     LinearRamp ramp;
     ramp.configure(100.0f, 44100.0f);
@@ -751,6 +776,32 @@ TEST_CASE("SlewLimiter instant transition within rate limit", "[smoother][slewli
     REQUIRE(limiter.getCurrentValue() == limiter.getTarget());
 }
 
+TEST_CASE("SlewLimiter timing accuracy (SC-001)", "[smoother][slewlimiter][SC-001]") {
+    // SC-001: All smoother types reach 99% within specified time (±5%)
+    SlewLimiter limiter;
+    const float ratePerMs = 1.0f;  // 1 unit per ms
+    const float sampleRate = 44100.0f;
+    limiter.configure(ratePerMs, sampleRate);
+
+    limiter.setTarget(1.0f);
+
+    // At 1 unit/ms, should take 1ms to go from 0 to 1
+    const float expectedTimeMs = 1.0f;
+    const int expectedSamples = static_cast<int>(expectedTimeMs * 0.001f * sampleRate);
+    int actualSamples = 0;
+
+    while (!limiter.isComplete() && actualSamples < expectedSamples * 2) {
+        limiter.process();
+        ++actualSamples;
+    }
+
+    // Should complete within 5% of expected samples
+    const float tolerance = 0.05f;
+    REQUIRE(actualSamples >= static_cast<int>(expectedSamples * (1.0f - tolerance)));
+    REQUIRE(actualSamples <= static_cast<int>(expectedSamples * (1.0f + tolerance)));
+    REQUIRE(limiter.getCurrentValue() == 1.0f);
+}
+
 TEST_CASE("SlewLimiter isComplete, snapToTarget, snapTo, reset", "[smoother][slewlimiter][US5]") {
     SlewLimiter limiter;
     limiter.configure(1.0f, 44100.0f);
@@ -817,7 +868,7 @@ TEST_CASE("OnePoleSmoother setSampleRate recalculates coefficient", "[smoother][
 
 TEST_CASE("Smoother timing consistency across sample rates", "[smoother][US6]") {
     const float targetTimeMs = 10.0f;  // 10ms to 99%
-    const float tolerance = 0.1f;  // 10% tolerance
+    const float tolerance = 0.05f;  // 5% tolerance (SC-005 requirement)
 
     SECTION("OnePoleSmoother wall-clock timing") {
         OnePoleSmoother low, high;
@@ -868,6 +919,133 @@ TEST_CASE("LinearRamp setSampleRate", "[smoother][linearramp][US6]") {
     }
 }
 
+// =============================================================================
+// SC-008: Comprehensive Sample Rate Coverage Tests
+// =============================================================================
+// Tests must pass at all supported sample rates: 44.1k, 48k, 88.2k, 96k, 176.4k, 192k
+
+TEST_CASE("OnePoleSmoother works at all sample rates", "[smoother][onepole][US6][SC-008]") {
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+    const float smoothTimeMs = 10.0f;
+
+    for (float sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz") {
+            OnePoleSmoother smoother;
+            smoother.configure(smoothTimeMs, sr);
+            smoother.setTarget(1.0f);
+
+            // Calculate samples for 10ms
+            const int samplesFor10ms = static_cast<int>(smoothTimeMs * 0.001f * sr);
+
+            // Process for smoothing time
+            for (int i = 0; i < samplesFor10ms; ++i) {
+                smoother.process();
+            }
+
+            // Should have made significant progress (at least 90% after 10ms = ~2 tau)
+            REQUIRE(smoother.getCurrentValue() > 0.8f);
+
+            // Process to completion (isComplete = within threshold, process snaps to exact)
+            while (!smoother.isComplete()) {
+                smoother.process();
+            }
+            // One more process() to snap to exact target when within threshold
+            smoother.process();
+
+            REQUIRE(smoother.getCurrentValue() == 1.0f);
+        }
+    }
+}
+
+TEST_CASE("LinearRamp works at all sample rates", "[smoother][linearramp][US6][SC-008]") {
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+    const float rampTimeMs = 10.0f;
+
+    for (float sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz") {
+            LinearRamp ramp;
+            ramp.configure(rampTimeMs, sr);
+            ramp.setTarget(1.0f);
+
+            // Expected samples
+            const int expectedSamples = static_cast<int>(rampTimeMs * 0.001f * sr);
+            int actualSamples = 0;
+
+            while (!ramp.isComplete() && actualSamples < expectedSamples + 10) {
+                ramp.process();
+                ++actualSamples;
+            }
+
+            // Should complete within ±1 sample of expected
+            REQUIRE(actualSamples >= expectedSamples - 1);
+            REQUIRE(actualSamples <= expectedSamples + 1);
+            REQUIRE(ramp.getCurrentValue() == 1.0f);
+        }
+    }
+}
+
+TEST_CASE("SlewLimiter works at all sample rates", "[smoother][slewlimiter][US6][SC-008]") {
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+    const float ratePerMs = 1.0f;  // 1 unit per ms
+
+    for (float sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz") {
+            SlewLimiter limiter;
+            limiter.configure(ratePerMs, sr);
+            limiter.setTarget(1.0f);
+
+            // At 1 unit/ms, should take ~1ms to go from 0 to 1
+            const int expectedSamples = static_cast<int>(1.0f * 0.001f * sr);
+            int actualSamples = 0;
+
+            while (!limiter.isComplete() && actualSamples < expectedSamples * 2) {
+                limiter.process();
+                ++actualSamples;
+            }
+
+            // Should complete within reasonable time
+            REQUIRE(limiter.isComplete());
+            REQUIRE(limiter.getCurrentValue() == 1.0f);
+        }
+    }
+}
+
+TEST_CASE("Timing consistency across all sample rates (SC-005/SC-008)", "[smoother][US6][SC-005][SC-008]") {
+    // SC-005: Smoothing time accuracy within 5% across all sample rates
+    // SC-008: Tests pass at all sample rates
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+    const float smoothTimeMs = 10.0f;
+    const float tolerance = 0.05f;  // 5% tolerance per SC-005
+
+    // Use 44100 as reference
+    OnePoleSmoother reference;
+    reference.configure(smoothTimeMs, 44100.0f);
+    reference.setTarget(1.0f);
+
+    const int refSamples = static_cast<int>(smoothTimeMs * 0.001f * 44100.0f);
+    for (int i = 0; i < refSamples; ++i) {
+        reference.process();
+    }
+    const float referenceValue = reference.getCurrentValue();
+
+    for (float sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz matches reference timing") {
+            OnePoleSmoother smoother;
+            smoother.configure(smoothTimeMs, sr);
+            smoother.setTarget(1.0f);
+
+            // Process for equivalent wall-clock time
+            const int samples = static_cast<int>(smoothTimeMs * 0.001f * sr);
+            for (int i = 0; i < samples; ++i) {
+                smoother.process();
+            }
+
+            // Should match reference value within tolerance
+            REQUIRE(smoother.getCurrentValue() == Approx(referenceValue).margin(tolerance));
+        }
+    }
+}
+
 TEST_CASE("SlewLimiter setSampleRate", "[smoother][slewlimiter][US6]") {
     SlewLimiter limiter;
     limiter.configure(1.0f, 44100.0f);
@@ -884,7 +1062,8 @@ TEST_CASE("SlewLimiter setSampleRate", "[smoother][slewlimiter][US6]") {
 // Phase 9: User Story 7 - Block Processing Tests (T101-T106)
 // =============================================================================
 
-TEST_CASE("OnePoleSmoother processBlock matches sequential", "[smoother][onepole][US7]") {
+TEST_CASE("OnePoleSmoother processBlock matches sequential", "[smoother][onepole][US7][SC-004]") {
+    // SC-004: Block processing produces bit-identical output vs sample-by-sample
     OnePoleSmoother seqSmoother, blockSmoother;
     seqSmoother.configure(10.0f, 44100.0f);
     blockSmoother.configure(10.0f, 44100.0f);
@@ -902,13 +1081,14 @@ TEST_CASE("OnePoleSmoother processBlock matches sequential", "[smoother][onepole
     // Block processing
     blockSmoother.processBlock(blockOutput.data(), blockOutput.size());
 
-    // Should match
+    // SC-004: Must be bit-identical, not approximate
     for (size_t i = 0; i < seqOutput.size(); ++i) {
-        REQUIRE(blockOutput[i] == Approx(seqOutput[i]));
+        REQUIRE(blockOutput[i] == seqOutput[i]);
     }
 }
 
-TEST_CASE("LinearRamp processBlock matches sequential", "[smoother][linearramp][US7]") {
+TEST_CASE("LinearRamp processBlock matches sequential", "[smoother][linearramp][US7][SC-004]") {
+    // SC-004: Block processing produces bit-identical output vs sample-by-sample
     LinearRamp seqRamp, blockRamp;
     seqRamp.configure(50.0f, 44100.0f);
     blockRamp.configure(50.0f, 44100.0f);
@@ -924,12 +1104,14 @@ TEST_CASE("LinearRamp processBlock matches sequential", "[smoother][linearramp][
 
     blockRamp.processBlock(blockOutput.data(), blockOutput.size());
 
+    // SC-004: Must be bit-identical, not approximate
     for (size_t i = 0; i < seqOutput.size(); ++i) {
-        REQUIRE(blockOutput[i] == Approx(seqOutput[i]));
+        REQUIRE(blockOutput[i] == seqOutput[i]);
     }
 }
 
-TEST_CASE("SlewLimiter processBlock matches sequential", "[smoother][slewlimiter][US7]") {
+TEST_CASE("SlewLimiter processBlock matches sequential", "[smoother][slewlimiter][US7][SC-004]") {
+    // SC-004: Block processing produces bit-identical output vs sample-by-sample
     SlewLimiter seqLimiter, blockLimiter;
     seqLimiter.configure(0.5f, 44100.0f);
     blockLimiter.configure(0.5f, 44100.0f);
@@ -945,8 +1127,9 @@ TEST_CASE("SlewLimiter processBlock matches sequential", "[smoother][slewlimiter
 
     blockLimiter.processBlock(blockOutput.data(), blockOutput.size());
 
+    // SC-004: Must be bit-identical, not approximate
     for (size_t i = 0; i < seqOutput.size(); ++i) {
-        REQUIRE(blockOutput[i] == Approx(seqOutput[i]));
+        REQUIRE(blockOutput[i] == seqOutput[i]);
     }
 }
 

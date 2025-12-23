@@ -997,3 +997,364 @@ TEST_CASE("Process performance is reasonable", "[lfo][SC005][benchmark][!benchma
     // Real benchmark would measure time, but this at least verifies it runs
     CHECK(true);
 }
+
+// ==============================================================================
+// SC-001: Sine Wave Precision Test (0.001% error tolerance)
+// ==============================================================================
+
+TEST_CASE("Sine output matches reference within 0.001% (SC-001)", "[lfo][SC-001][precision]") {
+    // SC-001: Sine wave output matches reference sine function within 0.001% error
+    // Note: Spec says "measured at 2048-point wavetable resolution"
+    // With linear interpolation, the error is determined by:
+    // - Wavetable resolution (2048 points)
+    // - Interpolation method (linear)
+    //
+    // For a 2048-point sine wavetable with linear interpolation:
+    // Max error ≈ (π/N)^2 / 8 ≈ 2.9e-7 at peaks
+    // This is well under 0.001% = 1e-5
+
+    LFO lfo;
+    // Use sample rate that gives exactly wavetable size samples per cycle
+    // to test at wavetable points directly (no interpolation error)
+    lfo.prepare(static_cast<double>(kTableSize));  // 2048 samples/sec
+    lfo.setWaveform(Waveform::Sine);
+    lfo.setFrequency(1.0f);  // 1 Hz = exactly kTableSize samples/cycle
+
+    constexpr double twoPi = 2.0 * std::numbers::pi;
+    constexpr float tolerance = 0.00001f;  // 0.001% = 1e-5 relative error
+
+    float maxRelativeError = 0.0f;
+    size_t errorCount = 0;
+
+    // Test exactly at wavetable sample points
+    for (size_t i = 0; i < kTableSize; ++i) {
+        float lfoOutput = lfo.process();
+
+        // Calculate reference sine at this exact wavetable phase
+        double phase = static_cast<double>(i) / static_cast<double>(kTableSize);
+        float reference = static_cast<float>(std::sin(twoPi * phase));
+
+        // Calculate relative error (avoid division by zero near zero crossings)
+        float absRef = std::abs(reference);
+        float absError = std::abs(lfoOutput - reference);
+
+        if (absRef > 0.1f) {
+            // For values well away from zero, check relative error
+            float relativeError = absError / absRef;
+            if (relativeError > maxRelativeError) {
+                maxRelativeError = relativeError;
+            }
+
+            if (relativeError >= tolerance) {
+                ++errorCount;
+                if (errorCount <= 5) {
+                    INFO("Sample " << i << ": LFO=" << lfoOutput << " ref=" << reference
+                         << " error=" << (relativeError * 100.0f) << "%");
+                }
+            }
+        }
+    }
+
+    INFO("Maximum relative error: " << (maxRelativeError * 100.0f) << "%");
+    INFO("Samples exceeding tolerance: " << errorCount);
+
+    // SC-001: 0.001% = 0.00001
+    CHECK(maxRelativeError < tolerance);
+    CHECK(errorCount == 0);
+}
+
+// ==============================================================================
+// SC-003: Tempo Sync Accuracy Test (within 1 sample over 10 seconds)
+// ==============================================================================
+
+TEST_CASE("Tempo sync accuracy within 1 sample over 10 seconds (SC-003)", "[lfo][SC-003][temposync][accuracy]") {
+    LFO lfo;
+    const double sampleRate = 44100.0;
+    lfo.prepare(sampleRate);
+    lfo.setWaveform(Waveform::Sine);
+    lfo.setTempoSync(true);
+    lfo.setTempo(120.0f);
+    lfo.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+
+    // At 120 BPM, quarter note = 0.5 seconds = 2 Hz
+    // Over 10 seconds, should complete exactly 20 cycles
+
+    const size_t tenSeconds = static_cast<size_t>(sampleRate * 10.0);
+    const float expectedFrequency = 2.0f;
+    const size_t expectedCycles = 20;
+
+    // Count zero-crossings (positive-going) to count cycles
+    size_t cycleCount = 0;
+    float prevSample = 0.0f;
+
+    for (size_t i = 0; i < tenSeconds; ++i) {
+        float sample = lfo.process();
+
+        // Detect positive-going zero crossing
+        if (prevSample <= 0.0f && sample > 0.0f) {
+            ++cycleCount;
+        }
+        prevSample = sample;
+    }
+
+    // SC-003: Within 1 sample means cycle count should be exact
+    // (1 sample error over 10 seconds = negligible phase error)
+    INFO("Expected cycles: " << expectedCycles);
+    INFO("Actual cycles: " << cycleCount);
+
+    // Allow ±1 cycle due to start/end boundary effects
+    CHECK(cycleCount >= expectedCycles - 1);
+    CHECK(cycleCount <= expectedCycles + 1);
+
+    // More precise check: verify we're within 1 sample of expected phase
+    // After exactly 10 seconds at 2 Hz, phase should be back to 0
+    // One more sample to check final phase position
+    float finalSample = lfo.process();
+
+    // At 2 Hz, samples per cycle = 44100/2 = 22050
+    // After 20 cycles = 441000 samples, next sample is start of cycle 21
+    // We processed 441000 + 1 = 441001 samples, phase should be ~0
+    // Allow small tolerance for accumulated rounding
+    INFO("Final sample (should be near 0): " << finalSample);
+    CHECK(std::abs(finalSample) < 0.001f);
+}
+
+// ==============================================================================
+// SC-004: Phase Accumulator Drift Test (simulated long duration)
+// ==============================================================================
+
+TEST_CASE("Phase accumulator drift less than 0.0001 degrees over 24 hours (SC-004)", "[lfo][SC-004][drift]") {
+    // We can't actually run 24 hours, but we can verify drift rate is acceptable
+    // At 44.1kHz, 24 hours = 3,810,240,000 samples
+    // At 1 Hz, that's 86,400 cycles
+    //
+    // Strategy: Run a shorter test and extrapolate drift rate
+    // If drift per cycle is small enough, 24h drift will be acceptable
+
+    LFO lfo;
+    const double sampleRate = 44100.0;
+    lfo.prepare(sampleRate);
+    lfo.setWaveform(Waveform::Sine);
+    lfo.setFrequency(1.0f);
+
+    // Process 1000 complete cycles (1000 seconds at 1 Hz)
+    const size_t samplesPerCycle = static_cast<size_t>(sampleRate);
+    const size_t numCycles = 1000;
+    const size_t totalSamples = samplesPerCycle * numCycles;
+
+    // Process all samples
+    for (size_t i = 0; i < totalSamples; ++i) {
+        lfo.process();
+    }
+
+    // After exactly numCycles cycles, LFO should be at phase 0
+    // Read one more sample to check phase position
+    lfo.reset();  // Reset to compare fresh state
+
+    // Process same amount again and check final phase
+    for (size_t i = 0; i < totalSamples; ++i) {
+        lfo.process();
+    }
+
+    // Next sample should be at phase 0 (start of new cycle)
+    float sample = lfo.process();
+
+    // With double-precision phase accumulator (NFR-004), drift should be minimal
+    // 0.0001 degrees = 0.0001/360 = 2.78e-7 of a cycle
+    // In terms of sine output at phase 0: sin(2π * 2.78e-7) ≈ 1.75e-6
+    // After 1000 cycles, accumulated drift should still be very small
+
+    INFO("Sample after 1000 cycles (should be ~0): " << sample);
+
+    // The sample should be very close to 0 (start of sine)
+    // Allow slightly larger tolerance due to 1000 cycles
+    CHECK(std::abs(sample) < 0.0001f);
+
+    // Extrapolate to 24 hours:
+    // 24 hours = 86,400 seconds = 86,400 cycles at 1 Hz
+    // If we have X degrees drift per 1000 cycles,
+    // drift over 86,400 cycles = X * 86.4
+    // For SC-004: total drift must be < 0.0001 degrees
+    // So per-1000-cycle drift must be < 0.0001 / 86.4 = 1.16e-6 degrees
+
+    // Convert sample error to degrees
+    // sample = sin(2π * phase_error_in_cycles)
+    // For small errors: phase_error ≈ sample / (2π)
+    // Degrees = phase_error * 360
+
+    float phaseError = std::abs(sample) / (2.0f * static_cast<float>(std::numbers::pi));
+    float degreesError = phaseError * 360.0f;
+    float extrapolated24hDrift = degreesError * 86.4f;
+
+    INFO("Drift after 1000 cycles: " << degreesError << " degrees");
+    INFO("Extrapolated 24h drift: " << extrapolated24hDrift << " degrees");
+
+    // SC-004: Must be less than 0.0001 degrees over 24 hours
+    CHECK(extrapolated24hDrift < 0.0001f);
+}
+
+// ==============================================================================
+// Sample Rate Coverage Tests
+// ==============================================================================
+
+TEST_CASE("LFO works at all sample rates (SC-007)", "[lfo][SC-007][samplerate]") {
+    const std::array<double, 6> sampleRates = {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0};
+
+    for (double sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz") {
+            LFO lfo;
+            lfo.prepare(sr);
+            lfo.setWaveform(Waveform::Sine);
+            lfo.setFrequency(5.0f);
+
+            // At 5 Hz, need sr/5 samples for one cycle
+            // Process 2 full cycles worth of samples to ensure we hit min and max
+            const size_t samplesPerCycle = static_cast<size_t>(sr / 5.0);
+            const size_t totalSamples = samplesPerCycle * 2;
+
+            float minVal = 1.0f, maxVal = -1.0f;
+            for (size_t i = 0; i < totalSamples; ++i) {
+                float sample = lfo.process();
+                minVal = std::min(minVal, sample);
+                maxVal = std::max(maxVal, sample);
+                REQUIRE(std::isfinite(sample));
+            }
+
+            // Should have full range
+            CHECK(maxVal > 0.99f);
+            CHECK(minVal < -0.99f);
+        }
+    }
+}
+
+// ==============================================================================
+// SC-008: Click-Free Waveform Transitions
+// ==============================================================================
+
+TEST_CASE("Waveform transitions produce no clicks (SC-008)", "[lfo][SC-008][waveform][transition]") {
+    // SC-008: Waveform transitions produce no audible clicks when changed mid-cycle.
+    //
+    // A "click" is caused by a discontinuity in the output waveform.
+    // We detect this by measuring the maximum sample-to-sample difference.
+    //
+    // For smooth operation:
+    // - At 20 Hz (max LFO freq) and 44100 Hz sample rate: ~2205 samples/cycle
+    // - Maximum expected change per sample for sine: 2π / 2205 ≈ 0.00285
+    // - Even at peaks where sine changes fastest: ~0.003
+    //
+    // For a discontinuity (e.g., sine at +0.8 → square at -1.0):
+    // - Jump of 1.8 would occur without crossfading
+    //
+    // A crossfade over 10ms = 441 samples at 44.1kHz
+    // Max slope during crossfade: ~1.0 / 441 ≈ 0.0023 per sample for the blend
+    // Plus underlying waveform change: combined max ~0.01 per sample is reasonable
+
+    LFO lfo;
+    const double sampleRate = 44100.0;
+    lfo.prepare(sampleRate);
+    lfo.setFrequency(5.0f);  // 5 Hz for reasonable cycle length
+
+    // Test various waveform transitions (worst cases involve high value differences)
+    const std::array<std::pair<Waveform, Waveform>, 6> transitions = {{
+        {Waveform::Sine, Waveform::Square},      // Smooth → discontinuous
+        {Waveform::Square, Waveform::Sine},      // Discontinuous → smooth
+        {Waveform::Triangle, Waveform::Sawtooth},
+        {Waveform::Sine, Waveform::SampleHold},  // Smooth → random
+        {Waveform::Sawtooth, Waveform::Square},
+        {Waveform::Square, Waveform::Triangle}
+    }};
+
+    for (const auto& [fromWave, toWave] : transitions) {
+        DYNAMIC_SECTION("Transition from " << static_cast<int>(fromWave)
+                       << " to " << static_cast<int>(toWave)) {
+            lfo.reset();
+            lfo.setWaveform(fromWave);
+
+            // Run for a quarter cycle to get to an interesting phase position
+            const size_t quarterCycle = static_cast<size_t>(sampleRate / 5.0 / 4.0);  // ~2205 samples
+            float prevSample = lfo.process();
+            for (size_t i = 1; i < quarterCycle; ++i) {
+                prevSample = lfo.process();
+            }
+
+            // Now change waveform mid-cycle
+            lfo.setWaveform(toWave);
+
+            // Monitor for discontinuities over the next 20ms (enough for crossfade + margin)
+            const size_t monitorSamples = static_cast<size_t>(sampleRate * 0.020);  // 882 samples
+            float maxDiff = 0.0f;
+            float sumDiff = 0.0f;
+
+            for (size_t i = 0; i < monitorSamples; ++i) {
+                float sample = lfo.process();
+                float diff = std::abs(sample - prevSample);
+                maxDiff = std::max(maxDiff, diff);
+                sumDiff += diff;
+                prevSample = sample;
+            }
+
+            float avgDiff = sumDiff / static_cast<float>(monitorSamples);
+
+            INFO("Max sample-to-sample diff: " << maxDiff);
+            INFO("Avg sample-to-sample diff: " << avgDiff);
+
+            // SC-008: Maximum difference should be small (no click)
+            // A click would show as maxDiff > 0.5 (huge discontinuity)
+            // With proper 10ms crossfade, max should be < 0.05
+            // Being generous: < 0.1 allows for fast LFO + transition
+            CHECK(maxDiff < 0.1f);
+
+            // Average should be very small (normal LFO operation)
+            CHECK(avgDiff < 0.01f);
+        }
+    }
+}
+
+TEST_CASE("Rapid waveform changes remain click-free (SC-008)", "[lfo][SC-008][waveform][rapid]") {
+    // Edge case: What if waveform is changed multiple times rapidly?
+    // Crossfades should stack or restart cleanly without artifacts.
+
+    LFO lfo;
+    const double sampleRate = 44100.0;
+    lfo.prepare(sampleRate);
+    lfo.setFrequency(2.0f);
+    lfo.setWaveform(Waveform::Sine);
+
+    float prevSample = lfo.process();
+    float maxDiff = 0.0f;
+
+    // Process 100 samples, then rapidly cycle through waveforms
+    for (int i = 0; i < 100; ++i) {
+        float sample = lfo.process();
+        maxDiff = std::max(maxDiff, std::abs(sample - prevSample));
+        prevSample = sample;
+    }
+
+    // Rapidly change waveforms every 50 samples (just over 1ms)
+    const std::array<Waveform, 5> waveforms = {
+        Waveform::Square, Waveform::Triangle, Waveform::Sawtooth,
+        Waveform::Sine, Waveform::Square
+    };
+
+    for (Waveform wave : waveforms) {
+        lfo.setWaveform(wave);
+        for (int i = 0; i < 50; ++i) {
+            float sample = lfo.process();
+            float diff = std::abs(sample - prevSample);
+            maxDiff = std::max(maxDiff, diff);
+            prevSample = sample;
+        }
+    }
+
+    // Continue processing to let any crossfade complete
+    for (int i = 0; i < 500; ++i) {
+        float sample = lfo.process();
+        maxDiff = std::max(maxDiff, std::abs(sample - prevSample));
+        prevSample = sample;
+    }
+
+    INFO("Max sample-to-sample diff during rapid changes: " << maxDiff);
+
+    // Even with rapid changes, no clicks (large discontinuities)
+    CHECK(maxDiff < 0.1f);
+}

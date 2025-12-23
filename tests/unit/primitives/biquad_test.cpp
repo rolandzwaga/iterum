@@ -1165,5 +1165,359 @@ TEST_CASE("Constexpr works for all filter types", "[biquad][US6][constexpr]") {
 }
 
 // ==============================================================================
+// SC-001: Slope Measurement Tests (12 dB/octave)
+// ==============================================================================
+
+// Helper: Measure gain at a specific frequency
+float measureGainAtFrequency(Biquad& filter, float testFreq, float sampleRate) {
+    filter.reset();
+
+    constexpr size_t numSamples = 8192;
+    const float omega = 2.0f * kPi * testFreq / sampleRate;
+
+    // Let filter settle
+    for (size_t i = 0; i < 2000; ++i) {
+        filter.process(std::sin(omega * static_cast<float>(i)));
+    }
+    filter.reset();
+
+    // Process and measure amplitude
+    float maxOutput = 0.0f;
+    for (size_t i = 0; i < numSamples; ++i) {
+        float input = std::sin(omega * static_cast<float>(i));
+        float output = filter.process(input);
+        if (i >= numSamples * 3 / 4) {
+            maxOutput = std::max(maxOutput, std::abs(output));
+        }
+    }
+
+    return maxOutput;
+}
+
+TEST_CASE("Lowpass slope is 12 dB/octave (SC-001)", "[biquad][US1][SC-001][slope]") {
+    Biquad filter;
+    // Use low cutoff to stay far from Nyquist where bilinear warping causes deviation
+    float cutoff = 200.0f;
+    filter.configure(FilterType::Lowpass, cutoff, butterworthQ(), 0.0f, kTestSampleRate);
+
+    // Measure in stopband: 1-2 octaves above cutoff
+    // At cutoff 200Hz: 1 oct = 400Hz, 2 oct = 800Hz (well below Nyquist)
+    float gainAt1Oct = measureGainAtFrequency(filter, cutoff * 2.0f, kTestSampleRate);
+    float gainAt2Oct = measureGainAtFrequency(filter, cutoff * 4.0f, kTestSampleRate);
+
+    // Convert to dB
+    float dbAt1Oct = 20.0f * std::log10(gainAt1Oct);
+    float dbAt2Oct = 20.0f * std::log10(gainAt2Oct);
+
+    // Slope between 1 and 2 octaves above cutoff: should be ~12 dB/oct
+    float slope = dbAt1Oct - dbAt2Oct;
+
+    INFO("Gain at 1 octave above cutoff (400Hz): " << dbAt1Oct << " dB");
+    INFO("Gain at 2 octaves above cutoff (800Hz): " << dbAt2Oct << " dB");
+    INFO("Slope (1 oct to 2 oct): " << slope << " dB/oct");
+
+    // SC-001: Within 0.5 dB of 12 dB/octave
+    CHECK(slope == Approx(12.0f).margin(0.5f));
+}
+
+TEST_CASE("Highpass slope is 12 dB/octave (SC-001)", "[biquad][US1][SC-001][slope]") {
+    Biquad filter;
+    float cutoff = 4000.0f;  // Higher cutoff to allow room for measurement below
+    filter.configure(FilterType::Highpass, cutoff, butterworthQ(), 0.0f, kTestSampleRate);
+
+    // Measure far into stopband where slope has reached asymptotic value
+    float gainAt2Oct = measureGainAtFrequency(filter, cutoff / 4.0f, kTestSampleRate);   // 1000 Hz
+    float gainAt3Oct = measureGainAtFrequency(filter, cutoff / 8.0f, kTestSampleRate);   // 500 Hz
+
+    // Convert to dB
+    float dbAt2Oct = 20.0f * std::log10(gainAt2Oct);
+    float dbAt3Oct = 20.0f * std::log10(gainAt3Oct);
+
+    // Slope: dbAt2Oct - dbAt3Oct should be ~12 dB (signal gets louder approaching cutoff)
+    float slope = dbAt2Oct - dbAt3Oct;
+
+    INFO("Gain at 2 octaves below cutoff (1kHz): " << dbAt2Oct << " dB");
+    INFO("Gain at 3 octaves below cutoff (500Hz): " << dbAt3Oct << " dB");
+    INFO("Slope (2 oct to 3 oct): " << slope << " dB/oct");
+
+    // SC-001: Within 0.5 dB of 12 dB/octave
+    CHECK(slope == Approx(12.0f).margin(0.5f));
+}
+
+// ==============================================================================
+// SC-002: Cascade Slope Measurement Tests (24/48 dB/octave)
+// ==============================================================================
+
+// Helper: Measure cascade gain
+template<size_t N>
+float measureCascadeGain(BiquadCascade<N>& cascade, float testFreq, float sampleRate) {
+    cascade.reset();
+
+    constexpr size_t numSamples = 8192;
+    const float omega = 2.0f * kPi * testFreq / sampleRate;
+
+    // Let filter settle
+    for (size_t i = 0; i < 2000; ++i) {
+        cascade.process(std::sin(omega * static_cast<float>(i)));
+    }
+    cascade.reset();
+
+    float maxOutput = 0.0f;
+    for (size_t i = 0; i < numSamples; ++i) {
+        float input = std::sin(omega * static_cast<float>(i));
+        float output = cascade.process(input);
+        if (i >= numSamples * 3 / 4) {
+            maxOutput = std::max(maxOutput, std::abs(output));
+        }
+    }
+
+    return maxOutput;
+}
+
+TEST_CASE("24 dB/oct cascade slope (SC-002)", "[biquad][US3][SC-002][slope]") {
+    Biquad24dB cascade;
+    // Use low cutoff to stay far from Nyquist
+    float cutoff = 200.0f;
+    cascade.setButterworth(FilterType::Lowpass, cutoff, kTestSampleRate);
+
+    // Measure at 1-2 octaves above cutoff
+    float gainAt1Oct = measureCascadeGain(cascade, cutoff * 2.0f, kTestSampleRate);
+    float gainAt2Oct = measureCascadeGain(cascade, cutoff * 4.0f, kTestSampleRate);
+
+    float dbAt1Oct = 20.0f * std::log10(gainAt1Oct);
+    float dbAt2Oct = 20.0f * std::log10(gainAt2Oct);
+
+    float slope = dbAt1Oct - dbAt2Oct;
+
+    INFO("Gain at 1 octave (400Hz): " << dbAt1Oct << " dB");
+    INFO("Gain at 2 octaves (800Hz): " << dbAt2Oct << " dB");
+    INFO("Slope (1 oct to 2 oct): " << slope << " dB/oct");
+
+    // SC-002: Within 1 dB of 24 dB/octave
+    CHECK(slope == Approx(24.0f).margin(1.0f));
+}
+
+TEST_CASE("48 dB/oct cascade slope (SC-002)", "[biquad][US3][SC-002][slope]") {
+    Biquad48dB cascade;
+    // Use low cutoff to stay far from Nyquist
+    float cutoff = 200.0f;
+    cascade.setButterworth(FilterType::Lowpass, cutoff, kTestSampleRate);
+
+    // Measure at 1-2 octaves above cutoff
+    float gainAt1Oct = measureCascadeGain(cascade, cutoff * 2.0f, kTestSampleRate);
+    float gainAt2Oct = measureCascadeGain(cascade, cutoff * 4.0f, kTestSampleRate);
+
+    float dbAt1Oct = 20.0f * std::log10(gainAt1Oct);
+    float dbAt2Oct = 20.0f * std::log10(gainAt2Oct);
+
+    float slope = dbAt1Oct - dbAt2Oct;
+
+    INFO("Gain at 1 octave (400Hz): " << dbAt1Oct << " dB");
+    INFO("Gain at 2 octaves (800Hz): " << dbAt2Oct << " dB");
+    INFO("Slope (1 oct to 2 oct): " << slope << " dB/oct");
+
+    // SC-002: Within 1 dB of 48 dB/octave
+    CHECK(slope == Approx(48.0f).margin(1.0f));
+}
+
+// ==============================================================================
+// SC-006: Frequency Response for All Filter Types (0.1 dB tolerance)
+// ==============================================================================
+
+TEST_CASE("Bandpass frequency response at center (SC-006)", "[biquad][US2][SC-006][response]") {
+    Biquad filter;
+    float center = 1000.0f;
+    float Q = 2.0f;
+    filter.configure(FilterType::Bandpass, center, Q, 0.0f, kTestSampleRate);
+
+    // At center frequency, bandpass should have peak gain
+    float gainAtCenter = measureGainAtFrequency(filter, center, kTestSampleRate);
+
+    // Bandpass peak gain depends on Q and normalization
+    // The RBJ cookbook bandpass has 0dB peak (constant 0dB peak gain)
+    float dbAtCenter = 20.0f * std::log10(gainAtCenter);
+    INFO("Bandpass gain at center: " << dbAtCenter << " dB");
+
+    // Within 0.1dB of 0dB at center
+    CHECK(dbAtCenter == Approx(0.0f).margin(0.1f));
+}
+
+TEST_CASE("Notch frequency response (SC-006)", "[biquad][US2][SC-006][response]") {
+    Biquad filter;
+    float center = 1000.0f;
+    filter.configure(FilterType::Notch, center, 10.0f, 0.0f, kTestSampleRate);
+
+    // At passband (well away from notch), should be unity
+    float gainAt100Hz = measureGainAtFrequency(filter, 100.0f, kTestSampleRate);
+    float gainAt5kHz = measureGainAtFrequency(filter, 5000.0f, kTestSampleRate);
+
+    float dbAt100 = 20.0f * std::log10(gainAt100Hz);
+    float dbAt5k = 20.0f * std::log10(gainAt5kHz);
+
+    INFO("Notch passband at 100Hz: " << dbAt100 << " dB");
+    INFO("Notch passband at 5kHz: " << dbAt5k << " dB");
+
+    // Passband should be within 0.1dB of unity
+    CHECK(dbAt100 == Approx(0.0f).margin(0.1f));
+    CHECK(dbAt5k == Approx(0.0f).margin(0.1f));
+}
+
+TEST_CASE("Allpass frequency response is flat (SC-006)", "[biquad][US2][SC-006][response]") {
+    Biquad filter;
+    filter.configure(FilterType::Allpass, 1000.0f, butterworthQ(), 0.0f, kTestSampleRate);
+
+    // Test at multiple frequencies - all should be unity
+    std::array<float, 5> testFreqs = {100.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f};
+
+    for (float freq : testFreqs) {
+        float gain = measureGainAtFrequency(filter, freq, kTestSampleRate);
+        float dB = 20.0f * std::log10(gain);
+
+        INFO("Allpass at " << freq << " Hz: " << dB << " dB");
+        CHECK(dB == Approx(0.0f).margin(0.1f));
+    }
+}
+
+TEST_CASE("LowShelf frequency response (SC-006)", "[biquad][US2][SC-006][response]") {
+    float shelfFreq = 500.0f;
+    float gainDb = 6.0f;
+
+    Biquad filter;
+    filter.configure(FilterType::LowShelf, shelfFreq, butterworthQ(), gainDb, kTestSampleRate);
+
+    // Well below shelf: should be boosted by gainDb
+    float gainAt100 = measureGainAtFrequency(filter, 100.0f, kTestSampleRate);
+    // Well above shelf: should be unity
+    float gainAt5k = measureGainAtFrequency(filter, 5000.0f, kTestSampleRate);
+
+    float dbAt100 = 20.0f * std::log10(gainAt100);
+    float dbAt5k = 20.0f * std::log10(gainAt5k);
+
+    INFO("LowShelf at 100Hz: " << dbAt100 << " dB (expected ~" << gainDb << ")");
+    INFO("LowShelf at 5kHz: " << dbAt5k << " dB (expected ~0)");
+
+    CHECK(dbAt100 == Approx(gainDb).margin(0.5f));  // Allow some transition slope tolerance
+    CHECK(dbAt5k == Approx(0.0f).margin(0.1f));
+}
+
+TEST_CASE("HighShelf frequency response (SC-006)", "[biquad][US2][SC-006][response]") {
+    float shelfFreq = 2000.0f;
+    float gainDb = 6.0f;
+
+    Biquad filter;
+    filter.configure(FilterType::HighShelf, shelfFreq, butterworthQ(), gainDb, kTestSampleRate);
+
+    // Well below shelf: should be unity
+    float gainAt100 = measureGainAtFrequency(filter, 100.0f, kTestSampleRate);
+    // Well above shelf: should be boosted
+    float gainAt10k = measureGainAtFrequency(filter, 10000.0f, kTestSampleRate);
+
+    float dbAt100 = 20.0f * std::log10(gainAt100);
+    float dbAt10k = 20.0f * std::log10(gainAt10k);
+
+    INFO("HighShelf at 100Hz: " << dbAt100 << " dB (expected ~0)");
+    INFO("HighShelf at 10kHz: " << dbAt10k << " dB (expected ~" << gainDb << ")");
+
+    CHECK(dbAt100 == Approx(0.0f).margin(0.1f));
+    CHECK(dbAt10k == Approx(gainDb).margin(0.5f));
+}
+
+TEST_CASE("Peak EQ frequency response (SC-006)", "[biquad][US2][SC-006][response]") {
+    float centerFreq = 1000.0f;
+    float gainDb = 12.0f;
+    float Q = 2.0f;
+
+    Biquad filter;
+    filter.configure(FilterType::Peak, centerFreq, Q, gainDb, kTestSampleRate);
+
+    // At center: should be boosted by gainDb
+    float gainAtCenter = measureGainAtFrequency(filter, centerFreq, kTestSampleRate);
+    // Well away from center: should be unity
+    float gainAt100 = measureGainAtFrequency(filter, 100.0f, kTestSampleRate);
+    float gainAt10k = measureGainAtFrequency(filter, 10000.0f, kTestSampleRate);
+
+    float dbAtCenter = 20.0f * std::log10(gainAtCenter);
+    float dbAt100 = 20.0f * std::log10(gainAt100);
+    float dbAt10k = 20.0f * std::log10(gainAt10k);
+
+    INFO("Peak at center: " << dbAtCenter << " dB (expected ~" << gainDb << ")");
+    INFO("Peak at 100Hz: " << dbAt100 << " dB (expected ~0)");
+    INFO("Peak at 10kHz: " << dbAt10k << " dB (expected ~0)");
+
+    CHECK(dbAtCenter == Approx(gainDb).margin(0.5f));  // Some tolerance for bell shape
+    CHECK(dbAt100 == Approx(0.0f).margin(0.1f));
+    CHECK(dbAt10k == Approx(0.0f).margin(0.1f));
+}
+
+// ==============================================================================
+// SC-007: State Decay Within 1 Second
+// ==============================================================================
+
+TEST_CASE("Filter state decays to zero within 1 second (SC-007)", "[biquad][US5][SC-007][denormal]") {
+    Biquad filter;
+    filter.configure(FilterType::Lowpass, 100.0f, butterworthQ(), 0.0f, kTestSampleRate);
+
+    // Feed an impulse
+    filter.process(1.0f);
+
+    // Feed exactly 1 second of silence (44100 samples at 44.1kHz)
+    constexpr size_t oneSecond = 44100;
+    for (size_t i = 0; i < oneSecond; ++i) {
+        filter.process(0.0f);
+    }
+
+    // State should be zero (not denormal)
+    float z1 = filter.getZ1();
+    float z2 = filter.getZ2();
+
+    INFO("Z1 after 1 second: " << z1);
+    INFO("Z2 after 1 second: " << z2);
+
+    // Should be exactly zero (flushed) or extremely small normal number
+    CHECK(z1 == 0.0f);
+    CHECK(z2 == 0.0f);
+}
+
+// ==============================================================================
+// Sample Rate Coverage Tests
+// ==============================================================================
+
+TEST_CASE("Biquad works at all sample rates", "[biquad][US5][samplerate]") {
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+
+    for (float sr : sampleRates) {
+        DYNAMIC_SECTION("Sample rate " << sr << " Hz") {
+            Biquad filter;
+            filter.configure(FilterType::Lowpass, 1000.0f, butterworthQ(), 0.0f, sr);
+
+            // Should produce stable coefficients
+            REQUIRE(filter.coefficients().isStable());
+
+            // Should process without issues
+            float out1 = filter.process(1.0f);
+            float out2 = filter.process(0.5f);
+
+            REQUIRE(std::isfinite(out1));
+            REQUIRE(std::isfinite(out2));
+        }
+    }
+}
+
+TEST_CASE("All filter types stable at all sample rates", "[biquad][US5][samplerate]") {
+    const std::array<float, 6> sampleRates = {44100.0f, 48000.0f, 88200.0f, 96000.0f, 176400.0f, 192000.0f};
+    const std::array<FilterType, 8> filterTypes = {
+        FilterType::Lowpass, FilterType::Highpass, FilterType::Bandpass, FilterType::Notch,
+        FilterType::Allpass, FilterType::LowShelf, FilterType::HighShelf, FilterType::Peak
+    };
+
+    for (float sr : sampleRates) {
+        for (FilterType type : filterTypes) {
+            auto coeffs = BiquadCoefficients::calculate(type, 1000.0f, butterworthQ(), 6.0f, sr);
+            REQUIRE(coeffs.isStable());
+        }
+    }
+}
+
+// ==============================================================================
 // End of Biquad Tests
 // ==============================================================================

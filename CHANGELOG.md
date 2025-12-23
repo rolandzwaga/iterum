@@ -5,6 +5,110 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2025-12-23
+
+### Added
+
+- **Layer 1 DSP Primitive: Oversampler** (`src/dsp/primitives/oversampler.h`)
+  - Upsampling/downsampling primitive for anti-aliased nonlinear processing
+  - Supports 2x and 4x oversampling factors
+  - Three quality presets:
+    - `Economy` - IIR 8-pole Butterworth, ~48dB stopband, zero latency
+    - `Standard` - FIR 31-tap halfband, ~80dB stopband, 15 samples latency
+    - `High` - FIR 63-tap halfband, ~100dB stopband, 31 samples latency
+  - Two processing modes:
+    - `ZeroLatency` - IIR filters (minimum-phase, no latency)
+    - `LinearPhase` - FIR filters (symmetric, linear phase)
+  - Kaiser-windowed sinc FIR filter design for optimal stopband rejection
+  - Pre-computed halfband coefficients (h[n]=0 for even n)
+  - Polyphase FIR implementation for efficiency
+  - Mono and stereo templates: `Oversampler<Factor, NumChannels>`
+  - `processBlock()` for block-based processing with callback
+  - `reset()` clears filter state without reallocation
+  - Real-time safe: `noexcept`, no allocations in `process()`
+
+- **Type aliases for common configurations**:
+  - `Oversampler2xMono`, `Oversampler2xStereo`
+  - `Oversampler4xMono`, `Oversampler4xStereo`
+
+- **Comprehensive oversampler test suite** (1,068 assertions across 24 test cases)
+  - All 5 user stories covered (US1-US5)
+  - Stopband rejection verification (≥48dB economy, ≥80dB standard, ≥96dB high)
+  - Passband flatness (<0.1dB ripple up to 20kHz)
+  - Latency verification (0 for IIR, 15/31 samples for FIR)
+  - Real-time safety verification (noexcept static_assert)
+  - Multi-channel independence tests
+
+### Changed
+
+- **LFO: Click-free waveform transitions** (SC-008)
+  - Smooth crossfade when changing waveforms during playback
+  - Captures current output value at transition point
+  - Handles mid-crossfade waveform changes correctly
+  - `hasProcessed_` flag distinguishes setup vs runtime changes
+  - Zero-crossing detection for waveforms that start at zero
+
+- **Constitution v1.7.0**: Added Principle XV (Honest Completion)
+  - Mandatory Implementation Verification sections in specs
+  - Explicit compliance status tables for all requirements
+  - Completion checklists with honest assessment guidelines
+  - No softening of assessments or quiet scope reductions
+
+- **Task templates**: Added cross-platform compatibility checks
+  - IEEE 754 verification step after each user story
+  - `-fno-fast-math` requirement for test files using `std::isnan`/`std::isfinite`/`std::isinf`
+  - Floating-point precision guidelines (Approx().margin())
+
+- **Tests CMakeLists.txt**: Extended `-fno-fast-math` to additional test files
+  - `delay_line_test.cpp`, `lfo_test.cpp`, `biquad_test.cpp` added
+  - Ensures IEEE 754 compliance on macOS/Linux (VST3 SDK enables `-ffast-math`)
+
+### Fixed
+
+- **Spec 001-db-conversion**: Added Implementation Verification section, SC-002 accuracy test
+- **Spec 002-delay-line**: Added Implementation Verification section, SC-002/SC-003/SC-007 explicit tests
+- **Spec 003-lfo**: Added Implementation Verification section, SC-008 click-free transitions
+- **Spec 004-biquad-filter**: Added Implementation Verification section
+- **Spec 005-parameter-smoother**: Added Implementation Verification section
+
+### Technical Details
+
+- **Oversampling formulas**:
+  - FIR halfband: `y[n] = Σ h[k] * x[n-k]` for symmetric kernel
+  - Kaiser window: `w[n] = I0(β × sqrt(1 - (n/M)²)) / I0(β)`
+  - β calculation: `β = 0.1102 × (A - 8.7)` where A = stopband dB
+- **LFO crossfade**: Linear interpolation over ~10ms (configurable)
+- **Namespace**: `Iterum::DSP` (Layer 1 DSP primitives)
+- **Constitution compliance**: Principles II, III, IX, X, XII, XV
+
+### Usage
+
+```cpp
+#include "dsp/primitives/oversampler.h"
+
+using namespace Iterum::DSP;
+
+// 2x oversampling for saturation
+Oversampler2xMono oversampler;
+oversampler.prepare(44100.0);
+oversampler.setQuality(OversamplingQuality::Standard);
+
+// In processBlock() - process with callback
+oversampler.processBlock(buffer, numSamples, [](float sample) {
+    return std::tanh(sample * 2.0f);  // Saturation at oversampled rate
+});
+
+// 4x stereo oversampling
+Oversampler4xStereo stereoOS;
+stereoOS.prepare(48000.0);
+stereoOS.setMode(OversamplingMode::LinearPhase);  // Best quality
+
+// Get latency for delay compensation
+size_t latency = stereoOS.getLatency();  // Report to host
+```
+
+---
+
 ## [0.0.5] - 2025-12-23
 
 ### Added

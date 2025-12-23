@@ -35,6 +35,7 @@ inline constexpr float kMinBPM = 1.0f;          // Minimum tempo (BPM)
 inline constexpr float kMaxBPM = 999.0f;        // Maximum tempo (BPM)
 inline constexpr size_t kTableSize = 2048;      // Wavetable size (power of 2)
 inline constexpr size_t kTableMask = kTableSize - 1;  // Bitmask for wrapping
+inline constexpr float kCrossfadeTimeMs = 10.0f;  // Waveform transition time (ms)
 
 // =============================================================================
 // Enumerations
@@ -96,6 +97,7 @@ public:
         sampleRate_ = sampleRate;
         generateWavetables();
         updatePhaseIncrement();
+        updateCrossfadeIncrement();
         reset();
     }
 
@@ -107,6 +109,9 @@ public:
         currentRandom_ = nextRandomValue();
         previousRandom_ = currentRandom_;
         targetRandom_ = nextRandomValue();
+        // Reset crossfade state
+        crossfadeProgress_ = 1.0f;  // Not crossfading
+        hasProcessed_ = false;      // Allow immediate waveform changes after reset
     }
 
     // =========================================================================
@@ -115,6 +120,8 @@ public:
 
     /// @brief Generate one sample of LFO output.
     [[nodiscard]] float process() noexcept {
+        hasProcessed_ = true;  // Mark that processing has started
+
         // Calculate effective phase including offset
         double effectivePhase = phase_ + phaseOffsetNorm_;
         if (effectivePhase >= 1.0) {
@@ -123,27 +130,24 @@ public:
 
         float output = 0.0f;
 
-        switch (waveform_) {
-            case Waveform::Sine:
-            case Waveform::Triangle:
-            case Waveform::Sawtooth:
-            case Waveform::Square:
-                output = readWavetable(static_cast<size_t>(waveform_), effectivePhase);
-                break;
+        // Get current waveform value
+        float newValue = getWaveformValue(waveform_, effectivePhase, false);
 
-            case Waveform::SampleHold:
-                output = currentRandom_;
-                break;
+        // Handle crossfading between waveforms
+        if (crossfadeProgress_ < 1.0f) {
+            // Linear crossfade from captured value to new waveform
+            output = crossfadeFromValue_ + crossfadeProgress_ * (newValue - crossfadeFromValue_);
 
-            case Waveform::SmoothRandom:
-                // Linear interpolation between previous and target
-                output = previousRandom_ +
-                         static_cast<float>(effectivePhase) * (targetRandom_ - previousRandom_);
-                break;
+            // Advance crossfade
+            crossfadeProgress_ += crossfadeIncrement_;
+            if (crossfadeProgress_ >= 1.0f) {
+                crossfadeProgress_ = 1.0f;  // Crossfade complete
+            }
+        } else {
+            output = newValue;
         }
 
         // Advance phase
-        double oldPhase = phase_;
         phase_ += phaseIncrement_;
 
         // Check for phase wrap (cycle complete)
@@ -175,7 +179,32 @@ public:
 
     /// @brief Set the LFO waveform.
     void setWaveform(Waveform waveform) noexcept {
-        waveform_ = waveform;
+        if (waveform != waveform_) {
+            // Only crossfade if audio processing has started
+            // During initial setup, switch immediately
+            if (hasProcessed_) {
+                // Calculate current effective phase
+                double effectivePhase = phase_ + phaseOffsetNorm_;
+                if (effectivePhase >= 1.0) effectivePhase -= 1.0;
+
+                // Capture the current output value to crossfade from
+                // This handles both normal transitions and mid-crossfade transitions
+                if (crossfadeProgress_ < 1.0f) {
+                    // Already crossfading - capture the current blended value
+                    float targetValue = getWaveformValue(waveform_, effectivePhase);
+                    crossfadeFromValue_ = crossfadeFromValue_ +
+                        crossfadeProgress_ * (targetValue - crossfadeFromValue_);
+                } else {
+                    // Not crossfading - capture current waveform value
+                    crossfadeFromValue_ = getWaveformValue(waveform_, effectivePhase);
+                }
+
+                // Start new crossfade
+                previousWaveform_ = waveform_;  // For reference only
+                crossfadeProgress_ = 0.0f;
+            }
+            waveform_ = waveform;
+        }
     }
 
     /// @brief Set the LFO frequency in Hz.
@@ -349,6 +378,29 @@ private:
     }
 
     // =========================================================================
+    // Waveform Value Helper
+    // =========================================================================
+
+    [[nodiscard]] float getWaveformValue(Waveform waveform, double effectivePhase,
+                                          bool /*unused*/ = false) const noexcept {
+        switch (waveform) {
+            case Waveform::Sine:
+            case Waveform::Triangle:
+            case Waveform::Sawtooth:
+            case Waveform::Square:
+                return readWavetable(static_cast<size_t>(waveform), effectivePhase);
+
+            case Waveform::SampleHold:
+                return currentRandom_;
+
+            case Waveform::SmoothRandom:
+                return previousRandom_ +
+                       static_cast<float>(effectivePhase) * (targetRandom_ - previousRandom_);
+        }
+        return 0.0f;  // Should never reach here
+    }
+
+    // =========================================================================
     // Random Number Generation (LCG - Linear Congruential Generator)
     // =========================================================================
 
@@ -402,6 +454,12 @@ private:
         phaseIncrement_ = static_cast<double>(freq) / sampleRate_;
     }
 
+    void updateCrossfadeIncrement() noexcept {
+        // Calculate increment to complete crossfade in kCrossfadeTimeMs
+        float crossfadeSamples = static_cast<float>(sampleRate_) * kCrossfadeTimeMs * 0.001f;
+        crossfadeIncrement_ = 1.0f / crossfadeSamples;
+    }
+
     // =========================================================================
     // State Variables
     // =========================================================================
@@ -439,6 +497,13 @@ private:
 
     // Wavetables (Sine, Triangle, Sawtooth, Square)
     std::array<std::vector<float>, 4> wavetables_;
+
+    // Crossfade state (for smooth waveform transitions)
+    Waveform previousWaveform_ = Waveform::Sine;  // Waveform we were crossfading from (for reference)
+    float crossfadeProgress_ = 1.0f;    // 0.0 = old value, 1.0 = new waveform (complete)
+    float crossfadeIncrement_ = 0.0f;   // Progress per sample
+    float crossfadeFromValue_ = 0.0f;   // Captured output value at start of crossfade
+    bool hasProcessed_ = false;         // True after first process() call; controls crossfade behavior
 };
 
 } // namespace DSP

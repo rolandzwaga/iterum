@@ -35,10 +35,33 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 [ ] Write failing tests for [feature]
 [ ] Implement [feature] to make tests pass
 [ ] Verify all tests pass
+[ ] Cross-platform check: verify -fno-fast-math for IEEE 754 functions
 [ ] Commit completed work
 ```
 
 **DO NOT** skip the context check or commit steps. These appear as checkboxes because they MUST be tracked.
+
+### Cross-Platform Compatibility Check (After Each User Story)
+
+**CRITICAL for VST3 projects**: The VST3 SDK enables `-ffast-math` globally, which breaks IEEE 754 compliance. After implementing tests, verify:
+
+1. **IEEE 754 Function Usage**: If any test file uses `std::isnan()`, `std::isfinite()`, `std::isinf()`, or NaN/infinity detection:
+   - Add the file to the `-fno-fast-math` list in `tests/CMakeLists.txt`
+   - Pattern to add:
+     ```cmake
+     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+         set_source_files_properties(
+             unit/path/to/your_test.cpp  # ADD YOUR FILE HERE
+             PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
+         )
+     endif()
+     ```
+
+2. **Floating-Point Precision**: Use `Approx().margin()` for comparisons, not exact equality
+
+3. **Approval Tests**: Use `std::setprecision(6)` or less (MSVC/Clang differ at 7th-8th digits)
+
+This check prevents CI failures on macOS/Linux that pass locally on Windows.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -127,9 +150,13 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T017 [US1] Verify all tests pass
 - [ ] T018 [US1] Add validation and error handling (if needed)
 
-### 3.4 Commit (MANDATORY)
+### 3.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T019 [US1] **Commit completed User Story 1 work**
+- [ ] T019 [US1] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` → add to `-fno-fast-math` list in tests/CMakeLists.txt
+
+### 3.5 Commit (MANDATORY)
+
+- [ ] T020 [US1] **Commit completed User Story 1 work**
 
 **Checkpoint**: User Story 1 should be fully functional, tested, and committed
 
@@ -149,19 +176,23 @@ Examples of foundational tasks (adjust based on your project):
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T021 [P] [US2] Unit tests for [Entity] in tests/unit/test_[entity].cpp
-- [ ] T022 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].cpp
+- [ ] T022 [P] [US2] Unit tests for [Entity] in tests/unit/test_[entity].cpp
+- [ ] T023 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].cpp
 
 ### 4.3 Implementation for User Story 2
 
-- [ ] T023 [P] [US2] Create [Entity] in src/[layer]/[entity].h
-- [ ] T024 [US2] Implement [Service] in src/[layer]/[service].h
-- [ ] T025 [US2] Verify all tests pass
-- [ ] T026 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T024 [P] [US2] Create [Entity] in src/[layer]/[entity].h
+- [ ] T025 [US2] Implement [Service] in src/[layer]/[service].h
+- [ ] T026 [US2] Verify all tests pass
+- [ ] T027 [US2] Integrate with User Story 1 components (if needed)
 
-### 4.4 Commit (MANDATORY)
+### 4.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T027 [US2] **Commit completed User Story 2 work**
+- [ ] T028 [US2] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` → add to `-fno-fast-math` list in tests/CMakeLists.txt
+
+### 4.5 Commit (MANDATORY)
+
+- [ ] T029 [US2] **Commit completed User Story 2 work**
 
 **Checkpoint**: User Stories 1 AND 2 should both work independently and be committed
 
@@ -175,24 +206,28 @@ Examples of foundational tasks (adjust based on your project):
 
 ### 5.1 Pre-Implementation (MANDATORY)
 
-- [ ] T028 [US3] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [ ] T030 [US3] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 5.2 Tests for User Story 3 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T029 [P] [US3] Unit tests for [Entity] in tests/unit/test_[entity].cpp
-- [ ] T030 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].cpp
+- [ ] T031 [P] [US3] Unit tests for [Entity] in tests/unit/test_[entity].cpp
+- [ ] T032 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].cpp
 
 ### 5.3 Implementation for User Story 3
 
-- [ ] T031 [P] [US3] Create [Entity] in src/[layer]/[entity].h
-- [ ] T032 [US3] Implement [Service] in src/[layer]/[service].h
-- [ ] T033 [US3] Verify all tests pass
+- [ ] T033 [P] [US3] Create [Entity] in src/[layer]/[entity].h
+- [ ] T034 [US3] Implement [Service] in src/[layer]/[service].h
+- [ ] T035 [US3] Verify all tests pass
 
-### 5.4 Commit (MANDATORY)
+### 5.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T034 [US3] **Commit completed User Story 3 work**
+- [ ] T036 [US3] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` → add to `-fno-fast-math` list in tests/CMakeLists.txt
+
+### 5.5 Commit (MANDATORY)
+
+- [ ] T037 [US3] **Commit completed User Story 3 work**
 
 **Checkpoint**: All user stories should now be independently functional and committed
 
@@ -263,6 +298,7 @@ Examples of foundational tasks (adjust based on your project):
 - Services before endpoints
 - Core implementation before integration
 - **Verify tests pass**: After implementation
+- **Cross-platform check**: Verify IEEE 754 functions have `-fno-fast-math` in tests/CMakeLists.txt
 - **Commit**: LAST task - commit completed work
 - Story complete before moving to next priority
 
@@ -329,6 +365,7 @@ With multiple developers:
 - Each user story should be independently completable and testable
 - **MANDATORY**: Check TESTING-GUIDE.md is in context FIRST
 - **MANDATORY**: Write tests that FAIL before implementing (Principle XII)
+- **MANDATORY**: Verify cross-platform IEEE 754 compliance (add test files to `-fno-fast-math` list)
 - **MANDATORY**: Commit work at end of each user story
 - **MANDATORY**: Update ARCHITECTURE.md before spec completion (Principle XIII)
 - Stop at any checkpoint to validate story independently
