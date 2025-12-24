@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include "dsp/core/note_value.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -51,22 +53,7 @@ enum class Waveform : uint8_t {
     SmoothRandom     ///< Interpolated random values
 };
 
-/// @brief Musical note divisions for tempo sync.
-enum class NoteValue : uint8_t {
-    Whole = 0,       ///< 1/1 note (4 beats)
-    Half,            ///< 1/2 note (2 beats)
-    Quarter,         ///< 1/4 note (1 beat) - default
-    Eighth,          ///< 1/8 note (0.5 beats)
-    Sixteenth,       ///< 1/16 note (0.25 beats)
-    ThirtySecond     ///< 1/32 note (0.125 beats)
-};
-
-/// @brief Timing modifiers for note values.
-enum class NoteModifier : uint8_t {
-    None = 0,        ///< Normal duration (default)
-    Dotted,          ///< 1.5x duration
-    Triplet          ///< 2/3x duration
-};
+// NoteValue and NoteModifier enums are now in dsp/core/note_value.h (Layer 0)
 
 // =============================================================================
 // LFO Class
@@ -416,29 +403,8 @@ private:
     // =========================================================================
 
     void updateTempoSyncFrequency() noexcept {
-        // Base beats per note value
-        static constexpr float kBeatsPerNote[] = {
-            4.0f,    // Whole
-            2.0f,    // Half
-            1.0f,    // Quarter
-            0.5f,    // Eighth
-            0.25f,   // Sixteenth
-            0.125f   // ThirtySecond
-        };
-
-        float beatsPerNote = kBeatsPerNote[static_cast<size_t>(noteValue_)];
-
-        // Apply modifier
-        switch (noteModifier_) {
-            case NoteModifier::None:
-                break;
-            case NoteModifier::Dotted:
-                beatsPerNote *= 1.5f;
-                break;
-            case NoteModifier::Triplet:
-                beatsPerNote *= (2.0f / 3.0f);
-                break;
-        }
+        // Use Layer 0 getBeatsForNote() helper function
+        float beatsPerNote = getBeatsForNote(noteValue_, noteModifier_);
 
         // Calculate frequency: BPM / (60 * beatsPerNote)
         // = beatsPerSecond / beatsPerNote

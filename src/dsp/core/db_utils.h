@@ -160,7 +160,7 @@ constexpr float constexprPow10(float x) noexcept {
 /// Platform-independent infinity check using bit manipulation.
 /// @param x Value to check
 /// @return true if x is positive or negative infinity
-[[nodiscard]] inline bool isInf(float x) noexcept {
+[[nodiscard]] constexpr bool isInf(float x) noexcept {
     const auto bits = std::bit_cast<std::uint32_t>(x);
     return (bits & 0x7FFFFFFFu) == 0x7F800000u;
 }

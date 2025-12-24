@@ -69,6 +69,10 @@ add_executable(dsp_tests
     unit/core/math_constants_test.cpp
     unit/core/window_functions_test.cpp
     unit/core/random_test.cpp
+    unit/core/note_value_test.cpp
+    unit/core/block_context_test.cpp
+    unit/core/fast_math_test.cpp
+    unit/core/interpolation_test.cpp
     unit/primitives/delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
@@ -116,6 +120,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/core/db_utils_test.cpp
         unit/core/math_constants_test.cpp
         unit/core/window_functions_test.cpp
+        unit/core/note_value_test.cpp
+        unit/core/block_context_test.cpp
+        unit/core/fast_math_test.cpp
+        unit/core/interpolation_test.cpp
         unit/primitives/smoother_test.cpp
         unit/primitives/oversampler_test.cpp
         unit/primitives/delay_line_test.cpp
@@ -243,3 +251,25 @@ endif()
 #     integration/test_plugin_load.cpp
 # )
 # target_link_libraries(integration_tests PRIVATE Catch2::Catch2WithMain sdk)
+
+# ==============================================================================
+# Performance Benchmarks
+# ==============================================================================
+# Standalone benchmarks for measuring DSP performance (SC-001)
+
+add_executable(benchmark_tanh
+    benchmark_tanh.cpp
+)
+
+target_include_directories(benchmark_tanh
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+# Release optimizations for accurate benchmarking
+target_compile_options(benchmark_tanh PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
+    $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
+)

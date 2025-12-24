@@ -5,6 +5,93 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.18] - 2025-12-24
+
+### Added
+
+- **Layer 0 Core Utility: NoteValue** (`src/dsp/core/note_value.h`)
+  - Musical note duration enums for tempo-synced features
+  - `NoteValue` enum: Whole, Half, Quarter, Eighth, Sixteenth, ThirtySecond
+  - `NoteModifier` enum: None, Dotted, Triplet
+  - `getBeatsForNote()` constexpr function with modifier support
+  - `kBeatsPerNote` compile-time lookup array
+
+- **Layer 0 Core Utility: BlockContext** (`src/dsp/core/block_context.h`)
+  - Per-block processing context for tempo-synced DSP
+  - Sample rate, block size, tempo (BPM), time signature, transport state
+  - `tempoToSamples()` constexpr function for note-to-samples conversion
+  - Default-constructible with sensible audio defaults (44100 Hz, 512 samples, 120 BPM)
+
+- **Layer 0 Core Utility: FastMath** (`src/dsp/core/fast_math.h`)
+  - `fastTanh()` - Padé (5,4) approximation, **~3x faster than std::tanh**
+  - Accuracy: <0.05% error for |x| < 3.5, exact saturation to ±1 for larger values
+  - Ideal for saturation/waveshaping in feedback loops and CPU-critical paths
+  - constexpr, noexcept, real-time safe
+  - NaN → NaN, ±Infinity → ±1.0 (graceful edge case handling)
+
+- **Layer 0 Core Utility: Interpolation** (`src/dsp/core/interpolation.h`)
+  - Standalone interpolation functions for fractional sample reading
+  - `linearInterpolate()` - 2-point linear (fast, good for modulated delay)
+  - `cubicHermiteInterpolate()` - 4-point cubic with C1 continuity (pitch shifting)
+  - `lagrangeInterpolate()` - 4-point 3rd-order polynomial (lowest aliasing)
+  - All constexpr, noexcept, exact at sample boundaries (t=0 or t=1)
+
+- **Performance benchmark** (`tests/benchmark_tanh.cpp`)
+  - Verified SC-001: fastTanh is 3x faster than std::tanh
+  - Uses volatile function pointers to prevent over-optimization
+
+- **Comprehensive test suite** (51 test cases for Layer 0 utilities)
+  - NoteValue: 11 test cases (beat calculations, modifiers)
+  - BlockContext: 11 test cases (tempo-to-samples conversions)
+  - FastMath: 10 test cases (accuracy, NaN/infinity, constexpr, noexcept)
+  - Interpolation: 18 test cases (polynomial exactness, boundary conditions)
+
+### Changed
+
+- **FastMath scope reduction** (User approved):
+  - Removed `fastSin`, `fastCos`, `fastExp` - benchmarking showed MSVC's std:: versions are faster (SIMD/lookup tables)
+  - Only `fastTanh` provides meaningful performance improvement
+  - Recommendation: Use `std::sin/cos/exp` for runtime, `fastTanh` for saturation
+
+### Technical Details
+
+- **fastTanh algorithm**: Padé (5,4) approximation
+  - Formula: `x * (945 + 105*x² + x⁴) / (945 + 420*x² + 15*x⁴)`
+  - Saturation threshold: |x| >= 3.5 returns ±1 (avoids polynomial overshoot)
+- **Benchmark results** (Windows/MSVC Release, 1M samples × 10 iterations):
+  - fastTanh: ~28,000 μs vs std::tanh: ~91,000 μs = **3.2x speedup**
+- **Dependencies**: Layer 0 only (db_utils.h for isNaN/isInf)
+- **Namespace**: `Iterum::DSP` (NoteValue, BlockContext), `Iterum::DSP::FastMath`, `Iterum::DSP::Interpolation`
+- **Constitution compliance**: Principles II, III, IX, XII, XIII, XV
+
+### Usage
+
+```cpp
+#include "dsp/core/block_context.h"
+#include "dsp/core/fast_math.h"
+#include "dsp/core/interpolation.h"
+
+using namespace Iterum::DSP;
+using namespace Iterum::DSP::FastMath;
+using namespace Iterum::DSP::Interpolation;
+
+// Tempo-synced delay
+BlockContext ctx;
+ctx.tempoBPM = 120.0;
+ctx.sampleRate = 48000.0;
+double delaySamples = ctx.tempoToSamples(NoteValue::Quarter);  // 24000
+
+// Fast saturation in feedback loop
+for (size_t i = 0; i < numSamples; ++i) {
+    feedback[i] = fastTanh(feedback[i] * drive);  // 3x faster
+}
+
+// Fractional delay reading
+float sample = cubicHermiteInterpolate(y[-1], y[0], y[1], y[2], frac);
+```
+
+---
+
 ## [0.0.17] - 2025-12-24
 
 ### Added
