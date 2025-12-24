@@ -268,7 +268,155 @@ TEST_CASE("MidSideProcessor reset() snaps smoothers to current targets", "[midsi
 // User Story 2: Stereo Width Control (P2)
 // ==============================================================================
 
-// T018-T022 tests go here
+// T018: width=0% produces mono output (L=R=Mid)
+TEST_CASE("MidSideProcessor width=0% produces mono output", "[midside][US2][width]") {
+    MidSideProcessor ms;
+    ms.prepare(kTestSampleRate, kTestBlockSize);
+    ms.setWidth(0.0f);  // Mono
+    ms.reset();
+
+    // Input: stereo signal with L != R
+    std::array<float, 4> left  = {1.0f, 0.5f, -0.3f, 0.8f};
+    std::array<float, 4> right = {-1.0f, 0.3f, -0.7f, 0.2f};
+    std::array<float, 4> leftOut{}, rightOut{};
+
+    ms.process(left.data(), right.data(), leftOut.data(), rightOut.data(), 4);
+
+    // FR-006: At width=0%, output MUST be mono (L=R=Mid)
+    // SC-002: Width=0% produces |L - R| < 1e-6
+    for (size_t i = 0; i < 4; ++i) {
+        REQUIRE(leftOut[i] == Approx(rightOut[i]).margin(kTolerance));
+
+        // Also verify output is the Mid value: (L + R) / 2
+        float expectedMid = (left[i] + right[i]) * 0.5f;
+        REQUIRE(leftOut[i] == Approx(expectedMid).margin(kTolerance));
+    }
+}
+
+// T019: width=100% produces unity output (equals input)
+TEST_CASE("MidSideProcessor width=100% produces unity output", "[midside][US2][width]") {
+    MidSideProcessor ms;
+    ms.prepare(kTestSampleRate, kTestBlockSize);
+    ms.setWidth(100.0f);  // Unity
+    ms.reset();
+
+    // Input: arbitrary stereo signal
+    std::array<float, 4> left  = {0.7f, -0.2f, 0.5f, -0.9f};
+    std::array<float, 4> right = {0.3f, 0.8f, -0.4f, 0.1f};
+    std::array<float, 4> leftOut{}, rightOut{};
+
+    // Store original for comparison
+    std::array<float, 4> origLeft = left;
+    std::array<float, 4> origRight = right;
+
+    ms.process(left.data(), right.data(), leftOut.data(), rightOut.data(), 4);
+
+    // FR-007: At width=100%, output MUST equal input (unity/bypass behavior)
+    // SC-003: Width=100% produces output within 1e-6 of input
+    for (size_t i = 0; i < 4; ++i) {
+        REQUIRE(leftOut[i] == Approx(origLeft[i]).margin(kTolerance));
+        REQUIRE(rightOut[i] == Approx(origRight[i]).margin(kTolerance));
+    }
+}
+
+// T020: width=200% doubles Side component
+TEST_CASE("MidSideProcessor width=200% doubles Side component", "[midside][US2][width]") {
+    MidSideProcessor ms;
+    ms.prepare(kTestSampleRate, kTestBlockSize);
+    ms.setWidth(200.0f);  // Maximum width
+    ms.reset();
+
+    // Input: pure side content (L=1, R=-1) -> Mid=0, Side=1
+    std::array<float, 4> left  = {1.0f, 1.0f, 1.0f, 1.0f};
+    std::array<float, 4> right = {-1.0f, -1.0f, -1.0f, -1.0f};
+    std::array<float, 4> leftOut{}, rightOut{};
+
+    ms.process(left.data(), right.data(), leftOut.data(), rightOut.data(), 4);
+
+    // FR-008: At width=200%, Side component MUST be doubled
+    // Mid = 0, Side = 1, Side*2 = 2
+    // L = Mid + Side*2 = 2.0, R = Mid - Side*2 = -2.0
+    for (size_t i = 0; i < 4; ++i) {
+        REQUIRE(leftOut[i] == Approx(2.0f).margin(kTolerance));
+        REQUIRE(rightOut[i] == Approx(-2.0f).margin(kTolerance));
+    }
+}
+
+// T021: setWidth() clamps to [0%, 200%]
+TEST_CASE("MidSideProcessor setWidth() clamps to valid range", "[midside][US2][width]") {
+    MidSideProcessor ms;
+    ms.prepare(kTestSampleRate, kTestBlockSize);
+
+    SECTION("clamps negative values to 0%") {
+        ms.setWidth(-50.0f);
+        REQUIRE(ms.getWidth() == Approx(0.0f));
+    }
+
+    SECTION("clamps values above 200% to 200%") {
+        ms.setWidth(300.0f);
+        REQUIRE(ms.getWidth() == Approx(200.0f));
+    }
+
+    SECTION("accepts values within range") {
+        ms.setWidth(75.0f);
+        REQUIRE(ms.getWidth() == Approx(75.0f));
+
+        ms.setWidth(150.0f);
+        REQUIRE(ms.getWidth() == Approx(150.0f));
+    }
+
+    SECTION("boundary values work correctly") {
+        ms.setWidth(0.0f);
+        REQUIRE(ms.getWidth() == Approx(0.0f));
+
+        ms.setWidth(200.0f);
+        REQUIRE(ms.getWidth() == Approx(200.0f));
+    }
+}
+
+// T022: width changes are smoothed (no clicks)
+TEST_CASE("MidSideProcessor width changes are smoothed", "[midside][US2][width][smoothing]") {
+    MidSideProcessor ms;
+    ms.prepare(kTestSampleRate, kTestBlockSize);
+    ms.setWidth(0.0f);  // Start at mono
+    ms.reset();
+
+    // Change to full width without reset
+    ms.setWidth(200.0f);
+
+    // Process a buffer - first samples should be transitioning
+    std::array<float, 64> left, right;
+    std::array<float, 64> leftOut, rightOut;
+
+    // Pure side input
+    std::fill(left.begin(), left.end(), 1.0f);
+    std::fill(right.begin(), right.end(), -1.0f);
+
+    ms.process(left.data(), right.data(), leftOut.data(), rightOut.data(), 64);
+
+    // SC-004: Parameter changes produce click-free transitions
+    // First sample should NOT be at target value (smoothing in progress)
+    // After width=200%, pure side would give L=2.0, R=-2.0
+    // But we started from width=0%, so first sample should be near 0
+
+    // The first sample should be transitioning from mono (0% width)
+    // Not exactly at either 0% or 200% value
+    REQUIRE(leftOut[0] < 2.0f);  // Not at full 200% yet
+    REQUIRE(leftOut[0] > 0.0f);  // Some side coming through
+
+    // Last sample should be closer to target
+    REQUIRE(leftOut[63] > leftOut[0]);
+
+    // Check for no sudden jumps (click-free)
+    // Adjacent samples should not differ by more than a reasonable amount
+    float maxJump = 0.0f;
+    for (size_t i = 1; i < 64; ++i) {
+        float jump = std::abs(leftOut[i] - leftOut[i-1]);
+        if (jump > maxJump) maxJump = jump;
+    }
+    // Max jump should be small (smoothed transition)
+    REQUIRE(maxJump < 0.2f);  // Reasonable threshold for smoothed transition
+}
 
 // ==============================================================================
 // User Story 3: Independent Mid and Side Gain (P3)
