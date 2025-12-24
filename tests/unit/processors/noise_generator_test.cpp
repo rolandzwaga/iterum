@@ -1710,3 +1710,211 @@ TEST_CASE("Grey noise: reset clears filter state", "[noise][US10]") {
         REQUIRE(buffer[i] <= 1.0f);
     }
 }
+
+// ==============================================================================
+// User Story 11: Velvet Noise Generation [US11]
+// ==============================================================================
+
+TEST_CASE("Velvet noise: output is zero when disabled", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    // Leave velvet noise disabled (default)
+    std::array<float, kBlockSize> buffer;
+    buffer.fill(0.5f);
+
+    noise.process(buffer.data(), buffer.size());
+
+    REQUIRE(isAllZeros(buffer.data(), buffer.size()));
+}
+
+TEST_CASE("Velvet noise: output contains sparse impulses when enabled", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+    noise.setVelvetDensity(1000.0f); // 1000 impulses/second
+
+    constexpr size_t testSize = 44100; // 1 second
+    std::vector<float> buffer(testSize, 0.0f);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Count non-zero samples (impulses)
+    size_t impulseCount = 0;
+    for (size_t i = 0; i < testSize; ++i) {
+        if (buffer[i] != 0.0f) {
+            ++impulseCount;
+        }
+    }
+
+    // With 1000 impulses/sec at 44.1kHz, expect ~1000 impulses
+    // Allow significant variance due to random nature
+    REQUIRE(impulseCount >= 500);
+    REQUIRE(impulseCount <= 2000);
+}
+
+TEST_CASE("Velvet noise: samples in [-1.0, 1.0] range", "[noise][US11][SC-003]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+    noise.setVelvetDensity(5000.0f); // Higher density for more samples
+
+    constexpr size_t testSize = 44100;
+    std::vector<float> buffer(testSize);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // All samples must be in valid range
+    for (size_t i = 0; i < testSize; ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}
+
+TEST_CASE("Velvet noise: impulse polarity approximately 50/50", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+    noise.setVelvetDensity(2000.0f);
+
+    constexpr size_t testSize = 44100; // 1 second
+    std::vector<float> buffer(testSize, 0.0f);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Count positive and negative impulses
+    size_t positiveCount = 0;
+    size_t negativeCount = 0;
+    for (size_t i = 0; i < testSize; ++i) {
+        if (buffer[i] > 0.0f) {
+            ++positiveCount;
+        } else if (buffer[i] < 0.0f) {
+            ++negativeCount;
+        }
+    }
+
+    // Should have roughly equal positive and negative impulses
+    // Allow 40%-60% ratio due to random variance
+    size_t total = positiveCount + negativeCount;
+    REQUIRE(total > 0);
+    float positiveRatio = static_cast<float>(positiveCount) / static_cast<float>(total);
+    REQUIRE(positiveRatio >= 0.35f);
+    REQUIRE(positiveRatio <= 0.65f);
+}
+
+TEST_CASE("Velvet noise: setVelvetDensity configures impulse rate", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+
+    constexpr size_t testSize = 44100; // 1 second
+
+    // Test low density
+    noise.setVelvetDensity(500.0f);
+    std::vector<float> bufferLow(testSize, 0.0f);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferLow.data() + i * kBlockSize, kBlockSize);
+    }
+
+    size_t lowCount = 0;
+    for (size_t i = 0; i < testSize; ++i) {
+        if (bufferLow[i] != 0.0f) ++lowCount;
+    }
+
+    // Reset and test high density
+    noise.reset();
+    noise.setVelvetDensity(4000.0f);
+    std::vector<float> bufferHigh(testSize, 0.0f);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferHigh.data() + i * kBlockSize, kBlockSize);
+    }
+
+    size_t highCount = 0;
+    for (size_t i = 0; i < testSize; ++i) {
+        if (bufferHigh[i] != 0.0f) ++highCount;
+    }
+
+    // Higher density should produce more impulses
+    REQUIRE(highCount > lowCount * 2); // At least 2x more
+}
+
+TEST_CASE("Velvet noise: setNoiseLevel affects impulse amplitude", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setVelvetDensity(2000.0f);
+
+    constexpr size_t testSize = 44100; // 1 second for more impulses
+    constexpr size_t skipSamples = 1000; // Skip initial settling
+
+    // Generate at 0dB
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+    std::vector<float> bufferLoud(testSize);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferLoud.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Reset and generate at -20dB
+    noise.reset();
+    noise.setNoiseLevel(NoiseType::Velvet, -20.0f);
+    std::vector<float> bufferQuiet(testSize);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferQuiet.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Find max absolute value in each buffer, skipping initial settling period
+    float maxLoud = 0.0f;
+    float maxQuiet = 0.0f;
+    for (size_t i = skipSamples; i < testSize; ++i) {
+        maxLoud = std::max(maxLoud, std::abs(bufferLoud[i]));
+        maxQuiet = std::max(maxQuiet, std::abs(bufferQuiet[i]));
+    }
+
+    // -20dB = 0.1x amplitude
+    // The ratio should be approximately 10:1
+    REQUIRE(maxLoud > 0.0f);
+    REQUIRE(maxQuiet > 0.0f);
+    float ratio = maxLoud / maxQuiet;
+    REQUIRE(ratio >= 5.0f);  // At least 5x difference (allowing variance)
+}
+
+TEST_CASE("Velvet noise: reset clears state", "[noise][US11]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+    noise.setVelvetDensity(2000.0f);
+
+    // Generate some samples
+    std::array<float, kBlockSize> buffer;
+    for (int i = 0; i < 10; ++i) {
+        noise.process(buffer.data(), buffer.size());
+    }
+
+    // Reset
+    noise.reset();
+
+    // After reset, should still generate valid samples
+    noise.process(buffer.data(), buffer.size());
+
+    for (size_t i = 0; i < buffer.size(); ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}

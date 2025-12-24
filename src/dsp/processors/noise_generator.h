@@ -49,11 +49,12 @@ enum class NoiseType : uint8_t {
     Brown,          ///< -6dB/octave brown/red noise (integrated white noise)
     Blue,           ///< +3dB/octave blue noise (differentiated pink noise)
     Violet,         ///< +6dB/octave violet noise (differentiated white noise)
-    Grey            ///< Inverse A-weighting for perceptually flat loudness
+    Grey,           ///< Inverse A-weighting for perceptually flat loudness
+    Velvet          ///< Sparse random impulses for smooth noise character
 };
 
 /// @brief Number of noise types available
-constexpr size_t kNumNoiseTypes = 9;
+constexpr size_t kNumNoiseTypes = 10;
 
 // =============================================================================
 // PinkNoiseFilter (Internal)
@@ -336,6 +337,18 @@ public:
         surfaceNoiseDb_ = std::clamp(surfaceNoiseDb, kMinLevelDb, 0.0f);
     }
 
+    /// @brief Configure velvet noise density (impulses per second)
+    /// @param density Impulses per second [100, 10000]
+    void setVelvetDensity(float density) noexcept {
+        velvetDensity_ = std::clamp(density, 100.0f, 10000.0f);
+    }
+
+    /// @brief Get current velvet noise density
+    /// @return Impulses per second
+    [[nodiscard]] float getVelvetDensity() const noexcept {
+        return velvetDensity_;
+    }
+
     // =========================================================================
     // Processing
     // =========================================================================
@@ -530,6 +543,22 @@ private:
             sample += greyNoise * greyGain;
         }
 
+        // Velvet noise (US11) - sparse random impulses for smooth noise character
+        // Velvet noise is perceptually smoother than white noise due to sparse impulses
+        float velvetGain = levelSmoothers_[static_cast<size_t>(NoiseType::Velvet)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::Velvet)]) {
+            // Probability of an impulse per sample = density / sampleRate
+            float impulseProb = velvetDensity_ / sampleRate_;
+            float randVal = rng_.nextUnipolar();
+
+            if (randVal < impulseProb) {
+                // Generate impulse with random polarity (+1 or -1)
+                float impulse = (rng_.nextUnipolar() < 0.5f) ? 1.0f : -1.0f;
+                sample += impulse * velvetGain;
+            }
+            // Otherwise output is 0 (sparse)
+        }
+
         // Apply master level
         float masterGain = masterSmoother_.process();
         return sample * masterGain;
@@ -556,10 +585,10 @@ private:
     std::array<float, kNumNoiseTypes> noiseLevels_ = {
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
-        kDefaultLevelDb
+        kDefaultLevelDb, kDefaultLevelDb
     };
     std::array<bool, kNumNoiseTypes> noiseEnabled_ = {
-        false, false, false, false, false, false, false, false, false
+        false, false, false, false, false, false, false, false, false, false
     };
     std::array<OnePoleSmoother, kNumNoiseTypes> levelSmoothers_;
 
@@ -602,6 +631,9 @@ private:
 
     // Grey noise filter (inverse A-weighting approximation)
     Biquad greyLowShelf_;
+
+    // Velvet noise density (impulses per second)
+    float velvetDensity_ = 1000.0f;
 };
 
 } // namespace DSP
