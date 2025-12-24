@@ -67,6 +67,7 @@ add_executable(dsp_tests
     unit/test_dsp_utils.cpp
     unit/core/db_utils_test.cpp
     unit/core/window_functions_test.cpp
+    unit/core/random_test.cpp
     unit/primitives/delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
@@ -81,6 +82,7 @@ add_executable(dsp_tests
     unit/processors/envelope_follower_test.cpp
     unit/processors/dynamics_processor_test.cpp
     unit/processors/ducking_processor_test.cpp
+    unit/processors/noise_generator_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -123,6 +125,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/processors/envelope_follower_test.cpp
         unit/processors/dynamics_processor_test.cpp
         unit/processors/ducking_processor_test.cpp
+        unit/processors/noise_generator_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

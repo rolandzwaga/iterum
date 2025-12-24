@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-23 (012-ducking-processor)
+**Last Updated**: 2025-12-24 (013-noise-generator)
 
 ---
 
@@ -213,6 +213,83 @@ bool canReconstruct = Window::verifyCOLA(window.data(), 1024, 512);  // 50% over
 
 // Factory usage
 auto kaiser = Window::generate(WindowType::Kaiser, 1024, 12.0f);  // High rejection
+```
+
+---
+
+### Xorshift32 PRNG
+
+| | |
+|---|---|
+| **Purpose** | Fast, deterministic random number generator for audio noise generation |
+| **Location** | [src/dsp/core/random.h](src/dsp/core/random.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.14 (013-noise-generator) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class Xorshift32 {
+    public:
+        // Construction
+        explicit constexpr Xorshift32(uint32_t seedValue = kDefaultSeed) noexcept;
+
+        // Generation (O(1), no branching, SIMD-friendly)
+        [[nodiscard]] constexpr uint32_t next() noexcept;        // Raw 32-bit value
+        [[nodiscard]] constexpr float nextFloat() noexcept;      // [-1.0, 1.0]
+        [[nodiscard]] constexpr float nextUnipolar() noexcept;   // [0.0, 1.0]
+
+        // Reseeding
+        constexpr void seed(uint32_t seedValue) noexcept;
+
+        // Constants
+        static constexpr uint32_t kDefaultSeed = 2463534242u;
+    };
+}
+```
+
+**Behavior**:
+- `next()` - Returns raw 32-bit pseudorandom value (period: 2^32 - 1)
+- `nextFloat()` - Returns bipolar float in [-1.0, 1.0] for audio noise
+- `nextUnipolar()` - Returns unipolar float in [0.0, 1.0] for probability checks
+- `seed(0)` - Automatically replaced with kDefaultSeed (zero state produces all zeros)
+- Different instances with same seed produce identical sequences (deterministic)
+
+**Algorithm**: Xorshift32 by George Marsaglia (2003)
+```cpp
+state ^= state << 13;
+state ^= state >> 17;
+state ^= state << 5;
+```
+
+**When to use**:
+
+| Use Case | Method |
+|----------|--------|
+| White noise generation | `nextFloat()` |
+| Click/crackle probability | `nextUnipolar()` < probability |
+| Deterministic test sequences | Construct with fixed seed |
+| Multiple uncorrelated streams | Use different seeds per instance |
+
+**Example**:
+```cpp
+#include "dsp/core/random.h"
+using namespace Iterum::DSP;
+
+Xorshift32 rng{12345};  // Fixed seed for reproducibility
+
+// In processBlock() - real-time safe
+for (size_t i = 0; i < numSamples; ++i) {
+    float whiteNoise = rng.nextFloat();  // [-1, 1]
+    buffer[i] += whiteNoise * noiseLevel;
+}
+
+// Poisson-distributed events (clicks at 10 Hz)
+float clickProb = 10.0f / sampleRate;
+if (rng.nextUnipolar() < clickProb) {
+    triggerClick();
+}
 ```
 
 ---
@@ -1912,6 +1989,133 @@ float grDb = ducker.getCurrentGainReduction();  // e.g., -8.5
 
 ---
 
+### NoiseGenerator
+
+| | |
+|---|---|
+| **Purpose** | Multi-type noise generator for analog character and lo-fi effects |
+| **Location** | [src/dsp/processors/noise_generator.h](src/dsp/processors/noise_generator.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.14 (013-noise-generator) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Noise generation algorithm types
+    enum class NoiseType : uint8_t {
+        White,        // Flat spectrum white noise
+        Pink,         // -3dB/octave pink noise (Paul Kellet filter)
+        TapeHiss,     // Signal-dependent tape hiss with high-frequency emphasis
+        VinylCrackle, // Impulsive clicks/pops with optional surface noise
+        Asperity      // Tape head contact noise varying with signal level
+    };
+
+    class NoiseGenerator {
+    public:
+        // Constants
+        static constexpr float kMinLevelDb = -96.0f;
+        static constexpr float kMaxLevelDb = 12.0f;
+        static constexpr float kDefaultLevelDb = -20.0f;
+        static constexpr float kMinCrackleDensity = 0.1f;
+        static constexpr float kMaxCrackleDensity = 20.0f;
+        static constexpr float kDefaultCrackleDensity = 3.0f;
+        static constexpr float kMinSensitivity = 0.0f;
+        static constexpr float kMaxSensitivity = 2.0f;
+
+        // Lifecycle (call before audio processing)
+        void prepare(float sampleRate, size_t maxBlockSize) noexcept;
+        void reset() noexcept;
+
+        // Processing (real-time safe)
+        void process(float* output, size_t numSamples) noexcept;
+        void process(const float* input, float* output, size_t numSamples) noexcept;
+        void processMix(const float* input, float* output, size_t numSamples) noexcept;
+
+        // Level Control
+        void setNoiseLevel(NoiseType type, float dB) noexcept;
+        void setNoiseEnabled(NoiseType type, bool enabled) noexcept;
+        void setMasterLevel(float dB) noexcept;
+        [[nodiscard]] float getNoiseLevel(NoiseType type) const noexcept;
+        [[nodiscard]] bool isNoiseEnabled(NoiseType type) const noexcept;
+        [[nodiscard]] float getMasterLevel() const noexcept;
+        [[nodiscard]] bool isAnyEnabled() const noexcept;
+
+        // Type-Specific Parameters
+        void setTapeHissParams(float floorDb, float sensitivity) noexcept;
+        void setAsperityParams(float floorDb, float sensitivity) noexcept;
+        void setCrackleParams(float density, float surfaceNoiseDb) noexcept;
+    };
+}
+```
+
+**Noise Types**:
+
+| Type | Description | Signal-Dependent | Character |
+|------|-------------|------------------|-----------|
+| `White` | Flat spectrum (equal energy per frequency) | No | Hiss, static |
+| `Pink` | -3dB/octave rolloff (equal energy per octave) | No | Natural, smooth |
+| `TapeHiss` | Pink + high-shelf boost + envelope modulation | Yes | Authentic tape |
+| `VinylCrackle` | Poisson clicks + surface noise | No | Vinyl record |
+| `Asperity` | White noise modulated by signal envelope | Yes | Tape contact |
+
+**Behavior**:
+- `prepare()` - Allocates buffers, configures smoothers and envelope followers (NOT real-time safe)
+- `reset()` - Clears filter states, reseeds RNG for different sequence
+- `process(output, n)` - Generates noise without sidechain (signal-dependent types use floor level)
+- `process(input, output, n)` - Uses input as sidechain for TapeHiss/Asperity modulation
+- `processMix(input, output, n)` - Adds noise to input signal (output = input + noise)
+- All level changes are smoothed (5ms) to prevent clicks
+- Each noise type has independent enable and level control
+
+**Dependencies** (Layer 0/1/2 primitives):
+- `Xorshift32` - Random number generation (Layer 0)
+- `Biquad` - High-shelf filter for tape hiss character (Layer 1)
+- `OnePoleSmoother` - Level smoothing for all channels (Layer 1)
+- `EnvelopeFollower` - Signal-dependent modulation (Layer 2)
+- `dbToGain()` - dB to linear conversion (Layer 0)
+
+**When to use**:
+
+| Use Case | Configuration |
+|----------|---------------|
+| Tape delay character | TapeHiss enabled, -30dB, floor -60dB |
+| Vinyl lo-fi effect | VinylCrackle + Pink, 5 clicks/sec, -35dB surface |
+| Subtle analog warmth | White at -40dB + Pink at -45dB |
+| BBD delay character | Asperity at -50dB, moderate sensitivity |
+| Lo-fi mix effect | All types enabled at low levels |
+
+**Example**:
+```cpp
+#include "dsp/processors/noise_generator.h"
+using namespace Iterum::DSP;
+
+NoiseGenerator noise;
+
+// In prepare() - allocates buffers
+noise.prepare(44100.0f, 512);
+
+// Configure tape hiss
+noise.setNoiseEnabled(NoiseType::TapeHiss, true);
+noise.setNoiseLevel(NoiseType::TapeHiss, -30.0f);
+noise.setTapeHissParams(-60.0f, 1.0f);  // Floor at -60dB, normal sensitivity
+
+// Configure vinyl crackle
+noise.setNoiseEnabled(NoiseType::VinylCrackle, true);
+noise.setNoiseLevel(NoiseType::VinylCrackle, -25.0f);
+noise.setCrackleParams(5.0f, -40.0f);  // 5 clicks/sec, -40dB surface
+
+// In processBlock() - with sidechain for signal-dependent noise
+noise.processMix(audioBuffer, audioBuffer, numSamples);  // In-place
+
+// Or separate noise output
+std::vector<float> noiseBuffer(numSamples);
+noise.process(audioBuffer, noiseBuffer.data(), numSamples);
+// Mix manually...
+```
+
+---
+
 ## Layer 3: System Components
 
 *No components yet. Future: Delay Engine, Feedback Network, Modulation Matrix*
@@ -2019,3 +2223,13 @@ Quick lookup by functionality:
 | Set range limit | `DuckingProcessor::setRange()` | processors/ducking_processor.h |
 | Enable sidechain HPF | `DuckingProcessor::setSidechainFilterEnabled()` | processors/ducking_processor.h |
 | Get ducking GR (metering) | `DuckingProcessor::getCurrentGainReduction()` | processors/ducking_processor.h |
+| Generate random numbers | `Iterum::DSP::Xorshift32` | core/random.h |
+| Get bipolar random [-1,1] | `Xorshift32::nextFloat()` | core/random.h |
+| Get unipolar random [0,1] | `Xorshift32::nextUnipolar()` | core/random.h |
+| Generate multi-type noise | `Iterum::DSP::NoiseGenerator` | processors/noise_generator.h |
+| Enable noise type | `NoiseGenerator::setNoiseEnabled()` | processors/noise_generator.h |
+| Set noise level | `NoiseGenerator::setNoiseLevel()` | processors/noise_generator.h |
+| Configure tape hiss | `NoiseGenerator::setTapeHissParams()` | processors/noise_generator.h |
+| Configure vinyl crackle | `NoiseGenerator::setCrackleParams()` | processors/noise_generator.h |
+| Configure asperity | `NoiseGenerator::setAsperityParams()` | processors/noise_generator.h |
+| Mix noise with audio | `NoiseGenerator::processMix()` | processors/noise_generator.h |
