@@ -66,8 +66,13 @@ inline constexpr float kTwoPi = 2.0f * kPi;
 
 /// @brief Single Schroeder allpass filter stage for diffusion network.
 ///
-/// Implements the standard Schroeder allpass formula:
-///   y[n] = -g * x[n] + x[n-D] + g * y[n-D]
+/// Implements the Schroeder allpass using the single-delay-line formulation:
+///   v[n] = x[n] + g * v[n-D]
+///   y[n] = -g * v[n] + v[n-D]
+///
+/// This is algebraically equivalent to y[n] = -g*x[n] + x[n-D] + g*y[n-D]
+/// but uses only ONE delay line, which improves energy preservation with
+/// fractional delays (only one interpolation operation per sample).
 ///
 /// Where:
 /// - g = allpass coefficient (0.618, golden ratio inverse)
@@ -75,7 +80,10 @@ inline constexpr float kTwoPi = 2.0f * kPi;
 /// - x[n] = input
 /// - y[n] = output
 ///
-/// Uses DelayLine with linear interpolation for smooth delay time modulation.
+/// Uses DelayLine with allpass interpolation for energy-preserving fractional delays.
+/// Note: Allpass interpolation is preferred over linear interpolation because it has
+/// unity magnitude response at all frequencies, preserving the allpass property.
+/// Linear interpolation acts as a lowpass filter, causing energy loss.
 class AllpassStage {
 public:
     /// @brief Default constructor.
@@ -87,15 +95,13 @@ public:
     void prepare(float sampleRate, float maxDelaySeconds) noexcept {
         sampleRate_ = sampleRate;
         maxDelaySamples_ = sampleRate * maxDelaySeconds;
-        inputDelayLine_.prepare(static_cast<double>(sampleRate), maxDelaySeconds);
-        outputDelayLine_.prepare(static_cast<double>(sampleRate), maxDelaySeconds);
+        delayLine_.prepare(static_cast<double>(sampleRate), maxDelaySeconds);
         reset();
     }
 
     /// @brief Reset internal state to silence.
     void reset() noexcept {
-        inputDelayLine_.reset();
-        outputDelayLine_.reset();
+        delayLine_.reset();
     }
 
     /// @brief Process a single sample through the allpass filter.
@@ -103,34 +109,33 @@ public:
     /// @param delaySamples Delay time in samples (fractional allowed)
     /// @return Filtered output sample
     [[nodiscard]] float process(float input, float delaySamples) noexcept {
-        // Clamp delay to valid range
-        const float clampedDelay = std::clamp(delaySamples, 0.0f, maxDelaySamples_);
+        // Clamp delay to valid range (minimum 1 sample for proper allpass behavior)
+        const float clampedDelay = std::clamp(delaySamples, 1.0f, maxDelaySamples_);
 
-        // Write input FIRST for correct delay line semantics (write advances writeIndex_)
-        inputDelayLine_.write(input);
+        // Read delayed value from single delay line (v[n-D])
+        // Use allpass interpolation for fractional delays - this preserves energy
+        // (unity magnitude at all frequencies) unlike linear interpolation which
+        // acts as a lowpass filter and causes high-frequency attenuation.
+        //
+        // Note: We use (clampedDelay - 1) because DelayLine::read() assumes a
+        // write-before-read pattern, but we use read-before-write. The -1 adjustment
+        // accounts for this: read(D-1) after the previous write gives us v[n-D].
+        const float delayedV = delayLine_.readAllpass(clampedDelay - 1.0f);
 
-        // Read delayed input x[n-D]
-        const float delayedInput = inputDelayLine_.readLinear(clampedDelay);
+        // Single-delay-line allpass formulation:
+        // v[n] = x[n] + g * v[n-D]
+        // y[n] = -g * v[n] + v[n-D]
+        const float v = input + kAllpassCoeff * delayedV;
+        const float output = -kAllpassCoeff * v + delayedV;
 
-        // Read delayed output y[n-D]
-        // Note: outputDelayLine is written at END of process(), so its writeIndex_ is
-        // one behind inputDelayLine's. Compensate by reading with (delay - 1).
-        // For delay < 1, clamp to 0 to avoid negative delay.
-        const float outputDelay = std::max(0.0f, clampedDelay - 1.0f);
-        const float delayedOutput = outputDelayLine_.readLinear(outputDelay);
-
-        // Schroeder allpass: y[n] = -g * x[n] + x[n-D] + g * y[n-D]
-        const float output = -kAllpassCoeff * input + delayedInput + kAllpassCoeff * delayedOutput;
-
-        // Write output to output delay line
-        outputDelayLine_.write(output);
+        // Write v to delay line
+        delayLine_.write(v);
 
         return output;
     }
 
 private:
-    DelayLine inputDelayLine_;
-    DelayLine outputDelayLine_;
+    DelayLine delayLine_;
     float sampleRate_ = 44100.0f;
     float maxDelaySamples_ = 0.0f;
 };
