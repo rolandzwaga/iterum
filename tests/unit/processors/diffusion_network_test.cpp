@@ -1528,8 +1528,192 @@ TEST_CASE("DiffusionNetwork width clamps to 0-100%", "[diffusion][US5]") {
 // Phase 7: User Story 6 Tests - Real-Time Safety (P1)
 // ==============================================================================
 
-// Tests for real-time safety compliance
-// (T069-T072)
+// T069: process() is noexcept
+TEST_CASE("DiffusionNetwork process() is noexcept", "[diffusion][US6]") {
+    // Static verification that process() is marked noexcept
+    DiffusionNetwork diffuser;
+
+    // Check that process has noexcept specifier using type trait
+    using ProcessFn = void (DiffusionNetwork::*)(const float*, const float*,
+                                                   float*, float*, size_t) noexcept;
+
+    // This will fail to compile if process() is not noexcept
+    ProcessFn fn = &DiffusionNetwork::process;
+    (void)fn;
+
+    REQUIRE(noexcept(diffuser.process(nullptr, nullptr, nullptr, nullptr, 0)));
+}
+
+// T070: various block sizes (1-8192 samples)
+TEST_CASE("DiffusionNetwork handles block sizes 1-8192", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+    diffuser.prepare(kTestSampleRate, 8192);
+    diffuser.setSize(50.0f);
+    diffuser.setDensity(100.0f);
+
+    std::vector<float> leftIn(8192);
+    std::vector<float> rightIn(8192);
+    std::vector<float> leftOut(8192);
+    std::vector<float> rightOut(8192);
+
+    generateWhiteNoise(leftIn.data(), 8192, 42);
+    std::copy(leftIn.begin(), leftIn.end(), rightIn.begin());
+
+    SECTION("block size 1") {
+        diffuser.reset();
+        for (size_t i = 0; i < 100; ++i) {
+            diffuser.process(&leftIn[i], &rightIn[i], &leftOut[i], &rightOut[i], 1);
+        }
+        // Should not crash and produce valid output
+        REQUIRE_FALSE(std::isnan(leftOut[50]));
+        REQUIRE_FALSE(std::isinf(leftOut[50]));
+    }
+
+    SECTION("block size 64") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 64);
+        REQUIRE_FALSE(std::isnan(leftOut[32]));
+        REQUIRE_FALSE(std::isinf(leftOut[32]));
+    }
+
+    SECTION("block size 256") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 256);
+        REQUIRE_FALSE(std::isnan(leftOut[128]));
+        REQUIRE_FALSE(std::isinf(leftOut[128]));
+    }
+
+    SECTION("block size 512") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 512);
+        REQUIRE_FALSE(std::isnan(leftOut[256]));
+        REQUIRE_FALSE(std::isinf(leftOut[256]));
+    }
+
+    SECTION("block size 1024") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 1024);
+        REQUIRE_FALSE(std::isnan(leftOut[512]));
+        REQUIRE_FALSE(std::isinf(leftOut[512]));
+    }
+
+    SECTION("block size 4096") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 4096);
+        REQUIRE_FALSE(std::isnan(leftOut[2048]));
+        REQUIRE_FALSE(std::isinf(leftOut[2048]));
+    }
+
+    SECTION("block size 8192") {
+        diffuser.reset();
+        diffuser.process(leftIn.data(), rightIn.data(), leftOut.data(), rightOut.data(), 8192);
+        REQUIRE_FALSE(std::isnan(leftOut[4096]));
+        REQUIRE_FALSE(std::isinf(leftOut[4096]));
+    }
+}
+
+// T071: in-place processing (input == output buffers)
+TEST_CASE("DiffusionNetwork supports in-place processing", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+    diffuser.prepare(kTestSampleRate, kTestBlockSize);
+    diffuser.setSize(50.0f);
+    diffuser.setDensity(100.0f);
+    diffuser.setModDepth(0.0f);
+
+    constexpr size_t kBufferSize = 1024;
+
+    // Generate test signal
+    std::vector<float> bufferL(kBufferSize);
+    std::vector<float> bufferR(kBufferSize);
+    std::vector<float> referenceL(kBufferSize);
+    std::vector<float> referenceR(kBufferSize);
+
+    generateSine(bufferL.data(), kBufferSize, 440.0f, kTestSampleRate);
+    std::copy(bufferL.begin(), bufferL.end(), bufferR.begin());
+    std::copy(bufferL.begin(), bufferL.end(), referenceL.begin());
+    std::copy(bufferR.begin(), bufferR.end(), referenceR.begin());
+
+    // Process in-place (same buffer for input and output)
+    diffuser.reset();
+    diffuser.process(bufferL.data(), bufferR.data(),
+                     bufferL.data(), bufferR.data(), kBufferSize);
+
+    // Should produce valid output (not NaN/Inf)
+    bool hasInvalidL = false;
+    bool hasInvalidR = false;
+    for (size_t i = 0; i < kBufferSize; ++i) {
+        if (std::isnan(bufferL[i]) || std::isinf(bufferL[i])) hasInvalidL = true;
+        if (std::isnan(bufferR[i]) || std::isinf(bufferR[i])) hasInvalidR = true;
+    }
+
+    REQUIRE_FALSE(hasInvalidL);
+    REQUIRE_FALSE(hasInvalidR);
+
+    // Output should be different from input (diffusion was applied)
+    float totalDiff = 0.0f;
+    for (size_t i = 0; i < kBufferSize; ++i) {
+        totalDiff += std::abs(bufferL[i] - referenceL[i]);
+    }
+
+    INFO("Total difference after in-place processing: " << totalDiff);
+    REQUIRE(totalDiff > 0.1f);  // Should have been modified
+}
+
+// T072: zero-length input handling
+TEST_CASE("DiffusionNetwork handles zero-length input", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+    diffuser.prepare(kTestSampleRate, kTestBlockSize);
+    diffuser.setSize(50.0f);
+    diffuser.setDensity(100.0f);
+
+    // Empty buffers
+    std::vector<float> leftIn;
+    std::vector<float> rightIn;
+    std::vector<float> leftOut;
+    std::vector<float> rightOut;
+
+    // This should not crash
+    diffuser.process(leftIn.data(), rightIn.data(),
+                     leftOut.data(), rightOut.data(), 0);
+
+    // Also test with valid pointers but zero size
+    float dummyL = 0.0f, dummyR = 0.0f;
+    diffuser.process(&dummyL, &dummyR, &dummyL, &dummyR, 0);
+
+    REQUIRE(true);  // If we get here without crashing, test passes
+}
+
+// T072b: setters are noexcept
+TEST_CASE("DiffusionNetwork setters are noexcept", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+
+    // Verify setters are noexcept
+    REQUIRE(noexcept(diffuser.setSize(50.0f)));
+    REQUIRE(noexcept(diffuser.setDensity(50.0f)));
+    REQUIRE(noexcept(diffuser.setWidth(50.0f)));
+    REQUIRE(noexcept(diffuser.setModDepth(50.0f)));
+    REQUIRE(noexcept(diffuser.setModRate(1.0f)));
+}
+
+// T072c: getters are noexcept
+TEST_CASE("DiffusionNetwork getters are noexcept", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+
+    // Verify getters are noexcept
+    REQUIRE(noexcept(diffuser.getSize()));
+    REQUIRE(noexcept(diffuser.getDensity()));
+    REQUIRE(noexcept(diffuser.getWidth()));
+    REQUIRE(noexcept(diffuser.getModDepth()));
+    REQUIRE(noexcept(diffuser.getModRate()));
+}
+
+// T072d: prepare and reset are noexcept
+TEST_CASE("DiffusionNetwork prepare and reset are noexcept", "[diffusion][US6]") {
+    DiffusionNetwork diffuser;
+
+    REQUIRE(noexcept(diffuser.prepare(44100.0f, 512)));
+    REQUIRE(noexcept(diffuser.reset()));
+}
 
 // ==============================================================================
 // Phase 8: Edge Cases
