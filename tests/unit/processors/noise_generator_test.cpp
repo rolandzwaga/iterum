@@ -1553,3 +1553,160 @@ TEST_CASE("Violet noise: reset clears filter state", "[noise][US9]") {
         REQUIRE(buffer[i] <= 1.0f);
     }
 }
+
+// ==============================================================================
+// User Story 10: Grey Noise Generation [US10]
+// ==============================================================================
+
+TEST_CASE("Grey noise: output is zero when disabled", "[noise][US10]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    // Leave grey noise disabled (default)
+    std::array<float, kBlockSize> buffer;
+    buffer.fill(0.5f);
+
+    noise.process(buffer.data(), buffer.size());
+
+    REQUIRE(isAllZeros(buffer.data(), buffer.size()));
+}
+
+TEST_CASE("Grey noise: output is non-zero when enabled", "[noise][US10]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Grey, true);
+    noise.setNoiseLevel(NoiseType::Grey, 0.0f);
+
+    constexpr size_t largeSize = 4096;
+    std::vector<float> buffer(largeSize, 0.0f);
+
+    for (size_t i = 0; i < largeSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    REQUIRE(hasNonZeroValues(buffer.data(), buffer.size()));
+}
+
+TEST_CASE("Grey noise: samples in [-1.0, 1.0] range", "[noise][US10][SC-003]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Grey, true);
+    noise.setNoiseLevel(NoiseType::Grey, 0.0f);
+
+    constexpr size_t testSize = 44100;
+    std::vector<float> buffer(testSize);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // All samples must be in valid range
+    for (size_t i = 0; i < testSize; ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}
+
+TEST_CASE("Grey noise: setNoiseLevel affects output amplitude", "[noise][US10]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Grey, true);
+
+    constexpr size_t testSize = 8192;
+    std::vector<float> bufferLoud(testSize);
+    std::vector<float> bufferQuiet(testSize);
+
+    // Generate at 0dB
+    noise.setNoiseLevel(NoiseType::Grey, 0.0f);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferLoud.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Reset and generate at -20dB
+    noise.reset();
+    noise.setNoiseLevel(NoiseType::Grey, -20.0f);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferQuiet.data() + i * kBlockSize, kBlockSize);
+    }
+
+    float rmsLoud = calculateRMS(bufferLoud.data() + 1000, testSize - 1000);
+    float rmsQuiet = calculateRMS(bufferQuiet.data() + 1000, testSize - 1000);
+
+    // -20dB difference = 10x amplitude difference
+    float ratio = rmsLoud / rmsQuiet;
+    REQUIRE(ratio == Approx(10.0f).margin(2.0f));
+}
+
+TEST_CASE("Grey noise: inverse A-weighting spectral shape", "[noise][US10][SC-002]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Grey, true);
+    noise.setNoiseLevel(NoiseType::Grey, 0.0f);
+
+    // Generate 10 seconds of grey noise for spectral analysis
+    constexpr size_t testSize = 441000;
+    std::vector<float> buffer(testSize);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Skip initial smoother settling
+    const float* analysisStart = buffer.data() + 4410;
+    size_t analysisSize = testSize - 4410;
+
+    // Measure energy at different frequency bands
+    float energy100 = measureBandEnergy(analysisStart, analysisSize, 80.0f, 120.0f, kSampleRate);
+    float energy1k = measureBandEnergy(analysisStart, analysisSize, 800.0f, 1200.0f, kSampleRate);
+    float energy4k = measureBandEnergy(analysisStart, analysisSize, 3500.0f, 4500.0f, kSampleRate);
+
+    // Convert to dB
+    float db100 = linearToDb(energy100);
+    float db1k = linearToDb(energy1k);
+    float db4k = linearToDb(energy4k);
+
+    // Grey noise: inverse A-weighting means boosted lows relative to midrange
+    // At 100Hz, A-weighting is about -19dB, so grey should boost +19dB relative to flat
+    // At 1kHz, A-weighting is ~0dB reference
+    // At 4kHz, A-weighting is about +1dB, so grey should cut ~1dB
+
+    // Test that 100Hz is boosted relative to 1kHz (inverse of A-weighting cut at 100Hz)
+    // A-weighting cuts ~19dB at 100Hz, so grey should boost relative to 1kHz
+    float lowBoost = db100 - db1k;
+    REQUIRE(lowBoost >= 5.0f);  // At least some boost (simplified approximation)
+
+    // 4kHz should be similar or slightly cut relative to 1kHz
+    // (inverse of A-weighting's slight boost at 4kHz)
+    float highCut = db4k - db1k;
+    REQUIRE(highCut <= 3.0f);  // Not boosted much
+}
+
+TEST_CASE("Grey noise: reset clears filter state", "[noise][US10]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Grey, true);
+    noise.setNoiseLevel(NoiseType::Grey, 0.0f);
+
+    // Generate some samples to build up filter state
+    std::array<float, kBlockSize> buffer;
+    for (int i = 0; i < 10; ++i) {
+        noise.process(buffer.data(), buffer.size());
+    }
+
+    // Reset should clear state
+    noise.reset();
+
+    // After reset, first samples should still be valid
+    noise.process(buffer.data(), buffer.size());
+
+    // Verify output is valid (no NaN, within range)
+    for (size_t i = 0; i < buffer.size(); ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}

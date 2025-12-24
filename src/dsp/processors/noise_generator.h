@@ -48,11 +48,12 @@ enum class NoiseType : uint8_t {
     Asperity,       ///< Tape head contact noise varying with signal level
     Brown,          ///< -6dB/octave brown/red noise (integrated white noise)
     Blue,           ///< +3dB/octave blue noise (differentiated pink noise)
-    Violet          ///< +6dB/octave violet noise (differentiated white noise)
+    Violet,         ///< +6dB/octave violet noise (differentiated white noise)
+    Grey            ///< Inverse A-weighting for perceptually flat loudness
 };
 
 /// @brief Number of noise types available
-constexpr size_t kNumNoiseTypes = 8;
+constexpr size_t kNumNoiseTypes = 9;
 
 // =============================================================================
 // PinkNoiseFilter (Internal)
@@ -196,6 +197,10 @@ public:
         // Configure tape hiss high-shelf filter (+3dB at 5kHz for tape character)
         tapeHissFilter_.configure(FilterType::HighShelf, 5000.0f, 0.707f, 3.0f, sampleRate);
 
+        // Configure grey noise low-shelf filter (inverse A-weighting approximation)
+        // A-weighting cuts ~19dB at 100Hz, we boost lows to compensate
+        greyLowShelf_.configure(FilterType::LowShelf, 200.0f, 0.707f, 12.0f, sampleRate);
+
         // Configure envelope followers for signal-dependent noise
         tapeHissEnvelope_.prepare(static_cast<double>(sampleRate), maxBlockSize);
         tapeHissEnvelope_.setMode(DetectionMode::RMS);
@@ -227,6 +232,7 @@ public:
 
         // Reset biquad filters
         tapeHissFilter_.reset();
+        greyLowShelf_.reset();
 
         // Reset envelope followers
         tapeHissEnvelope_.reset();
@@ -514,6 +520,16 @@ private:
             sample += violetNoise * violetGain;
         }
 
+        // Grey noise (US10) - inverse A-weighting for perceptually flat loudness
+        // A-weighting attenuates lows, so we boost them to make it sound "flat" to human ears
+        float greyGain = levelSmoothers_[static_cast<size_t>(NoiseType::Grey)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::Grey)]) {
+            // Apply low-shelf filter to white noise for inverse A-weighting approximation
+            float greyNoise = greyLowShelf_.process(whiteNoise);
+            greyNoise = std::clamp(greyNoise, -1.0f, 1.0f);
+            sample += greyNoise * greyGain;
+        }
+
         // Apply master level
         float masterGain = masterSmoother_.process();
         return sample * masterGain;
@@ -539,9 +555,12 @@ private:
     // Per-noise-type configuration
     std::array<float, kNumNoiseTypes> noiseLevels_ = {
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
-        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb
+        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
+        kDefaultLevelDb
     };
-    std::array<bool, kNumNoiseTypes> noiseEnabled_ = {false, false, false, false, false, false, false, false};
+    std::array<bool, kNumNoiseTypes> noiseEnabled_ = {
+        false, false, false, false, false, false, false, false, false
+    };
     std::array<OnePoleSmoother, kNumNoiseTypes> levelSmoothers_;
 
     // Master level
@@ -580,6 +599,9 @@ private:
 
     // Violet noise state (differentiator)
     float violetPrevious_ = 0.0f;
+
+    // Grey noise filter (inverse A-weighting approximation)
+    Biquad greyLowShelf_;
 };
 
 } // namespace DSP
