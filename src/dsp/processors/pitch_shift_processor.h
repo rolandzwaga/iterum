@@ -32,6 +32,7 @@
 
 // Layer 0 dependencies
 #include "dsp/core/db_utils.h"
+#include "dsp/core/math_constants.h"
 
 // Layer 1 dependencies
 #include "dsp/primitives/delay_line.h"
@@ -326,7 +327,7 @@ private:
 /// - Higher quefrency = more smoothing = coarser envelope
 class FormantPreserver {
 public:
-    static constexpr float kPi = 3.14159265358979323846f;
+    // Note: kPi is now defined in math_constants.h (Layer 0)
     static constexpr float kDefaultQuefrencyMs = 1.5f; // 1.5ms default (~666Hz max F0)
     static constexpr float kMinMagnitude = 1e-10f;     // Avoid log(0)
 
@@ -568,7 +569,7 @@ private:
 class SimplePitchShifter {
 public:
     static constexpr float kWindowTimeMs = 50.0f;  // 50ms crossfade window
-    static constexpr float kPi = 3.14159265358979323846f;
+    // Note: kPi is now defined in math_constants.h (Layer 0)
 
     SimplePitchShifter() = default;
 
@@ -740,7 +741,7 @@ private:
 class GranularPitchShifter {
 public:
     static constexpr float kWindowTimeMs = 46.0f;  // Longer than Simple (50ms) for spec
-    static constexpr float kPi = 3.14159265358979323846f;
+    // Note: kPi is now defined in math_constants.h (Layer 0)
 
     GranularPitchShifter() = default;
 
@@ -910,8 +911,7 @@ class PhaseVocoderPitchShifter {
 public:
     static constexpr std::size_t kFFTSize = 4096;      // ~93ms at 44.1kHz
     static constexpr std::size_t kHopSize = 1024;      // 25% overlap (4x)
-    static constexpr float kPi = 3.14159265358979323846f;
-    static constexpr float kTwoPi = 2.0f * kPi;
+    // Note: kPi and kTwoPi are now defined in math_constants.h (Layer 0)
 
     PhaseVocoderPitchShifter() = default;
 

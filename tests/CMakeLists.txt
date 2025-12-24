@@ -66,6 +66,7 @@ target_link_libraries(test_helpers
 add_executable(dsp_tests
     unit/test_dsp_utils.cpp
     unit/core/db_utils_test.cpp
+    unit/core/math_constants_test.cpp
     unit/core/window_functions_test.cpp
     unit/core/random_test.cpp
     unit/primitives/delay_line_test.cpp
@@ -113,6 +114,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
         unit/test_dsp_utils.cpp
         unit/core/db_utils_test.cpp
+        unit/core/math_constants_test.cpp
         unit/core/window_functions_test.cpp
         unit/primitives/smoother_test.cpp
         unit/primitives/oversampler_test.cpp

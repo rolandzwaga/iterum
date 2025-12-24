@@ -39,7 +39,7 @@ namespace {
 
 constexpr float kSampleRate = 44100.0f;
 constexpr size_t kBlockSize = 512;
-constexpr float kTwoPi = 6.283185307179586f;
+// Note: kTwoPi is now available from Iterum::DSP via math_constants.h
 
 // Calculate RMS of a buffer
 inline float calculateRMS(const float* buffer, size_t size) {

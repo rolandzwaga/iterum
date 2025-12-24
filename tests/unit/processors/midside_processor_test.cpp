@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "dsp/processors/midside_processor.h"
+#include "dsp/core/math_constants.h"
 
 #include <array>
 #include <cmath>
@@ -34,8 +35,8 @@ constexpr size_t kTestBlockSize = 512;
 constexpr float kTolerance = 1e-6f;
 
 // Generate a sine wave at specified frequency
+// Note: kTwoPi is now available from Iterum::DSP via math_constants.h
 inline void generateSine(float* buffer, size_t size, float frequency, float sampleRate) {
-    constexpr float kTwoPi = 6.283185307179586f;
     for (size_t i = 0; i < size; ++i) {
         buffer[i] = std::sin(kTwoPi * frequency * static_cast<float>(i) / sampleRate);
     }

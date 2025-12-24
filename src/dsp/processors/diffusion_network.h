@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "dsp/core/math_constants.h"
 #include "dsp/primitives/delay_line.h"
 #include "dsp/primitives/smoother.h"
 
@@ -54,11 +55,7 @@ inline constexpr std::array<float, kNumDiffusionStages> kDelayRatiosL = {
 /// Stereo decorrelation multiplier for right channel
 inline constexpr float kStereoOffset = 1.127f;
 
-/// Pi constant
-inline constexpr float kPi = 3.14159265358979323846f;
-
-/// Two Pi constant
-inline constexpr float kTwoPi = 2.0f * kPi;
+// Note: kPi and kTwoPi are now defined in math_constants.h (Layer 0)
 
 // =============================================================================
 // AllpassStage

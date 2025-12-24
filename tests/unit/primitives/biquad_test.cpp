@@ -28,8 +28,7 @@ using Catch::Approx;
 
 constexpr float kTestSampleRate = 44100.0f;
 constexpr float kTestFrequency = 1000.0f;
-// Use butterworthQ() from biquad.h - avoid redefining butterworthQ()
-constexpr float kPi = 3.14159265358979323846f;
+// Note: kPi is now available from Iterum::DSP via math_constants.h
 
 // ==============================================================================
 // Phase 2: Foundational Tests - FilterType Enum (T004-T005)

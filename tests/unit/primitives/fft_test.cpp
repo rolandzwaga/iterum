@@ -13,6 +13,7 @@
 
 #include "dsp/primitives/fft.h"
 #include "dsp/primitives/spectral_buffer.h"
+#include "dsp/core/math_constants.h"
 
 #include <array>
 #include <chrono>
@@ -27,8 +28,7 @@ using Catch::Approx;
 // Test Constants
 // ==============================================================================
 
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kTwoPi = 2.0f * kPi;
+// Note: kPi and kTwoPi are now available from Iterum::DSP via math_constants.h
 
 // ==============================================================================
 // Helper Functions

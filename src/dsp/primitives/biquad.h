@@ -18,6 +18,7 @@
 #pragma once
 
 #include "dsp/core/db_utils.h"
+#include "dsp/core/math_constants.h"
 
 #include <algorithm>
 #include <array>
@@ -82,9 +83,7 @@ enum class FilterType : uint8_t {
 
 namespace detail {
 
-/// Pi constant for internal use
-inline constexpr float kPi = 3.14159265358979323846f;
-inline constexpr float kTwoPi = 2.0f * kPi;
+// Note: kPi and kTwoPi are now defined in math_constants.h (Layer 0)
 
 /// Maximum filter frequency as ratio of sample rate
 inline constexpr float kMaxFrequencyRatio = 0.495f;
@@ -214,7 +213,7 @@ inline constexpr float clampQ(float q) noexcept {
     // Q[k] = 1 / (2 * cos(pi * (2*k + 1) / (4*N))) for N stages
     const float n = static_cast<float>(totalStages);
     const float k = static_cast<float>(stageIndex);
-    const float angle = detail::kPi * (2.0f * k + 1.0f) / (4.0f * n);
+    const float angle = kPi * (2.0f * k + 1.0f) / (4.0f * n);
     const float cosVal = detail::constexprCos(angle);
 
     return 1.0f / (2.0f * cosVal);
@@ -675,7 +674,7 @@ inline BiquadCoefficients BiquadCoefficients::calculate(
     Q = detail::clampQ(Q);
 
     // Common intermediate values
-    const float omega = detail::kTwoPi * frequency / sampleRate;
+    const float omega = kTwoPi * frequency / sampleRate;
     const float sinOmega = std::sin(omega);
     const float cosOmega = std::cos(omega);
     const float alpha = sinOmega / (2.0f * Q);
@@ -802,7 +801,7 @@ constexpr BiquadCoefficients BiquadCoefficients::calculateConstexpr(
     Q = (Q < kMinQ) ? kMinQ : (Q > kMaxQ) ? kMaxQ : Q;
 
     // Common intermediate values using constexpr math
-    const float omega = detail::kTwoPi * frequency / sampleRate;
+    const float omega = kTwoPi * frequency / sampleRate;
     const float sinOmega = detail::constexprSin(omega);
     const float cosOmega = detail::constexprCos(omega);
     const float alpha = sinOmega / (2.0f * Q);

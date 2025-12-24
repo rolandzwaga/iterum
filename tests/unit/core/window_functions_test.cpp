@@ -26,7 +26,7 @@ using Catch::Approx;
 // ==============================================================================
 
 constexpr size_t kTestWindowSize = 1024;
-constexpr float kPi = 3.14159265358979323846f;
+// Note: kPi is now available from Iterum::DSP via math_constants.h
 
 // ==============================================================================
 // besselI0() Tests (T011)

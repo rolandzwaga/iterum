@@ -12,6 +12,7 @@
 #include <catch2/catch_approx.hpp>
 
 #include "dsp/primitives/spectral_buffer.h"
+#include "dsp/core/math_constants.h"
 
 #include <array>
 #include <cmath>
@@ -24,7 +25,7 @@ using Catch::Approx;
 // Test Constants
 // ==============================================================================
 
-constexpr float kPi = 3.14159265358979323846f;
+// Note: kPi is now available from Iterum::DSP via math_constants.h
 
 // ==============================================================================
 // SpectralBuffer::prepare() Tests (T051)

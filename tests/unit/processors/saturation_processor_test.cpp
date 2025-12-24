@@ -39,7 +39,7 @@ using Catch::Approx;
 
 namespace {
 
-constexpr float kTwoPi = 6.283185307179586f;
+// Note: kTwoPi is now available from Iterum::DSP via math_constants.h
 constexpr float kSampleRate = 44100.0f;
 
 // Generate a sine wave at specified frequency
