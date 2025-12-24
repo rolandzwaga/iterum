@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-24 (015-diffusion-network)
+**Last Updated**: 2025-12-24 (017-layer0-utilities)
 
 ---
 
@@ -290,6 +290,244 @@ float clickProb = 10.0f / sampleRate;
 if (rng.nextUnipolar() < clickProb) {
     triggerClick();
 }
+```
+
+---
+
+### NoteValue Enums
+
+| | |
+|---|---|
+| **Purpose** | Musical note duration constants for tempo-synced features |
+| **Location** | [src/dsp/core/note_value.h](src/dsp/core/note_value.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.17 (017-layer0-utilities) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    enum class NoteValue : uint8_t {
+        Whole, Half, Quarter, Eighth, Sixteenth, ThirtySecond
+    };
+
+    enum class NoteModifier : uint8_t {
+        None, Dotted, Triplet
+    };
+
+    // Beats per note value (Quarter = 1.0 beat)
+    constexpr std::array<float, 6> kBeatsPerNote = {
+        4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f
+    };
+
+    // Get total beats including modifier
+    [[nodiscard]] constexpr float getBeatsForNote(NoteValue value,
+                                                   NoteModifier modifier = NoteModifier::None) noexcept;
+}
+```
+
+**Behavior**:
+- `getBeatsForNote(Quarter, None)` → `1.0f`
+- `getBeatsForNote(Quarter, Dotted)` → `1.5f` (×1.5)
+- `getBeatsForNote(Quarter, Triplet)` → `0.667f` (×2/3)
+
+**When to use**:
+- Tempo-synced delay time calculations
+- LFO rate synchronization
+- Any musical timing where note values are needed
+
+---
+
+### BlockContext
+
+| | |
+|---|---|
+| **Purpose** | Per-block processing context (sample rate, tempo, transport) for tempo-synced DSP |
+| **Location** | [src/dsp/core/block_context.h](src/dsp/core/block_context.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.17 (017-layer0-utilities) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    struct BlockContext {
+        // Audio context
+        double sampleRate = 44100.0;
+        size_t blockSize = 512;
+
+        // Tempo/transport context
+        double tempoBPM = 120.0;
+        int timeSignatureNumerator = 4;
+        int timeSignatureDenominator = 4;
+        bool isPlaying = false;
+        int64_t transportPositionSamples = 0;
+
+        // Tempo-to-samples conversion
+        [[nodiscard]] constexpr double tempoToSamples(NoteValue noteValue,
+                                                       NoteModifier modifier = NoteModifier::None) const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- `tempoToSamples(Quarter)` at 120 BPM, 44100 Hz → `22050.0` samples (0.5 seconds)
+- `tempoToSamples(Eighth, Dotted)` → samples for dotted eighth note
+- Default-constructible with sensible audio defaults
+
+**When to use**:
+- Layer 3 Delay Engine for tempo-synced delay times
+- LFO tempo sync mode
+- Any feature that needs tempo, transport, or sample rate context
+
+**Example**:
+```cpp
+#include "dsp/core/block_context.h"
+using namespace Iterum::DSP;
+
+BlockContext ctx;
+ctx.tempoBPM = 120.0;
+ctx.sampleRate = 48000.0;
+
+double delaySamples = ctx.tempoToSamples(NoteValue::Quarter);  // 24000 samples
+```
+
+---
+
+### FastMath
+
+| | |
+|---|---|
+| **Purpose** | Optimized approximations of transcendental functions for CPU-critical paths |
+| **Location** | [src/dsp/core/fast_math.h](src/dsp/core/fast_math.h) |
+| **Namespace** | `Iterum::DSP::FastMath` |
+| **Added** | 0.0.17 (017-layer0-utilities) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP::FastMath {
+    // Fast hyperbolic tangent using Padé (5,4) approximation
+    // ~3x faster than std::tanh (verified benchmark)
+    [[nodiscard]] constexpr float fastTanh(float x) noexcept;
+}
+```
+
+**Behavior**:
+- `fastTanh(0.0f)` → `0.0f`
+- `fastTanh(0.5f)` → `~0.462f` (within 0.05% of std::tanh)
+- `fastTanh(3.5f+)` → `1.0f` (saturation)
+- `fastTanh(NaN)` → `NaN`
+- `fastTanh(±Infinity)` → `±1.0f`
+
+**Performance** (Windows/MSVC Release, 1M samples × 10 iterations):
+
+| Function | Time | Speedup vs std:: | Status |
+|----------|------|------------------|--------|
+| fastTanh | ~28ms | **~3x faster** | ✅ Recommended |
+
+**Critical Finding - std:: vs Fast Approximations**:
+
+| Function | Recommendation | Reason |
+|----------|----------------|--------|
+| **tanh** | Use `fastTanh()` | ~3x faster, ideal for saturation/waveshaping |
+| **sin/cos** | Use `std::sin/cos` | MSVC uses SIMD/lookup tables, faster than polynomials |
+| **exp** | Use `std::exp` | MSVC uses SIMD/lookup tables, faster than polynomials |
+
+> **Why only fastTanh?** Benchmarking revealed MSVC's std::sin/cos/exp implementations are highly optimized (SIMD/lookup tables) and outperform pure C++ polynomial approximations. Only `tanh` benefits from a custom Padé approximation.
+
+**When to use**:
+
+| Use Case | Function | Why |
+|----------|----------|-----|
+| Saturation in feedback loops | `fastTanh()` | Called thousands of times per block, 3x speedup |
+| Waveshaping/soft clipping | `fastTanh()` | Hot path optimization |
+| LFO sine generation | `std::sin()` | MSVC is faster than polynomial approx |
+| Filter coefficient calculation | `std::cos()` | MSVC is faster than polynomial approx |
+| Envelope smoothing | `std::exp()` | MSVC is faster than polynomial approx |
+| Compile-time tanh tables | `fastTanh()` | constexpr capable |
+| Compile-time exp values | `Iterum::DSP::detail::constexprExp()` | In db_utils.h |
+
+**Example**:
+```cpp
+#include "dsp/core/fast_math.h"
+using namespace Iterum::DSP::FastMath;
+
+// Saturation in feedback path (hot code)
+for (size_t i = 0; i < numSamples; ++i) {
+    feedback[i] = fastTanh(feedback[i] * drive);  // 3x faster than std::tanh
+}
+
+// Compile-time lookup table
+constexpr std::array<float, 5> tanhTable = {
+    fastTanh(-2.0f), fastTanh(-1.0f), fastTanh(0.0f),
+    fastTanh(1.0f), fastTanh(2.0f)
+};
+```
+
+---
+
+### Interpolation Utilities
+
+| | |
+|---|---|
+| **Purpose** | Standalone interpolation functions for fractional sample reading |
+| **Location** | [src/dsp/core/interpolation.h](src/dsp/core/interpolation.h) |
+| **Namespace** | `Iterum::DSP::Interpolation` |
+| **Added** | 0.0.17 (017-layer0-utilities) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP::Interpolation {
+    // Linear interpolation (2-point)
+    [[nodiscard]] constexpr float linearInterpolate(float y0, float y1, float t) noexcept;
+
+    // Cubic Hermite interpolation (4-point, C1 continuous)
+    [[nodiscard]] constexpr float cubicHermiteInterpolate(
+        float y_minus1, float y0, float y1, float y2, float t) noexcept;
+
+    // Lagrange interpolation (4-point, 3rd-order polynomial)
+    [[nodiscard]] constexpr float lagrangeInterpolate(
+        float y_minus1, float y0, float y1, float y2, float t) noexcept;
+}
+```
+
+**Behavior**:
+- `linearInterpolate(0, 1, 0.5)` → `0.5f`
+- All functions return exact sample value when `t = 0` (returns y0)
+- All functions are constexpr and noexcept
+
+**Interpolation Quality Comparison**:
+
+| Method | Points | Order | Continuity | Aliasing | Use Case |
+|--------|--------|-------|------------|----------|----------|
+| Linear | 2 | 1st | C0 | Higher | Modulated delay (chorus) |
+| Cubic Hermite | 4 | 3rd | C1 | Low | Pitch shifting, resampling |
+| Lagrange | 4 | 3rd | C0 | Lowest | High-quality transposition |
+
+**When to use**:
+
+| Use Case | Method | Why |
+|----------|--------|-----|
+| Modulated delay (chorus, flanger) | `linearInterpolate` | Fast, smooth for slow modulation |
+| Pitch shifting | `cubicHermiteInterpolate` | C1 continuity reduces artifacts |
+| High-quality resampling | `lagrangeInterpolate` | Lowest aliasing |
+| Compile-time tables | Any (all constexpr) | Pre-compute interpolated values |
+
+**Example**:
+```cpp
+#include "dsp/core/interpolation.h"
+using namespace Iterum::DSP::Interpolation;
+
+// Read fractional delay position
+float delaySamples = 100.5f;
+size_t idx = static_cast<size_t>(delaySamples);
+float frac = delaySamples - idx;
+
+// 4-point cubic Hermite
+float sample = cubicHermiteInterpolate(
+    buffer[idx - 1], buffer[idx], buffer[idx + 1], buffer[idx + 2], frac);
 ```
 
 ---

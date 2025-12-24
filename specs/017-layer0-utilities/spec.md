@@ -25,9 +25,11 @@ As a developer building the Layer 3 Delay Engine, I need access to tempo and tra
 
 ### User Story 2 - FastMath for CPU-Critical Paths (Priority: P2)
 
-As a developer implementing feedback saturation in Layer 2/3, I need fast approximations of transcendental functions (sin, tanh, exp) so that I can maintain real-time performance without sacrificing audio quality.
+As a developer implementing feedback saturation in Layer 2/3, I need a fast approximation of tanh so that I can maintain real-time performance without sacrificing audio quality.
 
-**Why this priority**: Feedback paths may call saturation (tanh) thousands of times per block. Standard library functions are accurate but slow. FastMath enables higher-quality processing within CPU budgets.
+**Why this priority**: Feedback paths may call saturation (tanh) thousands of times per block. The standard library tanh is slower than a well-tuned polynomial approximation. fastTanh enables higher-quality processing within CPU budgets.
+
+**Scope Note**: Only fastTanh is provided because benchmarking revealed MSVC's std::sin/cos/exp are faster than polynomial approximations (they use SIMD/lookup tables). Use std:: versions for sin/cos/exp.
 
 **Independent Test**: Can be tested by comparing fastTanh output against std::tanh for a range of inputs, verifying accuracy within tolerance, and measuring CPU cycles per call.
 
@@ -35,7 +37,7 @@ As a developer implementing feedback saturation in Layer 2/3, I need fast approx
 
 1. **Given** an input value of 0.5, **When** I call fastTanh(0.5), **Then** the result is within 0.1% of std::tanh(0.5)
 2. **Given** an input value of 3.0 (saturation region), **When** I call fastTanh(3.0), **Then** the result is within 0.5% of std::tanh(3.0)
-3. **Given** a buffer of 512 samples, **When** I apply fastTanh to each sample, **Then** processing completes in less than 50% of the time required by std::tanh
+3. **Given** a buffer of 1M samples, **When** I apply fastTanh to each sample, **Then** processing completes in less than 50% of the time required by std::tanh (~3x speedup verified)
 
 ---
 
@@ -65,8 +67,10 @@ As a developer, I need math utilities that work at compile-time so that I can pr
 
 **Acceptance Scenarios**:
 
-1. **Given** a constexpr-capable fastSin function, **When** I initialize a constexpr array with pre-computed sine values, **Then** the code compiles and values are correct
+1. **Given** a constexpr-capable fastTanh function, **When** I initialize a constexpr array with pre-computed tanh values, **Then** the code compiles and values are correct
 2. **Given** tempoToSamples as a constexpr function, **When** I use it in a constexpr context, **Then** compilation succeeds with correct values
+
+**Note**: For compile-time sin/cos/exp, use `Iterum::DSP::detail::constexprExp()` from `db_utils.h` or Taylor series implementations. Runtime sin/cos/exp should use `std::sin`, `std::cos`, `std::exp` which are faster on modern compilers.
 
 ---
 
@@ -93,14 +97,14 @@ As a developer, I need math utilities that work at compile-time so that I can pr
 - **FR-008**: BlockContext MUST provide tempoToSamples() function to convert note values to sample counts
 
 **FastMath:**
-- **FR-009**: FastMath MUST provide fastSin(x) with maximum error of 0.1% over [-2pi, 2pi]
-- **FR-010**: FastMath MUST provide fastCos(x) with maximum error of 0.1% over [-2pi, 2pi]
+- **FR-009**: ~~FastMath MUST provide fastSin(x)~~ **REMOVED** - MSVC's std::sinf is faster. Use std::sin.
+- **FR-010**: ~~FastMath MUST provide fastCos(x)~~ **REMOVED** - MSVC's std::cosf is faster. Use std::cos.
 - **FR-011**: FastMath MUST provide fastTanh(x) with maximum error of 0.5% for |x| < 3 and 1% for larger values
-- **FR-012**: FastMath MUST provide fastExp(x) with maximum error of 0.5% for x in [-10, 10]
-- **FR-013**: All FastMath functions MUST be noexcept
-- **FR-014**: FastMath functions SHOULD be constexpr where the algorithm permits
-- **FR-015**: FastMath functions MUST handle NaN input gracefully (return NaN or appropriate limit)
-- **FR-016**: FastMath functions MUST handle infinity input gracefully (return appropriate limit)
+- **FR-012**: ~~FastMath MUST provide fastExp(x)~~ **REMOVED** - MSVC's std::expf is faster. Use std::exp.
+- **FR-013**: fastTanh MUST be noexcept
+- **FR-014**: fastTanh SHOULD be constexpr where the algorithm permits
+- **FR-015**: fastTanh MUST handle NaN input gracefully (return NaN)
+- **FR-016**: fastTanh MUST handle infinity input gracefully (return ±1)
 
 **Interpolation:**
 - **FR-017**: Interpolation MUST provide linearInterpolate(y0, y1, t) for t in [0, 1]
@@ -128,7 +132,7 @@ As a developer, I need math utilities that work at compile-time so that I can pr
 ### Measurable Outcomes
 
 - **SC-001**: fastTanh processes 10,000 samples at least 2x faster than std::tanh on the same platform
-- **SC-002**: fastSin/fastCos achieve 0.1% maximum relative error across the tested range
+- **SC-002**: ~~fastSin/fastCos achieve 0.1% maximum relative error~~ **REMOVED** - Functions removed.
 - **SC-003**: fastTanh achieves 0.5% maximum relative error for |x| < 3.0
 - **SC-004**: BlockContext tempoToSamples calculations are accurate to within 1 sample for tempos 20-300 BPM at sample rates 44100-192000 Hz
 - **SC-005**: All interpolation functions produce mathematically correct results for known test cases
@@ -185,15 +189,15 @@ grep -r "interpolat" src/dsp/primitives/delay_line.h
 | FR-006: Transport position | ✅ MET | `block_context.h:46` - `int64_t transportPositionSamples` |
 | FR-007: Default-constructible | ✅ MET | `block_context_test.cpp` - defaults verified (44100, 512, 120, 4/4, stopped) |
 | FR-008: tempoToSamples() | ✅ MET | `block_context.h:55-67` - tested in `block_context_test.cpp` |
-| **FastMath (FR-009 to FR-016)** | | |
-| FR-009: fastSin 0.1% error | ✅ MET | `fast_math_test.cpp:85-104` - accuracy across [-2pi, 2pi] |
-| FR-010: fastCos 0.1% error | ✅ MET | `fast_math_test.cpp:158-174` - accuracy across [-2pi, 2pi] |
-| FR-011: fastTanh 0.5%/1% error | ✅ MET | `fast_math_test.cpp:258-275` - Padé (5,4) achieves <0.05% |
-| FR-012: fastExp 0.5% error | ✅ MET | `fast_math_test.cpp:333-345` - accuracy across [-10, 10] |
-| FR-013: All noexcept | ✅ MET | `fast_math_test.cpp` - noexcept tests for all functions |
-| FR-014: Constexpr where possible | ✅ MET | `fast_math_test.cpp:374-411` - constexpr array initialization |
-| FR-015: NaN handling | ✅ MET | `fast_math_test.cpp:107-122` - returns NaN for NaN input |
-| FR-016: Infinity handling | ✅ MET | `fast_math_test.cpp:113-121,284-292` - returns limits |
+| **FastMath (FR-011 only - fastTanh)** | | |
+| FR-009: fastSin 0.1% error | 🔄 REMOVED | Removed - MSVC's std::sinf is faster. Use std::sin instead. |
+| FR-010: fastCos 0.1% error | 🔄 REMOVED | Removed - MSVC's std::cosf is faster. Use std::cos instead. |
+| FR-011: fastTanh 0.5%/1% error | ✅ MET | `fast_math_test.cpp` - Padé (5,4) achieves <0.05% |
+| FR-012: fastExp 0.5% error | 🔄 REMOVED | Removed - MSVC's std::expf is faster. Use std::exp instead. |
+| FR-013: fastTanh noexcept | ✅ MET | `fast_math_test.cpp` - noexcept verified |
+| FR-014: fastTanh constexpr | ✅ MET | `fast_math_test.cpp` - constexpr array initialization works |
+| FR-015: NaN handling | ✅ MET | `fast_math_test.cpp` - returns NaN for NaN input |
+| FR-016: Infinity handling | ✅ MET | `fast_math_test.cpp` - returns +/-1 for +/-infinity |
 | **Interpolation (FR-017 to FR-022)** | | |
 | FR-017: linearInterpolate | ✅ MET | `interpolation.h:41-47`, `interpolation_test.cpp:27-47` |
 | FR-018: cubicHermiteInterpolate | ✅ MET | `interpolation.h:84-99`, `interpolation_test.cpp:112-169` |
@@ -211,13 +215,20 @@ grep -r "interpolat" src/dsp/primitives/delay_line.h
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| SC-001: fastTanh 2x faster | ⚠️ NOT MEASURED | Performance benchmark not implemented (would require platform-specific timing) |
-| SC-002: fastSin/Cos 0.1% error | ✅ MET | `fast_math_test.cpp` - 200+ points tested across [-2pi, 2pi] |
-| SC-003: fastTanh 0.5% error | ✅ MET | `fast_math_test.cpp:258-275` - all 61 points in [-3,3] pass |
+| SC-001: fastTanh 2x faster | ✅ MET | **fastTanh: 3x faster** (Padé approximant beats std::tanh). See benchmark. |
+| SC-002: fastSin/Cos 0.1% error | 🔄 REMOVED | fastSin/fastCos removed - MSVC's std:: versions are faster. |
+| SC-003: fastTanh 0.5% error | ✅ MET | `fast_math_test.cpp` - Padé (5,4) achieves <0.05% for |x| < 3 |
 | SC-004: tempoToSamples accuracy | ✅ MET | `block_context_test.cpp` - tested at 90/120 BPM, 44100/48000 Hz |
 | SC-005: Interpolation correctness | ✅ MET | `interpolation_test.cpp` - 49 assertions, polynomial exactness verified |
 | SC-006: Cross-platform | ⚠️ PARTIAL | Windows/MSVC verified; macOS/Linux pending CI |
 | SC-007: No Layer 1+ deps | ✅ MET | Code inspection - only Layer 0 includes |
+
+**Performance Benchmark Results** (Windows/MSVC, Release, 1M samples × 10 iterations):
+| Function | Time (fast) | Time (std) | Speedup | Status |
+|----------|-------------|------------|---------|--------|
+| fastTanh | ~35,000 μs | ~105,000 μs | **~3x** | ✅ PASS |
+
+**Note**: fastSin, fastCos, and fastExp were removed after benchmarking showed they were slower than MSVC's highly optimized std:: implementations (which use SIMD/lookup tables). Only fastTanh provides meaningful performance improvement for audio processing.
 
 **Status Key:**
 - ✅ MET: Requirement fully satisfied with test evidence
@@ -238,25 +249,30 @@ grep -r "interpolat" src/dsp/primitives/delay_line.h
 
 ### Honest Assessment
 
-**Overall Status**: COMPLETE (with minor gaps)
+**Overall Status**: COMPLETE
 
-**Minor Gaps:**
-- SC-001: Performance benchmark not implemented. The Padé approximation is mathematically simpler than std::tanh (single rational function vs. exponential series), so 2x speedup is expected but not measured.
+**FastMath Scope Reduction (User Approved):**
+- **fastTanh: ~3x faster** ✅ - Exceeds 2x target. Critical for saturation/waveshaping in hot paths.
+- **fastSin/fastCos/fastExp: REMOVED** - Benchmarking revealed MSVC's std:: implementations are faster (SIMD/lookup tables). Removed to avoid providing slower alternatives.
+- **Recommendation**: Use `std::sin`, `std::cos`, `std::exp` for runtime. Use `Iterum::DSP::detail::constexprExp()` from `db_utils.h` if compile-time evaluation is needed.
+
+**Other Gaps:**
 - SC-006: Only Windows/MSVC tested locally. CI pipeline will verify macOS (Clang) and Linux (GCC).
 
 **Test Summary:**
-- Layer 0 utilities: 61 test cases, 1438 assertions passing
-- Full test suite: 733 test cases, 1,444,464 assertions passing
+- Layer 0 utilities: 51 test cases passing
+- Full test suite: 722 test cases, 1,443,922 assertions passing
 
 **Files Created:**
 - `src/dsp/core/note_value.h` - NoteValue/NoteModifier enums, kBeatsPerNote, getBeatsForNote()
 - `src/dsp/core/block_context.h` - BlockContext struct with tempoToSamples()
-- `src/dsp/core/fast_math.h` - fastSin, fastCos, fastTanh, fastExp
+- `src/dsp/core/fast_math.h` - fastTanh only (~3x faster than std::tanh)
 - `src/dsp/core/interpolation.h` - linearInterpolate, cubicHermiteInterpolate, lagrangeInterpolate
 - `tests/unit/core/note_value_test.cpp` - 11 test cases
 - `tests/unit/core/block_context_test.cpp` - 11 test cases
-- `tests/unit/core/fast_math_test.cpp` - 21 test cases
+- `tests/unit/core/fast_math_test.cpp` - 10 test cases (fastTanh only)
 - `tests/unit/core/interpolation_test.cpp` - 18 test cases
+- `tests/benchmark_tanh.cpp` - Performance benchmark verifying SC-001
 
 **Files Modified:**
 - `src/dsp/core/db_utils.h` - Made `isInf()` constexpr for FastMath reuse

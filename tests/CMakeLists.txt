@@ -251,3 +251,25 @@ endif()
 #     integration/test_plugin_load.cpp
 # )
 # target_link_libraries(integration_tests PRIVATE Catch2::Catch2WithMain sdk)
+
+# ==============================================================================
+# Performance Benchmarks
+# ==============================================================================
+# Standalone benchmarks for measuring DSP performance (SC-001)
+
+add_executable(benchmark_tanh
+    benchmark_tanh.cpp
+)
+
+target_include_directories(benchmark_tanh
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+# Release optimizations for accurate benchmarking
+target_compile_options(benchmark_tanh PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
+    $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
+)
