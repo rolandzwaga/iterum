@@ -362,9 +362,9 @@ public:
     }
 
     /// @brief Configure velvet noise density (impulses per second)
-    /// @param density Impulses per second [100, 10000]
+    /// @param density Impulses per second [100, 20000] (FR-025)
     void setVelvetDensity(float density) noexcept {
-        velvetDensity_ = std::clamp(density, 100.0f, 10000.0f);
+        velvetDensity_ = std::clamp(density, 100.0f, 20000.0f);
     }
 
     /// @brief Get current velvet noise density

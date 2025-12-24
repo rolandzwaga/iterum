@@ -1211,10 +1211,10 @@ TEST_CASE("Brown noise: spectral slope of -6dB/octave", "[noise][US7][SC-002]") 
     float db4k = linearToDb(energy4k);
 
     // Brown noise: -6dB per octave (1/f² spectrum)
-    // 1kHz to 2kHz = 1 octave = -6dB (tolerance: ±1.5dB)
+    // 1kHz to 2kHz = 1 octave = -6dB (tolerance: ±1dB per SC-009)
     float slope1to2 = db2k - db1k;
-    REQUIRE(slope1to2 >= -7.5f);
-    REQUIRE(slope1to2 <= -4.5f);
+    REQUIRE(slope1to2 >= -7.0f);
+    REQUIRE(slope1to2 <= -5.0f);
 
     // 1kHz to 4kHz = 2 octaves = -12dB (tolerance: ±2dB)
     float slope1to4 = db4k - db1k;
@@ -1364,10 +1364,10 @@ TEST_CASE("Blue noise: spectral slope of +3dB/octave", "[noise][US8][SC-002]") {
     float db4k = linearToDb(energy4k);
 
     // Blue noise: +3dB per octave
-    // 1kHz to 2kHz = 1 octave = +3dB (tolerance: ±1.5dB)
+    // 1kHz to 2kHz = 1 octave = +3dB (tolerance: ±1dB per SC-010)
     float slope1to2 = db2k - db1k;
-    REQUIRE(slope1to2 >= 1.5f);
-    REQUIRE(slope1to2 <= 4.5f);
+    REQUIRE(slope1to2 >= 2.0f);
+    REQUIRE(slope1to2 <= 4.0f);
 
     // 1kHz to 4kHz = 2 octaves = +6dB (tolerance: ±2dB)
     float slope1to4 = db4k - db1k;
@@ -1517,15 +1517,15 @@ TEST_CASE("Violet noise: spectral slope of +6dB/octave", "[noise][US9][SC-002]")
     float db4k = linearToDb(energy4k);
 
     // Violet noise: +6dB per octave (differentiated white noise)
-    // 1kHz to 2kHz = 1 octave = +6dB (tolerance: ±2dB)
+    // 1kHz to 2kHz = 1 octave = +6dB (tolerance: ±1dB per SC-011)
     float slope1to2 = db2k - db1k;
-    REQUIRE(slope1to2 >= 4.0f);
-    REQUIRE(slope1to2 <= 8.0f);
+    REQUIRE(slope1to2 >= 5.0f);
+    REQUIRE(slope1to2 <= 7.0f);
 
-    // 1kHz to 4kHz = 2 octaves = +12dB (tolerance: ±3dB)
+    // 1kHz to 4kHz = 2 octaves = +12dB (tolerance: ±2dB)
     float slope1to4 = db4k - db1k;
-    REQUIRE(slope1to4 >= 9.0f);
-    REQUIRE(slope1to4 <= 15.0f);
+    REQUIRE(slope1to4 >= 10.0f);
+    REQUIRE(slope1to4 <= 14.0f);
 }
 
 TEST_CASE("Violet noise: reset clears filter state", "[noise][US9]") {
@@ -1852,6 +1852,45 @@ TEST_CASE("Velvet noise: setVelvetDensity configures impulse rate", "[noise][US1
     REQUIRE(highCount > lowCount * 2); // At least 2x more
 }
 
+TEST_CASE("Velvet noise: density range 100-20000 per FR-025", "[noise][US11][FR-025]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::Velvet, true);
+    noise.setNoiseLevel(NoiseType::Velvet, 0.0f);
+
+    // Test minimum density (100)
+    noise.setVelvetDensity(100.0f);
+    REQUIRE(noise.getVelvetDensity() == Approx(100.0f));
+
+    // Test maximum density (20000 per FR-025)
+    noise.setVelvetDensity(20000.0f);
+    REQUIRE(noise.getVelvetDensity() == Approx(20000.0f));
+
+    // Test that values below minimum are clamped
+    noise.setVelvetDensity(50.0f);
+    REQUIRE(noise.getVelvetDensity() == Approx(100.0f));
+
+    // Test that values above maximum are clamped
+    noise.setVelvetDensity(25000.0f);
+    REQUIRE(noise.getVelvetDensity() == Approx(20000.0f));
+
+    // Verify max density produces output (functional test)
+    noise.setVelvetDensity(20000.0f);
+    constexpr size_t testSize = 4410; // 0.1 second
+    std::vector<float> buffer(testSize, 0.0f);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // At 20000 impulses/second, expect ~2000 non-zero samples in 0.1 seconds
+    size_t impulseCount = 0;
+    for (size_t i = 0; i < testSize; ++i) {
+        if (buffer[i] != 0.0f) ++impulseCount;
+    }
+    REQUIRE(impulseCount > 1000);  // At least half expected
+}
+
 TEST_CASE("Velvet noise: setNoiseLevel affects impulse amplitude", "[noise][US11]") {
     NoiseGenerator noise;
     noise.prepare(kSampleRate, kBlockSize);
@@ -1974,7 +2013,7 @@ TEST_CASE("Vinyl rumble: samples in [-1.0, 1.0] range", "[noise][US12][SC-003]")
     }
 }
 
-TEST_CASE("Vinyl rumble: energy concentrated below 100Hz", "[noise][US12][SC-002]") {
+TEST_CASE("Vinyl rumble: >90% energy concentrated below 100Hz", "[noise][US12][SC-014]") {
     NoiseGenerator noise;
     noise.prepare(kSampleRate, kBlockSize);
 
@@ -1993,16 +2032,18 @@ TEST_CASE("Vinyl rumble: energy concentrated below 100Hz", "[noise][US12][SC-002
     const float* analysisStart = buffer.data() + 4410;
     size_t analysisSize = testSize - 4410;
 
-    // Measure energy at low and high frequencies
-    float energyLow = measureBandEnergy(analysisStart, analysisSize, 10.0f, 100.0f, kSampleRate);
-    float energyHigh = measureBandEnergy(analysisStart, analysisSize, 500.0f, 2000.0f, kSampleRate);
+    // Measure energy below 100Hz (the rumble band)
+    float energyBelow100 = measureBandEnergy(analysisStart, analysisSize, 5.0f, 100.0f, kSampleRate);
 
-    // Low frequency energy should dominate (rumble is sub-bass)
-    float dbLow = linearToDb(energyLow);
-    float dbHigh = linearToDb(energyHigh);
+    // Measure energy above 100Hz (should be minimal)
+    float energyAbove100 = measureBandEnergy(analysisStart, analysisSize, 100.0f, 10000.0f, kSampleRate);
 
-    // Low frequencies should be at least 10dB louder than high frequencies
-    REQUIRE((dbLow - dbHigh) >= 10.0f);
+    // Calculate total energy and concentration percentage
+    float totalEnergy = energyBelow100 + energyAbove100;
+    float concentrationPercent = (energyBelow100 / totalEnergy) * 100.0f;
+
+    // SC-014: >90% energy concentration below 100Hz
+    REQUIRE(concentrationPercent > 90.0f);
 }
 
 TEST_CASE("Vinyl rumble: setNoiseLevel affects output amplitude", "[noise][US12]") {
@@ -2101,37 +2142,76 @@ TEST_CASE("Modulation noise: output is zero with silent input", "[noise][US14]")
     REQUIRE(rms < 0.001f); // Essentially zero
 }
 
-TEST_CASE("Modulation noise: output scales with input signal level", "[noise][US14]") {
+TEST_CASE("Modulation noise: correlation coefficient >0.8 with input signal", "[noise][US14][SC-017]") {
     NoiseGenerator noise;
     noise.prepare(kSampleRate, kBlockSize);
 
     noise.setNoiseEnabled(NoiseType::ModulationNoise, true);
-    noise.setNoiseLevel(NoiseType::ModulationNoise, -20.0f);
+    noise.setNoiseLevel(NoiseType::ModulationNoise, 0.0f);
 
-    constexpr size_t testSize = 8192;
-    constexpr size_t skipSamples = 1000;
+    // Use longer test with varying envelope for correlation analysis
+    constexpr size_t testSize = 44100;  // 1 second
+    constexpr size_t skipSamples = 2000;
+    constexpr size_t windowSize = 256;  // For envelope calculation
 
-    // Test with quiet input
-    std::vector<float> quietInput(testSize, 0.1f);
-    std::vector<float> quietOutput(testSize, 0.0f);
-    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
-        noise.process(quietInput.data() + i * kBlockSize,
-                     quietOutput.data() + i * kBlockSize, kBlockSize);
+    // Create input with smoothly varying amplitude envelope
+    // Use a slow sine-based envelope (0.5Hz) to get clear amplitude variation
+    std::vector<float> input(testSize);
+    std::vector<float> output(testSize, 0.0f);
+    std::vector<float> inputEnvelope;
+    std::vector<float> outputEnvelope;
+
+    for (size_t i = 0; i < testSize; ++i) {
+        // Sine envelope at 0.5Hz, amplitude varies from 0.1 to 0.9
+        float envelope = 0.5f + 0.4f * std::sin(2.0f * 3.14159f * 0.5f * static_cast<float>(i) / kSampleRate);
+        // Add carrier frequency to make it a real audio signal
+        float carrier = std::sin(2.0f * 3.14159f * 440.0f * static_cast<float>(i) / kSampleRate);
+        input[i] = envelope * carrier;
     }
-    float rmsQuiet = calculateRMS(quietOutput.data() + skipSamples, testSize - skipSamples);
 
-    // Reset and test with loud input
-    noise.reset();
-    std::vector<float> loudInput(testSize, 0.8f);
-    std::vector<float> loudOutput(testSize, 0.0f);
+    // Process through noise generator
     for (size_t i = 0; i < testSize / kBlockSize; ++i) {
-        noise.process(loudInput.data() + i * kBlockSize,
-                     loudOutput.data() + i * kBlockSize, kBlockSize);
+        noise.process(input.data() + i * kBlockSize,
+                     output.data() + i * kBlockSize, kBlockSize);
     }
-    float rmsLoud = calculateRMS(loudOutput.data() + skipSamples, testSize - skipSamples);
 
-    // Loud input should produce more noise than quiet input
-    REQUIRE(rmsLoud > rmsQuiet * 2.0f); // At least 2x more noise
+    // Calculate windowed envelopes (RMS per window) after settling
+    for (size_t i = skipSamples; i + windowSize < testSize; i += windowSize) {
+        // Input envelope (RMS of window)
+        float sumSqIn = 0.0f;
+        float sumSqOut = 0.0f;
+        for (size_t j = 0; j < windowSize; ++j) {
+            sumSqIn += input[i + j] * input[i + j];
+            sumSqOut += output[i + j] * output[i + j];
+        }
+        inputEnvelope.push_back(std::sqrt(sumSqIn / windowSize));
+        outputEnvelope.push_back(std::sqrt(sumSqOut / windowSize));
+    }
+
+    // Calculate Pearson correlation coefficient
+    size_t n = inputEnvelope.size();
+    REQUIRE(n > 10);  // Need enough samples for meaningful correlation
+
+    float sumX = 0.0f, sumY = 0.0f, sumXY = 0.0f, sumX2 = 0.0f, sumY2 = 0.0f;
+    for (size_t i = 0; i < n; ++i) {
+        sumX += inputEnvelope[i];
+        sumY += outputEnvelope[i];
+        sumXY += inputEnvelope[i] * outputEnvelope[i];
+        sumX2 += inputEnvelope[i] * inputEnvelope[i];
+        sumY2 += outputEnvelope[i] * outputEnvelope[i];
+    }
+
+    float nf = static_cast<float>(n);
+    float numerator = nf * sumXY - sumX * sumY;
+    float denominator = std::sqrt((nf * sumX2 - sumX * sumX) * (nf * sumY2 - sumY * sumY));
+
+    float correlation = 0.0f;
+    if (denominator > 1e-10f) {
+        correlation = numerator / denominator;
+    }
+
+    // SC-017: Modulation noise amplitude correlates with input signal (correlation coefficient >0.8)
+    REQUIRE(correlation > 0.8f);
 }
 
 TEST_CASE("Modulation noise: samples in [-1.0, 1.0] range", "[noise][US14][SC-003]") {
