@@ -12,7 +12,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **018-delay-engine** | Core wrapper, time modes (ms/sync), smooth changes, dry/wet | 🔲 TODO | DelayLine, Smoother, BlockContext |
+| **018-delay-engine** | Core wrapper, time modes (ms/sync), smooth changes, dry/wet | 🔄 IN PROGRESS | DelayLine, Smoother, BlockContext |
 | **019-tap-tempo** | Tap interval tracking, BPM output, averaging | 🔲 TODO | None |
 | **020-delay-crossfade** | Dual delay lines, crossfade for instant time jumps | 🔲 DEFERRED | DelayEngine |
 
