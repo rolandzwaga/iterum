@@ -2223,3 +2223,146 @@ TEST_CASE("Modulation noise: reset clears state", "[noise][US14]") {
         REQUIRE(buffer[i] <= 1.0f);
     }
 }
+
+// ==============================================================================
+// User Story 15: Radio Static Generation [US15]
+// ==============================================================================
+
+TEST_CASE("Radio static: output is zero when disabled", "[noise][US15]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    // Leave radio static disabled (default)
+    std::array<float, kBlockSize> buffer;
+    buffer.fill(0.5f);
+
+    noise.process(buffer.data(), buffer.size());
+
+    REQUIRE(isAllZeros(buffer.data(), buffer.size()));
+}
+
+TEST_CASE("Radio static: output is non-zero when enabled", "[noise][US15]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::RadioStatic, true);
+    noise.setNoiseLevel(NoiseType::RadioStatic, 0.0f);
+
+    constexpr size_t largeSize = 4096;
+    std::vector<float> buffer(largeSize, 0.0f);
+
+    for (size_t i = 0; i < largeSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    REQUIRE(hasNonZeroValues(buffer.data(), buffer.size()));
+}
+
+TEST_CASE("Radio static: samples in [-1.0, 1.0] range", "[noise][US15][SC-003]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::RadioStatic, true);
+    noise.setNoiseLevel(NoiseType::RadioStatic, 0.0f);
+
+    constexpr size_t testSize = 44100;
+    std::vector<float> buffer(testSize);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // All samples must be in valid range
+    for (size_t i = 0; i < testSize; ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}
+
+TEST_CASE("Radio static: band-limited (energy cut above 5kHz)", "[noise][US15][SC-002]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::RadioStatic, true);
+    noise.setNoiseLevel(NoiseType::RadioStatic, 0.0f);
+
+    // Generate 5 seconds for spectral analysis
+    constexpr size_t testSize = 44100 * 5;
+    std::vector<float> buffer(testSize);
+
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(buffer.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Skip initial settling
+    const float* analysisStart = buffer.data() + 4410;
+    size_t analysisSize = testSize - 4410;
+
+    // Measure energy below and above bandwidth cutoff
+    float energyLow = measureBandEnergy(analysisStart, analysisSize, 1000.0f, 4000.0f, kSampleRate);
+    float energyHigh = measureBandEnergy(analysisStart, analysisSize, 8000.0f, 15000.0f, kSampleRate);
+
+    // Band-limited: should have much more energy below 5kHz than above
+    float dbLow = linearToDb(energyLow);
+    float dbHigh = linearToDb(energyHigh);
+
+    // High frequencies should be at least 10dB quieter
+    REQUIRE((dbLow - dbHigh) >= 10.0f);
+}
+
+TEST_CASE("Radio static: setNoiseLevel affects output amplitude", "[noise][US15]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::RadioStatic, true);
+
+    constexpr size_t testSize = 44100;
+    constexpr size_t skipSamples = 1000;
+
+    // Generate at 0dB
+    noise.setNoiseLevel(NoiseType::RadioStatic, 0.0f);
+    std::vector<float> bufferLoud(testSize);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferLoud.data() + i * kBlockSize, kBlockSize);
+    }
+
+    // Reset and generate at -20dB
+    noise.reset();
+    noise.setNoiseLevel(NoiseType::RadioStatic, -20.0f);
+    std::vector<float> bufferQuiet(testSize);
+    for (size_t i = 0; i < testSize / kBlockSize; ++i) {
+        noise.process(bufferQuiet.data() + i * kBlockSize, kBlockSize);
+    }
+
+    float rmsLoud = calculateRMS(bufferLoud.data() + skipSamples, testSize - skipSamples);
+    float rmsQuiet = calculateRMS(bufferQuiet.data() + skipSamples, testSize - skipSamples);
+
+    // -20dB difference = 10x amplitude difference
+    float ratio = rmsLoud / rmsQuiet;
+    REQUIRE(ratio == Approx(10.0f).margin(2.0f));
+}
+
+TEST_CASE("Radio static: reset clears state", "[noise][US15]") {
+    NoiseGenerator noise;
+    noise.prepare(kSampleRate, kBlockSize);
+
+    noise.setNoiseEnabled(NoiseType::RadioStatic, true);
+    noise.setNoiseLevel(NoiseType::RadioStatic, 0.0f);
+
+    // Generate some samples
+    std::array<float, kBlockSize> buffer;
+    for (int i = 0; i < 10; ++i) {
+        noise.process(buffer.data(), buffer.size());
+    }
+
+    // Reset
+    noise.reset();
+
+    // After reset, should still generate valid samples
+    noise.process(buffer.data(), buffer.size());
+
+    for (size_t i = 0; i < buffer.size(); ++i) {
+        REQUIRE(buffer[i] >= -1.0f);
+        REQUIRE(buffer[i] <= 1.0f);
+    }
+}

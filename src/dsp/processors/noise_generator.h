@@ -52,11 +52,12 @@ enum class NoiseType : uint8_t {
     Grey,           ///< Inverse A-weighting for perceptually flat loudness
     Velvet,         ///< Sparse random impulses for smooth noise character
     VinylRumble,    ///< Low-frequency motor/platter noise below 100Hz
-    ModulationNoise ///< Signal-correlated noise (scales with input level, no floor)
+    ModulationNoise,///< Signal-correlated noise (scales with input level, no floor)
+    RadioStatic     ///< Band-limited atmospheric/interference noise (~5kHz cutoff)
 };
 
 /// @brief Number of noise types available
-constexpr size_t kNumNoiseTypes = 12;
+constexpr size_t kNumNoiseTypes = 13;
 
 // =============================================================================
 // PinkNoiseFilter (Internal)
@@ -225,6 +226,9 @@ public:
         modulationEnvelope_.setAttackTime(2.0f);   // Very fast attack
         modulationEnvelope_.setReleaseTime(30.0f); // Fast release
 
+        // Configure radio static low-pass filter (~5kHz cutoff for AM radio bandwidth)
+        radioLowPass_.configure(FilterType::Lowpass, 5000.0f, 0.707f, 0.0f, sampleRate);
+
         reset();
     }
 
@@ -267,6 +271,9 @@ public:
 
         // Reset vinyl rumble integrator
         rumblePrevious_ = 0.0f;
+
+        // Reset radio static low-pass filter
+        radioLowPass_.reset();
     }
 
     // =========================================================================
@@ -604,6 +611,16 @@ private:
             sample += modulatedNoise * modulationGain;
         }
 
+        // Radio static (US15) - band-limited atmospheric/interference noise
+        // White noise through ~5kHz low-pass filter for AM radio bandwidth character
+        float radioGain = levelSmoothers_[static_cast<size_t>(NoiseType::RadioStatic)].process();
+        if (noiseEnabled_[static_cast<size_t>(NoiseType::RadioStatic)]) {
+            // Apply low-pass filter to white noise for band-limited character
+            float radioNoise = radioLowPass_.process(whiteNoise);
+            radioNoise = std::clamp(radioNoise, -1.0f, 1.0f);
+            sample += radioNoise * radioGain;
+        }
+
         // Apply master level
         float masterGain = masterSmoother_.process();
         return sample * masterGain;
@@ -630,10 +647,11 @@ private:
     std::array<float, kNumNoiseTypes> noiseLevels_ = {
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
         kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
-        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb
+        kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb, kDefaultLevelDb,
+        kDefaultLevelDb
     };
     std::array<bool, kNumNoiseTypes> noiseEnabled_ = {
-        false, false, false, false, false, false, false, false, false, false, false, false
+        false, false, false, false, false, false, false, false, false, false, false, false, false
     };
     std::array<OnePoleSmoother, kNumNoiseTypes> levelSmoothers_;
 
@@ -686,6 +704,9 @@ private:
 
     // Modulation noise envelope follower (no floor, scales purely with input)
     EnvelopeFollower modulationEnvelope_;
+
+    // Radio static low-pass filter (~5kHz bandwidth for AM radio character)
+    Biquad radioLowPass_;
 };
 
 } // namespace DSP
