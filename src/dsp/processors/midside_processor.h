@@ -209,15 +209,16 @@ public:
             // width is already in factor form (0.0-2.0)
             side *= width;
 
-            // Handle solo modes
+            // Handle solo modes with smooth crossfade (not hard threshold)
             // FR-017: When both solos enabled, soloMid takes precedence
-            if (soloMidAmount > 0.5f) {
-                // FR-015: soloMid - output Mid only: L = R = Mid
-                side = 0.0f;
-            } else if (soloSideAmount > 0.5f) {
-                // FR-016: soloSide - output Side only: L = +Side, R = -Side
-                mid = 0.0f;
-            }
+            // FR-018: Solo mode changes MUST be smoothed to prevent clicks
+            // Use crossfade: at soloMidAmount=0, full mix; at soloMidAmount=1, side=0
+            const float soloMidFade = soloMidAmount;  // 0 = normal, 1 = mid only
+            const float soloSideFade = soloSideAmount * (1.0f - soloMidFade);  // Precedence to mid
+
+            // Crossfade: reduce side for soloMid, reduce mid for soloSide
+            side *= (1.0f - soloMidFade);
+            mid *= (1.0f - soloSideFade);
 
             // FR-002: Decode to Left/Right
             // L = Mid + Side, R = Mid - Side
@@ -275,3 +276,4 @@ private:
 
 } // namespace DSP
 } // namespace Iterum
+
