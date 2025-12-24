@@ -66,13 +66,13 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 - [X] T009 Implement semitonesFromPitchRatio() in src/dsp/processors/pitch_shift_processor.h
 - [X] T010 Define PitchMode enum (Simple, Granular, PhaseVocoder) in src/dsp/processors/pitch_shift_processor.h
 - [X] T011 Verify all foundational tests pass
-- [ ] T012 **Commit foundational utilities**
+- [X] T012 **Commit foundational utilities**
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
 ---
 
-## Phase 3: User Story 1 - Basic Pitch Shifting (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Basic Pitch Shifting (Priority: P1) 🎯 MVP ✅
 
 **Goal**: Shift pitch by semitones in a single mode (Simple), maintaining duration
 
@@ -80,36 +80,36 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 3.1 Pre-Implementation (MANDATORY)
 
-- [ ] T013 [US1] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [X] T013 [US1] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 3.2 Tests for User Story 1 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T014 [US1] Write test: 440Hz sine + 12 semitones = 880Hz output in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T015 [US1] Write test: 440Hz sine - 12 semitones = 220Hz output in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T016 [US1] Write test: 0 semitones = unity pass-through (input equals output) in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T017 [US1] Write test: prepare()/reset()/isPrepared() lifecycle in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T018 [US1] Write test: in-place processing (input buffer == output buffer) in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T019 [US1] Write test: output sample count equals input sample count (FR-004 duration preservation) in tests/unit/processors/pitch_shift_processor_test.cpp
-- [ ] T020 [US1] Write test: RMS output approximately equals RMS input at 0 semitones (FR-005 unity gain) in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T014 [US1] Write test: 440Hz sine + 12 semitones = 880Hz output in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T015 [US1] Write test: 440Hz sine - 12 semitones = 220Hz output in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T016 [US1] Write test: 0 semitones = unity pass-through (input equals output) in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T017 [US1] Write test: prepare()/reset()/isPrepared() lifecycle in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T018 [US1] Write test: in-place processing (input buffer == output buffer) in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T019 [US1] Write test: output sample count equals input sample count (FR-004 duration preservation) in tests/unit/processors/pitch_shift_processor_test.cpp
+- [X] T020 [US1] Write test: RMS output approximately equals RMS input at 0 semitones (FR-005 unity gain) in tests/unit/processors/pitch_shift_processor_test.cpp
 
 ### 3.3 Implementation for User Story 1
 
-- [ ] T021 [US1] Implement PitchShiftProcessor class skeleton (prepare, reset, process stubs) in src/dsp/processors/pitch_shift_processor.h
-- [ ] T022 [US1] Implement SimplePitchShifter internal class with dual-pointer crossfade in src/dsp/processors/pitch_shift_processor.h
-- [ ] T023 [US1] Implement half-sine crossfade window calculation in SimplePitchShifter
-- [ ] T024 [US1] Wire SimplePitchShifter to PitchShiftProcessor::process() for Simple mode
-- [ ] T025 [US1] Implement setSemitones()/getSemitones() parameter methods
-- [ ] T026 [US1] Verify all US1 tests pass
+- [X] T021 [US1] Implement PitchShiftProcessor class skeleton (prepare, reset, process stubs) in src/dsp/processors/pitch_shift_processor.h
+- [X] T022 [US1] Implement SimplePitchShifter internal class with dual-pointer crossfade in src/dsp/processors/pitch_shift_processor.h
+- [X] T023 [US1] Implement half-sine crossfade window calculation in SimplePitchShifter
+- [X] T024 [US1] Wire SimplePitchShifter to PitchShiftProcessor::process() for Simple mode
+- [X] T025 [US1] Implement setSemitones()/getSemitones() parameter methods
+- [X] T026 [US1] Verify all US1 tests pass
 
 ### 3.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T027 [US1] **Verify IEEE 754 compliance**: Add pitch_shift_processor_test.cpp to `-fno-fast-math` list in tests/CMakeLists.txt if NaN detection used
+- [X] T027 [US1] **Verify IEEE 754 compliance**: Add pitch_shift_processor_test.cpp to `-fno-fast-math` list in tests/CMakeLists.txt if NaN detection used
 
 ### 3.5 Commit (MANDATORY)
 
-- [ ] T028 [US1] **Commit completed User Story 1 work**
+- [X] T028 [US1] **Commit completed User Story 1 work**
 
 **Checkpoint**: Basic pitch shifting works in Simple mode
 

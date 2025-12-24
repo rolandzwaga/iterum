@@ -27,6 +27,8 @@
 #include <cmath>
 #include <array>
 #include <memory>
+#include <vector>
+#include <algorithm>
 
 // Layer 0 dependencies
 #include "dsp/core/db_utils.h"
@@ -294,5 +296,341 @@ private:
     struct Impl;
     std::unique_ptr<Impl> pImpl_;
 };
+
+// ==============================================================================
+// SimplePitchShifter - Internal class for delay-line modulation
+// ==============================================================================
+
+/// @brief Zero-latency pitch shifter using dual delay-line crossfade
+///
+/// Algorithm based on MathWorks delay-based pitch shifter and DSPRELATED theory:
+/// The pitch shift comes from TIME-VARYING DELAY (Doppler effect).
+///
+/// Key physics: ω_out = ω_in × (1 - dDelay/dt)
+/// For pitch ratio R: dDelay/dt = 1 - R
+/// - R > 1 (pitch up): delay DECREASES at rate (R-1) samples per sample
+/// - R < 1 (pitch down): delay INCREASES at rate (1-R) samples per sample
+///
+/// Implementation:
+/// - Two delays ramping in opposite directions
+/// - When one delay reaches its limit, reset it and crossfade to the other
+/// - Continuous half-sine crossfade preserves energy
+///
+/// Sources:
+/// - https://www.mathworks.com/help/audio/ug/delay-based-pitch-shifter.html
+/// - https://www.dsprelated.com/freebooks/pasp/Time_Varying_Delay_Effects.html
+/// - https://www.katjaas.nl/pitchshiftlowlatency/pitchshiftlowlatency.html
+class SimplePitchShifter {
+public:
+    static constexpr float kWindowTimeMs = 50.0f;  // 50ms crossfade window
+    static constexpr float kPi = 3.14159265358979323846f;
+
+    SimplePitchShifter() = default;
+
+    void prepare(double sampleRate, std::size_t /*maxBlockSize*/) noexcept {
+        sampleRate_ = static_cast<float>(sampleRate);
+
+        // Delay range in samples (~2205 at 44.1kHz for 50ms window)
+        maxDelay_ = sampleRate_ * kWindowTimeMs * 0.001f;
+        minDelay_ = 1.0f;  // Minimum safe delay
+
+        // Buffer must be large enough to hold max delay + safety margin
+        bufferSize_ = static_cast<std::size_t>(maxDelay_) * 2 + 64;
+        buffer_.resize(bufferSize_, 0.0f);
+
+        reset();
+    }
+
+    void reset() noexcept {
+        std::fill(buffer_.begin(), buffer_.end(), 0.0f);
+        writePos_ = 0;
+
+        // delay1 starts at max, is the "active" delay
+        // delay2 will be set when we need to crossfade
+        delay1_ = maxDelay_;
+        delay2_ = maxDelay_;  // Will be reset when needed
+        crossfadePhase_ = 0.0f;  // 0 = use delay1 only
+        needsCrossfade_ = false;
+    }
+
+    void process(const float* input, float* output, std::size_t numSamples,
+                 float pitchRatio) noexcept {
+        // At unity pitch, just pass through
+        if (std::abs(pitchRatio - 1.0f) < 0.0001f) {
+            if (input != output) {
+                std::copy(input, input + numSamples, output);
+            }
+            return;
+        }
+
+        // Delay-based pitch shifter using Doppler effect:
+        //
+        // Key physics: ω_out = ω_in × (1 - dDelay/dt)
+        // For pitch ratio R: dDelay/dt = 1 - R
+        //
+        // R = 2.0: delay decreases by 1 sample/sample (pitch UP)
+        // R = 0.5: delay increases by 0.5 samples/sample (pitch DOWN)
+        //
+        // Algorithm:
+        // 1. Delay1 is the "active" delay, ramping in the appropriate direction
+        // 2. When delay1 approaches its limit, reset delay2 to the START and crossfade
+        // 3. After crossfade completes, delay2 becomes active (swap roles)
+        // 4. Repeat
+
+        const float delayChange = 1.0f - pitchRatio;  // Negative for pitch up
+        const float bufferSizeF = static_cast<float>(bufferSize_);
+
+        // Crossfade over ~25% of the delay range for smooth transitions
+        const float crossfadeLength = maxDelay_ * 0.25f;
+        const float crossfadeRate = 1.0f / crossfadeLength;
+
+        // Threshold for triggering crossfade (when delay gets close to limit)
+        const float triggerThreshold = crossfadeLength;
+
+        for (std::size_t i = 0; i < numSamples; ++i) {
+            // Write input to buffer
+            buffer_[writePos_] = input[i];
+
+            // Read from both delay taps
+            float readPos1 = static_cast<float>(writePos_) - delay1_;
+            float readPos2 = static_cast<float>(writePos_) - delay2_;
+
+            // Wrap to valid buffer range
+            if (readPos1 < 0.0f) readPos1 += bufferSizeF;
+            if (readPos2 < 0.0f) readPos2 += bufferSizeF;
+
+            float sample1 = readInterpolated(readPos1);
+            float sample2 = readInterpolated(readPos2);
+
+            // Half-sine crossfade for constant power
+            float gain1 = std::cos(crossfadePhase_ * kPi * 0.5f);
+            float gain2 = std::sin(crossfadePhase_ * kPi * 0.5f);
+
+            output[i] = sample1 * gain1 + sample2 * gain2;
+
+            // Update the active delay (always delay1 conceptually, but we swap)
+            delay1_ += delayChange;
+            delay2_ += delayChange;
+
+            // Check if we need to start a crossfade
+            if (!needsCrossfade_) {
+                // For pitch UP (delayChange < 0): delay decreases toward minDelay_
+                // For pitch DOWN (delayChange > 0): delay increases toward maxDelay_
+                bool approachingLimit = (delayChange < 0.0f && delay1_ <= minDelay_ + triggerThreshold) ||
+                                        (delayChange > 0.0f && delay1_ >= maxDelay_ - triggerThreshold);
+
+                if (approachingLimit) {
+                    // Reset delay2 to the START of the cycle
+                    delay2_ = (pitchRatio > 1.0f) ? maxDelay_ : minDelay_;
+                    needsCrossfade_ = true;
+                }
+            }
+
+            // Manage crossfade
+            if (needsCrossfade_) {
+                crossfadePhase_ += crossfadeRate;
+
+                if (crossfadePhase_ >= 1.0f) {
+                    // Crossfade complete - swap delays
+                    crossfadePhase_ = 0.0f;
+                    needsCrossfade_ = false;
+
+                    // Swap delay1 and delay2 (delay2 becomes the new active)
+                    std::swap(delay1_, delay2_);
+                }
+            }
+
+            // Clamp delays to valid range (safety, shouldn't normally hit this)
+            delay1_ = std::clamp(delay1_, minDelay_, maxDelay_);
+            delay2_ = std::clamp(delay2_, minDelay_, maxDelay_);
+
+            // Advance write position
+            writePos_ = (writePos_ + 1) % bufferSize_;
+        }
+    }
+
+private:
+    [[nodiscard]] float readInterpolated(float pos) const noexcept {
+        const std::size_t idx0 = static_cast<std::size_t>(pos) % bufferSize_;
+        const std::size_t idx1 = (idx0 + 1) % bufferSize_;
+        const float frac = pos - std::floor(pos);
+        return buffer_[idx0] * (1.0f - frac) + buffer_[idx1] * frac;
+    }
+
+    std::vector<float> buffer_;
+    std::size_t bufferSize_ = 0;
+    std::size_t writePos_ = 0;
+    float delay1_ = 0.0f;
+    float delay2_ = 0.0f;
+    float crossfadePhase_ = 0.0f;
+    float maxDelay_ = 0.0f;
+    float minDelay_ = 1.0f;
+    float sampleRate_ = 44100.0f;
+    bool needsCrossfade_ = false;
+};
+
+// ==============================================================================
+// PitchShiftProcessor Implementation
+// ==============================================================================
+
+struct PitchShiftProcessor::Impl {
+    // Parameters
+    PitchMode mode = PitchMode::Simple;  // Default to Simple for US1
+    float semitones = 0.0f;
+    float cents = 0.0f;
+    bool formantPreserve = false;
+    double sampleRate = 44100.0;
+    std::size_t maxBlockSize = 512;
+    bool prepared = false;
+
+    // Internal processors
+    SimplePitchShifter simpleShifter;
+
+    // Parameter smoothers
+    OnePoleSmoother semitoneSmoother;
+    OnePoleSmoother centsSmoother;
+};
+
+inline PitchShiftProcessor::PitchShiftProcessor() noexcept
+    : pImpl_(std::make_unique<Impl>()) {}
+
+inline PitchShiftProcessor::~PitchShiftProcessor() noexcept = default;
+
+inline PitchShiftProcessor::PitchShiftProcessor(PitchShiftProcessor&&) noexcept = default;
+inline PitchShiftProcessor& PitchShiftProcessor::operator=(PitchShiftProcessor&&) noexcept = default;
+
+inline void PitchShiftProcessor::prepare(double sampleRate, std::size_t maxBlockSize) noexcept {
+    pImpl_->sampleRate = sampleRate;
+    pImpl_->maxBlockSize = maxBlockSize;
+
+    // Prepare all internal shifters
+    pImpl_->simpleShifter.prepare(sampleRate, maxBlockSize);
+
+    // Configure parameter smoothers (10ms smoothing time)
+    constexpr float kSmoothTimeMs = 10.0f;
+    pImpl_->semitoneSmoother.configure(kSmoothTimeMs, static_cast<float>(sampleRate));
+    pImpl_->centsSmoother.configure(kSmoothTimeMs, static_cast<float>(sampleRate));
+
+    pImpl_->prepared = true;
+    reset();
+}
+
+inline void PitchShiftProcessor::reset() noexcept {
+    if (!pImpl_->prepared) return;
+
+    pImpl_->simpleShifter.reset();
+    pImpl_->semitoneSmoother.reset();
+    pImpl_->semitoneSmoother.setTarget(pImpl_->semitones);
+    pImpl_->centsSmoother.reset();
+    pImpl_->centsSmoother.setTarget(pImpl_->cents);
+}
+
+inline bool PitchShiftProcessor::isPrepared() const noexcept {
+    return pImpl_->prepared;
+}
+
+inline void PitchShiftProcessor::process(const float* input, float* output,
+                                         std::size_t numSamples) noexcept {
+    if (!pImpl_->prepared || input == nullptr || output == nullptr || numSamples == 0) {
+        return;
+    }
+
+    // Update smoother targets
+    pImpl_->semitoneSmoother.setTarget(pImpl_->semitones);
+    pImpl_->centsSmoother.setTarget(pImpl_->cents);
+
+    // Calculate pitch ratio
+    // For Simple mode: use direct value (zero latency = no parameter smoothing delay)
+    // For Granular/PhaseVocoder: use smoothed value
+    float totalSemitones;
+    if (pImpl_->mode == PitchMode::Simple) {
+        // Simple mode: zero latency, use direct parameters
+        totalSemitones = pImpl_->semitones + pImpl_->cents / 100.0f;
+        // Snap smoothers to target for consistency when mode changes
+        pImpl_->semitoneSmoother.snapToTarget();
+        pImpl_->centsSmoother.snapToTarget();
+    } else {
+        // Granular/PhaseVocoder: use smoothed values (advance per block for now)
+        float smoothedSemitones = pImpl_->semitoneSmoother.process();
+        float smoothedCents = pImpl_->centsSmoother.process();
+        totalSemitones = smoothedSemitones + smoothedCents / 100.0f;
+    }
+
+    float pitchRatio = pitchRatioFromSemitones(totalSemitones);
+
+    // Route to appropriate processor based on mode
+    switch (pImpl_->mode) {
+        case PitchMode::Simple:
+            pImpl_->simpleShifter.process(input, output, numSamples, pitchRatio);
+            break;
+
+        case PitchMode::Granular:
+            // TODO: Implement in US2
+            // For now, fall through to simple mode
+            pImpl_->simpleShifter.process(input, output, numSamples, pitchRatio);
+            break;
+
+        case PitchMode::PhaseVocoder:
+            // TODO: Implement in US2
+            // For now, fall through to simple mode
+            pImpl_->simpleShifter.process(input, output, numSamples, pitchRatio);
+            break;
+    }
+}
+
+inline void PitchShiftProcessor::setMode(PitchMode mode) noexcept {
+    pImpl_->mode = mode;
+}
+
+inline PitchMode PitchShiftProcessor::getMode() const noexcept {
+    return pImpl_->mode;
+}
+
+inline void PitchShiftProcessor::setSemitones(float semitones) noexcept {
+    // Clamp to valid range
+    pImpl_->semitones = std::clamp(semitones, -24.0f, 24.0f);
+}
+
+inline float PitchShiftProcessor::getSemitones() const noexcept {
+    return pImpl_->semitones;
+}
+
+inline void PitchShiftProcessor::setCents(float cents) noexcept {
+    // Clamp to valid range
+    pImpl_->cents = std::clamp(cents, -100.0f, 100.0f);
+}
+
+inline float PitchShiftProcessor::getCents() const noexcept {
+    return pImpl_->cents;
+}
+
+inline float PitchShiftProcessor::getPitchRatio() const noexcept {
+    float totalSemitones = pImpl_->semitones + pImpl_->cents / 100.0f;
+    return pitchRatioFromSemitones(totalSemitones);
+}
+
+inline void PitchShiftProcessor::setFormantPreserve(bool enable) noexcept {
+    pImpl_->formantPreserve = enable;
+}
+
+inline bool PitchShiftProcessor::getFormantPreserve() const noexcept {
+    return pImpl_->formantPreserve;
+}
+
+inline std::size_t PitchShiftProcessor::getLatencySamples() const noexcept {
+    if (!pImpl_->prepared) return 0;
+
+    switch (pImpl_->mode) {
+        case PitchMode::Simple:
+            return 0;  // Zero latency
+        case PitchMode::Granular:
+            // ~grain size (~46ms at 44.1kHz)
+            return static_cast<std::size_t>(pImpl_->sampleRate * 0.046);
+        case PitchMode::PhaseVocoder:
+            // FFT_SIZE + HOP_SIZE (~116ms at 44.1kHz)
+            return static_cast<std::size_t>(pImpl_->sampleRate * 0.116);
+    }
+    return 0;
+}
 
 } // namespace Iterum::DSP
