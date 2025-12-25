@@ -5,6 +5,80 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: StereoField** (`src/dsp/systems/stereo_field.h`)
+  - Manages stereo processing modes for delay effects with comprehensive stereo imaging
+  - Complete feature set with 6 user stories:
+    - **US1: Stereo Processing Modes**: Mono, Stereo, PingPong, DualMono, MidSide
+    - **US2: Width Control**: 0% (mono) to 200% (exaggerated stereo) via M/S processing
+    - **US3: Output Panning**: Constant-power pan law (sin/cos) from -100 to +100
+    - **US4: L/R Timing Offset**: Haas-style widening with ±50ms timing difference
+    - **US5: L/R Delay Ratio**: Polyrhythmic patterns (0.1-10.0 ratio between channels)
+    - **US6: Smooth Mode Transitions**: 50ms crossfade prevents clicks when switching
+  - Width at 0% produces correlation of 1.0 (perfect mono) (SC-005)
+  - Width at 200% doubles the Side component (SC-006)
+  - Pan at ±100 achieves 40dB+ channel separation (SC-007)
+  - L/R offset accuracy within ±1 sample (SC-008)
+  - L/R ratio accuracy within ±1% (SC-009)
+  - Real-time safe: `noexcept`, no allocations in `process()`
+  - NaN input handling (treated as 0.0)
+
+- **Stereo mode implementations**:
+  - `Mono` - Sum L+R, output identical signals to both channels
+  - `Stereo` - Independent L/R delays with L/R ratio control
+  - `PingPong` - Alternating L/R output with cross-feedback
+  - `DualMono` - Same delay time, independent pan control per channel
+  - `MidSide` - M/S encode, delay Mid and Side independently, decode back
+
+- **Comprehensive test suite** (37 test cases, 1649 assertions)
+  - All 5 stereo modes verified with distinct output characteristics
+  - Width control at 0%, 100%, 200% tested
+  - Constant-power panning verification
+  - L/R offset and ratio accuracy tests
+  - Mode transition click-free verification
+  - Parameter automation smoothness
+  - Real-time safety verification (noexcept static_assert)
+
+### Technical Details
+
+- **Layer 3 architecture**: Composes Layer 0-2 components
+  - Uses: `DelayLine` (L1), `OnePoleSmoother` (L1)
+  - Uses: `MidSideProcessor` (L2) for M/S encoding/decoding
+  - Uses: `dbToGain()` (L0), `isNaN()` (L0)
+- **Delay smoother**: Stores samples (not ms) to avoid double-conversion
+- **Mode crossfading**: 50ms linear crossfade for click-free transitions
+- **Parameter smoothing**: 20ms one-pole smoothing on all parameters
+- **Constant-power pan**: `gainL = cos(pan * PI/2)`, `gainR = sin(pan * PI/2)`
+- **L/R ratio**: L delay = base × ratio, R delay = base
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/systems/stereo_field.h"
+
+using namespace Iterum::DSP;
+
+StereoField stereo;
+stereo.prepare(44100.0, 512, 2000.0f);
+
+// Wide ping-pong delay
+stereo.setMode(StereoMode::PingPong);
+stereo.setDelayTimeMs(375.0f);
+stereo.setWidth(150.0f);  // Enhanced stereo
+
+// Polyrhythmic delay (3:4 ratio)
+stereo.setMode(StereoMode::Stereo);
+stereo.setDelayTimeMs(400.0f);  // R = 400ms
+stereo.setLRRatio(0.75f);       // L = 300ms
+
+// In audio callback
+stereo.process(leftIn, rightIn, leftOut, rightOut, numSamples);
+```
+
 ## [0.0.22] - 2025-12-25
 
 ### Added
