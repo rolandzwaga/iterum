@@ -5,6 +5,94 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.25] - 2025-12-25
+
+### Added
+
+- **Layer 4 User Feature: TapeDelay** (`src/dsp/features/tape_delay.h`)
+  - Classic tape delay emulation inspired by Roland RE-201, Echoplex, and Watkins Copicat
+  - Composes TapManager (L3), FeedbackNetwork (L3), CharacterProcessor (L3), MotorController
+  - Complete feature set with 6 user stories:
+    - **US1: Basic Tape Echo**: Warm delay with progressive high-frequency rolloff
+    - **US2: Wow/Flutter Modulation**: Characteristic pitch wobble via Wear control
+    - **US3: Tape Saturation**: Warm compression and harmonic richness
+    - **US4: Multi-Head Echo Pattern**: RE-201 style 3-head rhythmic delays (1x, 1.5x, 2x ratios)
+    - **US5: Age/Degradation Character**: Lo-fi character with hiss, rolloff, splice artifacts
+    - **US6: Motor Inertia**: Realistic pitch sweep when changing delay times (200-500ms transition)
+
+- **User controls**:
+  - **Motor Speed**: Delay time 20-2000ms with motor inertia simulation
+  - **Wear**: Wow/flutter depth (0-100%) + hiss level, wow rate scales inversely with speed
+  - **Saturation**: Tape drive/warmth (0-100%)
+  - **Age**: EQ rolloff (12kHz→4kHz) + noise + splice artifact intensity
+  - **Echo Heads**: 3 playback heads with enable, level (-inf to +6dB), pan (-100 to +100)
+  - **Feedback**: 0-120% with soft limiting to prevent runaway
+  - **Mix**: Dry/wet balance with smoothing
+  - **Output Level**: Master gain in dB
+
+- **Tape-specific behaviors**:
+  - **FR-007**: Wow rate scales inversely with Motor Speed (slower tape = slower wow)
+  - **FR-023**: Optional splice artifacts at tape loop point (periodic transients)
+  - **FR-024**: Age control simultaneously affects hiss, rolloff, AND splice intensity
+  - Motor inertia creates smooth 200-500ms transitions when changing delay time
+  - Head gap simulation through CharacterProcessor frequency response
+
+- **Comprehensive test suite** (26 test cases, 1628 assertions)
+  - All 36 functional requirements verified
+  - Wow rate inverse scaling tests
+  - Splice artifact periodic occurrence tests
+  - Age/splice intensity relationship tests
+  - Edge cases: all heads disabled, 120% feedback stability, parameter smoothing
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 0-3 components
+  - Uses: `TapManager` (L3) - 3-head delay with ratios 1x, 1.5x, 2x
+  - Uses: `FeedbackNetwork` (L3) - feedback with lowpass filtering at 8kHz
+  - Uses: `CharacterProcessor` (L3) - tape mode with wow/flutter/saturation/hiss
+  - Uses: `MotorController` - OnePoleSmoother-based inertia simulation
+  - Uses: `OnePoleSmoother` (L1) - parameter smoothing (20ms)
+  - Uses: `dbToGain()` (L0) - level conversion
+- **TapeHead struct**: Per-head enabled, ratio, level, pan state
+- **MotorController class**: Smooth delay time transitions with configurable inertia (100-1000ms)
+- **Splice artifact generation**: Decaying impulse with noise character at tape loop interval
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/features/tape_delay.h"
+
+using namespace Iterum::DSP;
+
+TapeDelay delay;
+delay.prepare(44100.0, 512, 2000.0f);  // 2 second max delay
+
+// Set tape character
+delay.setMotorSpeed(375.0f);   // Delay time in ms
+delay.setWear(0.4f);           // Moderate wow/flutter
+delay.setSaturation(0.3f);     // Light tape warmth
+delay.setAge(0.2f);            // Slight degradation
+delay.setFeedback(0.5f);       // 50% feedback
+delay.setMix(0.5f);            // 50/50 dry/wet
+
+// Configure heads (RE-201 style)
+delay.setHeadEnabled(0, true);   // Head 1: 1x delay
+delay.setHeadEnabled(1, true);   // Head 2: 1.5x delay
+delay.setHeadEnabled(2, false);  // Head 3: disabled
+delay.setHeadLevel(0, 0.0f);     // Unity gain
+delay.setHeadLevel(1, -3.0f);    // -3dB
+delay.setHeadPan(0, -30.0f);     // Slightly left
+delay.setHeadPan(1, 30.0f);      // Slightly right
+
+// Enable optional splice artifacts
+delay.setSpliceEnabled(true);    // Age controls intensity
+
+// In audio callback
+delay.process(left, right, numSamples);
+```
+
 ## [0.0.24] - 2025-12-25
 
 ### Added
