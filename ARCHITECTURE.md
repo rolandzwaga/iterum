@@ -2800,7 +2800,203 @@ delay.process(buffer, numSamples, ctx);  // Delay = 750ms (dotted quarter at 120
 
 ---
 
-*Future: Feedback Network, Modulation Matrix*
+### FeedbackNetwork
+
+| | |
+|---|---|
+| **Purpose** | Manages feedback loops for delay effects with filtering, saturation, and cross-feedback routing |
+| **Location** | [src/dsp/systems/feedback_network.h](src/dsp/systems/feedback_network.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.19 (019-feedback-network) |
+| **Dependencies** | DelayLine (L1), MultimodeFilter (L2), SaturationProcessor (L2), OnePoleSmoother (L1), BlockContext (L0) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class FeedbackNetwork {
+    public:
+        // Lifecycle
+        void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+        void reset() noexcept;
+
+        // Feedback Configuration
+        void setFeedbackAmount(float amount) noexcept;       // 0.0-1.2 (120% for self-oscillation)
+        void setCrossFeedbackAmount(float amount) noexcept;  // 0.0-1.0 for ping-pong
+        void setFrozen(bool frozen) noexcept;                // Infinite sustain mode
+
+        // Delay Time
+        void setDelayTimeMs(float ms) noexcept;
+
+        // Filter in Feedback Path
+        void setFilterEnabled(bool enabled) noexcept;
+        void setFilterType(FilterType type) noexcept;        // Lowpass, Highpass, Bandpass
+        void setFilterCutoff(float hz) noexcept;
+        void setFilterResonance(float q) noexcept;
+
+        // Saturation in Feedback Path
+        void setSaturationEnabled(bool enabled) noexcept;
+        void setSaturationType(SaturationType type) noexcept;
+        void setSaturationDrive(float dB) noexcept;
+
+        // Processing (real-time safe, noexcept)
+        void process(float* left, float* right, size_t numSamples, const BlockContext& ctx) noexcept;
+
+        // Query
+        [[nodiscard]] float getFeedbackAmount() const noexcept;
+        [[nodiscard]] bool isFrozen() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- **Feedback range**: 0-120% - values >100% enable self-oscillation with saturation limiting
+- **Cross-feedback**: Routes left/right outputs to opposite channels for ping-pong effects
+- **Freeze mode**: Mutes input while maintaining 100% feedback for infinite sustain
+- **Filter placement**: In feedback path for progressive tone shaping on each repeat
+- **Saturation**: Soft limits feedback to prevent runaway oscillation at high settings
+
+**When to use**:
+- Building delay effects with feedback control
+- Creating ping-pong delays with cross-feedback
+- Adding warmth with filtered/saturated repeats
+- Implementing freeze/hold functionality
+
+**Example**:
+```cpp
+#include "dsp/systems/feedback_network.h"
+
+Iterum::DSP::FeedbackNetwork feedback;
+feedback.prepare(44100.0, 512, 2000.0f);
+
+feedback.setDelayTimeMs(375.0f);
+feedback.setFeedbackAmount(0.6f);
+feedback.setFilterEnabled(true);
+feedback.setFilterType(Iterum::DSP::FilterType::Lowpass);
+feedback.setFilterCutoff(4000.0f);
+
+// In audio callback
+feedback.process(left, right, numSamples, ctx);
+```
+
+---
+
+### ModulationMatrix
+
+| | |
+|---|---|
+| **Purpose** | Routes modulation sources (LFO, EnvelopeFollower) to parameter destinations with depth control |
+| **Location** | [src/dsp/systems/modulation_matrix.h](src/dsp/systems/modulation_matrix.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.20 (020-modulation-matrix) |
+| **Dependencies** | OnePoleSmoother (L1), db_utils (L0) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    enum class ModulationMode : uint8_t {
+        Bipolar,   // Source [-1,+1] maps directly to [-1,+1] × depth
+        Unipolar   // Source [-1,+1] maps to [0,1] × depth
+    };
+
+    class ModulationSource {
+    public:
+        virtual ~ModulationSource() = default;
+        [[nodiscard]] virtual float getCurrentValue() const noexcept = 0;
+        [[nodiscard]] virtual std::pair<float, float> getSourceRange() const noexcept = 0;
+    };
+
+    class ModulationMatrix {
+    public:
+        // Lifecycle
+        void prepare(double sampleRate, size_t maxBlockSize, size_t maxRoutes = 32) noexcept;
+        void reset() noexcept;
+
+        // Source/Destination Registration
+        bool registerSource(uint8_t id, ModulationSource* source) noexcept;
+        bool registerDestination(uint8_t id, float minValue, float maxValue,
+                                 const char* label = nullptr) noexcept;
+
+        // Route Management
+        int createRoute(uint8_t sourceId, uint8_t destinationId, float depth = 1.0f,
+                       ModulationMode mode = ModulationMode::Bipolar) noexcept;
+        void setRouteDepth(int routeIndex, float depth) noexcept;
+        void setRouteEnabled(int routeIndex, bool enabled) noexcept;
+
+        // Processing (real-time safe, noexcept)
+        void process(size_t numSamples) noexcept;
+
+        // Value Retrieval
+        [[nodiscard]] float getModulatedValue(uint8_t destinationId, float baseValue) const noexcept;
+        [[nodiscard]] float getCurrentModulation(uint8_t destinationId) const noexcept;
+
+        // Query
+        [[nodiscard]] size_t getSourceCount() const noexcept;
+        [[nodiscard]] size_t getDestinationCount() const noexcept;
+        [[nodiscard]] size_t getRouteCount() const noexcept;
+    };
+}
+```
+
+**Constants**:
+- `kMaxModulationSources = 16`
+- `kMaxModulationDestinations = 16`
+- `kMaxModulationRoutes = 32`
+- `kModulationSmoothingTimeMs = 20.0f`
+
+**Behavior**:
+- **Bipolar mode**: Source [-1,+1] maps directly, modulates ±50% of destination range at depth=1.0
+- **Unipolar mode**: Source [-1,+1] maps to [0,1], modulates 0-50% of destination range at depth=1.0
+- **Multiple routes**: Contributions to same destination are summed
+- **Depth smoothing**: 20ms one-pole smoothing prevents zipper noise on depth changes
+- **Clamping**: Final modulated values clamped to destination min/max range
+- **NaN handling**: Invalid source values treated as 0.0
+
+**When to use**:
+- Routing LFO to delay time for chorus/vibrato effects
+- Routing EnvelopeFollower to filter cutoff for auto-wah
+- Creating complex modulation with multiple sources per destination
+- Building modular-style effects with flexible routing
+
+**Example**:
+```cpp
+#include "dsp/systems/modulation_matrix.h"
+#include "dsp/primitives/lfo.h"
+
+// LFO implements ModulationSource interface
+class LFOModSource : public Iterum::DSP::ModulationSource {
+    Iterum::DSP::LFO& lfo_;
+public:
+    explicit LFOModSource(Iterum::DSP::LFO& lfo) : lfo_(lfo) {}
+    float getCurrentValue() const noexcept override { return lfo_.getCurrentValue(); }
+    std::pair<float, float> getSourceRange() const noexcept override { return {-1.0f, 1.0f}; }
+};
+
+Iterum::DSP::ModulationMatrix matrix;
+matrix.prepare(44100.0, 512, 32);
+
+// Setup LFO and wrap as ModulationSource
+Iterum::DSP::LFO lfo;
+lfo.prepare(44100.0);
+lfo.setRate(2.0f);  // 2 Hz
+LFOModSource lfoSource(lfo);
+
+// Register source and destination
+matrix.registerSource(0, &lfoSource);
+matrix.registerDestination(0, 0.0f, 100.0f, "Delay Time");
+
+// Create route: LFO → Delay Time, 50% depth, bipolar
+int route = matrix.createRoute(0, 0, 0.5f, Iterum::DSP::ModulationMode::Bipolar);
+
+// In audio callback
+lfo.process();  // Advance LFO
+matrix.process(numSamples);
+
+// Get modulated delay time
+float baseDelayMs = 50.0f;
+float modulatedDelayMs = matrix.getModulatedValue(0, baseDelayMs);  // 50 ± 25ms
+```
 
 ---
 
@@ -2915,3 +3111,19 @@ Quick lookup by functionality:
 | Configure vinyl crackle | `NoiseGenerator::setCrackleParams()` | processors/noise_generator.h |
 | Configure asperity | `NoiseGenerator::setAsperityParams()` | processors/noise_generator.h |
 | Mix noise with audio | `NoiseGenerator::processMix()` | processors/noise_generator.h |
+| Create tempo-synced delay | `Iterum::DSP::DelayEngine` | systems/delay_engine.h |
+| Set delay time mode | `DelayEngine::setTimeMode()` | systems/delay_engine.h |
+| Set delay time ms | `DelayEngine::setDelayTimeMs()` | systems/delay_engine.h |
+| Set delay note value | `DelayEngine::setNoteValue()` | systems/delay_engine.h |
+| Create feedback network | `Iterum::DSP::FeedbackNetwork` | systems/feedback_network.h |
+| Set feedback amount | `FeedbackNetwork::setFeedbackAmount()` | systems/feedback_network.h |
+| Set cross-feedback (ping-pong) | `FeedbackNetwork::setCrossFeedbackAmount()` | systems/feedback_network.h |
+| Enable feedback freeze | `FeedbackNetwork::setFrozen()` | systems/feedback_network.h |
+| Set feedback filter | `FeedbackNetwork::setFilterCutoff()` | systems/feedback_network.h |
+| Route modulation sources | `Iterum::DSP::ModulationMatrix` | systems/modulation_matrix.h |
+| Register modulation source | `ModulationMatrix::registerSource()` | systems/modulation_matrix.h |
+| Register modulation destination | `ModulationMatrix::registerDestination()` | systems/modulation_matrix.h |
+| Create modulation route | `ModulationMatrix::createRoute()` | systems/modulation_matrix.h |
+| Set route depth | `ModulationMatrix::setRouteDepth()` | systems/modulation_matrix.h |
+| Get modulated value | `ModulationMatrix::getModulatedValue()` | systems/modulation_matrix.h |
+| Query current modulation | `ModulationMatrix::getCurrentModulation()` | systems/modulation_matrix.h |
