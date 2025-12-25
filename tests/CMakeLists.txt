@@ -73,6 +73,7 @@ add_executable(dsp_tests
     unit/core/block_context_test.cpp
     unit/core/fast_math_test.cpp
     unit/core/interpolation_test.cpp
+    unit/core/stereo_utils_test.cpp
     unit/primitives/delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
