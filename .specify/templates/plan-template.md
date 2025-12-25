@@ -122,6 +122,70 @@ See CLAUDE.md "Layer 0 Refactoring Analysis" for decision framework.
 
 **Decision**: [Summary of what will be extracted vs kept local]
 
+## Higher-Layer Reusability Analysis
+
+*Forward-looking analysis: What code from THIS feature could be reused by SIBLING features at the same layer?*
+
+<!--
+  ACTION REQUIRED: For Layer 2+ features, analyze what new code might be shared
+  with other features at the same layer. This is the inverse of ODR prevention:
+  instead of checking for existing code to reuse, identify code YOU'RE creating
+  that FUTURE features might reuse.
+
+  Key principle: Don't abstract prematurely. Document potential reuse, but wait
+  for concrete evidence (2+ consumers) before extracting shared code.
+-->
+
+### Sibling Features Analysis
+
+**This feature's layer**: [e.g., Layer 4 - User Features]
+
+**Related features at same layer** (from ROADMAP.md or known plans):
+- [Feature A: brief description]
+- [Feature B: brief description]
+- [Feature C: brief description]
+
+### Reusability Candidates
+
+| Component | Reuse Potential | Future Consumers | Action |
+|-----------|-----------------|------------------|--------|
+| [New class/utility] | [HIGH/MEDIUM/LOW] | [Which sibling features?] | [Keep local / Extract after 2nd use / Extract now] |
+| — | — | — | — |
+
+### Detailed Analysis (for HIGH potential items)
+
+<!--
+  For each HIGH reuse potential item, analyze:
+  1. What it provides (capabilities)
+  2. Which sibling features could use it
+  3. Whether behaviors would diverge or stay consistent
+-->
+
+**[Component Name]** provides:
+- [Capability 1]
+- [Capability 2]
+
+| Sibling Feature | Would Reuse? | Notes |
+|-----------------|--------------|-------|
+| [Feature A] | YES/NO/MAYBE | [Why - same concept, different parameters, etc.] |
+| [Feature B] | YES/NO/MAYBE | [Why] |
+
+**Recommendation**: [Keep in this feature's file / Extract to common/ after 2nd use / Extract now if 3+ clear consumers]
+
+### Decision Log
+
+| Decision | Rationale |
+|----------|-----------|
+| [e.g., No shared base class] | [First feature at this layer - patterns not established] |
+| [e.g., Keep X local] | [Only one consumer so far] |
+
+### Review Trigger
+
+After implementing **[next sibling feature]**, review this section:
+- [ ] Does [sibling] need [reusable component] or similar? → Extract to shared location
+- [ ] Does [sibling] use same composition pattern? → Document shared pattern
+- [ ] Any duplicated code? → Consider shared utilities
+
 ## Project Structure
 
 ### Documentation (this feature)

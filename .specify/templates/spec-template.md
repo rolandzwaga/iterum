@@ -147,6 +147,18 @@ grep -r "[key term 2]" src/
 
 **Search Results Summary**: [Document what was found or "No existing implementations found"]
 
+### Forward Reusability Consideration
+
+*Note for planning phase: When this is a Layer 2+ feature, consider what new code might be reusable by sibling features at the same layer. The `/speckit.plan` phase will analyze this in detail, but early identification helps.*
+
+**Sibling features at same layer** (if known):
+- [e.g., Similar feature A that might share code]
+- [e.g., Similar feature B that might share code]
+
+**Potential shared components** (preliminary, refined in plan.md):
+- [e.g., "MotorController might be useful for BBD mode too"]
+- [e.g., "Composition pattern with FeedbackNetwork likely shared"]
+
 ## Implementation Verification *(mandatory at completion)*
 
 <!--
