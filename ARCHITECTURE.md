@@ -3238,6 +3238,125 @@ delay.process(leftChannel, rightChannel, blockSize);
 
 **When to use**: Creating tape-style delay effects with authentic vintage character. Ideal for adding warmth, movement, and lo-fi texture to delay sounds.
 
+### BBDDelay
+
+Classic bucket-brigade device (BBD) delay emulation (Boss DM-2, EHX Memory Man, Roland Dimension D style).
+
+**File**: `src/dsp/features/bbd_delay.h`
+
+**Purpose**: Layer 4 user feature providing vintage analog delay character with authentic BBD behaviors including bandwidth tracking, compander artifacts, and era-specific chip characteristics.
+
+**Composes**:
+- DelayEngine (Layer 3): Core delay with tempo sync capability
+- FeedbackNetwork (Layer 3): Feedback with filtering and saturation
+- CharacterProcessor (Layer 3): BBD character (bandwidth limiting, clock noise)
+- LFO (Layer 1): Triangle modulation for chorus effect
+
+**Unique BBD Behaviors**:
+- **Bandwidth Tracking**: Bandwidth inversely proportional to delay time (BBD clock physics) - 15kHz at 20ms down to 2.5kHz at 1000ms
+- **Compander Artifacts**: Compression on input, expansion on output creates pumping/breathing
+- **Clock Noise**: Proportional to delay time and Age parameter
+- **Era Selection**: Different BBD chip characteristics (MN3005, MN3007, MN3205, SAD1024)
+
+**User Controls**:
+- Time: Delay time 20-1000ms with automatic bandwidth tracking
+- Feedback: 0-120% (>100% enables self-oscillation)
+- Modulation: Triangle LFO depth 0-100% for chorus effect
+- Modulation Rate: LFO frequency 0.1-10 Hz
+- Age: Degradation artifacts 0-100% (noise, bandwidth reduction, compander)
+- Era: BBD chip model selection for character
+- Mix: Dry/wet balance 0-100%
+- Output Level: -96dB to +12dB
+
+**Supporting Enumerations**:
+
+#### BBDChipModel
+
+Chip model selection for era-based character.
+
+```cpp
+enum class BBDChipModel : uint8_t {
+    MN3005 = 0,   // Panasonic 4096-stage (Memory Man) - widest BW, lowest noise
+    MN3007 = 1,   // Panasonic 1024-stage - medium-dark character
+    MN3205 = 2,   // Panasonic 4096-stage budget - darker, noisier
+    SAD1024 = 3   // Reticon 1024-stage early chip - most noise, limited BW
+};
+```
+
+**Public API**:
+
+```cpp
+class BBDDelay {
+    // Constants
+    static constexpr float kMinDelayMs = 20.0f;
+    static constexpr float kMaxDelayMs = 1000.0f;
+    static constexpr float kDefaultDelayMs = 300.0f;
+    static constexpr float kDefaultFeedback = 0.4f;
+    static constexpr float kMinBandwidthHz = 2500.0f;   // BW at max delay
+    static constexpr float kMaxBandwidthHz = 15000.0f;  // BW at min delay
+
+    // Lifecycle
+    void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+    void reset() noexcept;
+    bool isPrepared() const noexcept;
+
+    // Time Control
+    void setTime(float ms) noexcept;
+    float getTime() const noexcept;
+
+    // Feedback Control
+    void setFeedback(float amount) noexcept;  // 0-1.2
+    float getFeedback() const noexcept;
+
+    // Modulation Control
+    void setModulation(float depth) noexcept;      // 0-1
+    void setModulationRate(float rateHz) noexcept; // 0.1-10
+    float getModulation() const noexcept;
+    float getModulationRate() const noexcept;
+
+    // Age/Degradation Control
+    void setAge(float amount) noexcept;  // 0-1
+    float getAge() const noexcept;
+
+    // Era Selection
+    void setEra(BBDChipModel model) noexcept;
+    BBDChipModel getEra() const noexcept;
+
+    // Output Control
+    void setMix(float amount) noexcept;        // 0-1
+    void setOutputLevel(float dB) noexcept;    // -96 to +12
+    float getMix() const noexcept;
+    float getOutputLevel() const noexcept;
+
+    // Processing
+    void process(float* left, float* right, size_t numSamples) noexcept;
+    void process(float* buffer, size_t numSamples) noexcept;
+};
+```
+
+**Usage Example**:
+
+```cpp
+#include "dsp/features/bbd_delay.h"
+
+BBDDelay delay;
+delay.prepare(44100.0, 512, 1000.0f);
+
+// Configure for classic Memory Man sound
+delay.setTime(350.0f);           // 350ms delay
+delay.setFeedback(0.5f);         // 50% feedback
+delay.setModulation(0.3f);       // 30% chorus modulation
+delay.setModulationRate(0.4f);   // Slow modulation
+delay.setAge(0.2f);              // Slight vintage character
+delay.setEra(BBDChipModel::MN3005);  // Memory Man chip
+delay.setMix(0.4f);              // 40% wet
+
+// In process callback
+delay.process(leftChannel, rightChannel, blockSize);
+```
+
+**When to use**: Creating analog-style delay effects with authentic BBD character. Ideal for warm, dark delays with subtle modulation and vintage coloration. Use different Era settings to emulate specific vintage units.
+
 ---
 
 ## Cross-Cutting Concerns
