@@ -53,7 +53,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **021-character-processor** | Tape/BBD/Digital character modes | 🔲 TODO | Saturator, NoiseGenerator, Filter, LFO |
+| **021-character-processor** | Tape/BBD/Digital character modes | ✅ DONE | Saturator, NoiseGenerator, Filter, LFO |
 
 ---
 
@@ -61,7 +61,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **022-stereo-field** | Mono/Stereo/PingPong/MidSide modes, width | 🔲 TODO | MidSide, DelayEngine |
+| **022-stereo-field** | Mono/Stereo/PingPong/DualMono/MidSide modes, width, pan, L/R offset/ratio | 🔄 IN PROGRESS | MidSide, DelayEngine |
 
 ---
 
@@ -94,8 +94,8 @@ Recommended implementation order based on dependencies:
 1. 018-delay-engine (foundational) ✅ DONE
 2. 019-feedback-network (needs DelayEngine) ✅ DONE
 3. 020-modulation-matrix (parallel with feedback) ✅ DONE
-4. 021-character-processor (needs several L2 processors) ← NEXT
-5. 022-stereo-field (needs DelayEngine, MidSide)
+4. 021-character-processor (needs several L2 processors) ✅ DONE
+5. 022-stereo-field (needs DelayEngine, MidSide) ← IN PROGRESS
 6. 023-tap-manager (needs multiple DelayEngines)
 
 ### Future Utilities (implement when needed)

@@ -99,6 +99,7 @@ add_executable(dsp_tests
     unit/systems/feedback_network_test.cpp
     unit/systems/modulation_matrix_test.cpp
     unit/systems/character_processor_test.cpp
+    unit/systems/stereo_field_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -157,6 +158,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/systems/feedback_network_test.cpp
         unit/systems/modulation_matrix_test.cpp
         unit/systems/character_processor_test.cpp
+        unit/systems/stereo_field_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
