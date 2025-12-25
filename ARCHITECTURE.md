@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-25 (018-delay-engine)
+**Last Updated**: 2025-12-25 (022-stereo-field)
 
 ---
 
@@ -3000,6 +3000,117 @@ float modulatedDelayMs = matrix.getModulatedValue(0, baseDelayMs);  // 50 ± 25m
 
 ---
 
+### StereoField
+
+| | |
+|---|---|
+| **Purpose** | Manages stereo processing modes with width control, panning, L/R offset, and ratio |
+| **Location** | [src/dsp/systems/stereo_field.h](src/dsp/systems/stereo_field.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.22 (022-stereo-field) |
+| **Dependencies** | DelayLine (L1), OnePoleSmoother (L1), MidSideProcessor (L2), db_utils (L0) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    enum class StereoMode : uint8_t {
+        Mono,       // Sum L+R, output to both channels
+        Stereo,     // Independent L/R processing with ratio
+        PingPong,   // Alternating L/R with cross-feedback
+        DualMono,   // Same delay time, panned outputs
+        MidSide     // M/S encode, delay, decode
+    };
+
+    class StereoField {
+    public:
+        // Lifecycle
+        void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+        void reset() noexcept;
+
+        // Mode Control
+        void setMode(StereoMode mode) noexcept;
+        [[nodiscard]] StereoMode getMode() const noexcept;
+
+        // Delay Time (base delay for all modes)
+        void setDelayTimeMs(float ms) noexcept;
+        [[nodiscard]] float getDelayTimeMs() const noexcept;
+
+        // Stereo Width (0-200%)
+        void setWidth(float widthPercent) noexcept;
+        [[nodiscard]] float getWidth() const noexcept;
+
+        // Panning (-100 to +100)
+        void setPan(float pan) noexcept;
+        [[nodiscard]] float getPan() const noexcept;
+
+        // L/R Timing Offset (±50ms)
+        void setLROffset(float offsetMs) noexcept;
+        [[nodiscard]] float getLROffset() const noexcept;
+
+        // L/R Delay Ratio (0.1 to 10.0)
+        void setLRRatio(float ratio) noexcept;
+        [[nodiscard]] float getLRRatio() const noexcept;
+
+        // Processing (real-time safe, noexcept)
+        void process(const float* leftIn, const float* rightIn,
+                    float* leftOut, float* rightOut,
+                    size_t numSamples) noexcept;
+
+        // Query
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- **Mono**: Sum L+R inputs, process through single delay, output identical signals
+- **Stereo**: Independent L/R delays with ratio control (L = base × ratio, R = base)
+- **PingPong**: Alternating L/R output with configurable cross-feedback
+- **DualMono**: Same delay time for both channels, independent pan control
+- **MidSide**: Encode to M/S, delay Mid and Side independently, decode back to L/R
+- **Width**: 0% = mono, 100% = original stereo, 200% = exaggerated stereo (2× Side)
+- **Pan**: Constant-power panning law (sin/cos) for even power distribution
+- **L/R Offset**: Haas-style widening with timing differences between channels
+- **L/R Ratio**: Polyrhythmic delays (e.g., 3:4 relationship between channels)
+- **Mode transitions**: 50ms crossfade for click-free switching
+- **Parameter smoothing**: 20ms one-pole smoothing on all parameters
+
+**When to use**:
+- Building stereo delay effects with multiple routing options
+- Creating wide stereo images with width and offset control
+- Implementing ping-pong delays
+- Adding polyrhythmic L/R timing relationships
+- Processing Mid/Side content separately
+
+**Example**:
+```cpp
+#include "dsp/systems/stereo_field.h"
+
+Iterum::DSP::StereoField stereo;
+stereo.prepare(44100.0, 512, 2000.0f);
+
+// Wide ping-pong delay
+stereo.setMode(Iterum::DSP::StereoMode::PingPong);
+stereo.setDelayTimeMs(375.0f);
+stereo.setWidth(150.0f);  // Enhanced stereo
+
+// In audio callback
+stereo.process(leftIn, rightIn, leftOut, rightOut, numSamples);
+```
+
+**Example - Polyrhythmic Delay**:
+```cpp
+stereo.setMode(Iterum::DSP::StereoMode::Stereo);
+stereo.setDelayTimeMs(400.0f);  // Base = 400ms for R
+stereo.setLRRatio(0.75f);       // L = 300ms (3:4 ratio)
+
+// Creates polyrhythmic delay pattern
+stereo.process(leftIn, rightIn, leftOut, rightOut, numSamples);
+```
+
+---
+
 ## Layer 4: User Features
 
 *No components yet. Future: Tape Mode, BBD Mode, Shimmer Mode*
@@ -3127,3 +3238,9 @@ Quick lookup by functionality:
 | Set route depth | `ModulationMatrix::setRouteDepth()` | systems/modulation_matrix.h |
 | Get modulated value | `ModulationMatrix::getModulatedValue()` | systems/modulation_matrix.h |
 | Query current modulation | `ModulationMatrix::getCurrentModulation()` | systems/modulation_matrix.h |
+| Create stereo processor | `Iterum::DSP::StereoField` | systems/stereo_field.h |
+| Set stereo mode | `StereoField::setMode()` | systems/stereo_field.h |
+| Set stereo width | `StereoField::setWidth()` | systems/stereo_field.h |
+| Set stereo pan | `StereoField::setPan()` | systems/stereo_field.h |
+| Set L/R timing offset | `StereoField::setLROffset()` | systems/stereo_field.h |
+| Set L/R delay ratio | `StereoField::setLRRatio()` | systems/stereo_field.h |

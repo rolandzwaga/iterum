@@ -61,7 +61,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **022-stereo-field** | Mono/Stereo/PingPong/DualMono/MidSide modes, width, pan, L/R offset/ratio | 🔄 IN PROGRESS | MidSide, DelayEngine |
+| **022-stereo-field** | Mono/Stereo/PingPong/DualMono/MidSide modes, width, pan, L/R offset/ratio | ✅ DONE | MidSide, DelayEngine |
 
 ---
 
@@ -95,8 +95,8 @@ Recommended implementation order based on dependencies:
 2. 019-feedback-network (needs DelayEngine) ✅ DONE
 3. 020-modulation-matrix (parallel with feedback) ✅ DONE
 4. 021-character-processor (needs several L2 processors) ✅ DONE
-5. 022-stereo-field (needs DelayEngine, MidSide) ← IN PROGRESS
-6. 023-tap-manager (needs multiple DelayEngines)
+5. 022-stereo-field (needs DelayEngine, MidSide) ✅ DONE
+6. 023-tap-manager (needs multiple DelayEngines) ← NEXT
 
 ### Future Utilities (implement when needed)
 
