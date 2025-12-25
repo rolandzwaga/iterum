@@ -5,6 +5,98 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.20] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: FeedbackNetwork** (`src/dsp/systems/feedback_network.h`)
+  - Manages feedback loops for delay effects with filtering, saturation, and cross-feedback routing
+  - Complete feature set with 6 user stories:
+    - **US1: Basic Feedback Loop**: Adjustable feedback amount (0-100%) with smooth parameter changes
+    - **US2: Self-Oscillation Mode**: 120% feedback with saturation for controlled runaway
+    - **US3: Filtered Feedback**: LP/HP/BP filter in feedback path for tone shaping
+    - **US4: Saturated Feedback**: 5 saturation types (Tape, Tube, Transistor, Digital, Diode)
+    - **US5: Freeze Mode**: Infinite sustain with input muting
+    - **US6: Stereo Cross-Feedback**: Ping-pong delays via cross-channel routing
+  - 20ms parameter smoothing for click-free transitions
+  - NaN rejection on all parameters
+  - Real-time safe: `noexcept`, no allocations in `process()`
+
+- **Layer 0 Utility: stereoCrossBlend** (`src/dsp/core/stereo_utils.h`)
+  - Stereo channel cross-blending for ping-pong delays
+  - `crossAmount = 0.0`: Normal stereo (L→L, R→R)
+  - `crossAmount = 0.5`: Mono blend ((L+R)/2)
+  - `crossAmount = 1.0`: Full swap / ping-pong (L→R, R→L)
+  - `constexpr` and `noexcept` for real-time safety
+
+- **Performance Benchmark** (`tests/benchmark_feedback_network.cpp`)
+  - Verifies <1% CPU at 44.1kHz stereo (SC-007)
+  - Results: 0.45% CPU stereo, 0.25% CPU mono
+
+- **Comprehensive test suite** (51 test cases, 158 assertions for FeedbackNetwork)
+  - All 6 user stories covered
+  - Edge cases: NaN handling, parameter clamping, click-free transitions
+  - Real-time safety verification
+
+### Technical Details
+
+- **Layer 3 architecture**: Composes Layer 0-2 components
+  - Uses: `DelayLine` (L1), `OnePoleSmoother` (L1), `MultimodeFilter` (L2), `SaturationProcessor` (L2)
+  - Uses: `BlockContext` (L0), `stereoCrossBlend` (L0)
+- **Feedback path signal flow**:
+  1. Read delayed sample (read-before-write pattern)
+  2. Apply filter (if enabled)
+  3. Apply saturation (if enabled)
+  4. Apply cross-feedback blend (stereo only)
+  5. Scale by feedback amount
+  6. Mix with input and write to delay line
+- **Freeze mode implementation**:
+  - Stores pre-freeze feedback amount
+  - Sets feedback to 100%, mutes input
+  - Restores original feedback on unfreeze
+- **Constitution compliance**: Principles II, III, IX, X, XI, XII, XIII, XV
+- **ARCHITECTURE.md**: Updated with stereoCrossBlend documentation in Layer 0 section
+
+### Usage
+
+```cpp
+#include "dsp/systems/feedback_network.h"
+
+using namespace Iterum::DSP;
+
+FeedbackNetwork network;
+
+// In prepare() - allocates buffers
+network.prepare(44100.0, 512, 2000.0f);  // 2 second max delay
+
+// Basic feedback
+network.setDelayTimeMs(500.0f);
+network.setFeedbackAmount(0.7f);  // 70% feedback
+
+// Self-oscillation with saturation
+network.setFeedbackAmount(1.2f);  // 120% feedback
+network.setSaturationEnabled(true);
+network.setSaturationType(SaturationType::Tape);
+
+// Filtered feedback (darkening repeats)
+network.setFilterEnabled(true);
+network.setFilterType(FilterType::Lowpass);
+network.setFilterCutoff(2000.0f);
+
+// Freeze mode
+network.setFreeze(true);  // Infinite sustain
+
+// Ping-pong delay
+network.setCrossFeedbackAmount(1.0f);  // Full L↔R swap
+
+// In processBlock() - real-time safe
+BlockContext ctx;
+ctx.sampleRate = 44100.0;
+network.process(left, right, numSamples, ctx);
+```
+
+---
+
 ## [0.0.19] - 2025-12-25
 
 ### Added

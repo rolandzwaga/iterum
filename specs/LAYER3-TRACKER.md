@@ -13,8 +13,6 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
 | **018-delay-engine** | Core wrapper, time modes (ms/sync), smooth changes, dry/wet | ✅ DONE | DelayLine, Smoother, BlockContext |
-| **019-tap-tempo** | Tap interval tracking, BPM output, averaging | 🔲 TODO | None |
-| **020-delay-crossfade** | Dual delay lines, crossfade for instant time jumps | 🔲 DEFERRED | DelayEngine |
 
 ### 018-delay-engine (Focused Scope)
 
@@ -26,9 +24,9 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 - `prepare()`, `process()`, `reset()` interface
 
 **Explicitly Excludes (for later specs):**
-- Tap tempo (separate utility - 019)
-- Crossfade for instant time changes (only if testing shows it's needed - 020)
-- Feedback processing (that's FeedbackNetwork - 021)
+- Tap tempo (separate utility - future)
+- Crossfade for instant time changes (only if needed - future)
+- Feedback processing (that's FeedbackNetwork - 019)
 - Multi-tap (that's TapManager - later)
 
 **Estimated effort**: ~200 LOC, ~15 test cases
@@ -39,7 +37,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **021-feedback-network** | Feedback loop, filter/saturation in path, freeze mode | 🔲 TODO | DelayEngine, Filter, Saturator |
+| **019-feedback-network** | Feedback loop, filter/saturation in path, freeze mode, cross-feedback | 🔄 IN PROGRESS | DelayEngine, MultimodeFilter, SaturationProcessor |
 
 ---
 
@@ -47,7 +45,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **022-modulation-matrix** | Source→Destination routing, depth control | 🔲 TODO | LFO, EnvelopeFollower |
+| **020-modulation-matrix** | Source→Destination routing, depth control | 🔲 TODO | LFO, EnvelopeFollower |
 
 ---
 
@@ -55,7 +53,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **023-character-processor** | Tape/BBD/Digital character modes | 🔲 TODO | Saturator, NoiseGenerator, Filter, LFO |
+| **021-character-processor** | Tape/BBD/Digital character modes | 🔲 TODO | Saturator, NoiseGenerator, Filter, LFO |
 
 ---
 
@@ -63,7 +61,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **024-stereo-field** | Mono/Stereo/PingPong/MidSide modes, width | 🔲 TODO | MidSide, DelayEngine |
+| **022-stereo-field** | Mono/Stereo/PingPong/MidSide modes, width | 🔲 TODO | MidSide, DelayEngine |
 
 ---
 
@@ -71,7 +69,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **025-tap-manager** | Multiple delay engines, per-tap controls | 🔲 TODO | DelayEngine (multiple) |
+| **023-tap-manager** | Multiple delay engines, per-tap controls | 🔲 TODO | DelayEngine (multiple) |
 
 ---
 
@@ -93,14 +91,14 @@ Context compaction in long sessions causes focus loss. Smaller specs (~200 LOC, 
 ### Dependency Order
 
 Recommended implementation order based on dependencies:
-1. 018-delay-engine (foundational)
-2. 019-tap-tempo (optional, small utility)
-3. 021-feedback-network (needs DelayEngine)
-4. 022-modulation-matrix (parallel with 021)
-5. 023-character-processor (needs several L2 processors)
-6. 024-stereo-field (needs DelayEngine, MidSide)
-7. 025-tap-manager (needs multiple DelayEngines)
+1. 018-delay-engine (foundational) ✅ DONE
+2. 019-feedback-network (needs DelayEngine) 🔄 IN PROGRESS
+3. 020-modulation-matrix (parallel with feedback)
+4. 021-character-processor (needs several L2 processors)
+5. 022-stereo-field (needs DelayEngine, MidSide)
+6. 023-tap-manager (needs multiple DelayEngines)
 
-### Deferred Items
+### Future Utilities (implement when needed)
 
-- **020-delay-crossfade**: Only implement if testing shows OnePoleSmoother isn't sufficient for time changes. May never be needed.
+- **tap-tempo**: Tap interval tracking, BPM output - implement when needed for UI
+- **delay-crossfade**: Only implement if testing shows OnePoleSmoother isn't sufficient for time changes

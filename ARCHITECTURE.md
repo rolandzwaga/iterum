@@ -532,6 +532,76 @@ float sample = cubicHermiteInterpolate(
 
 ---
 
+### Stereo Cross-Blend Utility
+
+| | |
+|---|---|
+| **Purpose** | Stereo channel cross-blending for ping-pong delays and stereo field manipulation |
+| **Location** | [src/dsp/core/stereo_utils.h](src/dsp/core/stereo_utils.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.19 (019-feedback-network) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    /// @brief Apply stereo cross-blend routing
+    /// @param inL Left input sample
+    /// @param inR Right input sample
+    /// @param crossAmount Cross-blend amount [0.0, 1.0]
+    /// @param outL Output: blended left sample
+    /// @param outR Output: blended right sample
+    constexpr void stereoCrossBlend(
+        float inL, float inR,
+        float crossAmount,
+        float& outL, float& outR
+    ) noexcept;
+}
+```
+
+**Behavior**:
+- `crossAmount = 0.0`: No cross (normal stereo, L→L, R→R)
+- `crossAmount = 0.5`: Mono blend (both channels become (L+R)/2)
+- `crossAmount = 1.0`: Full swap / ping-pong (L→R, R→L)
+
+**Formula**:
+```
+outL = inL × (1 - crossAmount) + inR × crossAmount
+outR = inR × (1 - crossAmount) + inL × crossAmount
+```
+
+**When to use**:
+
+| Use Case | crossAmount | Effect |
+|----------|-------------|--------|
+| Normal stereo delay | 0.0 | Independent L/R feedback |
+| Subtle stereo widening | 0.1-0.3 | Gentle cross-channel bleed |
+| Mono-compatible delay | 0.5 | Feedback is mono-summed |
+| Ping-pong delay | 1.0 | Full L↔R swap per repeat |
+
+**Future Consumers**:
+- 019-feedback-network: Cross-feedback routing (current)
+- 022-stereo-field: Ping-pong mode (planned)
+- 023-tap-manager: Per-tap stereo routing (planned)
+
+**Example**:
+```cpp
+#include "dsp/core/stereo_utils.h"
+using namespace Iterum::DSP;
+
+// In feedback loop (per sample)
+float feedbackL = delayedL;
+float feedbackR = delayedR;
+
+// Apply cross-feedback (50% creates ping-pong effect)
+float crossedL, crossedR;
+stereoCrossBlend(feedbackL, feedbackR, crossAmount, crossedL, crossedR);
+
+// Continue processing with crossedL, crossedR
+```
+
+---
+
 ## Layer 1: DSP Primitives
 
 DSP primitives depend only on Layer 0. They are the basic building blocks for higher-level processors.

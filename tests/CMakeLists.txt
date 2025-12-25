@@ -73,6 +73,7 @@ add_executable(dsp_tests
     unit/core/block_context_test.cpp
     unit/core/fast_math_test.cpp
     unit/core/interpolation_test.cpp
+    unit/core/stereo_utils_test.cpp
     unit/primitives/delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
@@ -93,6 +94,7 @@ add_executable(dsp_tests
     unit/processors/pitch_shift_processor_test.cpp
     # Layer 3: System Components
     unit/systems/delay_engine_test.cpp
+    unit/systems/feedback_network_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -146,6 +148,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/processors/pitch_shift_processor_test.cpp
         # Layer 3: System Components
         unit/systems/delay_engine_test.cpp
+        unit/systems/feedback_network_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
@@ -273,6 +276,24 @@ target_include_directories(benchmark_tanh
 
 # Release optimizations for accurate benchmarking
 target_compile_options(benchmark_tanh PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
+    $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
+)
+
+# FeedbackNetwork benchmark (SC-007: <1% CPU at 44.1kHz stereo)
+add_executable(benchmark_feedback_network
+    benchmark_feedback_network.cpp
+)
+
+target_include_directories(benchmark_feedback_network
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+# Release optimizations for accurate benchmarking
+target_compile_options(benchmark_feedback_network PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
