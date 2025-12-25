@@ -449,3 +449,196 @@ TEST_CASE("FeedbackNetwork not prepared returns early", "[feedback][US1][edge]")
     // Should return without processing (and not crash)
     REQUIRE_NOTHROW(network.process(buffer.data(), buffer.size(), ctx));
 }
+
+// =============================================================================
+// US2: Self-Oscillation Mode Tests
+// =============================================================================
+
+TEST_CASE("FeedbackNetwork accepts feedback values up to 120%", "[feedback][US2]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+
+    // Setting 120% feedback should work
+    network.setFeedbackAmount(1.2f);
+    REQUIRE(network.getFeedbackAmount() == Approx(1.2f));
+
+    // Values above 120% should be clamped
+    network.setFeedbackAmount(1.5f);
+    REQUIRE(network.getFeedbackAmount() == Approx(1.2f));
+}
+
+TEST_CASE("FeedbackNetwork saturation can be enabled/disabled", "[feedback][US2]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+
+    // Default is disabled
+    REQUIRE_FALSE(network.isSaturationEnabled());
+
+    // Can enable
+    network.setSaturationEnabled(true);
+    REQUIRE(network.isSaturationEnabled());
+
+    // Can disable
+    network.setSaturationEnabled(false);
+    REQUIRE_FALSE(network.isSaturationEnabled());
+}
+
+TEST_CASE("FeedbackNetwork 120% feedback with saturation keeps output bounded", "[feedback][US2][SC-003]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+    network.setDelayTimeMs(10.0f);  // 10ms = 441 samples (short for faster test)
+    network.setFeedbackAmount(1.2f);  // 120% feedback
+    network.setSaturationEnabled(true);  // Enable saturation to limit signal
+
+    auto ctx = createTestContext();
+
+    constexpr size_t kBlockSize = 512;
+    // Process for ~1 second to let oscillation build up
+    constexpr size_t kNumBlocks = 100;
+
+    // Start with an impulse
+    float maxOutputSeen = 0.0f;
+
+    for (size_t block = 0; block < kNumBlocks; ++block) {
+        std::array<float, kBlockSize> buffer = {};
+        if (block == 0) {
+            buffer[0] = 1.0f;  // Impulse
+        }
+        network.process(buffer.data(), buffer.size(), ctx);
+
+        // Track maximum output
+        for (size_t i = 0; i < kBlockSize; ++i) {
+            maxOutputSeen = std::max(maxOutputSeen, std::abs(buffer[i]));
+        }
+    }
+
+    // SC-003: Output should be bounded below 2.0 (saturation limits growth)
+    REQUIRE(maxOutputSeen < 2.0f);
+    // Should still have significant output (oscillation is happening)
+    REQUIRE(maxOutputSeen > 0.5f);
+}
+
+TEST_CASE("FeedbackNetwork self-oscillation builds up over repeats", "[feedback][US2]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+    network.setDelayTimeMs(10.0f);  // 10ms delay
+    network.setFeedbackAmount(1.2f);  // 120% feedback for stronger growth
+    network.setSaturationEnabled(true);
+
+    auto ctx = createTestContext();
+
+    constexpr size_t kBlockSize = 512;
+    constexpr size_t kDelayInSamples = 441;
+
+    // Use smaller initial impulse so signal can grow before hitting saturation
+    std::vector<float> allOutput;
+    allOutput.reserve(kBlockSize * 30);
+
+    for (size_t block = 0; block < 30; ++block) {
+        std::array<float, kBlockSize> buffer = {};
+        if (block == 0) {
+            buffer[0] = 0.1f;  // Small impulse to allow growth
+        }
+        network.process(buffer.data(), buffer.size(), ctx);
+        allOutput.insert(allOutput.end(), buffer.begin(), buffer.end());
+    }
+
+    // Find peaks at successive delay intervals
+    auto findPeakAround = [&](size_t centerSample) {
+        float peak = 0.0f;
+        size_t start = (centerSample > 50) ? centerSample - 50 : 0;
+        size_t end = std::min(centerSample + 50, allOutput.size());
+        for (size_t i = start; i < end; ++i) {
+            peak = std::max(peak, std::abs(allOutput[i]));
+        }
+        return peak;
+    };
+
+    float repeat1 = findPeakAround(kDelayInSamples);
+    float repeat2 = findPeakAround(2 * kDelayInSamples);
+    float repeat3 = findPeakAround(3 * kDelayInSamples);
+
+    // With 120% feedback and small initial signal:
+    // Signal should grow in early repeats before saturation limits it
+    // tanh(0.1) ≈ 0.0997, so ~100% of signal passes through
+    // With 120% feedback: 0.1 * 1.2 = 0.12, then 0.12 * 1.2 = 0.144, etc.
+    REQUIRE(repeat1 > 0.05f);  // First repeat present
+    REQUIRE(repeat2 > repeat1 * 1.05f);  // Second repeat grows (at least 5% larger)
+    REQUIRE(repeat3 > repeat2 * 1.0f);   // Third repeat at least same or larger
+}
+
+TEST_CASE("FeedbackNetwork saturation provides soft limiting", "[feedback][US2]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+    network.setDelayTimeMs(5.0f);  // Very short delay for fast oscillation
+    network.setFeedbackAmount(1.2f);  // 120% feedback
+    network.setSaturationEnabled(true);
+
+    auto ctx = createTestContext();
+
+    constexpr size_t kBlockSize = 512;
+    // Process for many blocks to reach steady-state oscillation
+    constexpr size_t kNumBlocks = 200;
+
+    std::array<float, kBlockSize> buffer = {};
+    float lastMaxDelta = 0.0f;
+
+    for (size_t block = 0; block < kNumBlocks; ++block) {
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+        if (block == 0) {
+            buffer[0] = 1.0f;
+        }
+        network.process(buffer.data(), buffer.size(), ctx);
+
+        // In steady state, check for soft limiting (no harsh clipping)
+        if (block > 150) {
+            // Find maximum sample-to-sample delta
+            for (size_t i = 1; i < kBlockSize; ++i) {
+                float delta = std::abs(buffer[i] - buffer[i-1]);
+                lastMaxDelta = std::max(lastMaxDelta, delta);
+            }
+        }
+    }
+
+    // Soft saturation means gradual transitions, not hard clips
+    // Hard clipping would create very large deltas when signal hits limit
+    // With tape saturation, deltas should be smoother
+    REQUIRE(lastMaxDelta < 0.5f);  // No extreme jumps
+}
+
+TEST_CASE("FeedbackNetwork output remains bounded after long oscillation", "[feedback][US2][SC-003]") {
+    FeedbackNetwork network;
+    network.prepare(44100.0, 512, 500.0f);
+    network.setDelayTimeMs(10.0f);
+    network.setFeedbackAmount(1.2f);
+    network.setSaturationEnabled(true);
+
+    auto ctx = createTestContext();
+
+    constexpr size_t kBlockSize = 512;
+    // Process for ~5 seconds at 44.1kHz
+    constexpr size_t kNumBlocks = 450;  // 450 * 512 / 44100 ≈ 5 seconds
+
+    std::array<float, kBlockSize> buffer = {};
+
+    // Feed impulse at start
+    buffer[0] = 1.0f;
+    network.process(buffer.data(), buffer.size(), ctx);
+
+    // Continue processing for several seconds
+    float maxOutput = 0.0f;
+    for (size_t block = 1; block < kNumBlocks; ++block) {
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+        network.process(buffer.data(), buffer.size(), ctx);
+
+        // Track maximum in last second of processing
+        if (block > 350) {
+            for (size_t i = 0; i < kBlockSize; ++i) {
+                maxOutput = std::max(maxOutput, std::abs(buffer[i]));
+            }
+        }
+    }
+
+    // Output should still be bounded (saturation preventing runaway)
+    REQUIRE(maxOutput < 2.0f);
+}

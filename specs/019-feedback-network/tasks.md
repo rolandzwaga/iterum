@@ -154,28 +154,29 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 4.1 Pre-Implementation (MANDATORY)
 
-- [ ] T018 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T018 [US2] **Verify TESTING-GUIDE.md is in context** (already loaded from US1)
 
 ### 4.2 Tests for User Story 2 (Write FIRST - Must FAIL)
 
-- [ ] T019 [P] [US2] Add US2 test cases to tests/unit/systems/feedback_network_test.cpp:
+- [x] T019 [P] [US2] Add US2 test cases to tests/unit/systems/feedback_network_test.cpp:
   - setFeedbackAmount(1.2) allows values up to 120%
   - Feedback at 120% with saturation keeps output bounded below 2.0 (SC-003)
-  - Self-oscillation builds up over repeats
+  - Self-oscillation builds up over repeats (with small initial signal)
   - Saturation soft-limits signal (no harsh clipping)
   - Output remains bounded after several seconds of 120% feedback
+  - Saturation enable/disable control
 
 ### 4.3 Implementation for User Story 2
 
-- [ ] T020 [US2] Add SaturationProcessor members (L/R) to FeedbackNetwork
-- [ ] T021 [US2] Wire SaturationProcessor into feedback path (after filter position, always active for now - user bypass control added in T037/US4)
-- [ ] T022 [US2] Update process() to route signal through saturator
-- [ ] T023 [US2] Configure default saturation (Tape type, moderate drive) for self-oscillation limiting
+- [x] T020 [US2] Add SaturationProcessor members (L/R) to FeedbackNetwork (done in US1)
+- [x] T021 [US2] Wire SaturationProcessor into feedback path (saturationEnabled_ flag controls activation)
+- [x] T022 [US2] Update process() to route signal through saturator (done in US1)
+- [x] T023 [US2] Configure default saturation (Tape type, 0dB drive) for self-oscillation limiting
 
 ### 4.4 Verification
 
-- [ ] T024 [US2] Verify all US2 tests pass
-- [ ] T025 [US2] **Commit completed User Story 2 work** (Self-Oscillation Mode)
+- [x] T024 [US2] Verify all US2 tests pass (6 test cases, 95201 assertions)
+- [x] T025 [US2] **Commit completed User Story 2 work** (Self-Oscillation Mode)
 
 **Checkpoint**: FeedbackNetwork supports 0-120% feedback with saturation limiting
 
