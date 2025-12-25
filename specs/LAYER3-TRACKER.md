@@ -69,13 +69,14 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **023-tap-manager** | Multiple delay engines, per-tap controls | 🔲 TODO | DelayEngine (multiple) |
+| **023-tap-manager** | Up to 16 taps, per-tap time/level/pan/filter/feedback, preset patterns, tempo sync | ✅ DONE | DelayLine, Biquad, BlockContext, NoteValue |
 
 ---
 
 ## Status Legend
 
 - 🔲 TODO - Not started
+- 📋 SPECIFIED - Spec written, ready for planning
 - 🔄 IN PROGRESS - Currently being implemented
 - ✅ DONE - Completed and merged
 - 🔲 DEFERRED - May not be needed, will evaluate later
@@ -96,7 +97,7 @@ Recommended implementation order based on dependencies:
 3. 020-modulation-matrix (parallel with feedback) ✅ DONE
 4. 021-character-processor (needs several L2 processors) ✅ DONE
 5. 022-stereo-field (needs DelayEngine, MidSide) ✅ DONE
-6. 023-tap-manager (needs multiple DelayEngines) ← NEXT
+6. 023-tap-manager (needs DelayLine, Biquad, BlockContext) ✅ DONE
 
 ### Future Utilities (implement when needed)
 
