@@ -78,6 +78,12 @@ build\bin\Debug\dsp_tests.exe --list-tests
 3. [Testing Best Practices](#testing-best-practices)
 4. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 5. [DSP Testing Strategies](#dsp-testing-strategies)
+   - [Test Signal Types](#test-signal-types)
+   - [Frequency Domain Testing](#frequency-domain-testing)
+   - [THD Measurement](#thd-total-harmonic-distortion-measurement)
+   - [Guard Rail Tests](#guard-rail-tests)
+   - [Latency and Delay Testing](#latency-and-delay-testing)
+   - [Real-Time Safety Testing](#real-time-safety-testing)
 6. [VST3-Specific Testing](#vst3-specific-testing)
 7. [Test Organization](#test-organization)
 8. [Catch2 Patterns](#catch2-patterns)
@@ -653,6 +659,142 @@ TEST_CASE("Lowpass filter frequency response", "[dsp][filter][fft]") {
     // Check stopband (above cutoff - should be attenuated)
     float stopbandGain = magnitudeToDb(spectrum[frequencyToBin(4000.0f, 44100.0f, 4096)]);
     REQUIRE(stopbandGain < -20.0f);
+}
+```
+
+### THD (Total Harmonic Distortion) Measurement
+
+Use FFT-based harmonic analysis to measure distortion from saturation and nonlinear processing. This is essential for testing saturation processors, tape emulations, and other nonlinear effects.
+
+**Why FFT-based THD?** Simple time-domain comparison (subtracting a reference sine) incorrectly measures phase shift and filter delay as distortion. FFT analysis properly isolates harmonic content.
+
+```cpp
+#include "dsp/primitives/fft.h"
+
+// Measure THD using FFT-based harmonic analysis
+// THD = sqrt(sum of harmonic powers) / fundamental power * 100%
+float measureTHDWithFFT(const float* buffer, size_t size,
+                         float fundamentalFreq, float sampleRate) {
+    // FFT size must be power of 2
+    size_t fftSize = 1;
+    while (fftSize < size && fftSize < kMaxFFTSize) {
+        fftSize <<= 1;
+    }
+    if (fftSize > size) fftSize >>= 1;
+    if (fftSize < kMinFFTSize) fftSize = kMinFFTSize;
+
+    // Apply Hann window to reduce spectral leakage
+    std::vector<float> windowed(fftSize);
+    constexpr float kTwoPi = 6.28318530718f;
+    for (size_t i = 0; i < fftSize; ++i) {
+        float window = 0.5f * (1.0f - std::cos(kTwoPi * static_cast<float>(i) /
+                                                static_cast<float>(fftSize - 1)));
+        windowed[i] = buffer[i] * window;
+    }
+
+    // Perform FFT
+    FFT fft;
+    fft.prepare(fftSize);
+    std::vector<Complex> spectrum(fftSize / 2 + 1);
+    fft.forward(windowed.data(), spectrum.data());
+
+    // Find the bin corresponding to the fundamental frequency
+    float binWidth = sampleRate / static_cast<float>(fftSize);
+    size_t fundamentalBin = static_cast<size_t>(std::round(fundamentalFreq / binWidth));
+
+    // Get fundamental magnitude (search nearby bins for peak)
+    float fundamentalMag = 0.0f;
+    size_t searchRange = 2;
+    for (size_t i = fundamentalBin > searchRange ? fundamentalBin - searchRange : 0;
+         i <= fundamentalBin + searchRange && i < spectrum.size(); ++i) {
+        float mag = spectrum[i].magnitude();
+        if (mag > fundamentalMag) {
+            fundamentalMag = mag;
+            fundamentalBin = i;
+        }
+    }
+
+    if (fundamentalMag < 1e-10f) return 0.0f;  // No fundamental detected
+
+    // Sum harmonic magnitudes (2nd through 10th harmonics)
+    float harmonicPowerSum = 0.0f;
+    for (int harmonic = 2; harmonic <= 10; ++harmonic) {
+        size_t harmonicBin = fundamentalBin * harmonic;
+        if (harmonicBin >= spectrum.size()) break;
+
+        // Search nearby bins for the harmonic peak
+        float harmonicMag = 0.0f;
+        for (size_t i = harmonicBin > searchRange ? harmonicBin - searchRange : 0;
+             i <= harmonicBin + searchRange && i < spectrum.size(); ++i) {
+            float mag = spectrum[i].magnitude();
+            if (mag > harmonicMag) harmonicMag = mag;
+        }
+        harmonicPowerSum += harmonicMag * harmonicMag;
+    }
+
+    // THD = sqrt(sum of harmonic powers) / fundamental power * 100%
+    return std::sqrt(harmonicPowerSum) / fundamentalMag * 100.0f;
+}
+```
+
+**Usage example:**
+
+```cpp
+TEST_CASE("Saturation THD is controllable", "[dsp][saturation][SC-005]") {
+    SaturationProcessor sat;
+    sat.prepare(44100.0, 512);
+
+    std::array<float, 4096> buffer;
+
+    auto measureTHDAtDrive = [&](float drive) {
+        sat.setInputGain(drive);
+
+        // Let processor settle
+        for (int i = 0; i < 10; ++i) {
+            generateSine(buffer.data(), buffer.size(), 1000.0f, 44100.0f, 0.5f);
+            sat.process(buffer.data(), buffer.size());
+        }
+
+        // Measure with fresh signal
+        generateSine(buffer.data(), buffer.size(), 1000.0f, 44100.0f, 0.5f);
+        sat.process(buffer.data(), buffer.size());
+
+        return measureTHDWithFFT(buffer.data(), buffer.size(), 1000.0f, 44100.0f);
+    };
+
+    float thdLow = measureTHDAtDrive(-10.0f);
+    float thdHigh = measureTHDAtDrive(10.0f);
+
+    REQUIRE(thdLow < 0.5f);      // Low drive = low THD
+    REQUIRE(thdHigh >= 3.0f);    // High drive = significant THD
+    REQUIRE(thdHigh > thdLow);   // THD increases with drive
+}
+```
+
+**Key considerations:**
+
+| Factor | Recommendation |
+|--------|----------------|
+| **Window function** | Use Hann window to reduce spectral leakage |
+| **FFT size** | Use 4096+ samples for good frequency resolution |
+| **Test frequency** | Use 1kHz (well away from FFT bin boundaries at common sample rates) |
+| **Test amplitude** | Use 0.5 (gives headroom for saturation without clipping) |
+| **Settling time** | Process 5-10 blocks before measurement to let smoothers settle |
+| **Harmonic count** | Sum harmonics 2-10 (covers most audible distortion) |
+
+**Avoid the simple difference method:**
+
+```cpp
+// BAD: Phase shift and filter delay measured as "distortion"
+float measureTHD_WRONG(const float* buffer, size_t size, float freq, float sr) {
+    std::vector<float> reference(size);
+    generateSine(reference.data(), size, freq, sr);
+
+    float diff = 0.0f;
+    for (size_t i = 0; i < size; ++i) {
+        diff += (buffer[i] - reference[i]) * (buffer[i] - reference[i]);
+    }
+    return std::sqrt(diff / size);  // WRONG: includes phase error!
 }
 ```
 
