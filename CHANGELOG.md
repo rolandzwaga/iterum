@@ -5,6 +5,77 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.24] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: TapManager** (`src/dsp/systems/tap_manager.h`)
+  - Multi-tap delay manager with up to 16 independent delay taps
+  - Complete feature set with 6 user stories:
+    - **US1: Basic Multi-Tap Delay**: 16 taps with independent time and level
+    - **US2: Per-Tap Spatial Positioning**: Constant-power pan law (-100 to +100)
+    - **US3: Per-Tap Filtering**: LP/HP/Bypass with 20Hz-20kHz cutoff, 0.5-10 Q
+    - **US4: Feedback Routing**: Per-tap feedback (0-100%) with soft limiting
+    - **US5: Preset Patterns**: QuarterNote, DottedEighth, Triplet, GoldenRatio, Fibonacci
+    - **US6: Tempo Sync**: Free-running (ms) or tempo-synced (NoteValue) time modes
+  - Delay time accuracy within 1 sample (SC-003)
+  - Constant-power pan law preserves power within 0.5dB (SC-004)
+  - 20ms parameter smoothing on all controls (SC-002)
+  - Real-time safe: `noexcept`, no allocations in `process()`
+  - Soft feedback limiting via `tanh()` prevents runaway oscillation (FR-021)
+
+- **Preset pattern implementations**:
+  - `QuarterNote` - taps at 1×, 2×, 3×... quarter note intervals
+  - `DottedEighth` - taps at 0.75× quarter note intervals
+  - `Triplet` - taps at 0.667× quarter note intervals
+  - `GoldenRatio` - each tap = previous × 1.618 (φ)
+  - `Fibonacci` - tap times follow Fibonacci sequence (1, 1, 2, 3, 5, 8...)
+
+- **Comprehensive test suite** (31 test cases)
+  - All 16 taps enabled simultaneously without dropouts
+  - Pattern formula verification for all 5 presets
+  - Constant-power pan law verification
+  - Feedback runaway prevention verification
+  - Out-of-range tap index handling (silently ignored)
+  - Real-time safety verification (noexcept static_assert)
+
+### Technical Details
+
+- **Layer 3 architecture**: Composes Layer 0-1 components
+  - Uses: `DelayLine` (L1) - shared buffer with 16 read positions
+  - Uses: `Biquad` (L1) - per-tap 12dB/oct filtering
+  - Uses: `OnePoleSmoother` (L1) - 6 smoothers per tap + 2 master
+  - Uses: `NoteValue` (L0), `dbToGain()` (L0), `kGoldenRatio` (L0)
+- **Memory efficient**: Single DelayLine shared by all taps
+- **Parameter smoothing**: 20ms one-pole smoothing on delay, level, pan, cutoff
+- **Constant-power pan**: `gainL = cos(θ)`, `gainR = sin(θ)` where θ = pan mapped to 0-π/2
+- **Pattern formulas**: 1-based indexing (n = i + 1) for intuitive tap numbering
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/systems/tap_manager.h"
+
+using namespace Iterum::DSP;
+
+TapManager taps;
+taps.prepare(44100.0f, 512, 5000.0f);  // 5 second max delay
+
+// Manual tap configuration
+taps.setTapEnabled(0, true);
+taps.setTapTimeMs(0, 250.0f);
+taps.setTapLevelDb(0, -3.0f);
+taps.setTapPan(0, -50.0f);  // Pan left
+
+// Or load a preset pattern
+taps.setTempo(120.0f);
+taps.loadPattern(TapPattern::GoldenRatio, 8);  // 8 taps
+
+// In audio callback
+taps.process(leftIn, rightIn, leftOut, rightOut, numSamples);
+```
+
 ## [0.0.23] - 2025-12-25
 
 ### Added
