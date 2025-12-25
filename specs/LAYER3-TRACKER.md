@@ -45,7 +45,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **020-modulation-matrix** | Source→Destination routing, depth control | 🔲 TODO | LFO, EnvelopeFollower |
+| **020-modulation-matrix** | Source→Destination routing, depth control | ✅ DONE | LFO, EnvelopeFollower |
 
 ---
 
@@ -93,8 +93,8 @@ Context compaction in long sessions causes focus loss. Smaller specs (~200 LOC, 
 Recommended implementation order based on dependencies:
 1. 018-delay-engine (foundational) ✅ DONE
 2. 019-feedback-network (needs DelayEngine) ✅ DONE
-3. 020-modulation-matrix (parallel with feedback) ← NEXT
-4. 021-character-processor (needs several L2 processors)
+3. 020-modulation-matrix (parallel with feedback) ✅ DONE
+4. 021-character-processor (needs several L2 processors) ← NEXT
 5. 022-stereo-field (needs DelayEngine, MidSide)
 6. 023-tap-manager (needs multiple DelayEngines)
 
