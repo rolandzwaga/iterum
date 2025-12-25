@@ -5,6 +5,102 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.22] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: CharacterProcessor** (`src/dsp/systems/character_processor.h`)
+  - Applies analog character/coloration to audio with four distinct modes
+  - Complete feature set with 6 user stories:
+    - **US1: Tape Mode**: Saturation, wow/flutter modulation, hiss, high-frequency rolloff
+    - **US2: BBD Mode**: Bandwidth limiting, clock noise, soft input saturation
+    - **US3: Digital Vintage Mode**: Bit depth reduction (4-16 bits), sample rate reduction (1x-8x)
+    - **US4: Clean Mode**: Transparent bypass with no processing
+    - **US5: Smooth Mode Transitions**: 50ms crossfade prevents clicks when switching modes
+    - **US6: Per-Mode Parameter Control**: Independent parameters for each character mode
+  - Tape mode: THD controllable from 0.1% to 5% (SC-005)
+  - BBD mode: -12dB attenuation at 2x cutoff frequency (SC-006)
+  - Digital Vintage mode: 8-bit achieves ~48dB SNR (SC-007)
+  - Real-time safe: `noexcept`, no allocations in `process()`
+  - NaN input handling (treated as 0.0)
+
+- **Internal character mode implementations**:
+  - `TapeCharacter` - Composes SaturationProcessor, LFO (wow/flutter), NoiseGenerator (hiss), MultimodeFilter (rolloff)
+  - `BBDCharacter` - Composes SaturationProcessor, NoiseGenerator (clock noise), MultimodeFilter (bandwidth)
+  - `DigitalVintageCharacter` - Bit crushing and sample rate reduction with dither
+
+- **Test tolerance audit fixes**:
+  - Pitch Shifter SC-001: Fixed false positive - FFT was fooled by AM artifacts, autocorrelation method is correct
+  - Oversampler SC-003: Added proper 0.1dB passband flatness test (implementation compliant)
+  - Documented frequency estimation helpers in TESTING-GUIDE.md
+
+- **Comprehensive test suite** (all user stories and success criteria)
+  - THD measurement and calibration (SC-005)
+  - Bandwidth limiting verification (SC-006)
+  - SNR measurement for bit depth (SC-007)
+  - Mode transition click-free verification (SC-002)
+  - Parameter automation smoothness (SC-004)
+  - Real-time safety verification (noexcept static_assert)
+
+### Technical Details
+
+- **Layer 3 architecture**: Composes Layer 0-2 components
+  - Uses: `SaturationProcessor` (L2), `NoiseGenerator` (L2), `MultimodeFilter` (L2)
+  - Uses: `LFO` (L1), `OnePoleSmoother` (L1)
+  - Uses: `dbToGain()` (L0), `isNaN()` (L0)
+- **Mode crossfading**: Linear crossfade over 50ms for click-free transitions
+- **Tape saturation**: tanh-based with configurable drive (0-100%)
+- **Wow/flutter**: LFO-modulated pitch shift (0.1-10Hz, 0-100% depth)
+- **BBD bandwidth**: Lowpass filter with configurable cutoff (2-15kHz)
+- **Bit crushing formula**: `output = floor(input * levels + 0.5) / levels` where levels = 2^bits
+- **Sample rate reduction**: Zero-order hold with optional TPDF dither
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/systems/character_processor.h"
+
+using namespace Iterum::DSP;
+
+CharacterProcessor character;
+
+// In prepare() - allocates buffers
+character.prepare(44100.0, 512);
+
+// Select character mode
+character.setMode(CharacterMode::Tape);
+
+// Configure Tape mode
+character.setTapeSaturation(50.0f);     // 50% saturation
+character.setTapeWowFlutterRate(2.0f);  // 2Hz modulation
+character.setTapeWowFlutterDepth(30.0f); // 30% depth
+character.setTapeHissLevel(-60.0f);     // -60dB hiss
+character.setTapeRolloff(8000.0f);      // 8kHz rolloff
+
+// BBD mode
+character.setMode(CharacterMode::BBD);
+character.setBBDBandwidth(8000.0f);     // 8kHz bandwidth
+character.setBBDClockNoiseLevel(-70.0f); // -70dB clock noise
+character.setBBDDrive(40.0f);           // 40% input saturation
+
+// Digital Vintage mode
+character.setMode(CharacterMode::DigitalVintage);
+character.setDigitalBitDepth(8);        // 8-bit (classic lo-fi)
+character.setDigitalSampleRateReduction(4); // 4x downsampling
+
+// Clean mode for A/B comparison
+character.setMode(CharacterMode::Clean);
+
+// In processBlock() - real-time safe
+character.process(buffer, numSamples);
+
+// Stereo processing
+character.process(leftBuffer, rightBuffer, numSamples);
+```
+
+---
+
 ## [0.0.21] - 2025-12-25
 
 ### Added

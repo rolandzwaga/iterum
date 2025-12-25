@@ -823,11 +823,11 @@ TEST_CASE("Oversampler2x passband preservation", "[oversampler][spectral][passba
 
         float outputLevel = calculateRMS(left.data(), blockSize);
 
-        // SC-003: Passband flat within 0.1dB up to 20kHz
-        // Using 3dB as generous threshold (spec is 0.1dB)
+        // Note: Basic passband check at single frequency
+        // See "[SC-003]" test for comprehensive multi-frequency spec compliance
         float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
-        REQUIRE(levelDiff > -3.0f);  // Max 3dB attenuation allowed
-        REQUIRE(levelDiff < 3.0f);   // Max 3dB gain allowed
+        REQUIRE(levelDiff > -1.0f);  // Within 1dB (SC-003 requires 0.1dB - see comprehensive test)
+        REQUIRE(levelDiff < 1.0f);
     }
 
     SECTION("High quality preserves passband") {
@@ -845,11 +845,11 @@ TEST_CASE("Oversampler2x passband preservation", "[oversampler][spectral][passba
 
         float outputLevel = calculateRMS(left.data(), blockSize);
 
-        // SC-003: Passband flat within 0.1dB up to 20kHz
-        // Using 3dB as generous threshold (spec is 0.1dB)
+        // Note: Basic passband check at single frequency
+        // See "[SC-003]" test for comprehensive multi-frequency spec compliance
         float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
-        REQUIRE(levelDiff > -3.0f);  // Max 3dB attenuation allowed
-        REQUIRE(levelDiff < 3.0f);   // Max 3dB gain allowed
+        REQUIRE(levelDiff > -1.0f);  // Within 1dB (SC-003 requires 0.1dB - see comprehensive test)
+        REQUIRE(levelDiff < 1.0f);
     }
 }
 
@@ -1020,6 +1020,80 @@ TEST_CASE("LinearPhase mode produces symmetric impulse response", "[oversampler]
 
         REQUIRE(peakVal > 0.1f);
         REQUIRE(peakIdx > 0);
+    }
+}
+
+// =============================================================================
+// SC-003 Passband Flatness Tests (Spec Compliance)
+// =============================================================================
+// SC-003: Passband frequency response is flat within 0.1dB up to 20kHz
+// at 44.1kHz base rate for Standard and High quality
+
+TEST_CASE("Oversampler SC-003 passband flatness compliance", "[oversampler][SC-003][spec]") {
+    // Test frequencies across the passband (up to 20kHz at 44.1kHz)
+    constexpr size_t blockSize = 4096;  // Large block for accurate measurement
+    constexpr float sampleRate = 44100.0f;
+    constexpr float specTolerance = 0.1f;  // ±0.1dB per SC-003
+
+    // Test frequencies: 1kHz, 5kHz, 10kHz, 15kHz, 20kHz
+    const std::array<float, 5> testFrequencies = {1000.0f, 5000.0f, 10000.0f, 15000.0f, 20000.0f};
+
+    SECTION("Standard quality passband flatness") {
+        Oversampler2x os;
+        os.prepare(sampleRate, blockSize, OversamplingQuality::Standard, OversamplingMode::LinearPhase);
+
+        for (float testFreq : testFrequencies) {
+            // Skip frequencies too close to Nyquist (edge effects)
+            if (testFreq >= sampleRate * 0.45f) continue;
+
+            std::array<float, blockSize> left{}, right{};
+            generateSineWave(left.data(), blockSize, testFreq, sampleRate);
+            std::copy(left.begin(), left.end(), right.begin());
+
+            float inputLevel = calculateRMS(left.data(), blockSize);
+
+            os.reset();  // Fresh state for each frequency
+            os.process(left.data(), right.data(), blockSize,
+                [](float*, float*, size_t) {});
+
+            float outputLevel = calculateRMS(left.data(), blockSize);
+            float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
+
+            INFO("Standard quality at " << testFreq << " Hz: " << levelDiff << " dB");
+
+            // SC-003: Must be within ±0.1dB
+            CHECK(levelDiff > -specTolerance);
+            CHECK(levelDiff < specTolerance);
+        }
+    }
+
+    SECTION("High quality passband flatness") {
+        Oversampler2x os;
+        os.prepare(sampleRate, blockSize, OversamplingQuality::High, OversamplingMode::LinearPhase);
+
+        for (float testFreq : testFrequencies) {
+            // Skip frequencies too close to Nyquist (edge effects)
+            if (testFreq >= sampleRate * 0.45f) continue;
+
+            std::array<float, blockSize> left{}, right{};
+            generateSineWave(left.data(), blockSize, testFreq, sampleRate);
+            std::copy(left.begin(), left.end(), right.begin());
+
+            float inputLevel = calculateRMS(left.data(), blockSize);
+
+            os.reset();  // Fresh state for each frequency
+            os.process(left.data(), right.data(), blockSize,
+                [](float*, float*, size_t) {});
+
+            float outputLevel = calculateRMS(left.data(), blockSize);
+            float levelDiff = 20.0f * std::log10(outputLevel / inputLevel);
+
+            INFO("High quality at " << testFreq << " Hz: " << levelDiff << " dB");
+
+            // SC-003: Must be within ±0.1dB (High quality is ±0.05dB but we test to spec)
+            CHECK(levelDiff > -specTolerance);
+            CHECK(levelDiff < specTolerance);
+        }
     }
 }
 

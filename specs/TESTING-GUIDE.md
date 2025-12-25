@@ -78,6 +78,13 @@ build\bin\Debug\dsp_tests.exe --list-tests
 3. [Testing Best Practices](#testing-best-practices)
 4. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 5. [DSP Testing Strategies](#dsp-testing-strategies)
+   - [Test Signal Types](#test-signal-types)
+   - [Frequency Domain Testing](#frequency-domain-testing)
+   - [THD Measurement](#thd-total-harmonic-distortion-measurement)
+   - [Frequency Estimation](#frequency-estimation-for-pitch-accuracy-tests)
+   - [Guard Rail Tests](#guard-rail-tests)
+   - [Latency and Delay Testing](#latency-and-delay-testing)
+   - [Real-Time Safety Testing](#real-time-safety-testing)
 6. [VST3-Specific Testing](#vst3-specific-testing)
 7. [Test Organization](#test-organization)
 8. [Catch2 Patterns](#catch2-patterns)
@@ -655,6 +662,231 @@ TEST_CASE("Lowpass filter frequency response", "[dsp][filter][fft]") {
     REQUIRE(stopbandGain < -20.0f);
 }
 ```
+
+### THD (Total Harmonic Distortion) Measurement
+
+Use FFT-based harmonic analysis to measure distortion from saturation and nonlinear processing. This is essential for testing saturation processors, tape emulations, and other nonlinear effects.
+
+**Why FFT-based THD?** Simple time-domain comparison (subtracting a reference sine) incorrectly measures phase shift and filter delay as distortion. FFT analysis properly isolates harmonic content.
+
+```cpp
+#include "dsp/primitives/fft.h"
+
+// Measure THD using FFT-based harmonic analysis
+// THD = sqrt(sum of harmonic powers) / fundamental power * 100%
+float measureTHDWithFFT(const float* buffer, size_t size,
+                         float fundamentalFreq, float sampleRate) {
+    // FFT size must be power of 2
+    size_t fftSize = 1;
+    while (fftSize < size && fftSize < kMaxFFTSize) {
+        fftSize <<= 1;
+    }
+    if (fftSize > size) fftSize >>= 1;
+    if (fftSize < kMinFFTSize) fftSize = kMinFFTSize;
+
+    // Apply Hann window to reduce spectral leakage
+    std::vector<float> windowed(fftSize);
+    constexpr float kTwoPi = 6.28318530718f;
+    for (size_t i = 0; i < fftSize; ++i) {
+        float window = 0.5f * (1.0f - std::cos(kTwoPi * static_cast<float>(i) /
+                                                static_cast<float>(fftSize - 1)));
+        windowed[i] = buffer[i] * window;
+    }
+
+    // Perform FFT
+    FFT fft;
+    fft.prepare(fftSize);
+    std::vector<Complex> spectrum(fftSize / 2 + 1);
+    fft.forward(windowed.data(), spectrum.data());
+
+    // Find the bin corresponding to the fundamental frequency
+    float binWidth = sampleRate / static_cast<float>(fftSize);
+    size_t fundamentalBin = static_cast<size_t>(std::round(fundamentalFreq / binWidth));
+
+    // Get fundamental magnitude (search nearby bins for peak)
+    float fundamentalMag = 0.0f;
+    size_t searchRange = 2;
+    for (size_t i = fundamentalBin > searchRange ? fundamentalBin - searchRange : 0;
+         i <= fundamentalBin + searchRange && i < spectrum.size(); ++i) {
+        float mag = spectrum[i].magnitude();
+        if (mag > fundamentalMag) {
+            fundamentalMag = mag;
+            fundamentalBin = i;
+        }
+    }
+
+    if (fundamentalMag < 1e-10f) return 0.0f;  // No fundamental detected
+
+    // Sum harmonic magnitudes (2nd through 10th harmonics)
+    float harmonicPowerSum = 0.0f;
+    for (int harmonic = 2; harmonic <= 10; ++harmonic) {
+        size_t harmonicBin = fundamentalBin * harmonic;
+        if (harmonicBin >= spectrum.size()) break;
+
+        // Search nearby bins for the harmonic peak
+        float harmonicMag = 0.0f;
+        for (size_t i = harmonicBin > searchRange ? harmonicBin - searchRange : 0;
+             i <= harmonicBin + searchRange && i < spectrum.size(); ++i) {
+            float mag = spectrum[i].magnitude();
+            if (mag > harmonicMag) harmonicMag = mag;
+        }
+        harmonicPowerSum += harmonicMag * harmonicMag;
+    }
+
+    // THD = sqrt(sum of harmonic powers) / fundamental power * 100%
+    return std::sqrt(harmonicPowerSum) / fundamentalMag * 100.0f;
+}
+```
+
+**Usage example:**
+
+```cpp
+TEST_CASE("Saturation THD is controllable", "[dsp][saturation][SC-005]") {
+    SaturationProcessor sat;
+    sat.prepare(44100.0, 512);
+
+    std::array<float, 4096> buffer;
+
+    auto measureTHDAtDrive = [&](float drive) {
+        sat.setInputGain(drive);
+
+        // Let processor settle
+        for (int i = 0; i < 10; ++i) {
+            generateSine(buffer.data(), buffer.size(), 1000.0f, 44100.0f, 0.5f);
+            sat.process(buffer.data(), buffer.size());
+        }
+
+        // Measure with fresh signal
+        generateSine(buffer.data(), buffer.size(), 1000.0f, 44100.0f, 0.5f);
+        sat.process(buffer.data(), buffer.size());
+
+        return measureTHDWithFFT(buffer.data(), buffer.size(), 1000.0f, 44100.0f);
+    };
+
+    float thdLow = measureTHDAtDrive(-10.0f);
+    float thdHigh = measureTHDAtDrive(10.0f);
+
+    REQUIRE(thdLow < 0.5f);      // Low drive = low THD
+    REQUIRE(thdHigh >= 3.0f);    // High drive = significant THD
+    REQUIRE(thdHigh > thdLow);   // THD increases with drive
+}
+```
+
+**Key considerations:**
+
+| Factor | Recommendation |
+|--------|----------------|
+| **Window function** | Use Hann window to reduce spectral leakage |
+| **FFT size** | Use 4096+ samples for good frequency resolution |
+| **Test frequency** | Use 1kHz (well away from FFT bin boundaries at common sample rates) |
+| **Test amplitude** | Use 0.5 (gives headroom for saturation without clipping) |
+| **Settling time** | Process 5-10 blocks before measurement to let smoothers settle |
+| **Harmonic count** | Sum harmonics 2-10 (covers most audible distortion) |
+
+**Avoid the simple difference method:**
+
+```cpp
+// BAD: Phase shift and filter delay measured as "distortion"
+float measureTHD_WRONG(const float* buffer, size_t size, float freq, float sr) {
+    std::vector<float> reference(size);
+    generateSine(reference.data(), size, freq, sr);
+
+    float diff = 0.0f;
+    for (size_t i = 0; i < size; ++i) {
+        diff += (buffer[i] - reference[i]) * (buffer[i] - reference[i]);
+    }
+    return std::sqrt(diff / size);  // WRONG: includes phase error!
+}
+```
+
+### Frequency Estimation for Pitch Accuracy Tests
+
+When testing pitch shifters or other frequency-altering DSP, you need to measure the output frequency accurately. Two methods are available:
+
+**1. FFT-based Detection** - Good for pure tones, but fooled by amplitude modulation:
+
+```cpp
+// FFT-based frequency estimation with parabolic interpolation
+// WARNING: Fooled by AM artifacts from crossfading pitch shifters!
+float estimateFrequencyFFT(const float* buffer, size_t size, float sampleRate,
+                            float expectedFreqMin = 50.0f, float expectedFreqMax = 2000.0f) {
+    size_t fftSize = /* power of 2 <= size */;
+
+    // Apply Hann window
+    std::vector<float> windowed(fftSize);
+    for (size_t i = 0; i < fftSize; ++i) {
+        float window = 0.5f * (1.0f - std::cos(kTwoPi * i / (fftSize - 1)));
+        windowed[i] = buffer[i] * window;
+    }
+
+    FFT fft;
+    fft.prepare(fftSize);
+    std::vector<Complex> spectrum(fftSize / 2 + 1);
+    fft.forward(windowed.data(), spectrum.data());
+
+    // Find peak bin in expected range
+    float binWidth = sampleRate / static_cast<float>(fftSize);
+    size_t minBin = static_cast<size_t>(expectedFreqMin / binWidth);
+    size_t maxBin = static_cast<size_t>(expectedFreqMax / binWidth);
+
+    size_t peakBin = minBin;
+    float peakMag = 0.0f;
+    for (size_t i = minBin; i <= maxBin && i < spectrum.size(); ++i) {
+        float mag = spectrum[i].magnitude();
+        if (mag > peakMag) { peakMag = mag; peakBin = i; }
+    }
+
+    // Parabolic interpolation for sub-bin accuracy
+    if (peakBin > 0 && peakBin < spectrum.size() - 1) {
+        float y0 = spectrum[peakBin - 1].magnitude();
+        float y1 = spectrum[peakBin].magnitude();
+        float y2 = spectrum[peakBin + 1].magnitude();
+        float delta = 0.5f * (y2 - y0) / (2.0f * y1 - y0 - y2);
+        return (peakBin + delta) * binWidth;
+    }
+    return peakBin * binWidth;
+}
+```
+
+**2. Autocorrelation-based Detection** - Robust against AM artifacts:
+
+```cpp
+// Autocorrelation-based frequency estimation
+// More robust for pitch shifters with crossfading/windowing artifacts
+float estimateFrequencyAutocorr(const float* buffer, size_t size, float sampleRate,
+                                 float minFreq = 50.0f, float maxFreq = 2000.0f) {
+    size_t minLag = static_cast<size_t>(sampleRate / maxFreq);
+    size_t maxLag = static_cast<size_t>(sampleRate / minFreq);
+    maxLag = std::min(maxLag, size / 2);
+
+    float bestCorr = -1.0f;
+    size_t bestLag = minLag;
+
+    for (size_t lag = minLag; lag <= maxLag; ++lag) {
+        float corr = 0.0f;
+        for (size_t i = 0; i < size - lag; ++i) {
+            corr += buffer[i] * buffer[i + lag];
+        }
+        if (corr > bestCorr) {
+            bestCorr = corr;
+            bestLag = lag;
+        }
+    }
+
+    return sampleRate / static_cast<float>(bestLag);
+}
+```
+
+**When to use which method:**
+
+| Scenario | Recommended Method | Why |
+|----------|-------------------|-----|
+| Pure sine waves | FFT | Sub-bin accuracy via parabolic interpolation |
+| Pitch shifters | Autocorrelation | Immune to AM sidebands from crossfading |
+| Filters | FFT | Need frequency response at specific bins |
+| Oscillators | Either | Both work well for clean sources |
+
+**Lesson learned:** During spec 016 (Pitch Shifter) audit, FFT detection showed 894Hz for an 880Hz target (1.6% error). Autocorrelation correctly measured 882Hz (0.2% error). The difference was caused by crossfade amplitude modulation creating sidebands that shifted the FFT peak.
 
 ### Guard Rail Tests
 

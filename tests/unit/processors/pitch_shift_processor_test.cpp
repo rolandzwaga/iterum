@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "dsp/processors/pitch_shift_processor.h"
+#include "dsp/primitives/fft.h"
 
 #include <array>
 #include <cmath>
@@ -151,7 +152,169 @@ inline float estimateFrequencyAutocorr(const float* buffer, size_t size, float s
     return sampleRate / static_cast<float>(bestLag);
 }
 
+// FFT-based frequency estimation with parabolic interpolation for sub-bin accuracy
+// This achieves ±1-2 cents accuracy, sufficient for testing ±5 cents spec requirement
+// See TESTING-GUIDE.md for methodology documentation
+inline float estimateFrequencyFFT(const float* buffer, size_t size, float sampleRate,
+                                   float expectedFreqMin = 50.0f, float expectedFreqMax = 2000.0f) {
+    // Determine FFT size (power of 2, at least as large as input)
+    size_t fftSize = 1;
+    while (fftSize < size && fftSize < kMaxFFTSize) {
+        fftSize <<= 1;
+    }
+    if (fftSize > size) fftSize >>= 1;
+    if (fftSize < kMinFFTSize) fftSize = kMinFFTSize;
+
+    // Apply Hann window to reduce spectral leakage
+    std::vector<float> windowed(fftSize);
+    for (size_t i = 0; i < fftSize; ++i) {
+        float window = 0.5f * (1.0f - std::cos(kTestTwoPi * static_cast<float>(i) /
+                                                static_cast<float>(fftSize - 1)));
+        windowed[i] = buffer[i] * window;
+    }
+
+    // Perform FFT
+    FFT fft;
+    fft.prepare(fftSize);
+    std::vector<Complex> spectrum(fftSize / 2 + 1);
+    fft.forward(windowed.data(), spectrum.data());
+
+    // Calculate frequency resolution
+    float binWidth = sampleRate / static_cast<float>(fftSize);
+
+    // Find bin range for expected frequency
+    size_t minBin = static_cast<size_t>(expectedFreqMin / binWidth);
+    size_t maxBin = static_cast<size_t>(expectedFreqMax / binWidth);
+    if (minBin < 1) minBin = 1;
+    if (maxBin >= spectrum.size()) maxBin = spectrum.size() - 1;
+
+    // Find the peak magnitude bin in the expected range
+    float maxMag = 0.0f;
+    size_t peakBin = minBin;
+    for (size_t i = minBin; i <= maxBin; ++i) {
+        float mag = spectrum[i].magnitude();
+        if (mag > maxMag) {
+            maxMag = mag;
+            peakBin = i;
+        }
+    }
+
+    if (maxMag < 1e-10f) return 0.0f;  // No significant peak found
+
+    // Parabolic interpolation around the peak for sub-bin accuracy
+    // Uses the magnitudes of the peak and its neighbors to find the true peak location
+    // Formula: delta = 0.5 * (left - right) / (left - 2*center + right)
+    float interpolatedBin = static_cast<float>(peakBin);
+
+    if (peakBin > 0 && peakBin < spectrum.size() - 1) {
+        float left = spectrum[peakBin - 1].magnitude();
+        float center = spectrum[peakBin].magnitude();
+        float right = spectrum[peakBin + 1].magnitude();
+
+        float denominator = left - 2.0f * center + right;
+        if (std::abs(denominator) > 1e-10f) {
+            float delta = 0.5f * (left - right) / denominator;
+            // Clamp delta to reasonable range to avoid interpolation artifacts
+            delta = std::clamp(delta, -0.5f, 0.5f);
+            interpolatedBin += delta;
+        }
+    }
+
+    return interpolatedBin * binWidth;
+}
+
 } // namespace
+
+// ==============================================================================
+// FFT Frequency Detection Verification
+// ==============================================================================
+
+TEST_CASE("Compare Simple vs Granular pitch accuracy", "[pitch][diagnostic]") {
+    // This test compares Simple and Granular modes on identical input
+    // to isolate where the pitch inaccuracy comes from
+
+    constexpr size_t numSamples = 16384;
+    std::vector<float> input(numSamples);
+    std::vector<float> outputSimple(numSamples);
+    std::vector<float> outputGranular(numSamples);
+
+    generateSine(input.data(), numSamples, 440.0f, kTestSampleRate);
+
+    PitchShiftProcessor shifterSimple, shifterGranular;
+    shifterSimple.prepare(kTestSampleRate, kTestBlockSize);
+    shifterGranular.prepare(kTestSampleRate, kTestBlockSize);
+
+    shifterSimple.setMode(PitchMode::Simple);
+    shifterGranular.setMode(PitchMode::Granular);
+
+    shifterSimple.setSemitones(12.0f);
+    shifterGranular.setSemitones(12.0f);
+
+    // Process both
+    for (size_t offset = 0; offset < numSamples; offset += kTestBlockSize) {
+        size_t blockSize = std::min(kTestBlockSize, numSamples - offset);
+        shifterSimple.process(input.data() + offset, outputSimple.data() + offset, blockSize);
+        shifterGranular.process(input.data() + offset, outputGranular.data() + offset, blockSize);
+    }
+
+    // Measure both with FFT (last 25%)
+    const float* measureSimple = outputSimple.data() + (numSamples * 3) / 4;
+    const float* measureGranular = outputGranular.data() + (numSamples * 3) / 4;
+    size_t measureSize = numSamples / 4;
+
+    float freqSimple = estimateFrequencyFFT(measureSimple, measureSize, kTestSampleRate,
+                                             800.0f, 1000.0f);
+    float freqGranular = estimateFrequencyFFT(measureGranular, measureSize, kTestSampleRate,
+                                               800.0f, 1000.0f);
+
+    INFO("Simple mode frequency: " << freqSimple << " Hz");
+    INFO("Granular mode frequency: " << freqGranular << " Hz");
+    INFO("Expected: 880 Hz");
+    INFO("Simple error: " << (freqSimple - 880.0f) << " Hz (" << ((freqSimple - 880.0f) / 880.0f * 100.0f) << "%)");
+    INFO("Granular error: " << (freqGranular - 880.0f) << " Hz (" << ((freqGranular - 880.0f) / 880.0f * 100.0f) << "%)");
+
+    // Also test autocorrelation for comparison
+    float freqSimpleAuto = estimateFrequencyAutocorr(measureSimple, measureSize, kTestSampleRate);
+    float freqGranularAuto = estimateFrequencyAutocorr(measureGranular, measureSize, kTestSampleRate);
+
+    INFO("Simple (autocorr): " << freqSimpleAuto << " Hz");
+    INFO("Granular (autocorr): " << freqGranularAuto << " Hz");
+
+    // FFT is fooled by AM modulation artifacts from crossfading - shows ~892Hz instead of 880Hz
+    // Autocorrelation correctly shows ~882Hz (within spec tolerance)
+    // This diagnostic test demonstrates why we use autocorrelation for pitch accuracy tests
+    REQUIRE(freqSimpleAuto == Approx(880.0f).margin(5.0f));  // Autocorr should be accurate
+}
+
+TEST_CASE("FFT frequency detection is accurate", "[pitch][diagnostic]") {
+    // Verify our frequency detection method works correctly
+    constexpr size_t numSamples = 8192;
+    std::vector<float> buffer(numSamples);
+
+    SECTION("detects 440 Hz accurately") {
+        generateSine(buffer.data(), numSamples, 440.0f, kTestSampleRate);
+        float detected = estimateFrequencyFFT(buffer.data(), numSamples, kTestSampleRate,
+                                               400.0f, 500.0f);
+        INFO("Detected: " << detected << " Hz, Expected: 440 Hz");
+        REQUIRE(detected == Approx(440.0f).margin(1.0f));  // Within 1 Hz
+    }
+
+    SECTION("detects 880 Hz accurately") {
+        generateSine(buffer.data(), numSamples, 880.0f, kTestSampleRate);
+        float detected = estimateFrequencyFFT(buffer.data(), numSamples, kTestSampleRate,
+                                               800.0f, 1000.0f);
+        INFO("Detected: " << detected << " Hz, Expected: 880 Hz");
+        REQUIRE(detected == Approx(880.0f).margin(1.0f));  // Within 1 Hz
+    }
+
+    SECTION("detects 1000 Hz accurately") {
+        generateSine(buffer.data(), numSamples, 1000.0f, kTestSampleRate);
+        float detected = estimateFrequencyFFT(buffer.data(), numSamples, kTestSampleRate,
+                                               900.0f, 1100.0f);
+        INFO("Detected: " << detected << " Hz, Expected: 1000 Hz");
+        REQUIRE(detected == Approx(1000.0f).margin(1.0f));  // Within 1 Hz
+    }
+}
 
 // ==============================================================================
 // Phase 2: Foundational Utilities Tests
@@ -557,7 +720,7 @@ TEST_CASE("Mode switching produces no discontinuities", "[pitch][US2]") {
 }
 
 // T035: Granular mode produces shifted pitch
-TEST_CASE("Granular mode produces correct pitch shift", "[pitch][US2]") {
+TEST_CASE("Granular mode produces correct pitch shift", "[pitch][US2][SC-001]") {
     PitchShiftProcessor shifter;
     shifter.prepare(kTestSampleRate, kTestBlockSize);
     shifter.setMode(PitchMode::Granular);
@@ -575,19 +738,23 @@ TEST_CASE("Granular mode produces correct pitch shift", "[pitch][US2]") {
     }
 
     // Measure frequency after settling (skip first 75% due to latency/transient)
+    // Use autocorrelation - more robust against crossfade AM artifacts than FFT
+    // (FFT sees sidebands from ~22Hz AM modulation as shifted frequency)
     const float* measureStart = output.data() + (numSamples * 3) / 4;
     size_t measureSize = numSamples / 4;
     float detectedFreq = estimateFrequencyAutocorr(measureStart, measureSize, kTestSampleRate);
 
     // Granular mode should achieve ±5 cents accuracy (SC-001)
-    // 5 cents = 0.289% tolerance
+    // 5 cents = 2^(5/1200) - 1 ≈ 0.289% frequency tolerance
+    // At 880Hz, ±5 cents = ±2.55Hz
     float expectedFreq = 880.0f;
-    float tolerance = expectedFreq * 0.02f;  // 2% tolerance (relaxed for initial implementation)
+    float tolerance = expectedFreq * 0.00289f;  // 0.289% = ±5 cents per SC-001
+    INFO("Detected frequency: " << detectedFreq << " Hz (expected: " << expectedFreq << " ±" << tolerance << " Hz)");
     REQUIRE(detectedFreq == Approx(expectedFreq).margin(tolerance));
 }
 
 // T036: PhaseVocoder mode produces shifted pitch
-TEST_CASE("PhaseVocoder mode produces correct pitch shift", "[pitch][US2]") {
+TEST_CASE("PhaseVocoder mode produces correct pitch shift", "[pitch][US2][SC-001]") {
     PitchShiftProcessor shifter;
     shifter.prepare(kTestSampleRate, kTestBlockSize);
     shifter.setMode(PitchMode::PhaseVocoder);
@@ -605,13 +772,17 @@ TEST_CASE("PhaseVocoder mode produces correct pitch shift", "[pitch][US2]") {
     }
 
     // Measure frequency after settling (skip first 75% due to latency/transient)
+    // Use autocorrelation - more robust against AM artifacts from overlap-add than FFT
     const float* measureStart = output.data() + (numSamples * 3) / 4;
     size_t measureSize = numSamples / 4;
     float detectedFreq = estimateFrequencyAutocorr(measureStart, measureSize, kTestSampleRate);
 
     // PhaseVocoder mode should achieve ±5 cents accuracy (SC-001)
+    // 5 cents = 2^(5/1200) - 1 ≈ 0.289% frequency tolerance
+    // At 880Hz, ±5 cents = ±2.55Hz
     float expectedFreq = 880.0f;
-    float tolerance = expectedFreq * 0.02f;  // 2% tolerance (relaxed for initial implementation)
+    float tolerance = expectedFreq * 0.00289f;  // 0.289% = ±5 cents per SC-001
+    INFO("Detected frequency: " << detectedFreq << " Hz (expected: " << expectedFreq << " ±" << tolerance << " Hz)");
     REQUIRE(detectedFreq == Approx(expectedFreq).margin(tolerance));
 }
 
