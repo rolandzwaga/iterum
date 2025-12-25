@@ -93,6 +93,35 @@ This section prevents One Definition Rule (ODR) violations by documenting existi
 
 **Justification**: [Why this risk level - e.g., "Low: All planned types are unique and not found in codebase" or "Medium: Similar utility exists in dsp_utils.h, will extend rather than duplicate"]
 
+## Layer 0 Candidate Analysis
+
+*For Layer 2+ features: Identify utility functions that should be extracted to Layer 0 for reuse.*
+
+See CLAUDE.md "Layer 0 Refactoring Analysis" for decision framework.
+
+### Utilities to Extract to Layer 0
+
+<!--
+  ACTION REQUIRED: Before implementation, identify any new utility functions that:
+  1. Have audio-specific semantics worth documenting
+  2. Will be needed by 3+ components
+  3. Are pure, stateless functions that could benefit other features
+-->
+
+| Candidate Function | Why Extract? | Proposed Location | Consumers |
+|--------------------|--------------|-------------------|-----------|
+| [e.g., stereoCrossBlend] | [Audio algorithm, reusable] | [stereo_utils.h] | [FeedbackNetwork, future ping-pong] |
+| — | — | — | — |
+
+### Utilities to Keep as Member Functions
+
+| Function | Why Keep? |
+|----------|-----------|
+| [e.g., msToSamples] | [One-liner, only 2 usages, class stores sampleRate_] |
+| — | — |
+
+**Decision**: [Summary of what will be extracted vs kept local]
+
 ## Project Structure
 
 ### Documentation (this feature)
