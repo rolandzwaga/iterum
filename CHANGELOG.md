@@ -5,6 +5,91 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.26] - 2025-12-26
+
+### Added
+
+- **Layer 4 User Feature: BBDDelay** (`src/dsp/features/bbd_delay.h`)
+  - Authentic bucket-brigade device delay emulation (MN3005, MN3007, MN3205, SAD1024)
+  - Composes DelayEngine (L3), FeedbackNetwork (L3), CharacterProcessor (L3), Biquad (L1)
+  - Complete feature set with 6 user stories:
+    - **US1: Darker Character**: BBD produces noticeably warmer tone than digital delay
+    - **US2: Bandwidth Tracking**: Shorter delays = brighter, longer delays = darker (BBD clock physics)
+    - **US3: Era Presets**: Four BBD chip models with distinct tonal signatures
+    - **US4: Chorus Modulation**: Triangle LFO pitch wobble (0-100% depth, 0.1-10Hz rate)
+    - **US5: Age Degradation**: Component aging simulation (noise, bandwidth reduction)
+    - **US6: Compander Artifacts**: Subtle pumping/breathing dynamics characteristic of BBD
+
+- **User controls**:
+  - **Time**: Delay time 20-900ms (inversely affects bandwidth)
+  - **Feedback**: 0-100% with soft limiting in feedback path
+  - **Modulation Depth**: 0-100% triangle LFO modulation
+  - **Modulation Rate**: 0.1-10Hz modulation speed
+  - **Age**: 0-100% degradation (noise floor + bandwidth reduction + compander intensity)
+  - **Era**: BBD chip model selection (MN3005/MN3007/MN3205/SAD1024)
+  - **Mix**: Dry/wet balance with smoothing
+  - **Output Level**: Master gain in dB
+
+- **BBD-specific behaviors**:
+  - **Bandwidth tracking**: 50ms = 12kHz cutoff, 900ms = 3kHz cutoff (BBD clock rate physics)
+  - **Era characteristics**:
+    - MN3005: Brightest, cleanest, 12kHz max bandwidth
+    - MN3007: Slightly darker, 10kHz max bandwidth
+    - MN3205: Darker, more lo-fi, 8kHz max bandwidth
+    - SAD1024: Darkest, most "vintage", 6kHz max bandwidth
+  - **Compander simulation**: Attack/release asymmetry creates subtle pumping on transients
+  - **Noise floor**: Increases with Age and varies by Era preset
+
+- **Perceptual testing guide** (`specs/025-bbd-delay/perceptual-testing.md`)
+  - Manual testing procedures for SC-001 to SC-006 audio quality criteria
+  - Test signals, procedures, pass criteria, optional analysis tools
+  - Troubleshooting section for common listening issues
+
+- **Comprehensive test suite** (26 test cases, 18762 assertions)
+  - All 41 functional requirements verified
+  - Bandwidth tracking tests (short vs long delay)
+  - Era preset distinction tests
+  - Compander attack/release tests
+  - Edge cases: extreme settings, parameter smoothing, real-time safety
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 0-3 components
+  - Uses: `DelayEngine` (L3) - core delay with tempo sync support
+  - Uses: `FeedbackNetwork` (L3) - feedback with filtering and saturation
+  - Uses: `CharacterProcessor` (L3) - BBD mode for noise/modulation
+  - Uses: `Biquad` (L1) - dynamic lowpass for bandwidth tracking
+  - Uses: `OnePoleSmoother` (L1) - parameter smoothing (20ms)
+  - Uses: `dbToGain()` (L0) - level conversion
+- **BBDChipModel enum**: MN3005, MN3007, MN3205, SAD1024
+- **Bandwidth calculation**: `cutoff = baseHz * (1.0 - (delayMs - 50) / 850 * (1.0 - minRatio))`
+- **Compander emulation**: Fast attack (1ms), slow release (50ms) envelope
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/features/bbd_delay.h"
+
+using namespace Iterum::DSP;
+
+BBDDelay delay;
+delay.prepare(44100.0, 512, 900.0f);  // 900ms max delay
+
+// Set BBD character
+delay.setTime(300.0f);             // Delay time in ms
+delay.setFeedback(0.5f);           // 50% feedback
+delay.setModulationDepth(0.3f);    // Moderate chorus wobble
+delay.setModulationRate(0.5f);     // Slow LFO rate
+delay.setAge(0.2f);                // Slight component aging
+delay.setEra(BBDChipModel::MN3005); // Cleanest BBD model
+delay.setMix(0.5f);                // 50/50 dry/wet
+
+// In audio callback
+delay.process(left, right, numSamples);
+```
+
 ## [0.0.25] - 2025-12-25
 
 ### Added
