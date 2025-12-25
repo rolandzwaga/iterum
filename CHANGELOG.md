@@ -5,6 +5,95 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.19] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: DelayEngine** (`src/dsp/systems/delay_engine.h`)
+  - High-level delay wrapper composing Layer 1 primitives (DelayLine, OnePoleSmoother)
+  - Complete feature set with 4 user stories:
+    - **Free Mode** (US1): Delay time in milliseconds with smooth transitions
+    - **Synced Mode** (US2): Tempo-synced via BlockContext and NoteValue
+    - **Mix Control** (US3): Dry/wet blend with kill-dry option for parallel processing
+    - **Lifecycle** (US4): Stereo support, prepare/reset, query methods
+  - TimeMode enum: `Free` (milliseconds) or `Synced` (tempo-based)
+  - 20ms parameter smoothing for click-free transitions (FR-004)
+  - Linear interpolation via `readLinear()` for sub-sample accuracy (FR-012)
+  - NaN rejection: Invalid values keep previous delay time (FR-011)
+  - Clamping: Delay time clamped to [0, maxDelayMs] (FR-010)
+  - Kill-dry mode: Outputs only wet signal for parallel delay chains (FR-006)
+  - Stereo processing with independent left/right delay lines
+  - Write-before-read order enables true 0-sample delay
+  - Real-time safe: `noexcept`, no allocations in `process()`
+  - Zero latency (no lookahead)
+
+- **Comprehensive test suite** (58 test cases, 5,935 assertions)
+  - US1: Free mode timing, smoothing, clamping, NaN handling
+  - US2: All NoteValue types at various tempos (120, 100, 140, 60 BPM)
+  - US3: Mix control (0%, 50%, 100%), kill-dry, smooth transitions
+  - US4: isPrepared(), getMaxDelayMs(), stereo processing, variable block sizes
+  - Edge cases: 0ms delay, negative delay, infinity, tempo=0 (clamps to 20 BPM)
+  - Real-time safety verification (noexcept static_assert)
+
+### Technical Details
+
+- **Layer 3 architecture**: First Layer 3 system component in codebase
+  - Composes: `DelayLine` (L1), `OnePoleSmoother` (L1)
+  - Uses: `BlockContext` (L0), `NoteValue` (L0)
+- **Delay time calculation**:
+  - Free mode: Direct milliseconds → samples conversion
+  - Synced mode: `ctx.tempoToSamples(noteValue, modifier)` → milliseconds
+- **Write-before-read order**: Enables true 0-sample delay behavior
+  - `delayLine_.write(dry)` before `delayLine_.readLinear(delaySamples)`
+- **Mix formula**:
+  - `dryCoeff = killDry ? 0.0f : (1.0f - mix)`
+  - `wetCoeff = mix`
+  - `output = dry * dryCoeff + wet * wetCoeff`
+- **Tempo clamping**: Minimum 20 BPM prevents infinite delay times
+- **Namespace**: `Iterum::DSP` (Layer 3 system components)
+- **Constitution compliance**: Principles II (RT Safety), III (Modern C++), IX (Layered Architecture), X (DSP Constraints), XII (Test-First), XIII (Architecture Docs), XV (Honest Completion)
+
+### Usage
+
+```cpp
+#include "dsp/systems/delay_engine.h"
+
+using namespace Iterum::DSP;
+
+DelayEngine delay;
+
+// In prepare() - allocates buffers
+delay.prepare(44100.0, 512, 2000.0f);  // 2 second max delay
+
+// Free mode: delay in milliseconds
+delay.setTimeMode(TimeMode::Free);
+delay.setDelayTimeMs(250.0f);  // 250ms delay
+delay.setMix(0.5f);            // 50% wet
+
+// Synced mode: delay from tempo
+delay.setTimeMode(TimeMode::Synced);
+delay.setNoteValue(NoteValue::Quarter, NoteModifier::Dotted);
+
+// Kill-dry for parallel processing
+delay.setKillDry(true);  // Output = 100% wet
+
+// In processBlock() - real-time safe
+BlockContext ctx;
+ctx.sampleRate = 44100.0;
+ctx.tempoBPM = 120.0;
+delay.process(buffer, numSamples, ctx);
+
+// Stereo processing
+delay.process(leftBuffer, rightBuffer, numSamples, ctx);
+
+// Query current state
+float currentMs = delay.getCurrentDelayMs();
+bool ready = delay.isPrepared();
+TimeMode mode = delay.getTimeMode();
+```
+
+---
+
 ## [0.0.18] - 2025-12-24
 
 ### Added

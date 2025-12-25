@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-24 (017-layer0-utilities)
+**Last Updated**: 2025-12-25 (018-delay-engine)
 
 ---
 
@@ -2640,7 +2640,97 @@ harmony2.process(input, output2, numSamples);
 
 ## Layer 3: System Components
 
-*No components yet. Future: Delay Engine, Feedback Network, Modulation Matrix*
+Layer 3 components compose Layer 1-2 primitives and processors into complete audio building blocks ready for plugin integration.
+
+### DelayEngine
+
+| | |
+|---|---|
+| **Purpose** | High-level delay wrapper with time modes, smoothing, and dry/wet mixing |
+| **Location** | [src/dsp/systems/delay_engine.h](src/dsp/systems/delay_engine.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.18 (018-delay-engine) |
+| **Dependencies** | DelayLine (L1), OnePoleSmoother (L1), BlockContext (L0), NoteValue (L0) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    // Time mode enumeration
+    enum class TimeMode : uint8_t {
+        Free,    // Delay time in milliseconds
+        Synced   // Delay time from NoteValue + host tempo
+    };
+
+    class DelayEngine {
+    public:
+        // Lifecycle
+        void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+        void reset() noexcept;
+
+        // Configuration
+        void setTimeMode(TimeMode mode) noexcept;
+        void setDelayTimeMs(float ms) noexcept;           // Free mode
+        void setNoteValue(NoteValue note, NoteModifier mod = NoteModifier::None) noexcept;
+        void setMix(float wetRatio) noexcept;             // 0.0-1.0
+        void setKillDry(bool killDry) noexcept;
+
+        // Processing (real-time safe, noexcept)
+        void process(float* buffer, size_t numSamples, const BlockContext& ctx) noexcept;
+        void process(float* left, float* right, size_t numSamples, const BlockContext& ctx) noexcept;
+
+        // Query
+        [[nodiscard]] float getCurrentDelayMs() const noexcept;
+        [[nodiscard]] TimeMode getTimeMode() const noexcept;
+        [[nodiscard]] float getMaxDelayMs() const noexcept;
+        [[nodiscard]] bool isPrepared() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- **Free mode**: Delay time set directly in milliseconds
+- **Synced mode**: Delay time calculated from NoteValue + BlockContext tempo
+- **Smoothing**: All parameter changes smoothed with 20ms one-pole filter
+- **Mix**: 0.0 = fully dry, 1.0 = fully wet; kill-dry mode removes dry signal
+- **NaN handling**: Invalid values rejected, previous value kept
+- **Clamping**: Delay time clamped to [0, maxDelayMs]
+
+**When to use**:
+- Building delay-based effects (simple delay, slapback, tempo-synced delay)
+- As building block for more complex effects (ping-pong, multi-tap, feedback networks)
+- Any effect requiring tempo-synchronized delay times
+
+**Example - Free Mode**:
+```cpp
+#include "dsp/systems/delay_engine.h"
+
+Iterum::DSP::DelayEngine delay;
+delay.prepare(44100.0, 512, 2000.0f);  // 2 second max delay
+delay.setTimeMode(Iterum::DSP::TimeMode::Free);
+delay.setDelayTimeMs(250.0f);
+delay.setMix(0.5f);
+
+// In audio callback
+Iterum::DSP::BlockContext ctx;
+ctx.sampleRate = 44100.0;
+delay.process(buffer, numSamples, ctx);
+```
+
+**Example - Tempo Synced**:
+```cpp
+delay.setTimeMode(Iterum::DSP::TimeMode::Synced);
+delay.setNoteValue(Iterum::DSP::NoteValue::Quarter, Iterum::DSP::NoteModifier::Dotted);
+delay.setMix(0.7f);
+
+// BlockContext with tempo info
+ctx.tempoBPM = 120.0;
+delay.process(buffer, numSamples, ctx);  // Delay = 750ms (dotted quarter at 120 BPM)
+```
+
+---
+
+*Future: Feedback Network, Modulation Matrix*
 
 ---
 
