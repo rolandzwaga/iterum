@@ -267,6 +267,15 @@ public:
     ///       current tempo. Completes within 1ms (SC-008).
     void loadPattern(TapPattern pattern, size_t tapCount) noexcept;
 
+    /// @brief Load a note-based pattern (extended preset patterns)
+    /// @param noteValue Base note value (SixtyFourth to DoubleWhole)
+    /// @param modifier Note modifier (None, Dotted, Triplet)
+    /// @param tapCount Number of taps to create [1, 16]
+    /// @note Creates evenly-spaced taps at multiples of the note duration.
+    ///       All existing taps are disabled first. Pattern is applied based on
+    ///       current tempo. Completes within 1ms.
+    void loadNotePattern(NoteValue noteValue, NoteModifier modifier, size_t tapCount) noexcept;
+
     /// @brief Set tempo for tempo-synced taps (US6)
     /// @param bpm Beats per minute (must be > 0)
     /// @note Updates delay times for TempoSynced taps within 1 audio block (SC-006).
@@ -592,6 +601,41 @@ inline void TapManager::loadPattern(TapPattern pattern, size_t tapCount) noexcep
                 timeMs = taps_[i].timeMs;
                 break;
         }
+
+        // Clamp to max delay and enable tap
+        taps_[i].timeMs = std::min(timeMs, maxDelayMs_);
+        taps_[i].timeMode = TapTimeMode::FreeRunning;
+        taps_[i].enabled = true;
+
+        // Set default level with progressive decay
+        taps_[i].levelDb = -3.0f * static_cast<float>(i);  // -0, -3, -6, -9...
+    }
+}
+
+inline void TapManager::loadNotePattern(NoteValue noteValue, NoteModifier modifier,
+                                         size_t tapCount) noexcept {
+    // Clamp tap count
+    tapCount = std::clamp(tapCount, size_t{1}, kMaxTaps);
+
+    // Disable all taps first
+    for (auto& tap : taps_) {
+        tap.enabled = false;
+    }
+
+    // Calculate base note duration in ms
+    // quarterNoteMs = 60000 / BPM
+    // noteMs = quarterNoteMs * beatsForNote
+    const float quarterNoteMs = 60000.0f / bpm_;
+    const float beats = getBeatsForNote(noteValue, modifier);
+    const float baseNoteMs = quarterNoteMs * beats;
+
+    // Set pattern to Custom (this is a note-based pattern, not a TapPattern enum value)
+    pattern_ = TapPattern::Custom;
+
+    // Configure taps at multiples of the note duration
+    for (size_t i = 0; i < tapCount; ++i) {
+        const size_t n = i + 1;  // 1-based tap number
+        const float timeMs = static_cast<float>(n) * baseNoteMs;
 
         // Clamp to max delay and enable tap
         taps_[i].timeMs = std::min(timeMs, maxDelayMs_);

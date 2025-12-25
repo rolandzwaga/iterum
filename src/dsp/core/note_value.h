@@ -27,12 +27,14 @@ namespace DSP {
 /// Used by BlockContext::tempoToSamples() and LFO tempo sync features.
 /// Values represent standard Western notation durations.
 enum class NoteValue : uint8_t {
-    Whole = 0,       ///< 1/1 note (4 beats at 4/4)
+    DoubleWhole = 0, ///< 2/1 note (8 beats at 4/4) - breve
+    Whole,           ///< 1/1 note (4 beats at 4/4)
     Half,            ///< 1/2 note (2 beats)
     Quarter,         ///< 1/4 note (1 beat) - default
     Eighth,          ///< 1/8 note (0.5 beats)
     Sixteenth,       ///< 1/16 note (0.25 beats)
-    ThirtySecond     ///< 1/32 note (0.125 beats)
+    ThirtySecond,    ///< 1/32 note (0.125 beats)
+    SixtyFourth      ///< 1/64 note (0.0625 beats)
 };
 
 /// @brief Timing modifiers for note values.
@@ -51,12 +53,14 @@ enum class NoteModifier : uint8_t {
 /// @brief Beats per note value (at 4/4 time signature).
 /// Array indexed by static_cast<size_t>(NoteValue).
 inline constexpr float kBeatsPerNote[] = {
+    8.0f,    // DoubleWhole (breve)
     4.0f,    // Whole
     2.0f,    // Half
     1.0f,    // Quarter
     0.5f,    // Eighth
     0.25f,   // Sixteenth
-    0.125f   // ThirtySecond
+    0.125f,  // ThirtySecond
+    0.0625f  // SixtyFourth
 };
 
 /// @brief Modifier multipliers.

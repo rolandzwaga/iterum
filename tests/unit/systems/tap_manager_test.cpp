@@ -507,6 +507,206 @@ TEST_CASE("TapManager: loadPattern() completes within 1ms (SC-008)", "[tap-manag
 }
 
 // =============================================================================
+// Note Pattern Tests (Extended preset patterns using NoteValue + NoteModifier)
+// =============================================================================
+
+TEST_CASE("TapManager: loadNotePattern() with Quarter note (normal)", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 500ms per quarter note
+
+    tm.loadNotePattern(NoteValue::Quarter, NoteModifier::None, 4);
+
+    REQUIRE(tm.getActiveTapCount() == 4);
+
+    // Quarter note at 120 BPM = 500ms
+    // Pattern: n × 500ms where n = 1, 2, 3, 4 (1-based)
+    REQUIRE(tm.getTapTimeMs(0) == Approx(500.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(1) == Approx(1000.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(2) == Approx(1500.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(3) == Approx(2000.0f).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Quarter note (dotted)", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 500ms per quarter note
+
+    tm.loadNotePattern(NoteValue::Quarter, NoteModifier::Dotted, 4);
+
+    REQUIRE(tm.getActiveTapCount() == 4);
+
+    // Dotted quarter at 120 BPM = 500ms × 1.5 = 750ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(750.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(1) == Approx(1500.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(2) == Approx(2250.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(3) == Approx(3000.0f).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Quarter note (triplet)", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 500ms per quarter note
+
+    tm.loadNotePattern(NoteValue::Quarter, NoteModifier::Triplet, 4);
+
+    REQUIRE(tm.getActiveTapCount() == 4);
+
+    // Triplet quarter at 120 BPM = 500ms × (2/3) ≈ 333.33ms
+    const float tripletMs = 500.0f * (2.0f / 3.0f);
+    REQUIRE(tm.getTapTimeMs(0) == Approx(tripletMs).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(1) == Approx(tripletMs * 2.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(2) == Approx(tripletMs * 3.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(3) == Approx(tripletMs * 4.0f).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Eighth note variants", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 500ms per quarter note, 250ms per eighth
+
+    SECTION("Eighth normal") {
+        tm.loadNotePattern(NoteValue::Eighth, NoteModifier::None, 4);
+        // 250ms per eighth
+        REQUIRE(tm.getTapTimeMs(0) == Approx(250.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(1) == Approx(500.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(2) == Approx(750.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(3) == Approx(1000.0f).margin(1.0f));
+    }
+
+    SECTION("Eighth dotted") {
+        tm.loadNotePattern(NoteValue::Eighth, NoteModifier::Dotted, 4);
+        // Dotted eighth = 250ms × 1.5 = 375ms
+        REQUIRE(tm.getTapTimeMs(0) == Approx(375.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(1) == Approx(750.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(2) == Approx(1125.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(3) == Approx(1500.0f).margin(1.0f));
+    }
+
+    SECTION("Eighth triplet") {
+        tm.loadNotePattern(NoteValue::Eighth, NoteModifier::Triplet, 6);
+        // Triplet eighth = 250ms × (2/3) ≈ 166.67ms
+        const float tripletMs = 250.0f * (2.0f / 3.0f);
+        REQUIRE(tm.getTapTimeMs(0) == Approx(tripletMs).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(2) == Approx(tripletMs * 3.0f).margin(1.0f));
+    }
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Sixteenth note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 125ms per sixteenth
+
+    tm.loadNotePattern(NoteValue::Sixteenth, NoteModifier::None, 8);
+
+    REQUIRE(tm.getActiveTapCount() == 8);
+
+    // Sixteenth at 120 BPM = 125ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(125.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(3) == Approx(500.0f).margin(1.0f));  // 4 × 125
+    REQUIRE(tm.getTapTimeMs(7) == Approx(1000.0f).margin(1.0f)); // 8 × 125
+}
+
+TEST_CASE("TapManager: loadNotePattern() with ThirtySecond note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 62.5ms per thirty-second
+
+    tm.loadNotePattern(NoteValue::ThirtySecond, NoteModifier::None, 8);
+
+    REQUIRE(tm.getActiveTapCount() == 8);
+
+    // 32nd at 120 BPM = 62.5ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(62.5f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(7) == Approx(500.0f).margin(1.0f));  // 8 × 62.5
+}
+
+TEST_CASE("TapManager: loadNotePattern() with SixtyFourth note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 31.25ms per sixty-fourth
+
+    tm.loadNotePattern(NoteValue::SixtyFourth, NoteModifier::None, 16);
+
+    REQUIRE(tm.getActiveTapCount() == 16);
+
+    // 64th at 120 BPM = 31.25ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(31.25f).margin(0.5f));
+    REQUIRE(tm.getTapTimeMs(15) == Approx(500.0f).margin(1.0f));  // 16 × 31.25
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Half note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 1000ms per half note
+
+    SECTION("Half normal") {
+        tm.loadNotePattern(NoteValue::Half, NoteModifier::None, 4);
+        REQUIRE(tm.getTapTimeMs(0) == Approx(1000.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(1) == Approx(2000.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(2) == Approx(3000.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(3) == Approx(4000.0f).margin(1.0f));
+    }
+
+    SECTION("Half dotted") {
+        tm.loadNotePattern(NoteValue::Half, NoteModifier::Dotted, 3);
+        // Dotted half = 1000ms × 1.5 = 1500ms
+        REQUIRE(tm.getTapTimeMs(0) == Approx(1500.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(1) == Approx(3000.0f).margin(1.0f));
+        REQUIRE(tm.getTapTimeMs(2) == Approx(4500.0f).margin(1.0f));
+    }
+}
+
+TEST_CASE("TapManager: loadNotePattern() with Whole note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 2000ms per whole note
+
+    tm.loadNotePattern(NoteValue::Whole, NoteModifier::None, 2);
+
+    REQUIRE(tm.getActiveTapCount() == 2);
+
+    // Whole at 120 BPM = 2000ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(2000.0f).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(1) == Approx(4000.0f).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() with DoubleWhole note", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(120.0f);  // 4000ms per double-whole note
+
+    tm.loadNotePattern(NoteValue::DoubleWhole, NoteModifier::None, 1);
+
+    REQUIRE(tm.getActiveTapCount() == 1);
+
+    // Double-whole at 120 BPM = 4000ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(4000.0f).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() clamps to max delay", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+    tm.setTempo(30.0f);  // Very slow tempo = 2000ms per quarter
+
+    tm.loadNotePattern(NoteValue::Whole, NoteModifier::None, 4);
+
+    // Whole at 30 BPM = 8000ms, but max delay is 5000ms
+    // All taps should be clamped to 5000ms
+    REQUIRE(tm.getTapTimeMs(0) == Approx(kTestMaxDelayMs).margin(1.0f));
+    REQUIRE(tm.getTapTimeMs(1) == Approx(kTestMaxDelayMs).margin(1.0f));
+}
+
+TEST_CASE("TapManager: loadNotePattern() clamps tap count", "[tap-manager][note-patterns]") {
+    auto tm = createPreparedTapManager();
+
+    SECTION("Minimum 1 tap") {
+        tm.loadNotePattern(NoteValue::Quarter, NoteModifier::None, 0);
+        REQUIRE(tm.getActiveTapCount() == 1);
+    }
+
+    SECTION("Maximum 16 taps") {
+        tm.loadNotePattern(NoteValue::Quarter, NoteModifier::None, 100);
+        REQUIRE(tm.getActiveTapCount() == kMaxTaps);
+    }
+}
+
+TEST_CASE("TapManager: loadNotePattern() is noexcept", "[tap-manager][note-patterns][real-time]") {
+    static_assert(noexcept(std::declval<TapManager>().loadNotePattern(
+        NoteValue::Quarter, NoteModifier::None, 4)));
+    REQUIRE(true);
+}
+
+// =============================================================================
 // Tempo Sync Tests (US6, SC-006)
 // =============================================================================
 

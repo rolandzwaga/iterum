@@ -25,22 +25,26 @@ using Catch::Approx;
 
 TEST_CASE("NoteValue enum has correct values", "[note_value][US1]") {
     SECTION("Enum values are sequential from 0") {
-        REQUIRE(static_cast<uint8_t>(NoteValue::Whole) == 0);
-        REQUIRE(static_cast<uint8_t>(NoteValue::Half) == 1);
-        REQUIRE(static_cast<uint8_t>(NoteValue::Quarter) == 2);
-        REQUIRE(static_cast<uint8_t>(NoteValue::Eighth) == 3);
-        REQUIRE(static_cast<uint8_t>(NoteValue::Sixteenth) == 4);
-        REQUIRE(static_cast<uint8_t>(NoteValue::ThirtySecond) == 5);
+        REQUIRE(static_cast<uint8_t>(NoteValue::DoubleWhole) == 0);
+        REQUIRE(static_cast<uint8_t>(NoteValue::Whole) == 1);
+        REQUIRE(static_cast<uint8_t>(NoteValue::Half) == 2);
+        REQUIRE(static_cast<uint8_t>(NoteValue::Quarter) == 3);
+        REQUIRE(static_cast<uint8_t>(NoteValue::Eighth) == 4);
+        REQUIRE(static_cast<uint8_t>(NoteValue::Sixteenth) == 5);
+        REQUIRE(static_cast<uint8_t>(NoteValue::ThirtySecond) == 6);
+        REQUIRE(static_cast<uint8_t>(NoteValue::SixtyFourth) == 7);
     }
 
-    SECTION("All 6 note values are defined") {
+    SECTION("All 8 note values are defined") {
         // Verify array indexing works for all values
+        REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::DoubleWhole)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Whole)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Half)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Quarter)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Eighth)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Sixteenth)] > 0.0f);
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::ThirtySecond)] > 0.0f);
+        REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::SixtyFourth)] > 0.0f);
     }
 }
 
@@ -68,6 +72,10 @@ TEST_CASE("NoteModifier enum has correct values", "[note_value][US1]") {
 // =============================================================================
 
 TEST_CASE("kBeatsPerNote has correct beat values for 4/4 time", "[note_value][US1]") {
+    SECTION("Double whole note = 8 beats") {
+        REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::DoubleWhole)] == 8.0f);
+    }
+
     SECTION("Whole note = 4 beats") {
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::Whole)] == 4.0f);
     }
@@ -92,12 +100,18 @@ TEST_CASE("kBeatsPerNote has correct beat values for 4/4 time", "[note_value][US
         REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::ThirtySecond)] == 0.125f);
     }
 
+    SECTION("Sixty-fourth note = 0.0625 beats") {
+        REQUIRE(kBeatsPerNote[static_cast<size_t>(NoteValue::SixtyFourth)] == 0.0625f);
+    }
+
     SECTION("Values decrease by factor of 2") {
-        REQUIRE(kBeatsPerNote[0] / kBeatsPerNote[1] == 2.0f);  // Whole/Half
-        REQUIRE(kBeatsPerNote[1] / kBeatsPerNote[2] == 2.0f);  // Half/Quarter
-        REQUIRE(kBeatsPerNote[2] / kBeatsPerNote[3] == 2.0f);  // Quarter/Eighth
-        REQUIRE(kBeatsPerNote[3] / kBeatsPerNote[4] == 2.0f);  // Eighth/Sixteenth
-        REQUIRE(kBeatsPerNote[4] / kBeatsPerNote[5] == 2.0f);  // Sixteenth/ThirtySecond
+        REQUIRE(kBeatsPerNote[0] / kBeatsPerNote[1] == 2.0f);  // DoubleWhole/Whole
+        REQUIRE(kBeatsPerNote[1] / kBeatsPerNote[2] == 2.0f);  // Whole/Half
+        REQUIRE(kBeatsPerNote[2] / kBeatsPerNote[3] == 2.0f);  // Half/Quarter
+        REQUIRE(kBeatsPerNote[3] / kBeatsPerNote[4] == 2.0f);  // Quarter/Eighth
+        REQUIRE(kBeatsPerNote[4] / kBeatsPerNote[5] == 2.0f);  // Eighth/Sixteenth
+        REQUIRE(kBeatsPerNote[5] / kBeatsPerNote[6] == 2.0f);  // Sixteenth/ThirtySecond
+        REQUIRE(kBeatsPerNote[6] / kBeatsPerNote[7] == 2.0f);  // ThirtySecond/SixtyFourth
     }
 }
 
@@ -133,6 +147,11 @@ TEST_CASE("kModifierMultiplier has correct multiplier values", "[note_value][US1
 // =============================================================================
 
 TEST_CASE("getBeatsForNote basic note values without modifier", "[note_value][US1]") {
+    SECTION("Double whole note = 8 beats") {
+        REQUIRE(getBeatsForNote(NoteValue::DoubleWhole) == 8.0f);
+        REQUIRE(getBeatsForNote(NoteValue::DoubleWhole, NoteModifier::None) == 8.0f);
+    }
+
     SECTION("Quarter note = 1 beat") {
         REQUIRE(getBeatsForNote(NoteValue::Quarter) == 1.0f);
         REQUIRE(getBeatsForNote(NoteValue::Quarter, NoteModifier::None) == 1.0f);
@@ -156,6 +175,10 @@ TEST_CASE("getBeatsForNote basic note values without modifier", "[note_value][US
 
     SECTION("Thirty-second note = 0.125 beats") {
         REQUIRE(getBeatsForNote(NoteValue::ThirtySecond) == 0.125f);
+    }
+
+    SECTION("Sixty-fourth note = 0.0625 beats") {
+        REQUIRE(getBeatsForNote(NoteValue::SixtyFourth) == 0.0625f);
     }
 }
 
@@ -229,21 +252,25 @@ TEST_CASE("getBeatsForNote is constexpr", "[note_value][constexpr][US4]") {
     }
 
     SECTION("Constexpr array initialization") {
-        constexpr std::array<float, 6> beats = {
+        constexpr std::array<float, 8> beats = {
+            getBeatsForNote(NoteValue::DoubleWhole),
             getBeatsForNote(NoteValue::Whole),
             getBeatsForNote(NoteValue::Half),
             getBeatsForNote(NoteValue::Quarter),
             getBeatsForNote(NoteValue::Eighth),
             getBeatsForNote(NoteValue::Sixteenth),
-            getBeatsForNote(NoteValue::ThirtySecond)
+            getBeatsForNote(NoteValue::ThirtySecond),
+            getBeatsForNote(NoteValue::SixtyFourth)
         };
 
-        REQUIRE(beats[0] == 4.0f);
-        REQUIRE(beats[1] == 2.0f);
-        REQUIRE(beats[2] == 1.0f);
-        REQUIRE(beats[3] == 0.5f);
-        REQUIRE(beats[4] == 0.25f);
-        REQUIRE(beats[5] == 0.125f);
+        REQUIRE(beats[0] == 8.0f);
+        REQUIRE(beats[1] == 4.0f);
+        REQUIRE(beats[2] == 2.0f);
+        REQUIRE(beats[3] == 1.0f);
+        REQUIRE(beats[4] == 0.5f);
+        REQUIRE(beats[5] == 0.25f);
+        REQUIRE(beats[6] == 0.125f);
+        REQUIRE(beats[7] == 0.0625f);
     }
 
     SECTION("static_assert validation") {
@@ -257,7 +284,7 @@ TEST_CASE("getBeatsForNote is constexpr", "[note_value][constexpr][US4]") {
 
 TEST_CASE("kBeatsPerNote and kModifierMultiplier are constexpr", "[note_value][constexpr][US4]") {
     SECTION("kBeatsPerNote can be used at compile time") {
-        constexpr float quarter = kBeatsPerNote[2];
+        constexpr float quarter = kBeatsPerNote[3];  // Index 3 = Quarter (after DoubleWhole, Whole, Half)
         REQUIRE(quarter == 1.0f);
     }
 

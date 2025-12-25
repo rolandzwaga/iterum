@@ -31,7 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GoldenRatio` - each tap = previous × 1.618 (φ)
   - `Fibonacci` - tap times follow Fibonacci sequence (1, 1, 2, 3, 5, 8...)
 
-- **Comprehensive test suite** (31 test cases)
+- **Extended note patterns** via `loadNotePattern(NoteValue, NoteModifier, tapCount)`:
+  - Added `SixtyFourth` (1/64 note) and `DoubleWhole` (breve, 2/1 note) to NoteValue enum
+  - All 8 note values: 64th, 32nd, 16th, 8th, quarter, half, whole, double-whole
+  - All 3 modifiers: normal (1×), dotted (1.5×), triplet (2/3×)
+  - **24 rhythmic pattern combinations** for precise delay timing
+  - Example: `taps.loadNotePattern(NoteValue::Eighth, NoteModifier::Dotted, 4)` → 375ms, 750ms, 1125ms, 1500ms at 120 BPM
+
+- **Comprehensive test suite** (44 test cases)
   - All 16 taps enabled simultaneously without dropouts
   - Pattern formula verification for all 5 presets
   - Constant-power pan law verification
@@ -71,6 +78,10 @@ taps.setTapPan(0, -50.0f);  // Pan left
 // Or load a preset pattern
 taps.setTempo(120.0f);
 taps.loadPattern(TapPattern::GoldenRatio, 8);  // 8 taps
+
+// Or use extended note patterns (24 combinations)
+taps.loadNotePattern(NoteValue::Eighth, NoteModifier::Dotted, 4);  // Dotted 8ths
+taps.loadNotePattern(NoteValue::SixtyFourth, NoteModifier::None, 16);  // 64th notes
 
 // In audio callback
 taps.process(leftIn, rightIn, leftOut, rightOut, numSamples);
