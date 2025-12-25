@@ -304,6 +304,52 @@ This project uses a **5-layer compositional architecture**. Higher layers compos
 - Each layer must be independently testable
 - Add layer identifier in file header comments: `// Layer 1: DSP Primitive`
 
+### Layer 0 Refactoring Analysis (During Planning)
+
+When creating specs for Layer 2+ features, **proactively identify** utility functions or patterns that should live in Layer 0 for reuse. This analysis should happen during `/speckit.plan`, not after implementation.
+
+**When to Extract to Layer 0:**
+
+| Criteria | Extract? | Example |
+|----------|----------|---------|
+| Used by 2+ Layer 1 primitives | **Yes** | `kDenormalThreshold`, `flushDenormal()` |
+| Pure, stateless utility function | **Yes** | `stereoCrossBlend()`, `dbToGain()` |
+| Algorithm with specific audio semantics | **Yes** | Cross-feedback blending formula |
+| One-liner arithmetic | **No** | `ms * sampleRate / 1000.0` |
+| Class-specific member function | **No** | `DelayEngine::msToSamples()` |
+| Fewer than 3 usages expected | **No** | Wait until third usage appears |
+
+**Decision Framework:**
+
+1. **Is it a one-liner?** → Keep as member function (duplication is acceptable)
+2. **Does it have audio-specific semantics?** → Extract to Layer 0 with documentation
+3. **Will 3+ components need it?** → Extract proactively
+4. **Is it already duplicated?** → Refactor to Layer 0 now
+
+**Case Study: FeedbackNetwork vs DelayEngine**
+
+Both systems needed `msToSamples()`:
+```cpp
+float msToSamples(float ms) const noexcept {
+    return static_cast<float>(ms * sampleRate_ / 1000.0);
+}
+```
+
+**Decision: Keep as member function** because:
+- It's a one-liner (trivial duplication)
+- Each class stores `sampleRate_` anyway
+- Only 2 usages exist (if a third appears, reconsider)
+
+Contrast with `stereoCrossBlend()`:
+```cpp
+void stereoCrossBlend(float inL, float inR, float crossAmount, float& outL, float& outR);
+```
+
+**Decision: Extract to Layer 0** because:
+- Implements specific audio algorithm (cross-channel blending)
+- Has edge-case semantics worth documenting once
+- Will be needed by future ping-pong delays, stereo wideners, etc.
+
 ## File Organization
 
 ```

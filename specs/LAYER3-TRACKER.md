@@ -37,7 +37,7 @@ The roadmap defines a full-featured Delay Engine. We split this into focused spe
 
 | Spec | Scope | Status | Dependencies |
 |------|-------|--------|--------------|
-| **019-feedback-network** | Feedback loop, filter/saturation in path, freeze mode, cross-feedback | 🔄 IN PROGRESS | DelayEngine, MultimodeFilter, SaturationProcessor |
+| **019-feedback-network** | Feedback loop, filter/saturation in path, freeze mode, cross-feedback | ✅ DONE | DelayEngine, MultimodeFilter, SaturationProcessor |
 
 ---
 
@@ -92,8 +92,8 @@ Context compaction in long sessions causes focus loss. Smaller specs (~200 LOC, 
 
 Recommended implementation order based on dependencies:
 1. 018-delay-engine (foundational) ✅ DONE
-2. 019-feedback-network (needs DelayEngine) 🔄 IN PROGRESS
-3. 020-modulation-matrix (parallel with feedback)
+2. 019-feedback-network (needs DelayEngine) ✅ DONE
+3. 020-modulation-matrix (parallel with feedback) ← NEXT
 4. 021-character-processor (needs several L2 processors)
 5. 022-stereo-field (needs DelayEngine, MidSide)
 6. 023-tap-manager (needs multiple DelayEngines)

@@ -5,6 +5,88 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.21] - 2025-12-25
+
+### Added
+
+- **Layer 3 System Component: ModulationMatrix** (`src/dsp/systems/modulation_matrix.h`)
+  - Routes modulation sources (LFO, EnvelopeFollower) to parameter destinations with depth control
+  - Complete feature set with 6 user stories:
+    - **US1: Route LFO to Delay Time**: Basic source-to-destination routing with depth control
+    - **US2: Multiple Routes to Same Destination**: Sum contributions from multiple sources
+    - **US3: Unipolar Modulation Mode**: Map [-1,+1] sources to [0,1] for parameters like gain
+    - **US4: Smooth Depth Changes**: 20ms smoothing prevents zipper noise on depth automation
+    - **US5: Enable/Disable Routes**: A/B comparison without removing route configuration
+    - **US6: Query Applied Modulation**: UI feedback via `getCurrentModulation()`
+  - Supports 16 sources, 16 destinations, 32 routes maximum
+  - Bipolar mode: source [-1,+1] → ±50% of destination range at depth=1.0
+  - Unipolar mode: source [-1,+1] → 0-50% of destination range at depth=1.0
+  - NaN source values treated as 0.0 (FR-018)
+  - Real-time safe: `noexcept`, no allocations in `process()`
+
+- **ModulationSource Interface** (`src/dsp/systems/modulation_matrix.h`)
+  - Abstract base class for modulation providers
+  - `getCurrentValue()`: Returns current modulation output
+  - `getSourceRange()`: Returns min/max output range
+  - Implemented by LFO, EnvelopeFollower, or custom sources
+
+- **Comprehensive test suite** (40 test cases, 243 assertions)
+  - All 6 user stories covered with acceptance scenarios
+  - Edge cases: NaN handling, depth clamping, route limits
+  - Performance verification: 16 routes process efficiently
+  - Real-time safety: `static_assert(noexcept(process()))`
+
+### Technical Details
+
+- **Layer 3 architecture**: Composes Layer 0-1 components
+  - Uses: `OnePoleSmoother` (L1), `detail::isNaN()` (L0)
+- **Modulation signal flow**:
+  1. Poll each source via `getCurrentValue()`
+  2. Apply mode conversion (bipolar passthrough, unipolar: (x+1)/2)
+  3. Multiply by smoothed depth and destination half-range
+  4. Accumulate to destination modulation sum
+  5. `getModulatedValue()` adds sum to base value, clamps to range
+- **Depth smoothing**: 20ms one-pole filter per route
+- **Constitution compliance**: Principles II, III, IX, X, XII, XV
+
+### Usage
+
+```cpp
+#include "dsp/systems/modulation_matrix.h"
+#include "dsp/primitives/lfo.h"
+
+using namespace Iterum::DSP;
+
+// Wrap LFO as ModulationSource
+class LFOModSource : public ModulationSource {
+    LFO& lfo_;
+public:
+    explicit LFOModSource(LFO& lfo) : lfo_(lfo) {}
+    float getCurrentValue() const noexcept override { return lfo_.getCurrentValue(); }
+    std::pair<float, float> getSourceRange() const noexcept override { return {-1.0f, 1.0f}; }
+};
+
+ModulationMatrix matrix;
+matrix.prepare(44100.0, 512, 32);
+
+LFO lfo;
+lfo.prepare(44100.0);
+lfo.setRate(2.0f);
+LFOModSource lfoSource(lfo);
+
+// Register source and destination
+matrix.registerSource(0, &lfoSource);
+matrix.registerDestination(0, 0.0f, 100.0f, "Delay Time");
+
+// Create route: LFO → Delay Time, 50% depth, bipolar
+matrix.createRoute(0, 0, 0.5f, ModulationMode::Bipolar);
+
+// In audio callback
+lfo.process();
+matrix.process(numSamples);
+float delayMs = matrix.getModulatedValue(0, 50.0f);  // 50 ± 25ms
+```
+
 ## [0.0.20] - 2025-12-25
 
 ### Added
