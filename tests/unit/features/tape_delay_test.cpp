@@ -594,3 +594,229 @@ TEST_CASE("TapeDelay edge case: parameter smoothing", "[features][tape-delay][ed
         REQUIRE(maxDiff < 1.0f);
     }
 }
+
+// =============================================================================
+// FR-007: Wow Rate Scales with Motor Speed Tests
+// =============================================================================
+
+TEST_CASE("FR-007: Wow rate scales inversely with Motor Speed", "[features][tape-delay][wow-rate]") {
+    TapeDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+
+    SECTION("slow motor (long delay) produces slower wow rate") {
+        delay.setMotorSpeed(2000.0f);  // Maximum delay = slowest tape
+        delay.setWear(0.5f);           // Enable wow/flutter
+
+        // Slow tape should have slower wow rate
+        // Typical tape wow rate: 0.3-0.6 Hz at normal speed
+        // At slowest speed, wow rate should be ~0.15-0.3 Hz
+        float wowRate = delay.getWowRate();
+        REQUIRE(wowRate < 0.5f);
+        REQUIRE(wowRate >= 0.1f);
+    }
+
+    SECTION("fast motor (short delay) produces faster wow rate") {
+        delay.setMotorSpeed(100.0f);   // Short delay = fast tape
+        delay.setWear(0.5f);           // Enable wow/flutter
+
+        // Fast tape should have faster wow rate
+        // At fastest speed, wow rate should be ~1.0-2.0 Hz
+        float wowRate = delay.getWowRate();
+        REQUIRE(wowRate > 0.8f);
+        REQUIRE(wowRate <= 3.0f);
+    }
+
+    SECTION("wow rate changes proportionally with motor speed") {
+        delay.setWear(0.5f);
+
+        delay.setMotorSpeed(500.0f);
+        float rateAtMedium = delay.getWowRate();
+
+        delay.setMotorSpeed(1000.0f);  // Half speed = slower tape
+        float rateAtSlow = delay.getWowRate();
+
+        delay.setMotorSpeed(250.0f);   // Double speed = faster tape
+        float rateAtFast = delay.getWowRate();
+
+        // Faster tape should have higher wow rate
+        REQUIRE(rateAtFast > rateAtMedium);
+        REQUIRE(rateAtMedium > rateAtSlow);
+    }
+
+    SECTION("wow rate at zero wear is still calculated but not audible") {
+        delay.setMotorSpeed(500.0f);
+        delay.setWear(0.0f);
+
+        // Rate calculation should still work even at zero wear
+        float wowRate = delay.getWowRate();
+        REQUIRE(wowRate > 0.0f);  // Rate is calculated
+    }
+}
+
+// =============================================================================
+// FR-023: Splice Artifacts Tests
+// =============================================================================
+
+TEST_CASE("FR-023: Splice artifacts at tape loop point", "[features][tape-delay][splice]") {
+    TapeDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+
+    SECTION("splice artifacts disabled by default") {
+        REQUIRE_FALSE(delay.isSpliceEnabled());
+    }
+
+    SECTION("splice artifacts can be enabled/disabled") {
+        delay.setSpliceEnabled(true);
+        REQUIRE(delay.isSpliceEnabled());
+
+        delay.setSpliceEnabled(false);
+        REQUIRE_FALSE(delay.isSpliceEnabled());
+    }
+
+    SECTION("splice intensity can be set") {
+        delay.setSpliceIntensity(0.5f);
+        REQUIRE(delay.getSpliceIntensity() == Approx(0.5f));
+    }
+
+    SECTION("splice intensity clamped to 0-1 range") {
+        delay.setSpliceIntensity(-0.1f);
+        REQUIRE(delay.getSpliceIntensity() >= 0.0f);
+
+        delay.setSpliceIntensity(1.5f);
+        REQUIRE(delay.getSpliceIntensity() <= 1.0f);
+    }
+
+    SECTION("splice artifacts occur at tape loop interval") {
+        delay.setMotorSpeed(100.0f);    // 100ms delay = 4410 samples at 44.1kHz
+        delay.setSpliceEnabled(true);
+        delay.setSpliceIntensity(1.0f); // Full intensity
+        delay.setWear(0.0f);            // Disable wow/flutter
+        delay.setSaturation(0.0f);      // Disable saturation
+        delay.setAge(0.0f);             // Disable hiss
+        delay.setMix(1.0f);             // Full wet
+        delay.reset();
+
+        // Process silence - splice artifacts should appear periodically
+        const size_t totalSamples = 44100;  // 1 second = 10 loop points at 100ms
+        std::vector<float> left(totalSamples, 0.0f);
+        std::vector<float> right(totalSamples, 0.0f);
+
+        delay.process(left.data(), right.data(), totalSamples);
+
+        // Count peaks that could be splice transients
+        size_t peakCount = 0;
+        const float threshold = 0.001f;  // Small threshold for splice clicks
+        for (size_t i = 1; i < totalSamples; ++i) {
+            if (std::abs(left[i]) > threshold && std::abs(left[i]) > std::abs(left[i - 1])) {
+                peakCount++;
+                // Skip ahead to avoid counting the same peak multiple times
+                i += 100;
+            }
+        }
+
+        // At 100ms loop, we expect ~10 splice points in 1 second
+        // Allow some tolerance (8-12)
+        REQUIRE(peakCount >= 5);
+        REQUIRE(peakCount <= 15);
+    }
+
+    SECTION("splice artifacts absent when disabled") {
+        delay.setMotorSpeed(100.0f);
+        delay.setSpliceEnabled(false);  // Disabled
+        delay.setMix(1.0f);
+        delay.setWear(0.0f);
+        delay.setSaturation(0.0f);
+        delay.setAge(0.0f);
+        delay.reset();
+
+        const size_t totalSamples = 4410;  // One loop
+        std::vector<float> left(totalSamples, 0.0f);
+        std::vector<float> right(totalSamples, 0.0f);
+
+        delay.process(left.data(), right.data(), totalSamples);
+
+        // With splice disabled and all other character off, output should be near silent
+        float maxOutput = 0.0f;
+        for (size_t i = 0; i < totalSamples; ++i) {
+            maxOutput = std::max(maxOutput, std::abs(left[i]));
+        }
+        REQUIRE(maxOutput < 0.001f);
+    }
+}
+
+// =============================================================================
+// FR-024: Age Control Affects Artifact Intensity
+// =============================================================================
+
+TEST_CASE("FR-024: Age control affects splice artifact intensity", "[features][tape-delay][age-splice]") {
+    TapeDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+
+    SECTION("Age at 0% produces no splice artifacts") {
+        delay.setAge(0.0f);
+        delay.setSpliceEnabled(true);
+
+        // At Age=0, even with splice enabled, intensity should be zero
+        REQUIRE(delay.getSpliceIntensity() == Approx(0.0f));
+    }
+
+    SECTION("Age increase raises splice artifact intensity") {
+        delay.setSpliceEnabled(true);
+
+        delay.setAge(0.5f);
+        float intensity50 = delay.getSpliceIntensity();
+
+        delay.setAge(1.0f);
+        float intensity100 = delay.getSpliceIntensity();
+
+        // Higher age = higher intensity
+        REQUIRE(intensity100 > intensity50);
+        REQUIRE(intensity50 > 0.0f);
+    }
+
+    SECTION("Age at 100% produces maximum artifact intensity") {
+        delay.setSpliceEnabled(true);
+        delay.setAge(1.0f);
+
+        // At Age=100%, splice intensity should be at or near maximum
+        REQUIRE(delay.getSpliceIntensity() >= 0.8f);
+    }
+
+    SECTION("Age simultaneously affects hiss, rolloff, and artifacts") {
+        delay.setSpliceEnabled(true);
+        delay.setMotorSpeed(500.0f);
+        delay.setMix(1.0f);
+
+        // At Age=0, minimal degradation
+        delay.setAge(0.0f);
+        delay.reset();
+
+        std::vector<float> clean(4410, 0.0f);
+        clean[0] = 1.0f;  // Impulse
+        std::vector<float> cleanR(4410, 0.0f);
+        cleanR[0] = 1.0f;
+        delay.process(clean.data(), cleanR.data(), 4410);
+
+        // At Age=100%, maximum degradation
+        delay.setAge(1.0f);
+        delay.reset();
+
+        std::vector<float> aged(4410, 0.0f);
+        aged[0] = 1.0f;
+        std::vector<float> agedR(4410, 0.0f);
+        agedR[0] = 1.0f;
+        delay.process(aged.data(), agedR.data(), 4410);
+
+        // Aged signal should have more noise (higher RMS in silent sections)
+        float cleanNoise = 0.0f;
+        float agedNoise = 0.0f;
+        // Check samples after initial transient
+        for (size_t i = 1000; i < 4410; ++i) {
+            cleanNoise += clean[i] * clean[i];
+            agedNoise += aged[i] * aged[i];
+        }
+
+        // Aged should have more residual noise/artifacts
+        REQUIRE(agedNoise > cleanNoise);
+    }
+}

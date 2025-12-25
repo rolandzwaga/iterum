@@ -184,6 +184,19 @@ public:
     static constexpr float kHeadRatio3 = 2.0f;       ///< Head 3 timing ratio
     static constexpr float kSmoothingTimeMs = 20.0f; ///< Parameter smoothing
 
+    // FR-007: Wow rate scaling constants
+    // Wow rate scales inversely with delay time (tape speed)
+    // At short delay (fast tape): higher wow rate (~1-2 Hz)
+    // At long delay (slow tape): lower wow rate (~0.2-0.4 Hz)
+    static constexpr float kBaseWowRate = 0.5f;      ///< Base wow rate at reference delay
+    static constexpr float kReferenceDelayMs = 500.0f; ///< Reference delay for base rate
+    static constexpr float kMinWowRate = 0.15f;      ///< Minimum wow rate (slowest tape)
+    static constexpr float kMaxWowRate = 2.0f;       ///< Maximum wow rate (fastest tape)
+
+    // FR-023: Splice artifact constants
+    static constexpr float kSpliceClickDurationMs = 2.0f;  ///< Duration of splice click
+    static constexpr float kSpliceMaxLevel = 0.03f;  ///< Maximum splice artifact level
+
     // =========================================================================
     // Construction / Destruction
     // =========================================================================
@@ -263,6 +276,9 @@ public:
         feedbackSmoother_.snapTo(feedback_);
         mixSmoother_.snapTo(mix_);
         outputLevelSmoother_.snapTo(dbToGain(outputLevelDb_));
+
+        // Reset splice artifact state
+        spliceSampleCounter_ = 0;
     }
 
     /// @brief Check if prepared for processing
@@ -277,10 +293,14 @@ public:
     /// @brief Set delay time (Motor Speed control)
     /// @param ms Delay time in milliseconds [20, 2000]
     /// @note Changes smoothly with motor inertia (200-500ms transition)
+    /// @note FR-007: Also updates wow rate (inversely proportional to delay)
     void setMotorSpeed(float ms) noexcept {
         ms = std::clamp(ms, kMinDelayMs, maxDelayMs_);
         motor_.setTargetDelayMs(ms);
         updateHeadDelayTimes();
+        updateWowRate();           // FR-007: Update wow rate for new speed
+        updateSpliceInterval();    // FR-023: Update splice timing
+        updateCharacter();         // Apply the new wow rate to CharacterProcessor
     }
 
     /// @brief Get current (smoothed) delay time
@@ -315,6 +335,12 @@ public:
         return wear_;
     }
 
+    /// @brief Get current wow rate (FR-007: scales inversely with Motor Speed)
+    /// @return Wow rate in Hz (lower at slow tape speed, higher at fast tape speed)
+    [[nodiscard]] float getWowRate() const noexcept {
+        return currentWowRate_;
+    }
+
     // =========================================================================
     // Saturation (FR-010 to FR-014)
     // =========================================================================
@@ -336,15 +362,60 @@ public:
     // =========================================================================
 
     /// @brief Set age/degradation amount
-    /// @param amount Age [0, 1] - controls EQ rolloff, noise, degradation
+    /// @param amount Age [0, 1] - controls EQ rolloff, noise, degradation, and artifact intensity
+    /// @note FR-024: Age controls splice artifact intensity when splice is enabled (unless manually overridden)
     void setAge(float amount) noexcept {
         age_ = std::clamp(amount, 0.0f, 1.0f);
+        // FR-024: Age controls artifact intensity when splice is enabled
+        // (but only if intensity wasn't manually set via setSpliceIntensity)
+        if (spliceEnabled_ && !spliceIntensityManual_) {
+            spliceIntensity_ = age_;
+        }
         updateCharacter();
     }
 
     /// @brief Get current age amount
     [[nodiscard]] float getAge() const noexcept {
         return age_;
+    }
+
+    // =========================================================================
+    // Splice Artifacts (FR-023, FR-024)
+    // =========================================================================
+
+    /// @brief Enable/disable splice artifacts
+    /// @param enabled Whether splice artifacts are active
+    /// @note FR-023: Optional periodic transients at tape loop point
+    void setSpliceEnabled(bool enabled) noexcept {
+        spliceEnabled_ = enabled;
+        if (enabled) {
+            // When enabled, splice intensity is controlled by Age (unless manual override is active)
+            if (!spliceIntensityManual_) {
+                spliceIntensity_ = age_;
+            }
+        } else {
+            spliceIntensity_ = 0.0f;
+            spliceIntensityManual_ = false;  // Reset manual flag when disabled
+        }
+    }
+
+    /// @brief Check if splice artifacts are enabled
+    [[nodiscard]] bool isSpliceEnabled() const noexcept {
+        return spliceEnabled_;
+    }
+
+    /// @brief Set splice artifact intensity manually
+    /// @param intensity Intensity [0, 1]
+    /// @note Overrides Age-based intensity control until setSpliceEnabled(false) is called
+    void setSpliceIntensity(float intensity) noexcept {
+        spliceIntensity_ = std::clamp(intensity, 0.0f, 1.0f);
+        spliceIntensityManual_ = true;  // Mark as manually controlled
+    }
+
+    /// @brief Get current splice artifact intensity
+    /// @return Intensity [0, 1] (0 when splice disabled or Age is 0)
+    [[nodiscard]] float getSpliceIntensity() const noexcept {
+        return spliceIntensity_;
     }
 
     // =========================================================================
@@ -457,6 +528,10 @@ public:
 
         BlockContext ctx;
 
+        // Calculate splice click duration in samples
+        const size_t spliceClickSamples = static_cast<size_t>(
+            kSpliceClickDurationMs * 0.001 * sampleRate_);
+
         for (size_t i = 0; i < numSamples; ++i) {
             // Get smoothed motor delay and update head times
             const float currentDelayMs = motor_.process();
@@ -482,6 +557,25 @@ public:
         // Process through CharacterProcessor (tape character)
         character_.processStereo(left, right, numSamples);
 
+        // FR-023: Add splice artifacts if enabled
+        if (spliceEnabled_ && spliceIntensity_ > 0.0f && spliceIntervalSamples_ > 0) {
+            for (size_t i = 0; i < numSamples; ++i) {
+                // Check if we're within a splice click window
+                if (spliceSampleCounter_ < spliceClickSamples) {
+                    const float spliceArtifact = generateSpliceClick(
+                        spliceSampleCounter_, spliceClickSamples);
+                    left[i] += spliceArtifact;
+                    right[i] += spliceArtifact;
+                }
+
+                // Increment counter and wrap at splice interval
+                spliceSampleCounter_++;
+                if (spliceSampleCounter_ >= spliceIntervalSamples_) {
+                    spliceSampleCounter_ = 0;
+                }
+            }
+        }
+
         // Apply mix and output level
         for (size_t i = 0; i < numSamples; ++i) {
             const float dryL = left[i];
@@ -502,6 +596,10 @@ public:
     void process(float* buffer, size_t numSamples) noexcept {
         if (!prepared_ || numSamples == 0) return;
 
+        // Calculate splice click duration in samples
+        const size_t spliceClickSamples = static_cast<size_t>(
+            kSpliceClickDurationMs * 0.001 * sampleRate_);
+
         // For mono, process as dual mono
         for (size_t i = 0; i < numSamples; ++i) {
             const float currentDelayMs = motor_.process();
@@ -517,6 +615,24 @@ public:
 
         // Process through character
         character_.process(buffer, numSamples);
+
+        // FR-023: Add splice artifacts if enabled
+        if (spliceEnabled_ && spliceIntensity_ > 0.0f && spliceIntervalSamples_ > 0) {
+            for (size_t i = 0; i < numSamples; ++i) {
+                // Check if we're within a splice click window
+                if (spliceSampleCounter_ < spliceClickSamples) {
+                    const float spliceArtifact = generateSpliceClick(
+                        spliceSampleCounter_, spliceClickSamples);
+                    buffer[i] += spliceArtifact;
+                }
+
+                // Increment counter and wrap at splice interval
+                spliceSampleCounter_++;
+                if (spliceSampleCounter_ >= spliceIntervalSamples_) {
+                    spliceSampleCounter_ = 0;
+                }
+            }
+        }
 
         // Apply output level
         for (size_t i = 0; i < numSamples; ++i) {
@@ -559,6 +675,12 @@ private:
 
     /// @brief Update CharacterProcessor from Wear, Saturation, Age controls
     void updateCharacter() noexcept {
+        // FR-007: Calculate wow rate based on motor speed
+        // Wow rate scales inversely with delay time (proportional to tape speed)
+        // Shorter delay = faster tape = higher wow rate
+        // Longer delay = slower tape = lower wow rate
+        updateWowRate();
+
         // Wear controls wow/flutter depth and hiss
         // Wear 0-1 maps to:
         // - Wow depth: 0-0.5 (moderate at max)
@@ -567,6 +689,9 @@ private:
         character_.setTapeWowDepth(wear_ * 0.5f);
         character_.setTapeFlutterDepth(wear_ * 0.3f);
         character_.setTapeHissLevel(-80.0f + wear_ * 40.0f);
+
+        // Apply the calculated wow rate (FR-007)
+        character_.setTapeWowRate(currentWowRate_);
 
         // Saturation controls tape drive
         character_.setTapeSaturation(saturation_);
@@ -581,6 +706,72 @@ private:
             const float ageHissBoost = age_ * 10.0f;  // Extra 0-10dB
             character_.setTapeHissLevel(-80.0f + wear_ * 40.0f + ageHissBoost);
         }
+    }
+
+    /// @brief Update wow rate based on current motor speed (FR-007)
+    void updateWowRate() noexcept {
+        const float targetDelay = motor_.getTargetDelayMs();
+        if (targetDelay <= 0.0f) {
+            currentWowRate_ = kMaxWowRate;
+            return;
+        }
+
+        // Wow rate scales inversely with delay time
+        // At reference delay (500ms): base rate (0.5 Hz)
+        // At shorter delay: higher rate (faster tape)
+        // At longer delay: lower rate (slower tape)
+        //
+        // Formula: rate = baseRate * (referenceDelay / currentDelay)
+        // This gives inverse scaling with delay time
+        const float ratio = kReferenceDelayMs / targetDelay;
+        currentWowRate_ = std::clamp(kBaseWowRate * ratio, kMinWowRate, kMaxWowRate);
+    }
+
+    /// @brief Update splice interval based on current delay time
+    void updateSpliceInterval() noexcept {
+        const float targetDelay = motor_.getTargetDelayMs();
+        if (targetDelay <= 0.0f || sampleRate_ <= 0.0) {
+            spliceIntervalSamples_ = 0;
+            return;
+        }
+        // Splice occurs once per tape loop (at the delay time interval)
+        spliceIntervalSamples_ = static_cast<size_t>(targetDelay * 0.001 * sampleRate_);
+    }
+
+    /// @brief Generate a splice artifact sample
+    /// @param sampleInClick Sample position within the click (0 to clickDurationSamples)
+    /// @param clickDurationSamples Total duration of the click in samples
+    /// @return Artifact sample value
+    [[nodiscard]] float generateSpliceClick(size_t sampleInClick, size_t clickDurationSamples) const noexcept {
+        if (clickDurationSamples == 0) return 0.0f;
+
+        // Generate a short transient/click
+        // Using a simple decaying impulse with some randomness
+        const float position = static_cast<float>(sampleInClick) / static_cast<float>(clickDurationSamples);
+
+        // Quick attack, exponential decay envelope
+        float envelope = 0.0f;
+        if (position < 0.1f) {
+            // Attack phase
+            envelope = position / 0.1f;
+        } else {
+            // Decay phase
+            envelope = std::exp(-5.0f * (position - 0.1f));
+        }
+
+        // Add some "click" character with a mix of impulse and noise
+        float click = 0.0f;
+        if (sampleInClick == 0) {
+            click = 1.0f;  // Initial impulse
+        } else {
+            // Decaying noise-like component
+            // Simple pseudo-random using sample position
+            const uint32_t seed = static_cast<uint32_t>(sampleInClick * 1103515245 + 12345);
+            const float noise = (static_cast<float>(seed % 1000) / 500.0f) - 1.0f;
+            click = noise * 0.5f;
+        }
+
+        return click * envelope * spliceIntensity_ * kSpliceMaxLevel;
     }
 
     // =========================================================================
@@ -611,6 +802,16 @@ private:
     float feedback_ = 0.5f;       // Feedback amount (0-1.2)
     float mix_ = 0.5f;            // Dry/wet (0-1)
     float outputLevelDb_ = 0.0f;  // Output level in dB
+
+    // FR-007: Wow rate state (scales with motor speed)
+    float currentWowRate_ = kBaseWowRate;
+
+    // FR-023: Splice artifact state
+    bool spliceEnabled_ = false;      // Splice artifacts disabled by default
+    float spliceIntensity_ = 0.0f;    // Intensity [0, 1], controlled by Age
+    bool spliceIntensityManual_ = false; // True if intensity was set manually via setSpliceIntensity
+    size_t spliceSampleCounter_ = 0;  // Counter for splice timing
+    size_t spliceIntervalSamples_ = 0; // Samples between splice points
 
     // Smoothers
     OnePoleSmoother feedbackSmoother_;
