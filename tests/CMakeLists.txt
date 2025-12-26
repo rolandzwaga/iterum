@@ -113,6 +113,7 @@ add_executable(dsp_tests
     unit/features/shimmer_delay_test.cpp
     unit/features/reverse_delay_test.cpp
     unit/features/freeze_mode_test.cpp
+    unit/features/ducking_delay_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -185,6 +186,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/features/shimmer_delay_test.cpp
         unit/features/reverse_delay_test.cpp
         unit/features/freeze_mode_test.cpp
+        unit/features/ducking_delay_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
