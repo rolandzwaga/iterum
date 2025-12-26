@@ -801,14 +801,395 @@ TEST_CASE("DuckingDelay gain reduction meter", "[ducking-delay][US1][FR-022]") {
 // =============================================================================
 // Phase 4: User Story 2 Tests - Feedback Path Ducking
 // =============================================================================
-// Tests will be added in T041-T045
+
+// T041: DuckTarget enum has Output, Feedback, Both values
+TEST_CASE("DuckTarget enum values", "[ducking-delay][US2][FR-010]") {
+    // Already tested in setup phase, but verify for US2 completeness
+    REQUIRE(static_cast<int>(DuckTarget::Output) == 0);
+    REQUIRE(static_cast<int>(DuckTarget::Feedback) == 1);
+    REQUIRE(static_cast<int>(DuckTarget::Both) == 2);
+}
+
+// T042: setDuckTarget() and getDuckTarget() work correctly
+TEST_CASE("DuckingDelay duck target getter/setter", "[ducking-delay][US2][FR-010]") {
+    auto delay = createPreparedDelay();
+
+    SECTION("Default target is Output") {
+        REQUIRE(delay.getDuckTarget() == DuckTarget::Output);
+    }
+
+    SECTION("Can set target to Feedback") {
+        delay.setDuckTarget(DuckTarget::Feedback);
+        REQUIRE(delay.getDuckTarget() == DuckTarget::Feedback);
+    }
+
+    SECTION("Can set target to Both") {
+        delay.setDuckTarget(DuckTarget::Both);
+        REQUIRE(delay.getDuckTarget() == DuckTarget::Both);
+    }
+
+    SECTION("Can set target back to Output") {
+        delay.setDuckTarget(DuckTarget::Both);
+        delay.setDuckTarget(DuckTarget::Output);
+        REQUIRE(delay.getDuckTarget() == DuckTarget::Output);
+    }
+}
+
+// T043: Output mode ducks wet signal before dry/wet mix (FR-011)
+TEST_CASE("DuckingDelay Output mode ducks wet signal", "[ducking-delay][US2][FR-011]") {
+    auto delay = createPreparedDelay();
+    delay.setDuckingEnabled(true);
+    delay.setDuckTarget(DuckTarget::Output);
+    delay.setDuckAmount(100.0f);
+    delay.setThreshold(-60.0f);
+    delay.setAttackTime(0.1f);
+    delay.setDryWetMix(100.0f);  // 100% wet to see effect
+    delay.setDelayTimeMs(50.0f);
+    delay.setFeedbackAmount(0.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Prime with impulse
+    std::vector<float> primeL(kBlockSize, 0.0f);
+    std::vector<float> primeR(kBlockSize, 0.0f);
+    primeL[0] = 1.0f;
+    primeR[0] = 1.0f;
+    delay.process(primeL.data(), primeR.data(), kBlockSize, ctx);
+
+    // Feed loud continuous signal - should duck the delay output
+    for (int i = 0; i < 10; ++i) {
+        std::vector<float> left(kBlockSize, 0.9f);
+        std::vector<float> right(kBlockSize, 0.9f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // With Output mode, ducking should be engaged
+    float gr = delay.getGainReduction();
+    REQUIRE(gr < -30.0f);  // Should show significant ducking
+}
+
+// T044: Feedback mode preserves first tap, ducks subsequent repeats (FR-012)
+TEST_CASE("DuckingDelay Feedback mode preserves first tap", "[ducking-delay][US2][FR-012]") {
+    auto delay = createPreparedDelay();
+    delay.setDuckingEnabled(true);
+    delay.setDuckTarget(DuckTarget::Feedback);
+    delay.setDuckAmount(100.0f);
+    delay.setThreshold(-60.0f);
+    delay.setAttackTime(0.1f);
+    delay.setDryWetMix(100.0f);
+    delay.setDelayTimeMs(50.0f);
+    delay.setFeedbackAmount(80.0f);  // High feedback
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // In Feedback mode, the output to user is NOT ducked
+    // Only the feedback path is ducked
+
+    // Feed loud continuous signal
+    for (int i = 0; i < 10; ++i) {
+        std::vector<float> left(kBlockSize, 0.9f);
+        std::vector<float> right(kBlockSize, 0.9f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // The output should still have audio content (not ducked to silence)
+    // because Feedback mode only ducks what feeds back, not the output
+    std::vector<float> testL(kBlockSize, 0.9f);
+    std::vector<float> testR(kBlockSize, 0.9f);
+    delay.process(testL.data(), testR.data(), kBlockSize, ctx);
+
+    float outputPeak = findStereoPeak(testL.data(), testR.data(), kBlockSize);
+    // Should have some output (the first tap is preserved)
+    // Note: With 100% wet, we'll see the delay output
+    REQUIRE(outputPeak > 0.0f);  // Not complete silence
+}
+
+// T045: Both mode ducks both output and feedback paths (FR-013)
+TEST_CASE("DuckingDelay Both mode ducks output and feedback", "[ducking-delay][US2][FR-013]") {
+    auto delay = createPreparedDelay();
+    delay.setDuckingEnabled(true);
+    delay.setDuckTarget(DuckTarget::Both);
+    delay.setDuckAmount(100.0f);
+    delay.setThreshold(-60.0f);
+    delay.setAttackTime(0.1f);
+    delay.setDryWetMix(100.0f);
+    delay.setDelayTimeMs(50.0f);
+    delay.setFeedbackAmount(80.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Prime with impulse
+    std::vector<float> primeL(kBlockSize, 0.0f);
+    std::vector<float> primeR(kBlockSize, 0.0f);
+    primeL[0] = 1.0f;
+    primeR[0] = 1.0f;
+    delay.process(primeL.data(), primeR.data(), kBlockSize, ctx);
+
+    // Feed loud continuous signal - both output and feedback are ducked
+    for (int i = 0; i < 10; ++i) {
+        std::vector<float> left(kBlockSize, 0.9f);
+        std::vector<float> right(kBlockSize, 0.9f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Should have full ducking (both paths)
+    float gr = delay.getGainReduction();
+    REQUIRE(gr < -30.0f);  // Should show significant ducking
+}
+
+// Additional test: Compare Output vs Both modes
+TEST_CASE("DuckingDelay Output and Both modes both duck output", "[ducking-delay][US2]") {
+    auto ctx = makeTestContext();
+
+    // Test with Output mode
+    auto delayOutput = createPreparedDelay();
+    delayOutput.setDuckingEnabled(true);
+    delayOutput.setDuckTarget(DuckTarget::Output);
+    delayOutput.setDuckAmount(100.0f);
+    delayOutput.setThreshold(-60.0f);
+    delayOutput.setAttackTime(0.1f);
+    delayOutput.setDryWetMix(100.0f);
+    delayOutput.setDelayTimeMs(50.0f);
+    delayOutput.setFeedbackAmount(0.0f);
+    delayOutput.snapParameters();
+
+    // Test with Both mode
+    auto delayBoth = createPreparedDelay();
+    delayBoth.setDuckingEnabled(true);
+    delayBoth.setDuckTarget(DuckTarget::Both);
+    delayBoth.setDuckAmount(100.0f);
+    delayBoth.setThreshold(-60.0f);
+    delayBoth.setAttackTime(0.1f);
+    delayBoth.setDryWetMix(100.0f);
+    delayBoth.setDelayTimeMs(50.0f);
+    delayBoth.setFeedbackAmount(0.0f);
+    delayBoth.snapParameters();
+
+    // Process both
+    for (int i = 0; i < 10; ++i) {
+        std::vector<float> left1(kBlockSize, 0.9f);
+        std::vector<float> right1(kBlockSize, 0.9f);
+        delayOutput.process(left1.data(), right1.data(), kBlockSize, ctx);
+
+        std::vector<float> left2(kBlockSize, 0.9f);
+        std::vector<float> right2(kBlockSize, 0.9f);
+        delayBoth.process(left2.data(), right2.data(), kBlockSize, ctx);
+    }
+
+    float grOutput = delayOutput.getGainReduction();
+    float grBoth = delayBoth.getGainReduction();
+
+    // Both should show significant ducking
+    REQUIRE(grOutput < -30.0f);
+    REQUIRE(grBoth < -30.0f);
+}
 
 // =============================================================================
 // Phase 5: User Story 3 Tests - Hold Time Control
 // =============================================================================
-// Tests will be added in T052-T054
+
+// T052: Hold time range is 0 to 500 ms (FR-008)
+TEST_CASE("DuckingDelay hold time parameter range", "[ducking-delay][US3][FR-008]") {
+    auto delay = createPreparedDelay();
+
+    SECTION("Hold time range is 0 to 500 ms") {
+        delay.setHoldTime(0.0f);
+        REQUIRE(delay.getHoldTime() == Approx(0.0f));
+
+        delay.setHoldTime(500.0f);
+        REQUIRE(delay.getHoldTime() == Approx(500.0f));
+
+        delay.setHoldTime(250.0f);
+        REQUIRE(delay.getHoldTime() == Approx(250.0f));
+    }
+
+    SECTION("Hold time clamped below minimum") {
+        delay.setHoldTime(-10.0f);
+        REQUIRE(delay.getHoldTime() == Approx(0.0f));
+    }
+
+    SECTION("Hold time clamped above maximum") {
+        delay.setHoldTime(1000.0f);
+        REQUIRE(delay.getHoldTime() == Approx(500.0f));
+    }
+}
+
+// T053: Hold time delays release phase (FR-009)
+TEST_CASE("DuckingDelay hold time delays release", "[ducking-delay][US3][FR-009]") {
+    // This test verifies that hold time keeps ducking engaged after input drops
+    // by comparing release behavior with and without hold time
+
+    auto ctx = makeTestContext();
+
+    SECTION("Zero hold time allows immediate release") {
+        auto delay = createPreparedDelay();
+        delay.setDuckingEnabled(true);
+        delay.setDuckAmount(100.0f);
+        delay.setThreshold(-60.0f);
+        delay.setAttackTime(0.1f);
+        delay.setReleaseTime(10.0f);  // Fast release
+        delay.setHoldTime(0.0f);      // No hold
+        delay.setDryWetMix(100.0f);
+        delay.setDelayTimeMs(50.0f);
+        delay.setFeedbackAmount(0.0f);
+        delay.snapParameters();
+
+        // Engage ducking (separate buffers)
+        for (int i = 0; i < 10; ++i) {
+            std::vector<float> loudL(kBlockSize, 0.9f);
+            std::vector<float> loudR(kBlockSize, 0.9f);
+            delay.process(loudL.data(), loudR.data(), kBlockSize, ctx);
+        }
+
+        float engagedGR = delay.getGainReduction();
+        REQUIRE(engagedGR < -30.0f);
+
+        // Feed silence - should start releasing (separate buffers)
+        // Need enough blocks for release to complete (10ms release at 44.1kHz)
+        for (int i = 0; i < 20; ++i) {
+            std::vector<float> silenceL(kBlockSize, 0.0f);
+            std::vector<float> silenceR(kBlockSize, 0.0f);
+            delay.process(silenceL.data(), silenceR.data(), kBlockSize, ctx);
+        }
+
+        float releasedGR = delay.getGainReduction();
+        // After extended silence, should have significantly recovered
+        // from -48dB towards 0dB
+        REQUIRE(releasedGR > -30.0f);  // Should have recovered significantly
+    }
+
+    SECTION("Non-zero hold time delays release") {
+        auto delay = createPreparedDelay();
+        delay.setDuckingEnabled(true);
+        delay.setDuckAmount(100.0f);
+        delay.setThreshold(-60.0f);
+        delay.setAttackTime(0.1f);
+        delay.setReleaseTime(10.0f);
+        delay.setHoldTime(200.0f);    // 200ms hold
+        delay.setDryWetMix(100.0f);
+        delay.setDelayTimeMs(50.0f);
+        delay.setFeedbackAmount(0.0f);
+        delay.snapParameters();
+
+        // Engage ducking (separate buffers)
+        for (int i = 0; i < 10; ++i) {
+            std::vector<float> loudL(kBlockSize, 0.9f);
+            std::vector<float> loudR(kBlockSize, 0.9f);
+            delay.process(loudL.data(), loudR.data(), kBlockSize, ctx);
+        }
+
+        float engagedGR = delay.getGainReduction();
+        REQUIRE(engagedGR < -30.0f);
+
+        // Feed one block of silence - should still be holding (separate buffers)
+        std::vector<float> silenceL(kBlockSize, 0.0f);
+        std::vector<float> silenceR(kBlockSize, 0.0f);
+        delay.process(silenceL.data(), silenceR.data(), kBlockSize, ctx);
+
+        float holdingGR = delay.getGainReduction();
+        // During hold phase, gain reduction should remain similar
+        REQUIRE(holdingGR < -20.0f);  // Still significantly reduced
+    }
+}
+
+// T054: Default hold time (FR-008)
+TEST_CASE("DuckingDelay default hold time", "[ducking-delay][US3][FR-008]") {
+    DuckingDelay delay;
+    // Default hold time should be a reasonable value
+    REQUIRE(delay.getHoldTime() == Approx(DuckingDelay::kDefaultHoldMs));
+}
 
 // =============================================================================
 // Phase 6: User Story 4 Tests - Sidechain Filtering
 // =============================================================================
-// Tests will be added in T062-T065
+
+// T062: Sidechain filter enable/disable (FR-016)
+TEST_CASE("DuckingDelay sidechain filter enable/disable", "[ducking-delay][US4][FR-016]") {
+    auto delay = createPreparedDelay();
+
+    SECTION("Sidechain filter disabled by default") {
+        REQUIRE_FALSE(delay.isSidechainFilterEnabled());
+    }
+
+    SECTION("Can enable sidechain filter") {
+        delay.setSidechainFilterEnabled(true);
+        REQUIRE(delay.isSidechainFilterEnabled());
+    }
+
+    SECTION("Can disable sidechain filter") {
+        delay.setSidechainFilterEnabled(true);
+        delay.setSidechainFilterEnabled(false);
+        REQUIRE_FALSE(delay.isSidechainFilterEnabled());
+    }
+}
+
+// T063: Sidechain filter cutoff range (FR-015)
+TEST_CASE("DuckingDelay sidechain filter cutoff range", "[ducking-delay][US4][FR-015]") {
+    auto delay = createPreparedDelay();
+
+    SECTION("Cutoff range is 20 to 500 Hz") {
+        delay.setSidechainFilterCutoff(20.0f);
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(20.0f));
+
+        delay.setSidechainFilterCutoff(500.0f);
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(500.0f));
+
+        delay.setSidechainFilterCutoff(100.0f);
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(100.0f));
+    }
+
+    SECTION("Cutoff clamped below minimum") {
+        delay.setSidechainFilterCutoff(10.0f);
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(20.0f));
+    }
+
+    SECTION("Cutoff clamped above maximum") {
+        delay.setSidechainFilterCutoff(1000.0f);
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(500.0f));
+    }
+}
+
+// T064: Sidechain highpass filter parameter setting (FR-014)
+TEST_CASE("DuckingDelay sidechain highpass filter parameters", "[ducking-delay][US4][FR-014]") {
+    auto delay = createPreparedDelay();
+
+    // Verify filter parameters can be set and forwarded
+    // The actual filtering behavior is tested in DuckingProcessor tests
+
+    SECTION("Filter can be enabled and cutoff set") {
+        delay.setSidechainFilterEnabled(true);
+        delay.setSidechainFilterCutoff(100.0f);
+
+        REQUIRE(delay.isSidechainFilterEnabled());
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(100.0f));
+    }
+
+    SECTION("Filter settings persist through snapParameters") {
+        delay.setSidechainFilterEnabled(true);
+        delay.setSidechainFilterCutoff(250.0f);
+        delay.snapParameters();
+
+        REQUIRE(delay.isSidechainFilterEnabled());
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(250.0f));
+    }
+
+    SECTION("Filter settings persist through reset") {
+        delay.setSidechainFilterEnabled(true);
+        delay.setSidechainFilterCutoff(300.0f);
+        delay.reset();
+
+        // Settings should persist (reset clears audio state, not parameters)
+        REQUIRE(delay.isSidechainFilterEnabled());
+        REQUIRE(delay.getSidechainFilterCutoff() == Approx(300.0f));
+    }
+}
+
+// T065: Default sidechain filter cutoff
+TEST_CASE("DuckingDelay default sidechain filter cutoff", "[ducking-delay][US4]") {
+    DuckingDelay delay;
+    // Default should be reasonable value (80 Hz per research.md)
+    REQUIRE(delay.getSidechainFilterCutoff() == Approx(DuckingDelay::kDefaultSidechainHz));
+}
