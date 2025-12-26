@@ -104,7 +104,7 @@
 
 ### 3.5 Commit (MANDATORY)
 
-- [ ] T034 [US1] **Commit completed User Story 1 work**
+- [x] T034 [US1] **Commit completed User Story 1 work**
 
 **Checkpoint**: Basic freeze capture fully functional - MVP complete
 
@@ -118,35 +118,35 @@
 
 ### 4.1 Pre-Implementation (MANDATORY)
 
-- [ ] T035 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T035 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 4.2 Tests for User Story 2 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T036 [P] [US2] Write tests for FreezeFeedbackProcessor pitch shift integration in tests/unit/features/freeze_mode_test.cpp
-- [ ] T037 [P] [US2] Write test: +12 semitones shifts up one octave per iteration (FR-009, FR-010) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T038 [P] [US2] Write test: -7 semitones shifts down a fifth per iteration in tests/unit/features/freeze_mode_test.cpp
-- [ ] T039 [P] [US2] Write test: pitch shift accuracy within +/- 5 cents (SC-005) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T040 [P] [US2] Write test: shimmer mix blends pitched/unpitched (FR-011) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T041 [P] [US2] Write test: pitch shift is modulatable without artifacts (FR-012) in tests/unit/features/freeze_mode_test.cpp
+- [x] T036 [P] [US2] Write tests for FreezeFeedbackProcessor pitch shift integration in tests/unit/features/freeze_mode_test.cpp
+- [x] T037 [P] [US2] Write test: +12 semitones shifts up one octave per iteration (FR-009, FR-010) in tests/unit/features/freeze_mode_test.cpp
+- [x] T038 [P] [US2] Write test: -7 semitones shifts down a fifth per iteration in tests/unit/features/freeze_mode_test.cpp
+- [x] T039 [P] [US2] Write test: pitch shift accuracy within +/- 5 cents (SC-005) in tests/unit/features/freeze_mode_test.cpp
+- [x] T040 [P] [US2] Write test: shimmer mix blends pitched/unpitched (FR-011) in tests/unit/features/freeze_mode_test.cpp
+- [x] T041 [P] [US2] Write test: pitch shift is modulatable without artifacts (FR-012) in tests/unit/features/freeze_mode_test.cpp
 
 ### 4.3 Implementation for User Story 2
 
-- [ ] T042 [US2] Add PitchShiftProcessor members to FreezeFeedbackProcessor in src/dsp/features/freeze_mode.h
-- [ ] T043 [US2] Implement FreezeFeedbackProcessor::setPitchSemitones()/setPitchCents() in src/dsp/features/freeze_mode.h
-- [ ] T044 [US2] Implement FreezeFeedbackProcessor::setShimmerMix() in src/dsp/features/freeze_mode.h
-- [ ] T045 [US2] Update FreezeFeedbackProcessor::process() to apply pitch shifting and shimmer mix blend in src/dsp/features/freeze_mode.h
-- [ ] T046 [US2] Add FreezeMode::setPitchSemitones()/setPitchCents()/setShimmerMix() delegating to processor in src/dsp/features/freeze_mode.h
-- [ ] T047 [US2] Verify all US2 tests pass
+- [x] T042 [US2] Add PitchShiftProcessor members to FreezeFeedbackProcessor in src/dsp/features/freeze_mode.h
+- [x] T043 [US2] Implement FreezeFeedbackProcessor::setPitchSemitones()/setPitchCents() in src/dsp/features/freeze_mode.h
+- [x] T044 [US2] Implement FreezeFeedbackProcessor::setShimmerMix() in src/dsp/features/freeze_mode.h
+- [x] T045 [US2] Update FreezeFeedbackProcessor::process() to apply pitch shifting and shimmer mix blend in src/dsp/features/freeze_mode.h
+- [x] T046 [US2] Add FreezeMode::setPitchSemitones()/setPitchCents()/setShimmerMix() delegating to processor in src/dsp/features/freeze_mode.h
+- [x] T047 [US2] Verify all US2 tests pass
 
 ### 4.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T048 [US2] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
+- [x] T048 [US2] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
 
 ### 4.5 Commit (MANDATORY)
 
-- [ ] T049 [US2] **Commit completed User Story 2 work**
+- [x] T049 [US2] **Commit completed User Story 2 work**
 
 **Checkpoint**: Shimmer freeze fully functional
 

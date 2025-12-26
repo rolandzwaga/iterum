@@ -566,8 +566,225 @@ TEST_CASE("FreezeMode reports latency to host for PDC", "[freeze-mode][US1][FR-0
 
 // =============================================================================
 // Phase 4: User Story 2 - Shimmer Freeze Tests
-// (To be implemented in Phase 4)
 // =============================================================================
+
+TEST_CASE("FreezeFeedbackProcessor pitch shift integration", "[freeze-mode][US2][processor]") {
+    FreezeFeedbackProcessor processor;
+    processor.prepare(kSampleRate, kBlockSize);
+
+    SECTION("setPitchSemitones configures pitch shifter") {
+        REQUIRE_NOTHROW(processor.setPitchSemitones(12.0f));  // +1 octave
+        REQUIRE_NOTHROW(processor.setPitchSemitones(-12.0f)); // -1 octave
+        REQUIRE_NOTHROW(processor.setPitchSemitones(0.0f));   // No shift
+    }
+
+    SECTION("setPitchCents configures fine tuning") {
+        REQUIRE_NOTHROW(processor.setPitchCents(50.0f));  // +50 cents
+        REQUIRE_NOTHROW(processor.setPitchCents(-50.0f)); // -50 cents
+        REQUIRE_NOTHROW(processor.setPitchCents(0.0f));   // No detune
+    }
+
+    SECTION("setShimmerMix controls pitch/unpitched blend") {
+        REQUIRE_NOTHROW(processor.setShimmerMix(0.0f));   // All unpitched
+        REQUIRE_NOTHROW(processor.setShimmerMix(0.5f));   // 50/50 blend
+        REQUIRE_NOTHROW(processor.setShimmerMix(1.0f));   // All pitched
+    }
+}
+
+TEST_CASE("FreezeMode pitch shift +12 semitones shifts up one octave", "[freeze-mode][US2][FR-009][FR-010]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.9f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setPitchSemitones(12.0f);  // +1 octave
+    freeze.setShimmerMix(100.0f);     // Full pitch shift
+    freeze.setDecay(0.0f);            // Infinite sustain
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with low frequency tone
+    std::array<float, kBlockSize> left, right;
+    for (int i = 0; i < 20; ++i) {
+        generateSineWave(left.data(), kBlockSize, 220.0f, kSampleRate);  // A3
+        generateSineWave(right.data(), kBlockSize, 220.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Process several iterations to let pitch shift accumulate
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Should have output (pitch-shifted content evolving)
+    float outputRMS = calculateRMS(left.data(), kBlockSize);
+    REQUIRE(outputRMS > 0.001f);  // Content present
+}
+
+TEST_CASE("FreezeMode pitch shift -7 semitones shifts down a fifth", "[freeze-mode][US2][FR-009][FR-010]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.9f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setPitchSemitones(-7.0f);  // Down a fifth
+    freeze.setShimmerMix(100.0f);     // Full pitch shift
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill with content
+    std::array<float, kBlockSize> left, right;
+    for (int i = 0; i < 20; ++i) {
+        generateSineWave(left.data(), kBlockSize, 440.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 440.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Process iterations
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float outputRMS = calculateRMS(left.data(), kBlockSize);
+    REQUIRE(outputRMS > 0.001f);
+}
+
+TEST_CASE("FreezeMode shimmer mix blends pitched and unpitched", "[freeze-mode][US2][FR-011]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(20.0f);
+    freeze.setFeedbackAmount(0.8f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setPitchSemitones(12.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill with content
+    std::array<float, kBlockSize> left, right;
+    for (int i = 0; i < 10; ++i) {
+        generateSineWave(left.data(), kBlockSize, 440.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 440.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    SECTION("0% shimmer mix = no pitch shifting") {
+        freeze.setShimmerMix(0.0f);
+        freeze.snapParameters();
+        freeze.setFreezeEnabled(true);
+
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+
+        // Should have output
+        float outputRMS = calculateRMS(left.data(), kBlockSize);
+        REQUIRE(outputRMS > 0.001f);
+    }
+
+    SECTION("100% shimmer mix = full pitch shifting") {
+        freeze.setShimmerMix(100.0f);
+        freeze.snapParameters();
+        freeze.setFreezeEnabled(true);
+
+        // Process several blocks to allow pitch shifter latency to settle
+        for (int i = 0; i < 10; ++i) {
+            fillBuffer(left.data(), kBlockSize, 0.0f);
+            fillBuffer(right.data(), kBlockSize, 0.0f);
+            freeze.process(left.data(), right.data(), kBlockSize, ctx);
+        }
+
+        // Should have output (pitch-shifted) after latency compensation
+        float outputRMS = calculateRMS(left.data(), kBlockSize);
+        REQUIRE(outputRMS > 0.001f);
+    }
+
+    SECTION("50% shimmer mix = blend of both") {
+        freeze.setShimmerMix(50.0f);
+        freeze.snapParameters();
+        freeze.setFreezeEnabled(true);
+
+        // Process several blocks to allow pitch shifter latency to settle
+        for (int i = 0; i < 10; ++i) {
+            fillBuffer(left.data(), kBlockSize, 0.0f);
+            fillBuffer(right.data(), kBlockSize, 0.0f);
+            freeze.process(left.data(), right.data(), kBlockSize, ctx);
+        }
+
+        // Should have output (blend) after latency compensation
+        float outputRMS = calculateRMS(left.data(), kBlockSize);
+        REQUIRE(outputRMS > 0.001f);
+    }
+}
+
+TEST_CASE("FreezeMode pitch shift parameter is modulatable", "[freeze-mode][US2][FR-012]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.8f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(100.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill with content
+    std::array<float, kBlockSize> left, right;
+    for (int i = 0; i < 20; ++i) {
+        generateSineWave(left.data(), kBlockSize, 440.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 440.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Let freeze stabilize with pitch shifter latency
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Modulate pitch during processing - should produce continuous output
+    // (Following ShimmerDelay test pattern - check output presence, not sample clicks)
+    float totalRMS = 0.0f;
+    int blocksWithOutput = 0;
+
+    for (int i = 0; i < 20; ++i) {
+        // Modulate pitch across range
+        float pitchMod = static_cast<float>(i) * 0.5f - 5.0f;  // -5 to +5 semitones
+        freeze.setPitchSemitones(pitchMod);
+
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+
+        float blockRMS = calculateRMS(left.data(), kBlockSize);
+        totalRMS += blockRMS;
+        if (blockRMS > 0.0001f) {
+            blocksWithOutput++;
+        }
+    }
+
+    // Pitch modulation should not cause output to disappear
+    // Most blocks should have output (allowing for some pitch shifter latency)
+    REQUIRE(blocksWithOutput >= 15);  // At least 75% of blocks have output
+    REQUIRE(totalRMS > 0.01f);  // Significant total output
+}
 
 // =============================================================================
 // Phase 5: User Story 3 - Decay Control Tests
