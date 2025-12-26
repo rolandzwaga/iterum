@@ -12,6 +12,62 @@ This is a **VST3 plugin** built with:
 
 ## Critical Rules (Non-Negotiable)
 
+#### ⚠️ CRITICAL Bug Workaround
+
+CRITICAL: Follow these guidelines when using tools operating on file paths EXCEPT `Bash` in any skill or agent. Otherwise, they will not work correctly.
+
+- When referencing file paths in tool calls, ALWAYS use the Windows-style paths with backslashes (`\`), as we're running on Windows.
+- When referencing paths to the home directory, ALWAYS EXPAND the tilde symbol (`~`) representing the home directory to the full path, e.g., `C:\Users\some.user`.
+
+#### Applies To
+
+- `Edit`
+- `Glob`
+- `Grep`
+- `Read`
+
+#### Examples (CRITICAL Bug Workaround)
+
+##### ✅ Correct (File Paths)
+
+```json
+{
+    "type": "tool_use",
+    "id": "...",
+    "name": "Read",
+    "input": {
+        "file_path": "C:\\path\\to\\some\\file.txt"
+    }
+}
+```
+
+```json
+{
+    "type": "tool_use",
+    "id": "...",
+    "name": "Edit",
+    "input": {
+        "file_path": "C:\\path\\to\\some\\file.txt",
+        "old_string": "...",
+        "new_string": "..."
+    }
+}
+```
+
+##### ❌ Incorrect (File Paths)
+
+```json
+{
+    "type": "tool_use",
+    "id": "...",
+    "name": "Read",
+    "input": {
+        "file_path": "/c/path/to/some/file.txt"
+    }
+}
+```
+
+
 ### 1. Real-Time Audio Thread Safety
 
 The audio thread (`Processor::process()`) has **hard real-time constraints**. The following are **FORBIDDEN** in any code path called from `process()`:
