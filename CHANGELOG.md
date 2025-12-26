@@ -5,6 +5,102 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.30] - 2025-12-26
+
+### Added
+
+- **Layer 4 User Feature: ShimmerDelay** (`src/dsp/features/shimmer_delay.h`)
+  - Pitch-shifted feedback delay for ambient/ethereal textures
+  - Composes FlexibleFeedbackNetwork (L3), PitchShiftProcessor (L2), DiffusionNetwork (L2)
+  - Complete feature set with 6 user stories:
+    - **US1: Shimmer Effect**: Pitch-shifted feedback creates cascading harmonics
+    - **US2: Reverb-like Textures**: Diffusion network smears repeats for pad-like sound
+    - **US3: Blend Control**: Mix between pitched and unpitched feedback
+    - **US4: Tempo Sync**: Lock delay time to host tempo with note values
+    - **US5: Mix/Output**: Independent dry/wet and output level controls
+    - **US6: Quality Modes**: Simple, Granular, and Phase Vocoder pitch algorithms
+
+- **Layer 3 System Component: FlexibleFeedbackNetwork** (`src/dsp/systems/flexible_feedback_network.h`)
+  - Extensible feedback network with processor injection via `IFeedbackProcessor` interface
+  - Enables shimmer, freeze mode, and future experimental effects
+  - Features: freeze mode, feedback filtering, >100% feedback limiting, hot-swap with crossfade
+  - Hybrid design: sample-by-sample delay loop with block-based processor support
+
+- **Pitch shifting parameters**:
+  - **Range**: ±24 semitones + ±100 cents fine tuning
+  - **Modes**: Simple (low CPU), Granular (balanced), PhaseVocoder (high quality)
+  - **Smoothing**: 20ms pitch ratio smoothing prevents zipper noise
+
+- **Diffusion parameters**:
+  - **Amount**: 0-100% controls diffusion intensity
+  - **Size**: 0-100% controls diffusion time/density
+
+- **Feedback parameters**:
+  - **Amount**: 0-120% with limiter + tanh soft clipping for stability
+  - **Filter**: Lowpass/highpass in feedback path (20Hz-20kHz)
+  - **Freeze**: Input mute + 100% feedback for infinite sustain
+
+- **User controls**:
+  - **Delay Time**: 10-5000ms with tempo sync support
+  - **Shimmer Mix**: 0-100% blend of pitched/unpitched feedback
+  - **Dry/Wet Mix**: 0-100% with 20ms parameter smoothing
+  - **Output Level**: ±12dB master gain
+
+- **Comprehensive test suite** (21 test cases, 116 assertions)
+  - All 28 functional requirements verified
+  - All 9 success criteria measured
+  - Pitch accuracy verified (±5 cents)
+  - Feedback stability verified at 120%
+  - Tempo sync accuracy verified (±1 sample)
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 2-3 components
+  - Uses: `FlexibleFeedbackNetwork` (L3) - delay + feedback + filtering + limiting
+  - Uses: `ShimmerFeedbackProcessor` - implements `IFeedbackProcessor` interface
+  - Uses: `PitchShiftProcessor` (L2) × 2 - stereo pitch shifting
+  - Uses: `DiffusionNetwork` (L2) - allpass diffusion for reverb texture
+  - Uses: `OnePoleSmoother` (L1) - parameter smoothing
+  - Uses: `dbToGain` (L0) - level conversion
+
+- **IFeedbackProcessor interface**: Enables injection of arbitrary processors into feedback path
+  - `prepare()`, `process()`, `reset()`, `getLatencySamples()`
+  - Real-time safe: no allocations in process()
+
+- **Modulation destinations**: DelayTime, Pitch, ShimmerMix, DiffusionAmount, FilterCutoff, DryWetMix
+
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Fixed
+
+- **FlexibleFeedbackNetwork parameter smoothing**: Processor mix now uses per-sample smoothing to prevent clicks
+- **FlexibleFeedbackNetwork freeze interpolation**: Feedback now interpolates smoothly instead of hard threshold at 50%
+
+### Usage
+
+```cpp
+#include "dsp/features/shimmer_delay.h"
+
+using namespace Iterum::DSP;
+
+ShimmerDelay shimmer;
+shimmer.prepare(44100.0, 512, 5000.0f);  // 5s max delay
+
+// Configure shimmer effect
+shimmer.setPitchSemitones(12.0f);        // +1 octave
+shimmer.setShimmerMix(75.0f);            // 75% pitched
+shimmer.setFeedbackAmount(0.7f);         // 70% feedback
+shimmer.setDiffusionAmount(50.0f);       // 50% diffusion
+
+// Configure output
+shimmer.setDryWetMix(60.0f);             // 60% wet
+shimmer.setOutputGainDb(-3.0f);          // -3dB output
+
+// In audio callback
+shimmer.process(left, right, numSamples, ctx);
+```
+
 ## [0.0.29] - 2025-12-26
 
 ### Added
