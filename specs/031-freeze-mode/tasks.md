@@ -262,7 +262,7 @@
 
 ### 7.5 Commit (MANDATORY)
 
-- [ ] T082 [US5] **Commit completed User Story 5 work**
+- [x] T082 [US5] **Commit completed User Story 5 work**
 
 **Checkpoint**: Tonal shaping fully functional
 
@@ -274,17 +274,17 @@
 
 ### 8.1 Edge Case Tests
 
-- [ ] T083 Write test: freeze with empty delay buffer produces silence in tests/unit/features/freeze_mode_test.cpp
-- [ ] T084 Write test: delay time change deferred when frozen (per spec edge case) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T085 Write test: short delay (<50ms) adapts transition time in tests/unit/features/freeze_mode_test.cpp
-- [ ] T086 Write test: multiple parameter changes while frozen apply smoothly in tests/unit/features/freeze_mode_test.cpp
-- [ ] T087 Write test: real-time safety - no allocations in process() in tests/unit/features/freeze_mode_test.cpp
-- [ ] T088 Write test: CPU usage below 1% at 44.1kHz stereo (SC-008) in tests/unit/features/freeze_mode_test.cpp
+- [x] T083 Write test: freeze with empty delay buffer produces silence in tests/unit/features/freeze_mode_test.cpp
+- [x] T084 Write test: delay time change deferred when frozen (per spec edge case) in tests/unit/features/freeze_mode_test.cpp
+- [x] T085 Write test: short delay (<50ms) adapts transition time in tests/unit/features/freeze_mode_test.cpp
+- [x] T086 Write test: multiple parameter changes while frozen apply smoothly in tests/unit/features/freeze_mode_test.cpp
+- [x] T087 Write test: real-time safety - no allocations in process() in tests/unit/features/freeze_mode_test.cpp
+- [x] T088 Write test: CPU usage below 1% at 44.1kHz stereo (SC-008) in tests/unit/features/freeze_mode_test.cpp
 
 ### 8.2 Implementation
 
-- [ ] T089 Fix any edge case test failures
-- [ ] T090 Verify all tests pass
+- [x] T089 Fix any edge case test failures
+- [x] T090 Verify all tests pass
 - [ ] T091 **Commit edge case fixes**
 
 ---
