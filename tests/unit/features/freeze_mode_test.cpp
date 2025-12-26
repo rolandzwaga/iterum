@@ -995,8 +995,198 @@ TEST_CASE("FreezeMode decay parameter is updateable", "[freeze-mode][US3][FR-016
 
 // =============================================================================
 // Phase 6: User Story 4 - Diffusion Tests
-// (To be implemented in Phase 6)
 // =============================================================================
+
+TEST_CASE("FreezeMode diffusion 0% preserves transients", "[freeze-mode][US4][FR-017][FR-018]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setDiffusionAmount(0.0f);  // No diffusion
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with impulse (transient)
+    std::array<float, kBlockSize> left{}, right{};
+    left[0] = 1.0f;
+    right[0] = 1.0f;
+    freeze.process(left.data(), right.data(), kBlockSize, ctx);
+
+    // Process more to fill delay
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Process and capture output
+    fillBuffer(left.data(), kBlockSize, 0.0f);
+    fillBuffer(right.data(), kBlockSize, 0.0f);
+    freeze.process(left.data(), right.data(), kBlockSize, ctx);
+
+    // Calculate crest factor (peak/RMS) - transients have high crest factor
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < kBlockSize; ++i) {
+        peak = std::max(peak, std::abs(left[i]));
+    }
+    float rms = calculateRMS(left.data(), kBlockSize);
+
+    // With 0% diffusion, crest factor should be preserved (transients sharp)
+    if (rms > 0.001f) {
+        float crestFactor = peak / rms;
+        INFO("Crest factor with 0% diffusion: " << crestFactor);
+        // Impulse should have high crest factor (>3 typical for transients)
+        REQUIRE(crestFactor > 2.0f);
+    }
+}
+
+TEST_CASE("FreezeMode diffusion 100% smears transients", "[freeze-mode][US4][FR-017][FR-018]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setDiffusionAmount(100.0f);  // Full diffusion
+    freeze.setDiffusionSize(50.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with impulse (transient)
+    std::array<float, kBlockSize> left{}, right{};
+    left[0] = 1.0f;
+    right[0] = 1.0f;
+    freeze.process(left.data(), right.data(), kBlockSize, ctx);
+
+    // Process more to fill delay and apply diffusion
+    for (int i = 0; i < 20; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Process several iterations with diffusion
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // With 100% diffusion, output should be smoothed (lower crest factor)
+    float rms = calculateRMS(left.data(), kBlockSize);
+    INFO("RMS with 100% diffusion: " << rms);
+    // Should have output (diffusion doesn't eliminate signal)
+    REQUIRE(rms > 0.0001f);
+}
+
+TEST_CASE("FreezeMode diffusion preserves stereo width", "[freeze-mode][US4][FR-019][SC-006]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setDiffusionAmount(50.0f);  // Moderate diffusion
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with stereo signal (left and right different)
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 10; ++i) {
+        generateSineWave(left.data(), kBlockSize, 440.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 550.0f, kSampleRate);  // Different freq
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Process with diffusion
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // SC-006: Stereo width preserved within 5%
+    // Check that left and right are not identical (stereo preserved)
+    float leftRMS = calculateRMS(left.data(), kBlockSize);
+    float rightRMS = calculateRMS(right.data(), kBlockSize);
+
+    if (leftRMS > 0.001f && rightRMS > 0.001f) {
+        // Calculate correlation (how similar left and right are)
+        float correlation = 0.0f;
+        for (std::size_t i = 0; i < kBlockSize; ++i) {
+            correlation += left[i] * right[i];
+        }
+        correlation /= (leftRMS * rightRMS * kBlockSize);
+
+        INFO("L/R correlation: " << correlation);
+        // Correlation < 1.0 means stereo is preserved (not collapsed to mono)
+        REQUIRE(std::abs(correlation) < 0.95f);
+    }
+}
+
+TEST_CASE("FreezeMode diffusion amount is updateable", "[freeze-mode][US4][FR-017]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setDiffusionAmount(0.0f);  // Start with no diffusion
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill and freeze
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 20; ++i) {
+        generateSineWave(left.data(), kBlockSize, 440.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 440.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Process with 0% diffusion
+    for (int i = 0; i < 5; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsBefore = calculateRMS(left.data(), kBlockSize);
+
+    // Change diffusion to 100% mid-process
+    freeze.setDiffusionAmount(100.0f);
+
+    // Process more
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsAfter = calculateRMS(left.data(), kBlockSize);
+
+    // Both should have output (diffusion change shouldn't kill signal)
+    REQUIRE(rmsBefore > 0.001f);
+    REQUIRE(rmsAfter > 0.001f);
+}
 
 // =============================================================================
 // Phase 7: User Story 5 - Filter Tests

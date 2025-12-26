@@ -199,32 +199,32 @@
 
 ### 6.1 Pre-Implementation (MANDATORY)
 
-- [ ] T062 [US4] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T062 [US4] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 6.2 Tests for User Story 4 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T063 [P] [US4] Write test: diffusion 0% preserves transients (FR-017, FR-018) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T064 [P] [US4] Write test: diffusion 100% smears transients into smooth texture in tests/unit/features/freeze_mode_test.cpp
-- [ ] T065 [P] [US4] Write test: diffusion preserves stereo width (FR-019, SC-006: within 5%) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T066 [P] [US4] Write test: diffusion amount change is smooth in tests/unit/features/freeze_mode_test.cpp
+- [x] T063 [P] [US4] Write test: diffusion 0% preserves transients (FR-017, FR-018) in tests/unit/features/freeze_mode_test.cpp
+- [x] T064 [P] [US4] Write test: diffusion 100% smears transients into smooth texture in tests/unit/features/freeze_mode_test.cpp
+- [x] T065 [P] [US4] Write test: diffusion preserves stereo width (FR-019, SC-006: within 5%) in tests/unit/features/freeze_mode_test.cpp
+- [x] T066 [P] [US4] Write test: diffusion amount change is smooth in tests/unit/features/freeze_mode_test.cpp
 
 ### 6.3 Implementation for User Story 4
 
-- [ ] T067 [US4] Add DiffusionNetwork member to FreezeFeedbackProcessor in src/dsp/features/freeze_mode.h
-- [ ] T068 [US4] Implement FreezeFeedbackProcessor::setDiffusionAmount()/setDiffusionSize() in src/dsp/features/freeze_mode.h
-- [ ] T069 [US4] Update FreezeFeedbackProcessor::process() to apply diffusion in src/dsp/features/freeze_mode.h
-- [ ] T070 [US4] Add FreezeMode::setDiffusionAmount()/setDiffusionSize() delegating to processor in src/dsp/features/freeze_mode.h
-- [ ] T071 [US4] Verify all US4 tests pass
+- [x] T067 [US4] Add DiffusionNetwork member to FreezeFeedbackProcessor in src/dsp/features/freeze_mode.h
+- [x] T068 [US4] Implement FreezeFeedbackProcessor::setDiffusionAmount()/setDiffusionSize() in src/dsp/features/freeze_mode.h
+- [x] T069 [US4] Update FreezeFeedbackProcessor::process() to apply diffusion in src/dsp/features/freeze_mode.h
+- [x] T070 [US4] Add FreezeMode::setDiffusionAmount()/setDiffusionSize() delegating to processor in src/dsp/features/freeze_mode.h
+- [x] T071 [US4] Verify all US4 tests pass
 
 ### 6.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T072 [US4] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
+- [x] T072 [US4] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
 
 ### 6.5 Commit (MANDATORY)
 
-- [ ] T073 [US4] **Commit completed User Story 4 work**
+- [x] T073 [US4] **Commit completed User Story 4 work**
 
 **Checkpoint**: Diffusion fully functional
 
