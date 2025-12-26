@@ -37,13 +37,13 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 **Purpose**: Create file structure and enums/constants needed by all user stories
 
-- [ ] T001 Create `src/dsp/systems/tap_manager.h` with header guard and includes
-- [ ] T002 Create `tests/unit/systems/tap_manager_test.cpp` with Catch2 setup
-- [ ] T003 [P] Define TapPattern enum in `src/dsp/systems/tap_manager.h`
-- [ ] T004 [P] Define TapTimeMode enum in `src/dsp/systems/tap_manager.h`
-- [ ] T005 [P] Define TapFilterMode enum in `src/dsp/systems/tap_manager.h`
-- [ ] T006 [P] Define constants (kMaxTaps, kDefaultSmoothingMs, level/filter ranges) in `src/dsp/systems/tap_manager.h`
-- [ ] T007 Add test file to `tests/CMakeLists.txt`
+- [x] T001 Create `src/dsp/systems/tap_manager.h` with header guard and includes
+- [x] T002 Create `tests/unit/systems/tap_manager_test.cpp` with Catch2 setup
+- [x] T003 [P] Define TapPattern enum in `src/dsp/systems/tap_manager.h`
+- [x] T004 [P] Define TapTimeMode enum in `src/dsp/systems/tap_manager.h`
+- [x] T005 [P] Define TapFilterMode enum in `src/dsp/systems/tap_manager.h`
+- [x] T006 [P] Define constants (kMaxTaps, kDefaultSmoothingMs, level/filter ranges) in `src/dsp/systems/tap_manager.h`
+- [x] T007 Add test file to `tests/CMakeLists.txt`
 
 ---
 
@@ -53,14 +53,14 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T008 **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
-- [ ] T009 Write foundational tests: TapManager default construction, prepare() validates inputs in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T010 Define Tap struct with all fields (enabled, timeMs, levelDb, pan, filterMode, cutoff, Q, feedback, timeMode, noteValue) in `src/dsp/systems/tap_manager.h`
-- [ ] T011 Define TapManager class skeleton with member variables (taps array, DelayLine, smoothers, sample rate, BPM) in `src/dsp/systems/tap_manager.h`
-- [ ] T012 Implement TapManager::prepare() - allocate DelayLine, initialize all 16 taps and smoothers in `src/dsp/systems/tap_manager.h`
-- [ ] T013 Implement TapManager::reset() - clear delay line, snap smoothers in `src/dsp/systems/tap_manager.h`
-- [ ] T014 Verify foundational tests pass
-- [ ] T015 **Commit Phase 2 work** (foundational TapManager structure)
+- [x] T008 **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T009 Write foundational tests: TapManager default construction, prepare() validates inputs in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T010 Define Tap struct with all fields (enabled, timeMs, levelDb, pan, filterMode, cutoff, Q, feedback, timeMode, noteValue) in `src/dsp/systems/tap_manager.h`
+- [x] T011 Define TapManager class skeleton with member variables (taps array, DelayLine, smoothers, sample rate, BPM) in `src/dsp/systems/tap_manager.h`
+- [x] T012 Implement TapManager::prepare() - allocate DelayLine, initialize all 16 taps and smoothers in `src/dsp/systems/tap_manager.h`
+- [x] T013 Implement TapManager::reset() - clear delay line, snap smoothers in `src/dsp/systems/tap_manager.h`
+- [x] T014 Verify foundational tests pass
+- [x] T015 **Commit Phase 2 work** (foundational TapManager structure)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -74,37 +74,37 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 3.1 Pre-Implementation (MANDATORY)
 
-- [ ] T016 [US1] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T016 [US1] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 3.2 Tests for User Story 1 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T017 [US1] Write tests: setTapEnabled() enables/disables tap output in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T018 [US1] Write tests: setTapTimeMs() sets delay time, output delayed correctly in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T018a [US1] Write tests: delay time accuracy within 1 sample of target (SC-003) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T019 [US1] Write tests: setTapLevelDb() sets output level, gain applied correctly in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T019a [US1] Write tests: level at -96dB produces silence (FR-010) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T020 [US1] Write tests: multiple active taps produce combined output in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T021 [US1] Write tests: 16 taps max, out-of-range index (≥16) silently ignored in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T022 [US1] Write tests: level/time changes are smoothed (no clicks) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T017 [US1] Write tests: setTapEnabled() enables/disables tap output in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T018 [US1] Write tests: setTapTimeMs() sets delay time, output delayed correctly in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T018a [US1] Write tests: delay time accuracy within 1 sample of target (SC-003) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T019 [US1] Write tests: setTapLevelDb() sets output level, gain applied correctly in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T019a [US1] Write tests: level at -96dB produces silence (FR-010) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T020 [US1] Write tests: multiple active taps produce combined output in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T021 [US1] Write tests: 16 taps max, out-of-range index (≥16) silently ignored in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T022 [US1] Write tests: level/time changes are smoothed (no clicks) in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 3.3 Implementation for User Story 1
 
-- [ ] T023 [US1] Implement setTapEnabled() with smooth fade in `src/dsp/systems/tap_manager.h`
-- [ ] T024 [US1] Implement setTapTimeMs() with time smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T025 [US1] Implement setTapLevelDb() with level smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T026 [US1] Implement process() - write input to delay line, read from each enabled tap, sum outputs in `src/dsp/systems/tap_manager.h`
-- [ ] T027 [US1] Implement isTapEnabled(), getTapTimeMs(), getTapLevelDb() query methods in `src/dsp/systems/tap_manager.h`
-- [ ] T028 [US1] Verify all US1 tests pass
+- [x] T023 [US1] Implement setTapEnabled() with smooth fade in `src/dsp/systems/tap_manager.h`
+- [x] T024 [US1] Implement setTapTimeMs() with time smoother in `src/dsp/systems/tap_manager.h`
+- [x] T025 [US1] Implement setTapLevelDb() with level smoother in `src/dsp/systems/tap_manager.h`
+- [x] T026 [US1] Implement process() - write input to delay line, read from each enabled tap, sum outputs in `src/dsp/systems/tap_manager.h`
+- [x] T027 [US1] Implement isTapEnabled(), getTapTimeMs(), getTapLevelDb() query methods in `src/dsp/systems/tap_manager.h`
+- [x] T028 [US1] Verify all US1 tests pass
 
 ### 3.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T029 [US1] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite` -> add to `-fno-fast-math` list in tests/CMakeLists.txt if needed
+- [x] T029 [US1] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite` -> add to `-fno-fast-math` list in tests/CMakeLists.txt if needed
 
 ### 3.5 Commit (MANDATORY)
 
-- [ ] T030 [US1] **Commit completed User Story 1 work** (basic multi-tap delay)
+- [x] T030 [US1] **Commit completed User Story 1 work** (basic multi-tap delay)
 
 **Checkpoint**: User Story 1 should be fully functional, tested, and committed
 
@@ -118,30 +118,30 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 4.1 Pre-Implementation (MANDATORY)
 
-- [ ] T031 [US2] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T031 [US2] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 4.2 Tests for User Story 2 (Write FIRST - Must FAIL)
 
-- [ ] T032 [US2] Write tests: setTapPan(-100) outputs only to left channel in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T033 [US2] Write tests: setTapPan(+100) outputs only to right channel in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T034 [US2] Write tests: setTapPan(0) outputs equal to both channels in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T035 [US2] Write tests: constant-power pan law (0dB sum at all positions) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T036 [US2] Write tests: pan changes are smoothed (no clicks) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T032 [US2] Write tests: setTapPan(-100) outputs only to left channel in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T033 [US2] Write tests: setTapPan(+100) outputs only to right channel in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T034 [US2] Write tests: setTapPan(0) outputs equal to both channels in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T035 [US2] Write tests: constant-power pan law (0dB sum at all positions) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T036 [US2] Write tests: pan changes are smoothed (no clicks) in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 4.3 Implementation for User Story 2
 
-- [ ] T037 [US2] Implement setTapPan() with pan smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T038 [US2] Implement constant-power pan law (cos/sin) in process() in `src/dsp/systems/tap_manager.h`
-- [ ] T039 [US2] Implement getTapPan() query method in `src/dsp/systems/tap_manager.h`
-- [ ] T040 [US2] Verify all US2 tests pass
+- [x] T037 [US2] Implement setTapPan() with pan smoother in `src/dsp/systems/tap_manager.h`
+- [x] T038 [US2] Implement constant-power pan law (cos/sin) in process() in `src/dsp/systems/tap_manager.h`
+- [x] T039 [US2] Implement getTapPan() query method in `src/dsp/systems/tap_manager.h`
+- [x] T040 [US2] Verify all US2 tests pass
 
 ### 4.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T041 [US2] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
+- [x] T041 [US2] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
 
 ### 4.5 Commit (MANDATORY)
 
-- [ ] T042 [US2] **Commit completed User Story 2 work** (per-tap pan)
+- [x] T042 [US2] **Commit completed User Story 2 work** (per-tap pan)
 
 **Checkpoint**: User Stories 1 AND 2 should both work independently and be committed
 
@@ -155,33 +155,33 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 5.1 Pre-Implementation (MANDATORY)
 
-- [ ] T043 [US3] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T043 [US3] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 5.2 Tests for User Story 3 (Write FIRST - Must FAIL)
 
-- [ ] T044 [US3] Write tests: setTapFilterMode(Lowpass) attenuates high frequencies (>12dB at cutoff×2) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T045 [US3] Write tests: setTapFilterMode(Highpass) attenuates low frequencies (>12dB at cutoff/2) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T046 [US3] Write tests: setTapFilterMode(Bypass) passes full spectrum in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T047 [US3] Write tests: setTapFilterCutoff() changes cutoff frequency in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T048 [US3] Write tests: setTapFilterQ() changes resonance in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T049 [US3] Write tests: filter parameter changes are smoothed in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T044 [US3] Write tests: setTapFilterMode(Lowpass) attenuates high frequencies (>12dB at cutoff×2) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T045 [US3] Write tests: setTapFilterMode(Highpass) attenuates low frequencies (>12dB at cutoff/2) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T046 [US3] Write tests: setTapFilterMode(Bypass) passes full spectrum in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T047 [US3] Write tests: setTapFilterCutoff() changes cutoff frequency in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T048 [US3] Write tests: setTapFilterQ() changes resonance in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T049 [US3] Write tests: filter parameter changes are smoothed in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 5.3 Implementation for User Story 3
 
-- [ ] T050 [US3] Add Biquad instance per tap in Tap struct in `src/dsp/systems/tap_manager.h`
-- [ ] T051 [US3] Implement setTapFilterMode() in `src/dsp/systems/tap_manager.h`
-- [ ] T052 [US3] Implement setTapFilterCutoff() with cutoff smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T053 [US3] Implement setTapFilterQ() in `src/dsp/systems/tap_manager.h`
-- [ ] T054 [US3] Integrate Biquad processing into process() after delay read in `src/dsp/systems/tap_manager.h`
-- [ ] T055 [US3] Verify all US3 tests pass
+- [x] T050 [US3] Add Biquad instance per tap in Tap struct in `src/dsp/systems/tap_manager.h`
+- [x] T051 [US3] Implement setTapFilterMode() in `src/dsp/systems/tap_manager.h`
+- [x] T052 [US3] Implement setTapFilterCutoff() with cutoff smoother in `src/dsp/systems/tap_manager.h`
+- [x] T053 [US3] Implement setTapFilterQ() in `src/dsp/systems/tap_manager.h`
+- [x] T054 [US3] Integrate Biquad processing into process() after delay read in `src/dsp/systems/tap_manager.h`
+- [x] T055 [US3] Verify all US3 tests pass
 
 ### 5.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T056 [US3] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
+- [x] T056 [US3] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
 
 ### 5.5 Commit (MANDATORY)
 
-- [ ] T057 [US3] **Commit completed User Story 3 work** (per-tap filtering)
+- [x] T057 [US3] **Commit completed User Story 3 work** (per-tap filtering)
 
 **Checkpoint**: User Stories 1, 2, AND 3 should all work independently
 
@@ -195,29 +195,29 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 6.1 Pre-Implementation (MANDATORY)
 
-- [ ] T058 [US4] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T058 [US4] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 6.2 Tests for User Story 4 (Write FIRST - Must FAIL)
 
-- [ ] T059 [US4] Write tests: setTapFeedback(50) causes 50% decay per iteration in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T060 [US4] Write tests: setTapFeedback(0) produces single echo (no repetition) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T061 [US4] Write tests: multiple taps with feedback combine correctly in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T062 [US4] Write tests: total feedback > 100% is limited (no runaway) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T059 [US4] Write tests: setTapFeedback(50) causes 50% decay per iteration in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T060 [US4] Write tests: setTapFeedback(0) produces single echo (no repetition) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T061 [US4] Write tests: multiple taps with feedback combine correctly in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T062 [US4] Write tests: total feedback > 100% is limited (no runaway) in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 6.3 Implementation for User Story 4
 
-- [ ] T063 [US4] Implement setTapFeedback() with validation (0-100%) in `src/dsp/systems/tap_manager.h`
-- [ ] T064 [US4] Implement feedback summing in process() - accumulate tap outputs × feedback, add to delay input in `src/dsp/systems/tap_manager.h`
-- [ ] T065 [US4] Implement feedback limiter (soft clip if total > 1.0) in `src/dsp/systems/tap_manager.h`
-- [ ] T066 [US4] Verify all US4 tests pass
+- [x] T063 [US4] Implement setTapFeedback() with validation (0-100%) in `src/dsp/systems/tap_manager.h`
+- [x] T064 [US4] Implement feedback summing in process() - accumulate tap outputs × feedback, add to delay input in `src/dsp/systems/tap_manager.h`
+- [x] T065 [US4] Implement feedback limiter (soft clip if total > 1.0) in `src/dsp/systems/tap_manager.h`
+- [x] T066 [US4] Verify all US4 tests pass
 
 ### 6.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T067 [US4] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
+- [x] T067 [US4] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
 
 ### 6.5 Commit (MANDATORY)
 
-- [ ] T068 [US4] **Commit completed User Story 4 work** (per-tap feedback)
+- [x] T068 [US4] **Commit completed User Story 4 work** (per-tap feedback)
 
 **Checkpoint**: User Stories 1-4 should all work independently
 
@@ -231,39 +231,39 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 7.1 Pre-Implementation (MANDATORY)
 
-- [ ] T069 [US5] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T069 [US5] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 7.2 Tests for User Story 5 (Write FIRST - Must FAIL)
 
-- [ ] T070 [US5] Write tests: loadPattern(QuarterNote, 4) at 120 BPM creates taps at 500, 1000, 1500, 2000ms in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T071 [US5] Write tests: loadPattern(DottedEighth, 4) at 120 BPM creates taps at 375, 750, 1125, 1500ms in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T072 [US5] Write tests: loadPattern(Triplet, 4) at 120 BPM creates taps at ~333, 667, 1000, 1333ms in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T073 [US5] Write tests: loadPattern(GoldenRatio, 4) creates taps at t, t×1.618, t×2.618, t×4.236 in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T074 [US5] Write tests: loadPattern(Fibonacci, 6) creates taps following 1, 1, 2, 3, 5, 8 sequence in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T075 [US5] Write tests: loadPattern() disables all taps first, then enables pattern taps in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T076 [US5] Write tests: getPattern() returns current pattern type in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T077 [US5] Write tests: modifying tap after loadPattern() marks pattern as Custom in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T077a [US5] Write tests: loadPattern() completes within 1ms (SC-008) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T070 [US5] Write tests: loadPattern(QuarterNote, 4) at 120 BPM creates taps at 500, 1000, 1500, 2000ms in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T071 [US5] Write tests: loadPattern(DottedEighth, 4) at 120 BPM creates taps at 375, 750, 1125, 1500ms in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T072 [US5] Write tests: loadPattern(Triplet, 4) at 120 BPM creates taps at ~333, 667, 1000, 1333ms in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T073 [US5] Write tests: loadPattern(GoldenRatio, 4) creates taps at t, t×1.618, t×2.618, t×4.236 in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T074 [US5] Write tests: loadPattern(Fibonacci, 6) creates taps following 1, 1, 2, 3, 5, 8 sequence in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T075 [US5] Write tests: loadPattern() disables all taps first, then enables pattern taps in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T076 [US5] Write tests: getPattern() returns current pattern type in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T077 [US5] Write tests: modifying tap after loadPattern() marks pattern as Custom in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T077a [US5] Write tests: loadPattern() completes within 1ms (SC-008) in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 7.3 Implementation for User Story 5
 
-- [ ] T078 [US5] Implement loadPattern() - disable all, calculate times (1-based indexing), enable count taps in `src/dsp/systems/tap_manager.h`
-- [ ] T079 [US5] Implement QuarterNote pattern: tap[i] = (i+1) × (60000/bpm), i=0..count-1 in `src/dsp/systems/tap_manager.h`
-- [ ] T080 [US5] Implement DottedEighth pattern: tap[i] = (i+1) × (60000/bpm × 0.75) in `src/dsp/systems/tap_manager.h`
-- [ ] T081 [US5] Implement Triplet pattern: tap[i] = (i+1) × (60000/bpm × 0.667) in `src/dsp/systems/tap_manager.h`
-- [ ] T082 [US5] Implement GoldenRatio pattern: tap[0] = quarter, tap[i] = tap[i-1] × kGoldenRatio in `src/dsp/systems/tap_manager.h`
-- [ ] T083 [US5] Implement Fibonacci pattern: tap[i] = fib(i+1) × baseMs, fib = 1,1,2,3,5,8... in `src/dsp/systems/tap_manager.h`
-- [ ] T084 [US5] Implement getPattern() query method in `src/dsp/systems/tap_manager.h`
-- [ ] T085 [US5] Mark pattern as Custom when tap modified manually in `src/dsp/systems/tap_manager.h`
-- [ ] T086 [US5] Verify all US5 tests pass
+- [x] T078 [US5] Implement loadPattern() - disable all, calculate times (1-based indexing), enable count taps in `src/dsp/systems/tap_manager.h`
+- [x] T079 [US5] Implement QuarterNote pattern: tap[i] = (i+1) × (60000/bpm), i=0..count-1 in `src/dsp/systems/tap_manager.h`
+- [x] T080 [US5] Implement DottedEighth pattern: tap[i] = (i+1) × (60000/bpm × 0.75) in `src/dsp/systems/tap_manager.h`
+- [x] T081 [US5] Implement Triplet pattern: tap[i] = (i+1) × (60000/bpm × 0.667) in `src/dsp/systems/tap_manager.h`
+- [x] T082 [US5] Implement GoldenRatio pattern: tap[0] = quarter, tap[i] = tap[i-1] × kGoldenRatio in `src/dsp/systems/tap_manager.h`
+- [x] T083 [US5] Implement Fibonacci pattern: tap[i] = fib(i+1) × baseMs, fib = 1,1,2,3,5,8... in `src/dsp/systems/tap_manager.h`
+- [x] T084 [US5] Implement getPattern() query method in `src/dsp/systems/tap_manager.h`
+- [x] T085 [US5] Mark pattern as Custom when tap modified manually in `src/dsp/systems/tap_manager.h`
+- [x] T086 [US5] Verify all US5 tests pass
 
 ### 7.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T087 [US5] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
+- [x] T087 [US5] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
 
 ### 7.5 Commit (MANDATORY)
 
-- [ ] T088 [US5] **Commit completed User Story 5 work** (preset patterns)
+- [x] T088 [US5] **Commit completed User Story 5 work** (preset patterns)
 
 **Checkpoint**: User Stories 1-5 should all work independently
 
@@ -277,32 +277,32 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 8.1 Pre-Implementation (MANDATORY)
 
-- [ ] T089 [US6] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
+- [x] T089 [US6] **Verify TESTING-GUIDE.md is in context** (ingest if needed)
 
 ### 8.2 Tests for User Story 6 (Write FIRST - Must FAIL)
 
-- [ ] T090 [US6] Write tests: setTapNoteValue() sets time mode to TempoSynced in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T091 [US6] Write tests: synced tap at 120 BPM quarter note = 500ms, at 140 BPM = 428.57ms in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T092 [US6] Write tests: free-running tap ignores tempo changes in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T093 [US6] Write tests: setTempo() updates all synced tap times in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T093a [US6] Write tests: tempo sync updates within 1 audio block (SC-006) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T094 [US6] Write tests: dotted eighth = 0.75 × quarter, triplet = 0.667 × quarter in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T090 [US6] Write tests: setTapNoteValue() sets time mode to TempoSynced in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T091 [US6] Write tests: synced tap at 120 BPM quarter note = 500ms, at 140 BPM = 428.57ms in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T092 [US6] Write tests: free-running tap ignores tempo changes in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T093 [US6] Write tests: setTempo() updates all synced tap times in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T093a [US6] Write tests: tempo sync updates within 1 audio block (SC-006) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T094 [US6] Write tests: dotted eighth = 0.75 × quarter, triplet = 0.667 × quarter in `tests/unit/systems/tap_manager_test.cpp`
 
 ### 8.3 Implementation for User Story 6
 
-- [ ] T095 [US6] Implement setTapNoteValue() - set timeMode to TempoSynced, store note value in `src/dsp/systems/tap_manager.h`
-- [ ] T096 [US6] Implement setTempo() - store BPM, recalculate all synced tap times in `src/dsp/systems/tap_manager.h`
-- [ ] T097 [US6] Implement getEffectiveDelayMs() - return ms for free-running, calculate from BPM for synced in `src/dsp/systems/tap_manager.h`
-- [ ] T098 [US6] Update process() to use getEffectiveDelayMs() for delay read position in `src/dsp/systems/tap_manager.h`
-- [ ] T099 [US6] Verify all US6 tests pass
+- [x] T095 [US6] Implement setTapNoteValue() - set timeMode to TempoSynced, store note value in `src/dsp/systems/tap_manager.h`
+- [x] T096 [US6] Implement setTempo() - store BPM, recalculate all synced tap times in `src/dsp/systems/tap_manager.h`
+- [x] T097 [US6] Implement getEffectiveDelayMs() - return ms for free-running, calculate from BPM for synced in `src/dsp/systems/tap_manager.h`
+- [x] T098 [US6] Update process() to use getEffectiveDelayMs() for delay read position in `src/dsp/systems/tap_manager.h`
+- [x] T099 [US6] Verify all US6 tests pass
 
 ### 8.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T100 [US6] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
+- [x] T100 [US6] **Verify IEEE 754 compliance**: Check test files for IEEE 754 function usage
 
 ### 8.5 Commit (MANDATORY)
 
-- [ ] T101 [US6] **Commit completed User Story 6 work** (tempo sync)
+- [x] T101 [US6] **Commit completed User Story 6 work** (tempo sync)
 
 **Checkpoint**: All 6 user stories should work independently
 
@@ -312,19 +312,19 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 **Purpose**: Master output level, dry/wet mix, performance verification, and final improvements
 
-- [ ] T102 Write tests: setMasterLevel() applies gain to all tap outputs in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T103 Write tests: setDryWetMix() blends dry input with wet tap output in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T104 Write tests: getActiveTapCount() returns number of enabled taps in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T104a Write tests: 16 active taps process without audio dropouts at 44.1kHz stereo (SC-001) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T104b Write tests: CPU usage < 2% for 16 active taps at 44.1kHz stereo (SC-007) in `tests/unit/systems/tap_manager_test.cpp`
-- [ ] T105 Implement setMasterLevel() with master level smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T106 Implement setDryWetMix() with dry/wet smoother in `src/dsp/systems/tap_manager.h`
-- [ ] T107 Implement getActiveTapCount() query in `src/dsp/systems/tap_manager.h`
-- [ ] T108 Update process() to apply master level and dry/wet mix in `src/dsp/systems/tap_manager.h`
-- [ ] T109 Verify all master control tests pass
-- [ ] T109a Verify performance tests pass (SC-001, SC-007)
-- [ ] T110 Run quickstart.md validation - verify all examples compile/work
-- [ ] T111 **Commit Polish phase work**
+- [x] T102 Write tests: setMasterLevel() applies gain to all tap outputs in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T103 Write tests: setDryWetMix() blends dry input with wet tap output in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T104 Write tests: getActiveTapCount() returns number of enabled taps in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T104a Write tests: 16 active taps process without audio dropouts at 44.1kHz stereo (SC-001) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T104b Write tests: CPU usage < 2% for 16 active taps at 44.1kHz stereo (SC-007) in `tests/unit/systems/tap_manager_test.cpp`
+- [x] T105 Implement setMasterLevel() with master level smoother in `src/dsp/systems/tap_manager.h`
+- [x] T106 Implement setDryWetMix() with dry/wet smoother in `src/dsp/systems/tap_manager.h`
+- [x] T107 Implement getActiveTapCount() query in `src/dsp/systems/tap_manager.h`
+- [x] T108 Update process() to apply master level and dry/wet mix in `src/dsp/systems/tap_manager.h`
+- [x] T109 Verify all master control tests pass
+- [x] T109a Verify performance tests pass (SC-001, SC-007)
+- [x] T110 Run quickstart.md validation - verify all examples compile/work
+- [x] T111 **Commit Polish phase work**
 
 ---
 
@@ -336,7 +336,7 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 10.1 Architecture Documentation Update
 
-- [ ] T112 **Update ARCHITECTURE.md** with TapManager component:
+- [x] T112 **Update ARCHITECTURE.md** with TapManager component:
   - Add to Layer 3: System Components section
   - Include: purpose, public API summary, file location
   - Document: TapPattern, TapTimeMode, TapFilterMode enums
@@ -344,8 +344,8 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 10.2 Final Commit
 
-- [ ] T113 **Commit ARCHITECTURE.md updates**
-- [ ] T114 Verify all spec work is committed to feature branch
+- [x] T113 **Commit ARCHITECTURE.md updates**
+- [x] T114 Verify all spec work is committed to feature branch
 
 **Checkpoint**: ARCHITECTURE.md reflects all new functionality
 
@@ -359,12 +359,12 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ### 11.1 Requirements Verification
 
-- [ ] T115 **Review ALL FR-xxx requirements** from spec.md against implementation (FR-001 to FR-033, FR-004a)
-- [ ] T115a **Verify real-time safety (FR-031, FR-032)**:
+- [x] T115 **Review ALL FR-xxx requirements** from spec.md against implementation (FR-001 to FR-033, FR-004a)
+- [x] T115a **Verify real-time safety (FR-031, FR-032)**:
   - Confirm all process() methods are noexcept
   - Confirm no allocations in process() (grep for new/delete/malloc/vector resize)
   - Confirm no blocking calls (mutex, file I/O, etc.)
-- [ ] T116 **Review ALL SC-xxx success criteria** (SC-001 to SC-008):
+- [x] T116 **Review ALL SC-xxx success criteria** (SC-001 to SC-008):
   - SC-001: 16 taps active without dropouts
   - SC-002: Parameter changes smooth within 20ms
   - SC-003: Delay time accuracy within 1 sample
@@ -373,18 +373,18 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
   - SC-006: Tempo sync updates within 1 block
   - SC-007: CPU < 2% for 16 taps at 44.1kHz
   - SC-008: Patterns load within 1ms
-- [ ] T117 **Search for cheating patterns** in implementation:
+- [x] T117 **Search for cheating patterns** in implementation:
   - No `// placeholder` or `// TODO` comments
   - No relaxed test thresholds
   - No quietly removed features
 
 ### 11.2 Fill Compliance Table
 
-- [ ] T118 **Update spec.md "Implementation Verification" section** with compliance status for each FR and SC
+- [x] T118 **Update spec.md "Implementation Verification" section** with compliance status for each FR and SC
 
 ### 11.3 Honest Self-Check
 
-- [ ] T119 **All self-check questions answered "no"** (or gaps documented honestly)
+- [x] T119 **All self-check questions answered "no"** (or gaps documented honestly)
 
 **Checkpoint**: Honest assessment complete
 
@@ -392,9 +392,9 @@ Before starting ANY implementation task, include these as EXPLICIT todo items:
 
 ## Phase 12: Final Completion
 
-- [ ] T120 **Commit all spec work** to feature branch
-- [ ] T121 **Verify all tests pass**
-- [ ] T122 **Claim completion ONLY if all requirements are MET**
+- [x] T120 **Commit all spec work** to feature branch
+- [x] T121 **Verify all tests pass**
+- [x] T122 **Claim completion ONLY if all requirements are MET**
 
 ---
 
