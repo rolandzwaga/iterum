@@ -5,6 +5,91 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.32] - 2025-12-26
+
+### Added
+
+- **Layer 4 User Feature: FreezeMode** (`src/dsp/features/freeze_mode.h`)
+  - Infinite sustain of delay buffer contents with optional evolving textures
+  - Composes FlexibleFeedbackNetwork (L3) with injected FreezeFeedbackProcessor
+  - When frozen: sets feedback to 100%, mutes input, optionally enables pitch shifting
+  - Complete feature set with 5 user stories:
+    - **US1: Basic Freeze Capture**: Capture and hold delay buffer indefinitely
+    - **US2: Shimmer Freeze**: Pitch-shifted feedback for evolving textures
+    - **US3: Decay Control**: 0-100% decay (0 = infinite, 100 = fast fade)
+    - **US4: Diffusion**: Smear transients into smooth pad-like textures
+    - **US5: Tonal Shaping**: LP/HP/BP filter in feedback path
+
+- **FreezeFeedbackProcessor** (internal to FreezeMode)
+  - Implements `IFeedbackProcessor` for injection into FlexibleFeedbackNetwork
+  - Combines PitchShifter, DiffusionNetwork, and cumulative decay gain
+  - Shimmer mix blends pitched and unpitched content
+
+- **Freeze parameters**:
+  - **Freeze Toggle**: Smooth click-free engage/disengage via FFN crossfade
+  - **Pitch Shift**: ±24 semitones with real-time modulation
+  - **Shimmer Mix**: 0-100% blend of pitched/unpitched frozen content
+  - **Decay**: 0% (infinite sustain) to 100% (reach -60dB in 500ms)
+  - **Diffusion**: 0-100% smearing of transients
+  - **Filter**: Optional LP/HP/BP with 20Hz-20kHz cutoff
+
+- **User controls**:
+  - **Dry/Wet Mix**: 0-100% with 20ms parameter smoothing
+  - **Output Level**: -96dB to +6dB master gain
+
+- **Comprehensive test suite** (40 test cases, 70 assertions)
+  - All 29 functional requirements verified
+  - All 8 success criteria measured
+  - Click-free freeze transitions verified
+  - Infinite sustain at 0% decay verified
+  - -60dB decay in 500ms at 100% decay verified
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 1-3 components
+  - Uses: `FlexibleFeedbackNetwork` (L3) - delay + feedback + filtering + freeze crossfade
+  - Uses: `FreezeFeedbackProcessor` - implements `IFeedbackProcessor` interface
+  - Uses: `PitchShifter` (L2) x 2 - stereo pitch shifting for shimmer
+  - Uses: `DiffusionNetwork` (L2) - pad-like texture generation
+  - Uses: `OnePoleSmoother` (L1) - parameter smoothing
+
+- **Freeze state management**: Handled by FlexibleFeedbackNetwork's built-in `setFreezeEnabled()`
+  - Smooth crossfade during state transitions (no clicks)
+  - Input muting when frozen (>96dB attenuation)
+
+- **Decay implementation**: Cumulative per-sample gain reduction
+  - Persists across process() calls for continuous fade effect
+  - Resets on freeze disengage or reset()
+
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/features/freeze_mode.h"
+
+Iterum::DSP::FreezeMode freeze;
+freeze.prepare(44100.0, 512, 2000.0f);
+freeze.setDelayTimeMs(500.0f);
+freeze.setFeedbackAmount(0.8f);
+freeze.setDryWetMix(100.0f);
+
+// Configure shimmer freeze
+freeze.setPitchSemitones(12.0f);  // +1 octave
+freeze.setShimmerMix(50.0f);      // 50% blend
+freeze.setDecay(0.0f);            // Infinite sustain
+freeze.setDiffusionAmount(30.0f); // Light smearing
+
+freeze.snapParameters();
+
+// Process audio, then engage freeze
+freeze.setFreezeEnabled(true);  // Freeze current delay content
+freeze.process(left, right, numSamples, ctx);
+```
+
+---
+
 ## [0.0.31] - 2025-12-26
 
 ### Added

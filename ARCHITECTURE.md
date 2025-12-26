@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-25 (022-stereo-field)
+**Last Updated**: 2025-12-26 (031-freeze-mode)
 
 ---
 
@@ -4133,6 +4133,114 @@ reverseDelay.process(leftChannel, rightChannel, blockSize, ctx);
 
 ---
 
+### FreezeMode
+
+| | |
+|---|---|
+| **Purpose** | Infinite sustain of delay buffer contents with shimmer, diffusion, and decay |
+| **Location** | [src/dsp/features/freeze_mode.h](src/dsp/features/freeze_mode.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.32 (031-freeze-mode) |
+
+**Dependencies**:
+- `FlexibleFeedbackNetwork` (Layer 3) - Delay line with built-in freeze support
+- `PitchShiftProcessor` (Layer 2) - Shimmer effect via pitch shifting
+- `DiffusionNetwork` (Layer 2) - Smearing for pad-like textures
+- `MultimodeFilter` (Layer 2) - Feedback filtering via FFN
+- `OnePoleSmoother` (Layer 1) - Parameter smoothing
+
+**Public API**:
+
+```cpp
+class FreezeMode {
+public:
+    // Lifecycle
+    void prepare(double sampleRate, std::size_t maxBlockSize, float maxDelayMs) noexcept;
+    void reset() noexcept;
+    void snapParameters() noexcept;
+
+    // Freeze control
+    void setFreezeEnabled(bool enabled) noexcept;
+    [[nodiscard]] bool isFreezeEnabled() const noexcept;
+
+    // Delay configuration
+    void setDelayTimeMs(float ms) noexcept;
+    void setTimeMode(TimeMode mode) noexcept;
+    void setNoteValue(NoteValue note, NoteModifier mod) noexcept;
+    void setFeedbackAmount(float amount) noexcept;
+
+    // Pitch configuration (shimmer)
+    void setPitchSemitones(float semitones) noexcept;  // ±24 semitones
+    void setPitchCents(float cents) noexcept;          // ±100 cents
+    void setShimmerMix(float percent) noexcept;        // 0-100%
+
+    // Decay configuration
+    void setDecay(float percent) noexcept;  // 0 = infinite, 100 = fast fade
+
+    // Diffusion configuration
+    void setDiffusionAmount(float percent) noexcept;   // 0-100%
+    void setDiffusionSize(float percent) noexcept;     // 0-100%
+
+    // Filter configuration
+    void setFilterEnabled(bool enabled) noexcept;
+    void setFilterType(FilterType type) noexcept;
+    void setFilterCutoff(float hz) noexcept;  // 20Hz-20kHz
+
+    // Output configuration
+    void setDryWetMix(float percent) noexcept;    // 0-100%
+    void setOutputGainDb(float dB) noexcept;      // -96dB to +6dB
+
+    // Processing
+    void process(float* left, float* right, std::size_t numSamples,
+                 const BlockContext& ctx) noexcept;
+
+    // Query
+    [[nodiscard]] std::size_t getLatencySamples() const noexcept;
+};
+```
+
+**Behavior**:
+- **Freeze Enabled**: Input is muted, delay buffer loops at 100% feedback
+- **Shimmer**: Each iteration pitch shifts, creating evolving textures
+- **Decay**: 0% = infinite sustain, 100% = reach -60dB in 500ms
+- **Diffusion**: Smears transients into smooth pad-like textures
+- **Filter**: Progressively darkens/brightens frozen content
+
+**Example**:
+
+```cpp
+#include "dsp/features/freeze_mode.h"
+
+Iterum::DSP::FreezeMode freeze;
+freeze.prepare(44100.0, 512, 5000.0f);
+
+// Configure for ambient pad
+freeze.setDelayTimeMs(500.0f);
+freeze.setFeedbackAmount(0.7f);
+freeze.setShimmerMix(50.0f);
+freeze.setPitchSemitones(12.0f);  // One octave up
+freeze.setDiffusionAmount(50.0f);
+freeze.setDecay(5.0f);             // Slow fade
+freeze.setFilterEnabled(true);
+freeze.setFilterType(FilterType::Lowpass);
+freeze.setFilterCutoff(4000.0f);
+freeze.setDryWetMix(70.0f);
+freeze.snapParameters();
+
+// In process callback
+BlockContext ctx{.sampleRate = 44100.0, .blockSize = 512, .tempoBPM = 120.0};
+freeze.process(leftChannel, rightChannel, blockSize, ctx);
+
+// User activates freeze (e.g., via footswitch)
+freeze.setFreezeEnabled(true);  // Capture and sustain current buffer
+// ... later ...
+freeze.setFreezeEnabled(false); // Return to normal delay operation
+```
+
+**When to use**: Creating infinite sustain textures from any audio source. Freeze captures the current delay buffer and loops it indefinitely with optional shimmer (pitch shifting), diffusion (smearing), and decay. Perfect for ambient pads, drone creation, and "freeze frame" effects. The shimmer option creates evolving, ethereal textures by pitch shifting each feedback iteration.
+
+---
+
 ## Cross-Cutting Concerns
 
 ### Namespaces
@@ -4284,3 +4392,8 @@ Quick lookup by functionality:
 | Set reverse delay chunk | `ReverseDelay::setChunkSizeMs()` | features/reverse_delay.h |
 | Set reverse playback mode | `ReverseDelay::setPlaybackMode()` | features/reverse_delay.h |
 | Set reverse crossfade | `ReverseDelay::setCrossfadePercent()` | features/reverse_delay.h |
+| Create freeze mode | `Iterum::DSP::FreezeMode` | features/freeze_mode.h |
+| Enable/disable freeze | `FreezeMode::setFreezeEnabled()` | features/freeze_mode.h |
+| Set freeze shimmer | `FreezeMode::setShimmerMix()` | features/freeze_mode.h |
+| Set freeze decay | `FreezeMode::setDecay()` | features/freeze_mode.h |
+| Set freeze diffusion | `FreezeMode::setDiffusionAmount()` | features/freeze_mode.h |
