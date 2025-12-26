@@ -187,6 +187,31 @@ _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
 - `std::pow`, `std::log10`, `std::exp` are NOT constexpr in MSVC
 - Use custom Taylor series (see `src/dsp/core/db_utils.h`)
 
+### Brace Initialization and Narrowing Conversions
+
+**CRITICAL:** Clang treats narrowing conversions in brace initialization as errors (`-Wc++11-narrowing`), while MSVC only warns.
+
+```cpp
+// WRONG - Clang error, MSVC warning
+struct BlockContext {
+    double sampleRate;
+    size_t blockSize;      // <-- size_t, not double!
+    double tempoBPM;
+    bool isPlaying;
+};
+BlockContext ctx{44100.0, 120.0, false};  // 120.0 narrows to size_t - ERROR on Clang!
+
+// CORRECT - Use C++20 designated initializers for clarity and safety
+BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0, .isPlaying = false};
+```
+
+**Rules:**
+- ALWAYS use designated initializers for structs with mixed types (especially `size_t` + `double`)
+- NEVER rely on positional brace initialization for complex structs
+- If you see MSVC warnings about narrowing (`C4244`, `C4838`), fix them - they WILL be errors on Clang
+
+**Common offender:** `BlockContext` has `size_t blockSize` between `double sampleRate` and `double tempoBPM`. Easy to forget when initializing with `{sampleRate, tempo, isPlaying}`.
+
 ### SIMD and Memory Alignment
 
 **Alignment Requirements:**
