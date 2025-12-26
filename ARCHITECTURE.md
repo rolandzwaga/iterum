@@ -3470,6 +3470,131 @@ delay.process(leftChannel, rightChannel, blockSize, ctx);
 
 **When to use**: Creating digital delay effects ranging from pristine transparency to vintage digital character. Ideal for clean, precise delays with optional 80s warmth or lo-fi degradation. Use LFO modulation for chorus-like effects.
 
+### PingPongDelay
+
+Classic stereo ping-pong delay with alternating left/right bounces.
+
+**File**: `src/dsp/features/ping_pong_delay.h`
+
+**Purpose**: Layer 4 user feature providing stereo ping-pong delay effects with L/R timing ratios for polyrhythmic patterns, adjustable cross-feedback routing, stereo width control, and optional LFO modulation.
+
+**Composes**:
+- DelayLine (Layer 1): 2 instances for independent L/R delay buffers
+- LFO (Layer 1): 2 instances for stereo modulation with 90° phase offset
+- OnePoleSmoother (Layer 1): 7 instances for click-free parameter changes
+- DynamicsProcessor (Layer 2): Limiting for feedback > 100%
+- stereoCrossBlend (Layer 0): Cross-feedback routing between channels
+
+**User Controls**:
+- Time: Delay time 1-10000ms with optional tempo sync
+- L/R Ratio: 7 preset ratios for polyrhythmic patterns (1:1, 2:1, 3:2, 4:3, 1:2, 2:3, 3:4)
+- Cross-Feedback: 0% (dual mono) to 100% (full ping-pong)
+- Stereo Width: 0% (mono) to 200% (ultra-wide) using M/S processing
+- Feedback: 0-120% (>100% enables controlled self-oscillation)
+- Modulation: LFO depth 0-100%, rate 0.1-10Hz
+- Mix: Dry/wet balance 0-100%
+- Output Level: -120dB to +12dB
+
+**Enumerations**:
+
+#### LRRatio
+
+Preset L/R timing ratios for polyrhythmic ping-pong effects.
+
+\`\`\`cpp
+enum class LRRatio : uint8_t {
+    OneToOne = 0,     // 1:1 - Classic even ping-pong (L=1.0, R=1.0)
+    TwoToOne = 1,     // 2:1 - R is double speed (L=1.0, R=0.5)
+    ThreeToTwo = 2,   // 3:2 - Polyrhythmic triplet feel (L=1.0, R=0.667)
+    FourToThree = 3,  // 4:3 - Subtle polyrhythm (L=1.0, R=0.75)
+    OneToTwo = 4,     // 1:2 - L is double speed (L=0.5, R=1.0)
+    TwoToThree = 5,   // 2:3 - Inverse triplet feel (L=0.667, R=1.0)
+    ThreeToFour = 6   // 3:4 - Inverse subtle polyrhythm (L=0.75, R=1.0)
+};
+\`\`\`
+
+**Public API**:
+
+\`\`\`cpp
+class PingPongDelay {
+    // Constants
+    static constexpr float kMinDelayMs = 1.0f;
+    static constexpr float kMaxDelayMs = 10000.0f;
+
+    // Lifecycle
+    void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+    void reset() noexcept;
+    void snapParameters() noexcept;  // Snap smoothers to targets (for tests/presets)
+    bool isPrepared() const noexcept;
+
+    // Time Control
+    void setDelayTimeMs(float ms) noexcept;
+    float getDelayTimeMs() const noexcept;
+    void setTimeMode(TimeMode mode) noexcept;
+    TimeMode getTimeMode() const noexcept;
+    void setNoteValue(NoteValue note, NoteModifier modifier = NoteModifier::None) noexcept;
+    NoteValue getNoteValue() const noexcept;
+
+    // L/R Ratio Control
+    void setLRRatio(LRRatio ratio) noexcept;
+    LRRatio getLRRatio() const noexcept;
+
+    // Feedback Control
+    void setFeedback(float amount) noexcept;       // 0-1.2
+    float getFeedback() const noexcept;
+    void setCrossFeedback(float amount) noexcept;  // 0-1 (0=dual mono, 1=full ping-pong)
+    float getCrossFeedback() const noexcept;
+
+    // Stereo Width Control
+    void setWidth(float widthPercent) noexcept;    // 0-200
+    float getWidth() const noexcept;
+
+    // Modulation Control
+    void setModulationDepth(float depth) noexcept; // 0-1
+    float getModulationDepth() const noexcept;
+    void setModulationRate(float rateHz) noexcept; // 0.1-10
+    float getModulationRate() const noexcept;
+
+    // Output Control
+    void setMix(float amount) noexcept;            // 0-1
+    float getMix() const noexcept;
+    void setOutputLevel(float dB) noexcept;        // -120 to +12
+    float getOutputLevel() const noexcept;
+
+    // Processing
+    void process(float* left, float* right, size_t numSamples, const BlockContext& ctx) noexcept;
+};
+\`\`\`
+
+**Usage Example**:
+
+\`\`\`cpp
+#include "dsp/features/ping_pong_delay.h"
+
+PingPongDelay delay;
+delay.prepare(44100.0, 512, 2000.0f);
+
+// Configure for classic ping-pong
+delay.setDelayTimeMs(375.0f);           // 375ms delay
+delay.setFeedback(0.5f);                // 50% feedback
+delay.setCrossFeedback(1.0f);           // Full ping-pong routing
+delay.setLRRatio(LRRatio::OneToOne);    // Even L/R timing
+delay.setWidth(100.0f);                 // Natural stereo width
+delay.setMix(0.4f);                     // 40% wet
+
+// Or configure for polyrhythmic pattern
+delay.setLRRatio(LRRatio::ThreeToTwo);  // Triplet feel
+delay.setCrossFeedback(0.75f);          // Partial crossing
+
+// In process callback
+BlockContext ctx;
+ctx.sampleRate = 44100.0;
+ctx.tempoBPM = 120.0;
+delay.process(leftChannel, rightChannel, blockSize, ctx);
+\`\`\`
+
+**When to use**: Creating stereo ping-pong delay effects with alternating L/R bounces. Ideal for adding spatial movement and rhythmic interest. Use L/R ratios for polyrhythmic patterns, adjust cross-feedback for partial or full ping-pong routing.
+
 ---
 
 ## Cross-Cutting Concerns
@@ -3605,3 +3730,7 @@ Quick lookup by functionality:
 | Set digital delay era | `DigitalDelay::setEra()` | features/digital_delay.h |
 | Set limiter character | `DigitalDelay::setLimiterCharacter()` | features/digital_delay.h |
 | Set delay modulation | `DigitalDelay::setModulationDepth()` | features/digital_delay.h |
+| Create ping-pong delay | `Iterum::DSP::PingPongDelay` | features/ping_pong_delay.h |
+| Set L/R ratio (ping-pong) | `PingPongDelay::setLRRatio()` | features/ping_pong_delay.h |
+| Set cross-feedback | `PingPongDelay::setCrossFeedback()` | features/ping_pong_delay.h |
+| Set ping-pong width | `PingPongDelay::setWidth()` | features/ping_pong_delay.h |
