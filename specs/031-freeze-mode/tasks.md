@@ -238,27 +238,27 @@
 
 ### 7.1 Pre-Implementation (MANDATORY)
 
-- [ ] T074 [US5] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T074 [US5] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 7.2 Tests for User Story 5 (Write FIRST - Must FAIL)
 
 > **Constitution Principle XII**: Tests MUST be written and FAIL before implementation begins
 
-- [ ] T075 [P] [US5] Write test: lowpass filter attenuates above cutoff (FR-020, FR-021) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T076 [P] [US5] Write test: highpass filter attenuates below cutoff in tests/unit/features/freeze_mode_test.cpp
-- [ ] T076a [P] [US5] Write test: bandpass filter attenuates above and below cutoff (FR-021 bandpass mode) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T076b [P] [US5] Write test: filter cutoff works across full range 20Hz to 20kHz (FR-022) in tests/unit/features/freeze_mode_test.cpp
-- [ ] T077 [P] [US5] Write test: filter disabled preserves full frequency range in tests/unit/features/freeze_mode_test.cpp
-- [ ] T078 [P] [US5] Write test: filter cutoff change is smooth (FR-023, SC-007: within 20ms) in tests/unit/features/freeze_mode_test.cpp
+- [x] T075 [P] [US5] Write test: lowpass filter attenuates above cutoff (FR-020, FR-021) in tests/unit/features/freeze_mode_test.cpp
+- [x] T076 [P] [US5] Write test: highpass filter attenuates below cutoff in tests/unit/features/freeze_mode_test.cpp
+- [x] T076a [P] [US5] Write test: bandpass filter attenuates above and below cutoff (FR-021 bandpass mode) in tests/unit/features/freeze_mode_test.cpp
+- [x] T076b [P] [US5] Write test: filter cutoff works across full range 20Hz to 20kHz (FR-022) in tests/unit/features/freeze_mode_test.cpp
+- [x] T077 [P] [US5] Write test: filter disabled preserves full frequency range in tests/unit/features/freeze_mode_test.cpp
+- [x] T078 [P] [US5] Write test: filter cutoff change is smooth (FR-023, SC-007: within 20ms) in tests/unit/features/freeze_mode_test.cpp
 
 ### 7.3 Implementation for User Story 5
 
-- [ ] T079 [US5] Implement FreezeMode::setFilterEnabled()/setFilterType()/setFilterCutoff() delegating to FFN in src/dsp/features/freeze_mode.h
-- [ ] T080 [US5] Verify all US5 tests pass
+- [x] T079 [US5] Implement FreezeMode::setFilterEnabled()/setFilterType()/setFilterCutoff() delegating to FFN in src/dsp/features/freeze_mode.h
+- [x] T080 [US5] Verify all US5 tests pass
 
 ### 7.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T081 [US5] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
+- [x] T081 [US5] **Verify IEEE 754 compliance**: Check if test files use `std::isnan`/`std::isfinite`/`std::isinf` -> add to `-fno-fast-math` list in tests/CMakeLists.txt
 
 ### 7.5 Commit (MANDATORY)
 

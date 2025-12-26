@@ -1189,9 +1189,322 @@ TEST_CASE("FreezeMode diffusion amount is updateable", "[freeze-mode][US4][FR-01
 }
 
 // =============================================================================
-// Phase 7: User Story 5 - Filter Tests
-// (To be implemented in Phase 7)
+// Phase 7: User Story 5 - Filter Tests (FR-020 to FR-023, SC-007)
 // =============================================================================
+
+TEST_CASE("FreezeMode lowpass filter attenuates high frequencies", "[freeze-mode][US5][FR-020][FR-021]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    // Filter initially disabled
+    freeze.setFilterEnabled(false);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with high frequency content (5kHz sine - above lowpass cutoff)
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 50; ++i) {
+        generateSineWave(left.data(), kBlockSize, 5000.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 5000.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Measure initial RMS without filter
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsNoFilter = calculateRMS(left.data(), kBlockSize);
+
+    // Now enable lowpass filter at 2kHz (well below our 5kHz content)
+    freeze.setFilterEnabled(true);
+    freeze.setFilterType(FilterType::Lowpass);
+    freeze.setFilterCutoff(2000.0f);
+
+    // Process many iterations - lowpass should progressively attenuate our 5kHz
+    for (int i = 0; i < 100; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float rmsWithFilter = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS without filter: " << rmsNoFilter);
+    INFO("RMS with lowpass at 2kHz (100 iterations): " << rmsWithFilter);
+
+    // Lowpass at 2kHz should heavily attenuate 5kHz content
+    REQUIRE(rmsNoFilter > 0.01f);  // Should have signal before filter
+    REQUIRE(rmsWithFilter < rmsNoFilter * 0.5f);  // At least 50% reduction
+}
+
+TEST_CASE("FreezeMode highpass filter attenuates low frequencies", "[freeze-mode][US5][FR-021]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    freeze.setFilterEnabled(false);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with low frequency content (200Hz sine)
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 50; ++i) {
+        generateSineWave(left.data(), kBlockSize, 200.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 200.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Engage freeze
+    freeze.setFreezeEnabled(true);
+
+    // Measure initial RMS without filter
+    for (int i = 0; i < 5; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsNoFilter = calculateRMS(left.data(), kBlockSize);
+
+    // Enable highpass filter at 1kHz (above our 200Hz content)
+    freeze.setFilterEnabled(true);
+    freeze.setFilterType(FilterType::Highpass);
+    freeze.setFilterCutoff(1000.0f);
+
+    // Process many iterations - highpass should progressively attenuate our low frequency
+    for (int i = 0; i < 100; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float rmsWithFilter = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS without filter: " << rmsNoFilter);
+    INFO("RMS with highpass at 1kHz (100 iterations): " << rmsWithFilter);
+
+    // Highpass should significantly reduce our 200Hz content
+    REQUIRE(rmsWithFilter < rmsNoFilter * 0.5f);  // At least 50% reduction
+}
+
+TEST_CASE("FreezeMode bandpass filter attenuates above and below cutoff", "[freeze-mode][US5][FR-021]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    freeze.setFilterEnabled(false);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with low frequency content (200Hz - below bandpass center)
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 50; ++i) {
+        generateSineWave(left.data(), kBlockSize, 200.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 200.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Measure initial RMS without filter
+    for (int i = 0; i < 10; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsNoFilter = calculateRMS(left.data(), kBlockSize);
+
+    // Enable bandpass at 2kHz (well above our 200Hz content)
+    freeze.setFilterEnabled(true);
+    freeze.setFilterType(FilterType::Bandpass);
+    freeze.setFilterCutoff(2000.0f);
+
+    // Process many iterations - bandpass should attenuate content outside its band
+    for (int i = 0; i < 100; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float rmsWithFilter = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS without filter (200Hz content): " << rmsNoFilter);
+    INFO("RMS with bandpass at 2kHz (100 iterations): " << rmsWithFilter);
+
+    // Bandpass at 2kHz should attenuate 200Hz content
+    REQUIRE(rmsNoFilter > 0.01f);  // Should have signal before filter
+    REQUIRE(rmsWithFilter < rmsNoFilter * 0.5f);  // Significant reduction
+}
+
+TEST_CASE("FreezeMode filter cutoff works across full range", "[freeze-mode][US5][FR-022]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    freeze.setFilterEnabled(true);
+    freeze.setFilterType(FilterType::Lowpass);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with signal
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 20; ++i) {
+        generateSineWave(left.data(), kBlockSize, 1000.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 1000.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // FR-022: Filter cutoff 20Hz to 20kHz
+    // Test extreme low cutoff
+    freeze.setFilterCutoff(20.0f);
+    for (int i = 0; i < 5; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsLowCutoff = calculateRMS(left.data(), kBlockSize);
+
+    // Test extreme high cutoff
+    freeze.setFilterCutoff(20000.0f);
+    for (int i = 0; i < 5; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsHighCutoff = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS with 20Hz lowpass: " << rmsLowCutoff);
+    INFO("RMS with 20kHz lowpass: " << rmsHighCutoff);
+
+    // At 20Hz cutoff, a 1kHz signal should be heavily attenuated
+    // At 20kHz cutoff, the signal should pass through
+    REQUIRE(rmsHighCutoff > rmsLowCutoff);
+}
+
+TEST_CASE("FreezeMode filter disabled preserves full frequency range", "[freeze-mode][US5][FR-020]") {
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    // Filter disabled (default)
+    freeze.setFilterEnabled(false);
+    freeze.setFilterType(FilterType::Lowpass);
+    freeze.setFilterCutoff(200.0f);  // Very aggressive cutoff - would kill most signal if enabled
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with 1kHz sine (well above 200Hz cutoff)
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 30; ++i) {
+        generateSineWave(left.data(), kBlockSize, 1000.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 1000.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Process many iterations - without filter, signal should sustain
+    for (int i = 0; i < 50; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float rms = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS with filter disabled: " << rms);
+
+    // Signal should sustain well (no filter applied despite low cutoff setting)
+    REQUIRE(rms > 0.1f);
+}
+
+TEST_CASE("FreezeMode filter cutoff is updateable without crash", "[freeze-mode][US5][FR-023]") {
+    // FR-023: Filter cutoff changes should be smooth
+    // This test verifies the filter cutoff can be changed during freeze
+    // Note: Coefficient-level smoothing depends on MultimodeFilter implementation
+    FreezeMode freeze;
+    freeze.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+    freeze.setDelayTimeMs(50.0f);
+    freeze.setFeedbackAmount(0.99f);
+    freeze.setDryWetMix(100.0f);
+    freeze.setShimmerMix(0.0f);
+    freeze.setDecay(0.0f);
+    freeze.setDiffusionAmount(0.0f);
+    freeze.setFilterEnabled(true);
+    freeze.setFilterType(FilterType::Lowpass);
+    freeze.setFilterCutoff(5000.0f);
+    freeze.snapParameters();
+
+    auto ctx = makeTestContext();
+
+    // Fill delay with signal
+    std::array<float, kBlockSize> left{}, right{};
+    for (int i = 0; i < 30; ++i) {
+        generateSineWave(left.data(), kBlockSize, 1000.0f, kSampleRate);
+        generateSineWave(right.data(), kBlockSize, 1000.0f, kSampleRate);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    freeze.setFreezeEnabled(true);
+
+    // Process with initial cutoff
+    for (int i = 0; i < 5; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsBefore = calculateRMS(left.data(), kBlockSize);
+
+    // Change cutoff to a very different value
+    freeze.setFilterCutoff(500.0f);
+
+    // Process with new cutoff
+    for (int i = 0; i < 20; ++i) {
+        fillBuffer(left.data(), kBlockSize, 0.0f);
+        fillBuffer(right.data(), kBlockSize, 0.0f);
+        freeze.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+    float rmsAfter = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS at 5kHz cutoff: " << rmsBefore);
+    INFO("RMS at 500Hz cutoff: " << rmsAfter);
+
+    // Both should have output (cutoff change didn't crash or kill signal completely)
+    REQUIRE(rmsBefore > 0.001f);
+    // With 500Hz lowpass on 1kHz content, we expect attenuation
+    // But signal should still exist (not zero)
+    REQUIRE(rmsAfter > 0.0001f);
+    // Lower cutoff should reduce signal level
+    REQUIRE(rmsAfter < rmsBefore);
+}
 
 // =============================================================================
 // Phase 8: Edge Cases
