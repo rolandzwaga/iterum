@@ -3725,6 +3725,147 @@ delay.process(leftChannel, rightChannel, blockSize, ctx);
 
 **When to use**: Creating stereo ping-pong delay effects with alternating L/R bounces. Ideal for adding spatial movement and rhythmic interest. Use L/R ratios for polyrhythmic patterns, adjust cross-feedback for partial or full ping-pong routing.
 
+### ShimmerDelay
+
+Pitch-shifted delay with cascading octaves for ambient/ethereal textures.
+
+**File**: `src/dsp/features/shimmer_delay.h`
+
+**Purpose**: Layer 4 user feature providing ambient shimmer delay with pitch shifting in the feedback path. Creates cascading harmonics (each repeat pitched higher/lower than the previous) for ethereal pads and ambient textures. Inspired by effects like Strymon BigSky, Eventide Space, and Valhalla Shimmer.
+
+**Composes**:
+- DelayLine (Layer 1): 2 instances for stereo delay buffers
+- PitchShiftProcessor (Layer 2): 2 instances for mono L/R pitch shifting in feedback path
+- DiffusionNetwork (Layer 2): Temporal smearing for reverb-like texture
+- MultimodeFilter (Layer 2): 2 instances for feedback filtering
+- DynamicsProcessor (Layer 2): Limiting for feedback > 100%
+- OnePoleSmoother (Layer 1): 6 instances for click-free parameter changes
+- ModulationMatrix (Layer 3): Optional pointer for external modulation routing
+
+**User Controls**:
+- Delay Time: 10-5000ms with optional tempo sync
+- Pitch: ±24 semitones + ±100 cents for fine tuning
+- Pitch Mode: Simple (zero latency), Granular (balanced), PhaseVocoder (high quality)
+- Shimmer Mix: 0% (standard delay) to 100% (full pitch-shifted feedback)
+- Feedback: 0-120% (>100% enables controlled self-oscillation)
+- Diffusion: Amount 0-100% and Size 0-100% for reverb-like smearing
+- Filter: Optional lowpass in feedback path (20-20kHz)
+- Mix: Dry/wet balance 0-100%
+- Output Gain: -12 to +12 dB
+
+**Enumerations**:
+
+Uses existing enumerations:
+- `TimeMode` from delay_engine.h (Free/Synced)
+- `NoteValue`, `NoteModifier` from note_value.h
+- `PitchMode` from pitch_shift_processor.h (Simple/Granular/PhaseVocoder)
+- `FilterType` from multimode_filter.h
+
+**Public API**:
+
+\`\`\`cpp
+class ShimmerDelay {
+    // Constants
+    static constexpr float kMinDelayMs = 10.0f;
+    static constexpr float kMaxDelayMs = 5000.0f;
+    static constexpr float kMinPitchSemitones = -24.0f;
+    static constexpr float kMaxPitchSemitones = 24.0f;
+
+    // Lifecycle
+    void prepare(double sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+    void reset() noexcept;
+    void snapParameters() noexcept;  // Snap smoothers to targets
+    bool isPrepared() const noexcept;
+
+    // Delay Time Control
+    void setDelayTimeMs(float ms) noexcept;
+    float getDelayTimeMs() const noexcept;
+    float getCurrentDelayMs() const noexcept;  // Smoothed value
+    void setTimeMode(TimeMode mode) noexcept;
+    TimeMode getTimeMode() const noexcept;
+    void setNoteValue(NoteValue note, NoteModifier modifier = NoteModifier::None) noexcept;
+
+    // Pitch Control
+    void setPitchSemitones(float semitones) noexcept;   // -24 to +24
+    float getPitchSemitones() const noexcept;
+    void setPitchCents(float cents) noexcept;           // -100 to +100
+    float getPitchCents() const noexcept;
+    float getPitchRatio() const noexcept;               // Calculated ratio
+    void setPitchMode(PitchMode mode) noexcept;
+    PitchMode getPitchMode() const noexcept;
+
+    // Shimmer Mix Control
+    void setShimmerMix(float percent) noexcept;         // 0-100
+    float getShimmerMix() const noexcept;
+
+    // Feedback Control
+    void setFeedbackAmount(float amount) noexcept;      // 0-1.2
+    float getFeedbackAmount() const noexcept;
+
+    // Diffusion Control
+    void setDiffusionAmount(float percent) noexcept;    // 0-100
+    float getDiffusionAmount() const noexcept;
+    void setDiffusionSize(float percent) noexcept;      // 0-100
+    float getDiffusionSize() const noexcept;
+
+    // Filter Control
+    void setFilterEnabled(bool enabled) noexcept;
+    bool isFilterEnabled() const noexcept;
+    void setFilterCutoff(float hz) noexcept;            // 20-20000
+    float getFilterCutoff() const noexcept;
+
+    // Output Control
+    void setDryWetMix(float percent) noexcept;          // 0-100
+    float getDryWetMix() const noexcept;
+    void setOutputGainDb(float dB) noexcept;            // -12 to +12
+    float getOutputGainDb() const noexcept;
+
+    // Modulation
+    void connectModulationMatrix(ModulationMatrix* matrix) noexcept;
+
+    // Latency
+    size_t getLatencySamples() const noexcept;
+
+    // Processing
+    void process(float* left, float* right, size_t numSamples, const BlockContext& ctx) noexcept;
+};
+\`\`\`
+
+**Usage Example**:
+
+\`\`\`cpp
+#include "dsp/features/shimmer_delay.h"
+
+ShimmerDelay shimmer;
+shimmer.prepare(44100.0, 512, 2000.0f);
+
+// Configure classic shimmer (octave up)
+shimmer.setDelayTimeMs(500.0f);           // 500ms delay
+shimmer.setPitchSemitones(12.0f);         // Octave up
+shimmer.setShimmerMix(100.0f);            // Full pitch-shifted feedback
+shimmer.setFeedbackAmount(0.6f);          // 60% feedback
+shimmer.setDiffusionAmount(50.0f);        // Medium diffusion
+shimmer.setDryWetMix(50.0f);              // 50/50 mix
+
+// Or configure subtle shimmer with perfect fifth
+shimmer.setPitchSemitones(7.0f);          // Perfect fifth up
+shimmer.setShimmerMix(30.0f);             // 30% shimmer blend
+shimmer.setDiffusionAmount(80.0f);        // High diffusion for reverb texture
+
+// Or configure downward shimmer
+shimmer.setPitchSemitones(-12.0f);        // Octave down
+shimmer.setShimmerMix(100.0f);            // Full shimmer
+shimmer.setFeedbackAmount(0.8f);          // High feedback for deep drones
+
+// In process callback
+BlockContext ctx;
+ctx.sampleRate = 44100.0;
+ctx.tempoBPM = 120.0;
+shimmer.process(leftChannel, rightChannel, blockSize, ctx);
+\`\`\`
+
+**When to use**: Creating ambient/ethereal pitch-shifted delay textures. Classic shimmer effect with octave-up creates cascading harmonics for pads and ambient soundscapes. Use diffusion for reverb-like smearing, shimmer mix for subtle to full effect, and pitch modes to trade latency for quality.
+
 ---
 
 ## Cross-Cutting Concerns
@@ -3864,3 +4005,8 @@ Quick lookup by functionality:
 | Set L/R ratio (ping-pong) | `PingPongDelay::setLRRatio()` | features/ping_pong_delay.h |
 | Set cross-feedback | `PingPongDelay::setCrossFeedback()` | features/ping_pong_delay.h |
 | Set ping-pong width | `PingPongDelay::setWidth()` | features/ping_pong_delay.h |
+| Create shimmer delay | `Iterum::DSP::ShimmerDelay` | features/shimmer_delay.h |
+| Set shimmer pitch | `ShimmerDelay::setPitchSemitones()` | features/shimmer_delay.h |
+| Set shimmer mix | `ShimmerDelay::setShimmerMix()` | features/shimmer_delay.h |
+| Set shimmer diffusion | `ShimmerDelay::setDiffusionAmount()` | features/shimmer_delay.h |
+| Set shimmer pitch mode | `ShimmerDelay::setPitchMode()` | features/shimmer_delay.h |
