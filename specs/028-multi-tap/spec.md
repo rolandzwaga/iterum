@@ -132,7 +132,7 @@ A producer working at 140 BPM wants all taps synchronized to musical time divisi
   - WideningStereo (pan spreads progressively wider)
   - DecayingLevel (each tap -3dB from previous)
   - FlatLevel (all taps equal level)
-- **FR-003**: System MUST support custom user-defined tap timing patterns
+- **FR-003**: System MUST support custom user-defined tap timing patterns via `setCustomTimingPattern(std::span<float> timeRatios)` accepting an array of time multipliers relative to base time
 - **FR-004**: Each tap MUST have independent time, level, pan, and filter controls
 - **FR-005**: System MUST process stereo audio (2-channel input/output)
 
@@ -144,7 +144,7 @@ A producer working at 140 BPM wants all taps synchronized to musical time divisi
 - **FR-010**: Time parameter changes MUST be smoothed to prevent clicks (20ms smoothing)
 
 #### Per-Tap Controls
-- **FR-011**: Per-tap level range MUST be -inf to 0 dB (or muted to unity)
+- **FR-011**: Per-tap level range MUST be -96 dB to +6 dB (matching TapManager's kMinLevelDb/kMaxLevelDb)
 - **FR-012**: Per-tap pan MUST follow constant-power pan law (-3dB at center)
 - **FR-013**: Per-tap filter MUST support bypass, lowpass, and highpass modes
 - **FR-014**: Per-tap filter cutoff range MUST be 20 Hz to 20 kHz
@@ -216,7 +216,7 @@ A producer working at 140 BPM wants all taps synchronized to musical time divisi
 | FeedbackNetwork | src/dsp/systems/feedback_network.h | Provides master feedback with filtering and limiting |
 | ModulationMatrix | src/dsp/systems/modulation_matrix.h | Provides LFO/envelope routing to parameters |
 | TapPattern enum | src/dsp/systems/tap_manager.h | Preset pattern definitions |
-| NoteValue enum | src/dsp/systems/tap_manager.h | Tempo sync note values |
+| NoteValue enum | src/dsp/core/note_value.h | Tempo sync note values |
 | OnePoleSmoother | src/dsp/primitives/smoother.h | Parameter smoothing |
 | MultimodeFilter | src/dsp/processors/multimode_filter.h | Per-tap filtering |
 

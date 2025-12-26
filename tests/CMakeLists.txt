@@ -106,6 +106,7 @@ add_executable(dsp_tests
     unit/features/bbd_delay_test.cpp
     unit/features/digital_delay_test.cpp
     unit/features/ping_pong_delay_test.cpp
+    unit/features/multi_tap_delay_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -171,6 +172,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/features/bbd_delay_test.cpp
         unit/features/digital_delay_test.cpp
         unit/features/ping_pong_delay_test.cpp
+        unit/features/multi_tap_delay_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

@@ -93,6 +93,60 @@ This section prevents One Definition Rule (ODR) violations by documenting existi
 
 **Justification**: [Why this risk level - e.g., "Low: All planned types are unique and not found in codebase" or "Medium: Similar utility exists in dsp_utils.h, will extend rather than duplicate"]
 
+## Dependency API Contracts (Principle XIV Extension)
+
+*GATE: Must complete BEFORE implementation begins. Prevents compile-time API mismatch errors.*
+
+This section documents the **exact API signatures** of all dependencies that will be called. This prevents errors like using `ctx.tempo` when the actual member is `ctx.tempoBPM`.
+
+<!--
+  ACTION REQUIRED: For each component listed in "Existing Components to Reuse" above,
+  document the EXACT methods/members you will call. Read the actual header file and
+  copy the signature - do NOT guess from documentation or memory.
+
+  VERIFICATION METHOD:
+  1. Open the dependency header file
+  2. Find the method/member you plan to use
+  3. Copy the exact signature (return type, name, parameters)
+  4. Mark as verified only after reading the source
+-->
+
+### API Signatures to Call
+
+| Dependency | Method/Member | Exact Signature (from header) | Verified? |
+|------------|---------------|-------------------------------|-----------|
+| [e.g., BlockContext] | [tempoBPM] | `double tempoBPM = 120.0` | ✓ |
+| [e.g., BlockContext] | [isPlaying] | `bool isPlaying = false` | ✓ |
+| [e.g., TapManager] | [setTapTimeMs] | `void setTapTimeMs(size_t tapIndex, float timeMs) noexcept` | ✓ |
+| [e.g., TapManager] | [getTapTimeMs] | `[[nodiscard]] float getTapTimeMs(size_t tapIndex) const noexcept` | ✓ |
+
+### Header Files Read
+
+<!--
+  List each header file you opened to verify signatures.
+  This creates an audit trail and ensures you actually read the code.
+-->
+
+- [ ] `src/dsp/core/block_context.h` - BlockContext struct
+- [ ] `src/dsp/systems/tap_manager.h` - TapManager class
+- [ ] `src/dsp/systems/feedback_network.h` - FeedbackNetwork class
+- [ ] [Add more as needed]
+
+### Common Gotchas Documented
+
+<!--
+  Note any non-obvious API details discovered during verification:
+  - Member names that differ from expected (tempo vs tempoBPM)
+  - Parameter order differences
+  - Return type differences (float vs double)
+  - Const-correctness requirements
+-->
+
+| Component | Gotcha | Correct Usage |
+|-----------|--------|---------------|
+| [e.g., BlockContext] | [Member is `tempoBPM` not `tempo`] | `ctx.tempoBPM` |
+| [e.g., OnePoleSmoother] | [Uses `snapTo()` not `snap()`] | `smoother.snapTo(value)` |
+
 ## Layer 0 Candidate Analysis
 
 *For Layer 2+ features: Identify utility functions that should be extracted to Layer 0 for reuse.*
