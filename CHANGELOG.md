@@ -5,6 +5,91 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.27] - 2025-12-26
+
+### Added
+
+- **Layer 4 User Feature: DigitalDelay** (`src/dsp/features/digital_delay.h`)
+  - Clean digital delay with three era presets (Pristine, 80s Digital, Lo-Fi)
+  - Composes DelayEngine (L3), FeedbackNetwork (L3), CharacterProcessor (L3), DynamicsProcessor (L2)
+  - Complete feature set with 6 user stories:
+    - **US1: Core Delay**: Pristine digital delay with 1-10000ms range and tempo sync
+    - **US2: Era Presets**: Three distinct digital characters with age control
+    - **US3: Feedback Limiting**: Program-dependent limiter prevents runaway oscillation
+    - **US4: LFO Modulation**: 6 waveforms (Sine, Triangle, Saw, Square, S&H, Random)
+    - **US5: Tempo Sync**: Musical note values with dotted/triplet modifiers
+    - **US6: Stereo Processing**: Full stereo support with channel separation
+
+- **Era presets with distinct characteristics**:
+  - **Pristine**: Perfect digital delay, <-120dB noise floor, 0.1dB flat response
+  - **EightiesDigital**: 14kHz anti-alias filter, -80dB noise floor, subtle character
+  - **LoFi**: Aggressive bit/sample rate reduction, higher noise, heavy filtering
+
+- **User controls**:
+  - **Time**: 1-10000ms delay with tempo sync support
+  - **Feedback**: 0-120% with program-dependent limiter (Soft/Medium/Hard knee)
+  - **Modulation**: Depth (0-100%) and Rate (0.1-10Hz) with 6 LFO waveforms
+  - **Era**: Pristine / 80s Digital / Lo-Fi character presets
+  - **Age**: 0-100% degradation intensity within each era
+  - **Mix**: Dry/wet balance with 20ms parameter smoothing
+  - **Output Level**: -96dB to +12dB master gain
+
+- **Precision audio measurement tests**:
+  - SC-001: Pristine frequency response 0.1dB flat 20Hz-20kHz (FFT verified)
+  - SC-002: Pristine noise floor below -120dB (RMS measurement)
+  - FR-009: 80s mode 18kHz attenuation >3dB vs 10kHz (anti-alias filter)
+  - FR-010: 80s noise floor between -90dB and -70dB
+
+- **Comprehensive test suite** (35 test cases, 9939 assertions)
+  - All 44 functional requirements verified
+  - Precision audio measurements with FFT analysis
+  - Era preset distinction tests
+  - Parameter smoothing and edge case coverage
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 0-3 components
+  - Uses: `DelayEngine` (L3) - core delay with tempo sync (set to 100% wet)
+  - Uses: `FeedbackNetwork` (L3) - feedback with filtering
+  - Uses: `CharacterProcessor` (L3) - DigitalVintage mode for 80s/Lo-Fi
+  - Uses: `DynamicsProcessor` (L2) - program-dependent limiter (100:1 ratio, peak detection)
+  - Uses: `LFO` (L1) - modulation with 6 waveform shapes
+  - Uses: `Biquad` (L1) - anti-aliasing filter for 80s/Lo-Fi era
+  - Uses: `OnePoleSmoother` (L1) - parameter smoothing (20ms)
+  - Uses: `Xorshift32` (L0) - noise generation for 80s/Lo-Fi era
+- **DigitalEra enum**: Pristine, EightiesDigital, LoFi
+- **LimiterCharacter enum**: Soft (6dB knee), Medium (3dB), Hard (0dB)
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Fixed
+
+- **Double-mixing bug**: DelayEngine now set to 100% wet to avoid comb filter artifacts when DigitalDelay handles dry/wet mixing
+
+### Usage
+
+```cpp
+#include "dsp/features/digital_delay.h"
+
+using namespace Iterum::DSP;
+
+DigitalDelay delay;
+delay.prepare(44100.0, 512, 10000.0f);  // 10s max delay
+
+// Set digital character
+delay.setTime(500.0f);                     // 500ms delay
+delay.setFeedback(0.5f);                   // 50% feedback
+delay.setEra(DigitalEra::EightiesDigital); // 80s character
+delay.setAge(0.3f);                        // Moderate aging
+delay.setLimiterCharacter(LimiterCharacter::Soft);  // Soft knee
+delay.setModulationDepth(0.1f);            // Subtle modulation
+delay.setModulationRate(0.5f);             // Slow LFO
+delay.setMix(0.5f);                        // 50/50 dry/wet
+
+// In audio callback
+delay.process(left, right, numSamples, ctx);
+```
+
 ## [0.0.26] - 2025-12-26
 
 ### Added
