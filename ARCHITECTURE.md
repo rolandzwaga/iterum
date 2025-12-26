@@ -3109,6 +3109,136 @@ stereo.setLRRatio(0.75f);       // L = 300ms (3:4 ratio)
 stereo.process(leftIn, rightIn, leftOut, rightOut, numSamples);
 ```
 
+### TapManager
+
+Multi-tap delay system with up to 16 independent taps and preset patterns.
+
+**File**: `src/dsp/systems/tap_manager.h`
+
+**Purpose**: Layer 3 system component providing multi-tap delay management with per-tap control over timing, level, pan, filtering, and feedback. Includes preset timing patterns for rhythmic delay effects.
+
+**Composes**:
+- DelayLine (Layer 1): Shared delay buffer for all taps
+- Biquad (Layer 1): Per-tap LP/HP filtering
+- OnePoleSmoother (Layer 1): Per-tap parameter smoothing (time, level, pan, cutoff)
+- NoteValue (Layer 0): Tempo sync note value calculations
+
+**User Controls**:
+- Per-Tap Time: 0-5000ms or tempo-synced note values
+- Per-Tap Level: -96dB to +6dB with -inf threshold
+- Per-Tap Pan: -100 (left) to +100 (right) with constant-power law
+- Per-Tap Filter: Bypass/Lowpass/Highpass with 20Hz-20kHz cutoff
+- Per-Tap Feedback: 0-100% routed back to delay input
+- Master Level: -96dB to +6dB output gain
+- Dry/Wet Mix: 0-100%
+
+**Enumerations**:
+
+#### TapPattern
+
+Preset timing patterns for rhythmic delays:
+
+| Pattern | Description | Formula |
+|---------|-------------|---------|
+| `Custom` | User-defined times | Manual per-tap |
+| `QuarterNote` | Taps at quarter note intervals | tap[i] = (i+1) × quarterNoteMs |
+| `DottedEighth` | Classic dotted-eighth feel | tap[i] = (i+1) × quarterNoteMs × 0.75 |
+| `Triplet` | Triplet quarter timing | tap[i] = (i+1) × quarterNoteMs × 0.667 |
+| `GoldenRatio` | Organic, non-repeating | tap[i] = tap[i-1] × 1.618 |
+| `Fibonacci` | Natural sequence | tap[i] = fib(i+1) × baseMs |
+
+#### TapTimeMode
+
+How tap delay time is specified:
+
+| Mode | Description |
+|------|-------------|
+| `FreeRunning` | Absolute time in milliseconds |
+| `TempoSynced` | Relative to host BPM via NoteValue |
+
+#### TapFilterMode
+
+Per-tap filter type:
+
+| Mode | Description |
+|------|-------------|
+| `Bypass` | No filtering |
+| `Lowpass` | 12dB/oct lowpass at cutoff |
+| `Highpass` | 12dB/oct highpass at cutoff |
+
+**Key Methods**:
+```cpp
+void prepare(float sampleRate, size_t maxBlockSize, float maxDelayMs) noexcept;
+void reset() noexcept;
+void process(const float* leftIn, const float* rightIn,
+             float* leftOut, float* rightOut, size_t numSamples) noexcept;
+
+// Per-tap configuration
+void setTapEnabled(size_t tapIndex, bool enabled) noexcept;
+void setTapTimeMs(size_t tapIndex, float timeMs) noexcept;
+void setTapLevelDb(size_t tapIndex, float levelDb) noexcept;
+void setTapPan(size_t tapIndex, float pan) noexcept;
+void setTapFilterMode(size_t tapIndex, TapFilterMode mode) noexcept;
+void setTapFilterCutoff(size_t tapIndex, float cutoffHz) noexcept;
+void setTapFeedback(size_t tapIndex, float feedbackPercent) noexcept;
+void setTapNoteValue(size_t tapIndex, NoteValue value, NoteModifier mod) noexcept;
+
+// Pattern loading
+void loadPattern(TapPattern pattern, size_t tapCount) noexcept;
+void loadNotePattern(NoteValue noteValue, NoteModifier modifier, size_t tapCount) noexcept;
+
+// Tempo sync
+void setTempo(float bpm) noexcept;
+```
+
+**Example - Basic Multi-Tap Setup**:
+```cpp
+Iterum::DSP::TapManager taps;
+taps.prepare(44100.0f, 512, 5000.0f);  // 5 seconds max delay
+
+// Configure 4 taps manually
+taps.setTapEnabled(0, true);
+taps.setTapTimeMs(0, 125.0f);   // 125ms
+taps.setTapLevelDb(0, 0.0f);    // Unity gain
+taps.setTapPan(0, -50.0f);      // Left of center
+
+taps.setTapEnabled(1, true);
+taps.setTapTimeMs(1, 250.0f);   // 250ms
+taps.setTapLevelDb(1, -3.0f);   // -3dB
+taps.setTapPan(1, 50.0f);       // Right of center
+
+// Process audio
+taps.process(leftIn, rightIn, leftOut, rightOut, numSamples);
+```
+
+**Example - Preset Pattern with Tempo Sync**:
+```cpp
+Iterum::DSP::TapManager taps;
+taps.prepare(44100.0f, 512, 5000.0f);
+taps.setTempo(120.0f);  // 120 BPM
+
+// Load dotted-eighth pattern with 6 taps
+// At 120 BPM: taps at 375, 750, 1125, 1500, 1875, 2250ms
+taps.loadPattern(TapPattern::DottedEighth, 6);
+
+// Or use any note value via loadNotePattern
+taps.loadNotePattern(NoteValue::Eighth, NoteModifier::Triplet, 4);
+```
+
+**Example - Per-Tap Filtering for Darkening Delays**:
+```cpp
+// Create progressively darker taps
+for (size_t i = 0; i < 4; ++i) {
+    taps.setTapEnabled(i, true);
+    taps.setTapTimeMs(i, 200.0f * (i + 1));
+    taps.setTapFilterMode(i, TapFilterMode::Lowpass);
+    // Each tap darker than the last: 8kHz, 4kHz, 2kHz, 1kHz
+    taps.setTapFilterCutoff(i, 8000.0f / (1 << i));
+}
+```
+
+**When to use**: Building multi-tap delay effects, rhythmic echoes, or any effect requiring multiple independently-controlled delay taps. Use preset patterns for quick rhythmic setups, or configure taps manually for custom effects. Compose with FeedbackNetwork for master feedback and ModulationMatrix for per-tap modulation.
+
 ---
 
 ## Layer 4: User Features
