@@ -285,7 +285,7 @@
 
 - [x] T089 Fix any edge case test failures
 - [x] T090 Verify all tests pass
-- [ ] T091 **Commit edge case fixes**
+- [x] T091 **Commit edge case fixes**
 
 ---
 
@@ -297,7 +297,7 @@
 
 ### 9.1 Architecture Documentation Update
 
-- [ ] T092 **Update ARCHITECTURE.md** with new components:
+- [x] T092 **Update ARCHITECTURE.md** with new components:
   - Add FreezeMode to Layer 4 features section
   - Add FreezeFeedbackProcessor to Layer 2 processors section (or note it's internal to FreezeMode)
   - Include: purpose, public API summary, file location, "when to use this"
@@ -305,7 +305,7 @@
 
 ### 9.2 Final Commit
 
-- [ ] T093 **Commit ARCHITECTURE.md updates**
+- [x] T093 **Commit ARCHITECTURE.md updates**
 
 **Checkpoint**: ARCHITECTURE.md reflects all new functionality
 
