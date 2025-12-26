@@ -5,6 +5,82 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.28] - 2025-12-26
+
+### Added
+
+- **Layer 4 User Feature: PingPongDelay** (`src/dsp/features/ping_pong_delay.h`)
+  - Classic stereo ping-pong delay with alternating L/R bounces
+  - Composes DelayLine (L1), LFO (L1), OnePoleSmoother (L1), DynamicsProcessor (L2), stereoCrossBlend (L0)
+  - Complete feature set with 6 user stories:
+    - **US1: Classic Ping-Pong**: Alternating L/R delays with feedback and mix control
+    - **US2: Asymmetric Timing**: 7 L/R ratios for polyrhythmic patterns (1:1, 2:1, 3:2, 4:3, 1:2, 2:3, 3:4)
+    - **US3: Tempo Sync**: Lock to host tempo with note values and modifiers
+    - **US4: Stereo Width**: 0% (mono) to 200% (ultra-wide) using M/S processing
+    - **US5: Cross-Feedback**: Variable 0-100% for dual mono to full ping-pong
+    - **US6: Modulation**: Optional LFO with 90° L/R phase offset
+
+- **L/R ratio presets for polyrhythmic delays**:
+  - **1:1**: Classic even ping-pong
+  - **2:1 / 1:2**: Double speed relationships
+  - **3:2 / 2:3**: Triplet feel polyrhythms
+  - **4:3 / 3:4**: Subtle polyrhythmic patterns
+
+- **User controls**:
+  - **Time**: 1-10000ms delay with tempo sync support
+  - **L/R Ratio**: 7 preset timing relationships
+  - **Feedback**: 0-120% with soft limiting (tanh-based)
+  - **Cross-Feedback**: 0% (dual mono) to 100% (full ping-pong)
+  - **Width**: 0-200% stereo spread using M/S technique
+  - **Modulation**: Depth (0-100%) and Rate (0.1-10Hz)
+  - **Mix**: Dry/wet balance with 20ms parameter smoothing
+  - **Output Level**: -120dB to +12dB master gain
+
+- **Comprehensive test suite** (23 test cases, 16028 assertions)
+  - All 34 functional requirements verified
+  - All 10 success criteria measured
+  - Ratio accuracy within 1% tolerance
+  - Width correlation measurements verified
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 0-2 components
+  - Uses: `DelayLine` (L1) - 2 instances for independent L/R timing
+  - Uses: `LFO` (L1) - 2 instances with 90° phase offset
+  - Uses: `OnePoleSmoother` (L1) - 7 instances for parameter smoothing
+  - Uses: `DynamicsProcessor` (L2) - feedback limiting for >100%
+  - Uses: `stereoCrossBlend` (L0) - cross-feedback routing
+  - Uses: `dbToGain` (L0) - output level conversion
+- **LRRatio enum**: OneToOne, TwoToOne, ThreeToTwo, FourToThree, OneToTwo, TwoToThree, ThreeToFour
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/features/ping_pong_delay.h"
+
+using namespace Iterum::DSP;
+
+PingPongDelay delay;
+delay.prepare(44100.0, 512, 2000.0f);  // 2s max delay
+
+// Classic ping-pong
+delay.setDelayTimeMs(375.0f);            // 375ms delay
+delay.setFeedback(0.5f);                 // 50% feedback
+delay.setCrossFeedback(1.0f);            // Full ping-pong
+delay.setLRRatio(LRRatio::OneToOne);     // Even L/R timing
+delay.setWidth(100.0f);                  // Natural stereo
+delay.setMix(0.4f);                      // 40% wet
+
+// Polyrhythmic variation
+delay.setLRRatio(LRRatio::ThreeToTwo);   // Triplet feel
+delay.setCrossFeedback(0.75f);           // Partial crossing
+
+// In audio callback
+delay.process(left, right, numSamples, ctx);
+```
+
 ## [0.0.27] - 2025-12-26
 
 ### Added
