@@ -16,8 +16,20 @@
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
 #include "dsp/dsp_utils.h"
+#include "dsp/features/ducking_delay.h"
+#include "dsp/features/freeze_mode.h"
 #include "dsp/features/granular_delay.h"
+#include "dsp/features/reverse_delay.h"
+#include "dsp/features/shimmer_delay.h"
+#include "dsp/features/spectral_delay.h"
+#include "dsp/features/tape_delay.h"
+#include "parameters/ducking_params.h"
+#include "parameters/freeze_params.h"
 #include "parameters/granular_params.h"
+#include "parameters/reverse_params.h"
+#include "parameters/shimmer_params.h"
+#include "parameters/spectral_params.h"
+#include "parameters/tape_params.h"
 
 #include <array>
 #include <atomic>
@@ -116,13 +128,25 @@ private:
     // Mode-Specific Parameter Packs
     // ==========================================================================
 
-    GranularParams granularParams_;  // Granular Delay (spec 034)
+    GranularParams granularParams_;   // Granular Delay (spec 034)
+    SpectralParams spectralParams_;   // Spectral Delay (spec 033)
+    DuckingParams duckingParams_;     // Ducking Delay (spec 032)
+    FreezeParams freezeParams_;       // Freeze Mode (spec 031)
+    ReverseParams reverseParams_;     // Reverse Delay (spec 030)
+    ShimmerParams shimmerParams_;     // Shimmer Delay (spec 029)
+    TapeParams tapeParams_;           // Tape Delay (spec 024)
 
     // ==========================================================================
     // DSP Components
     // ==========================================================================
 
     DSP::GranularDelay granularDelay_;
+    DSP::SpectralDelay spectralDelay_;
+    DSP::DuckingDelay duckingDelay_;
+    DSP::FreezeMode freezeMode_;
+    DSP::ReverseDelay reverseDelay_;
+    DSP::ShimmerDelay shimmerDelay_;
+    DSP::TapeDelay tapeDelay_;
 };
 
 } // namespace Iterum

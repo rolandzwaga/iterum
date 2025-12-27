@@ -74,21 +74,58 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     // Spectral Delay Parameters (200-299) - spec 033
     // ==========================================================================
     kSpectralBaseId = 200,
-    // Parameters to be added during integration
+    kSpectralFFTSizeId = 200,        // 512, 1024, 2048, 4096
+    kSpectralBaseDelayId = 201,      // 0-2000ms
+    kSpectralSpreadId = 202,         // 0-2000ms
+    kSpectralSpreadDirectionId = 203, // 0-2 (LowToHigh, HighToLow, CenterOut)
+    kSpectralFeedbackId = 204,       // 0-1.2
+    kSpectralFeedbackTiltId = 205,   // -1.0 to +1.0
+    kSpectralFreezeId = 206,         // on/off
+    kSpectralDiffusionId = 207,      // 0-1
+    kSpectralDryWetId = 208,         // 0-100%
+    kSpectralOutputGainId = 209,     // -96 to +6 dB
     kSpectralEndId = 299,
 
     // ==========================================================================
     // Shimmer Delay Parameters (300-399) - spec 029
     // ==========================================================================
     kShimmerBaseId = 300,
-    // Parameters to be added during integration
+    kShimmerDelayTimeId = 300,        // 10-5000ms
+    kShimmerPitchSemitonesId = 301,   // -24 to +24 semitones
+    kShimmerPitchCentsId = 302,       // -100 to +100 cents
+    kShimmerShimmerMixId = 303,       // 0-100%
+    kShimmerFeedbackId = 304,         // 0-120%
+    kShimmerDiffusionAmountId = 305,  // 0-100%
+    kShimmerDiffusionSizeId = 306,    // 0-100%
+    kShimmerFilterEnabledId = 307,    // on/off
+    kShimmerFilterCutoffId = 308,     // 20-20000Hz
+    kShimmerDryWetId = 309,           // 0-100%
+    kShimmerOutputGainId = 310,       // -12 to +12 dB
     kShimmerEndId = 399,
 
     // ==========================================================================
     // Tape Delay Parameters (400-499) - spec 024
     // ==========================================================================
     kTapeBaseId = 400,
-    // Parameters to be added during integration
+    kTapeMotorSpeedId = 400,       // 20-2000ms (delay time)
+    kTapeMotorInertiaId = 401,     // 100-1000ms
+    kTapeWearId = 402,             // 0-100% (wow/flutter/hiss)
+    kTapeSaturationId = 403,       // 0-100%
+    kTapeAgeId = 404,              // 0-100%
+    kTapeSpliceEnabledId = 405,    // on/off
+    kTapeSpliceIntensityId = 406,  // 0-100%
+    kTapeFeedbackId = 407,         // 0-120%
+    kTapeMixId = 408,              // 0-100%
+    kTapeOutputLevelId = 409,      // -96 to +12 dB
+    kTapeHead1EnabledId = 410,     // on/off
+    kTapeHead2EnabledId = 411,     // on/off
+    kTapeHead3EnabledId = 412,     // on/off
+    kTapeHead1LevelId = 413,       // -96 to +6 dB
+    kTapeHead2LevelId = 414,       // -96 to +6 dB
+    kTapeHead3LevelId = 415,       // -96 to +6 dB
+    kTapeHead1PanId = 416,         // L100-R100
+    kTapeHead2PanId = 417,         // L100-R100
+    kTapeHead3PanId = 418,         // L100-R100
     kTapeEndId = 499,
 
     // ==========================================================================
@@ -116,7 +153,15 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     // Reverse Delay Parameters (800-899) - spec 030
     // ==========================================================================
     kReverseBaseId = 800,
-    // Parameters to be added during integration
+    kReverseChunkSizeId = 800,       // 10-2000ms
+    kReverseCrossfadeId = 801,       // 0-100%
+    kReversePlaybackModeId = 802,    // 0-2 (FullReverse, Alternating, Random)
+    kReverseFeedbackId = 803,        // 0-120%
+    kReverseFilterEnabledId = 804,   // on/off
+    kReverseFilterCutoffId = 805,    // 20-20000Hz
+    kReverseFilterTypeId = 806,      // 0-2 (LowPass, HighPass, BandPass)
+    kReverseDryWetId = 807,          // 0-100%
+    kReverseOutputGainId = 808,      // -96 to +6 dB
     kReverseEndId = 899,
 
     // ==========================================================================
@@ -130,14 +175,39 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     // Freeze Mode Parameters (1000-1099) - spec 031
     // ==========================================================================
     kFreezeBaseId = 1000,
-    // Parameters to be added during integration
+    kFreezeEnabledId = 1000,          // on/off
+    kFreezeDelayTimeId = 1001,        // 10-5000ms
+    kFreezeFeedbackId = 1002,         // 0-120%
+    kFreezePitchSemitonesId = 1003,   // -24 to +24
+    kFreezePitchCentsId = 1004,       // -100 to +100
+    kFreezeShimmerMixId = 1005,       // 0-100%
+    kFreezeDecayId = 1006,            // 0-100%
+    kFreezeDiffusionAmountId = 1007,  // 0-100%
+    kFreezeDiffusionSizeId = 1008,    // 0-100%
+    kFreezeFilterEnabledId = 1009,    // on/off
+    kFreezeFilterTypeId = 1010,       // 0-2 (LowPass, HighPass, BandPass)
+    kFreezeFilterCutoffId = 1011,     // 20-20000Hz
+    kFreezeDryWetId = 1012,           // 0-100%
+    kFreezeOutputGainId = 1013,       // -96 to +6 dB
     kFreezeEndId = 1099,
 
     // ==========================================================================
     // Ducking Delay Parameters (1100-1199) - spec 032
     // ==========================================================================
     kDuckingBaseId = 1100,
-    // Parameters to be added during integration
+    kDuckingEnabledId = 1100,           // on/off
+    kDuckingThresholdId = 1101,         // -60 to 0 dB
+    kDuckingDuckAmountId = 1102,        // 0-100%
+    kDuckingAttackTimeId = 1103,        // 0.1-100ms
+    kDuckingReleaseTimeId = 1104,       // 10-2000ms
+    kDuckingHoldTimeId = 1105,          // 0-500ms
+    kDuckingDuckTargetId = 1106,        // 0-2 (Output, Feedback, Both)
+    kDuckingSidechainFilterEnabledId = 1107,  // on/off
+    kDuckingSidechainFilterCutoffId = 1108,   // 20-500Hz
+    kDuckingDelayTimeId = 1109,         // 10-5000ms
+    kDuckingFeedbackId = 1110,          // 0-120%
+    kDuckingDryWetId = 1111,            // 0-100%
+    kDuckingOutputGainId = 1112,        // -96 to +6 dB
     kDuckingEndId = 1199,
 
     // ==========================================================================

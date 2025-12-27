@@ -4,6 +4,7 @@
 
 #include "processor.h"
 #include "plugin_ids.h"
+#include "dsp/core/block_context.h"
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -66,6 +67,24 @@ Steinberg::tresult PLUGIN_API Processor::setupProcessing(
     // Prepare GranularDelay (spec 034)
     granularDelay_.prepare(sampleRate_);
 
+    // Prepare SpectralDelay (spec 033)
+    spectralDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_));
+
+    // Prepare DuckingDelay (spec 032)
+    duckingDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_));
+
+    // Prepare ShimmerDelay (spec 029)
+    shimmerDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 5000.0f);
+
+    // Prepare FreezeMode (spec 031)
+    freezeMode_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 5000.0f);
+
+    // Prepare ReverseDelay (spec 030)
+    reverseDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 2000.0f);
+
+    // Prepare TapeDelay (spec 024)
+    tapeDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 2000.0f);
+
     return AudioEffect::setupProcessing(setup);
 }
 
@@ -73,6 +92,12 @@ Steinberg::tresult PLUGIN_API Processor::setActive(Steinberg::TBool state) {
     if (state) {
         // Activating: reset any processing state
         granularDelay_.reset();
+        spectralDelay_.reset();
+        duckingDelay_.reset();
+        freezeMode_.reset();
+        reverseDelay_.reset();
+        shimmerDelay_.reset();
+        tapeDelay_.reset();
     }
 
     return AudioEffect::setActive(state);
@@ -171,6 +196,190 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
     granularDelay_.process(inputL, inputR, outputL, outputR,
                            static_cast<size_t>(data.numSamples));
 
+    // ==========================================================================
+    // Update SpectralDelay parameters from param pack
+    // ==========================================================================
+
+    spectralDelay_.setFFTSize(static_cast<size_t>(
+        spectralParams_.fftSize.load(std::memory_order_relaxed)));
+    spectralDelay_.setBaseDelayMs(spectralParams_.baseDelay.load(std::memory_order_relaxed));
+    spectralDelay_.setSpreadMs(spectralParams_.spread.load(std::memory_order_relaxed));
+    spectralDelay_.setSpreadDirection(static_cast<DSP::SpreadDirection>(
+        spectralParams_.spreadDirection.load(std::memory_order_relaxed)));
+    spectralDelay_.setFeedback(spectralParams_.feedback.load(std::memory_order_relaxed));
+    spectralDelay_.setFeedbackTilt(spectralParams_.feedbackTilt.load(std::memory_order_relaxed));
+    spectralDelay_.setFreezeEnabled(spectralParams_.freeze.load(std::memory_order_relaxed));
+    spectralDelay_.setDiffusion(spectralParams_.diffusion.load(std::memory_order_relaxed));
+    spectralDelay_.setDryWetMix(spectralParams_.dryWet.load(std::memory_order_relaxed));
+    spectralDelay_.setOutputGainDb(spectralParams_.outputGain.load(std::memory_order_relaxed));
+
+    // ==========================================================================
+    // Process audio through SpectralDelay (in series after GranularDelay)
+    // ==========================================================================
+
+    DSP::BlockContext ctx{
+        .sampleRate = sampleRate_,
+        .blockSize = static_cast<size_t>(data.numSamples),
+        .tempoBPM = 120.0,  // TODO: Get from host transport
+        .isPlaying = true
+    };
+    spectralDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update DuckingDelay parameters from param pack
+    // ==========================================================================
+
+    duckingDelay_.setDuckingEnabled(duckingParams_.duckingEnabled.load(std::memory_order_relaxed));
+    duckingDelay_.setThreshold(duckingParams_.threshold.load(std::memory_order_relaxed));
+    duckingDelay_.setDuckAmount(duckingParams_.duckAmount.load(std::memory_order_relaxed));
+    duckingDelay_.setAttackTime(duckingParams_.attackTime.load(std::memory_order_relaxed));
+    duckingDelay_.setReleaseTime(duckingParams_.releaseTime.load(std::memory_order_relaxed));
+    duckingDelay_.setHoldTime(duckingParams_.holdTime.load(std::memory_order_relaxed));
+    duckingDelay_.setDuckTarget(static_cast<DSP::DuckTarget>(
+        duckingParams_.duckTarget.load(std::memory_order_relaxed)));
+    duckingDelay_.setSidechainFilterEnabled(duckingParams_.sidechainFilterEnabled.load(std::memory_order_relaxed));
+    duckingDelay_.setSidechainFilterCutoff(duckingParams_.sidechainFilterCutoff.load(std::memory_order_relaxed));
+    duckingDelay_.setDelayTimeMs(duckingParams_.delayTime.load(std::memory_order_relaxed));
+    duckingDelay_.setFeedbackAmount(duckingParams_.feedback.load(std::memory_order_relaxed));
+    duckingDelay_.setDryWetMix(duckingParams_.dryWet.load(std::memory_order_relaxed));
+    duckingDelay_.setOutputGainDb(duckingParams_.outputGain.load(std::memory_order_relaxed));
+
+    // ==========================================================================
+    // Process audio through DuckingDelay (in series after SpectralDelay)
+    // ==========================================================================
+
+    duckingDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update ShimmerDelay parameters from param pack
+    // ==========================================================================
+
+    shimmerDelay_.setDelayTimeMs(shimmerParams_.delayTime.load(std::memory_order_relaxed));
+    shimmerDelay_.setPitchSemitones(shimmerParams_.pitchSemitones.load(std::memory_order_relaxed));
+    shimmerDelay_.setPitchCents(shimmerParams_.pitchCents.load(std::memory_order_relaxed));
+    shimmerDelay_.setShimmerMix(shimmerParams_.shimmerMix.load(std::memory_order_relaxed));
+    shimmerDelay_.setFeedbackAmount(shimmerParams_.feedback.load(std::memory_order_relaxed));
+    shimmerDelay_.setDiffusionAmount(shimmerParams_.diffusionAmount.load(std::memory_order_relaxed));
+    shimmerDelay_.setDiffusionSize(shimmerParams_.diffusionSize.load(std::memory_order_relaxed));
+    shimmerDelay_.setFilterEnabled(shimmerParams_.filterEnabled.load(std::memory_order_relaxed));
+    shimmerDelay_.setFilterCutoff(shimmerParams_.filterCutoff.load(std::memory_order_relaxed));
+    shimmerDelay_.setDryWetMix(shimmerParams_.dryWet.load(std::memory_order_relaxed));
+    shimmerDelay_.setOutputGainDb(shimmerParams_.outputGain.load(std::memory_order_relaxed));
+
+    // ==========================================================================
+    // Process audio through ShimmerDelay (in series after DuckingDelay)
+    // ==========================================================================
+
+    shimmerDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update FreezeMode parameters from param pack
+    // ==========================================================================
+
+    freezeMode_.setFreezeEnabled(freezeParams_.freezeEnabled.load(std::memory_order_relaxed));
+    freezeMode_.setDelayTimeMs(freezeParams_.delayTime.load(std::memory_order_relaxed));
+    freezeMode_.setFeedbackAmount(freezeParams_.feedback.load(std::memory_order_relaxed));
+    freezeMode_.setPitchSemitones(freezeParams_.pitchSemitones.load(std::memory_order_relaxed));
+    freezeMode_.setPitchCents(freezeParams_.pitchCents.load(std::memory_order_relaxed));
+    freezeMode_.setShimmerMix(freezeParams_.shimmerMix.load(std::memory_order_relaxed) * 100.0f);  // 0-1 -> 0-100
+    freezeMode_.setDecay(freezeParams_.decay.load(std::memory_order_relaxed) * 100.0f);            // 0-1 -> 0-100
+    freezeMode_.setDiffusionAmount(freezeParams_.diffusionAmount.load(std::memory_order_relaxed) * 100.0f);
+    freezeMode_.setDiffusionSize(freezeParams_.diffusionSize.load(std::memory_order_relaxed) * 100.0f);
+    freezeMode_.setFilterEnabled(freezeParams_.filterEnabled.load(std::memory_order_relaxed));
+    freezeMode_.setFilterType(static_cast<DSP::FilterType>(
+        freezeParams_.filterType.load(std::memory_order_relaxed)));
+    freezeMode_.setFilterCutoff(freezeParams_.filterCutoff.load(std::memory_order_relaxed));
+    freezeMode_.setDryWetMix(freezeParams_.dryWet.load(std::memory_order_relaxed) * 100.0f);       // 0-1 -> 0-100
+    // Output gain already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = freezeParams_.outputGain.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        freezeMode_.setOutputGainDb(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through FreezeMode (in series after ShimmerDelay)
+    // ==========================================================================
+
+    freezeMode_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update ReverseDelay parameters from param pack
+    // ==========================================================================
+
+    reverseDelay_.setChunkSizeMs(reverseParams_.chunkSize.load(std::memory_order_relaxed));
+    reverseDelay_.setCrossfadePercent(reverseParams_.crossfade.load(std::memory_order_relaxed));
+    reverseDelay_.setPlaybackMode(static_cast<DSP::PlaybackMode>(
+        reverseParams_.playbackMode.load(std::memory_order_relaxed)));
+    reverseDelay_.setFeedbackAmount(reverseParams_.feedback.load(std::memory_order_relaxed));
+    reverseDelay_.setFilterEnabled(reverseParams_.filterEnabled.load(std::memory_order_relaxed));
+    reverseDelay_.setFilterCutoff(reverseParams_.filterCutoff.load(std::memory_order_relaxed));
+    reverseDelay_.setFilterType(static_cast<DSP::FilterType>(
+        reverseParams_.filterType.load(std::memory_order_relaxed)));
+    reverseDelay_.setDryWetMix(reverseParams_.dryWet.load(std::memory_order_relaxed) * 100.0f);  // 0-1 -> 0-100
+    // Output gain already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = reverseParams_.outputGain.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        reverseDelay_.setOutputGainDb(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through ReverseDelay (in series after FreezeMode)
+    // ==========================================================================
+
+    reverseDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update TapeDelay parameters from param pack
+    // ==========================================================================
+
+    tapeDelay_.setMotorSpeed(tapeParams_.motorSpeed.load(std::memory_order_relaxed));
+    tapeDelay_.setMotorInertia(tapeParams_.motorInertia.load(std::memory_order_relaxed));
+    tapeDelay_.setWear(tapeParams_.wear.load(std::memory_order_relaxed));
+    tapeDelay_.setSaturation(tapeParams_.saturation.load(std::memory_order_relaxed));
+    tapeDelay_.setAge(tapeParams_.age.load(std::memory_order_relaxed));
+    tapeDelay_.setSpliceEnabled(tapeParams_.spliceEnabled.load(std::memory_order_relaxed));
+    tapeDelay_.setSpliceIntensity(tapeParams_.spliceIntensity.load(std::memory_order_relaxed));
+    tapeDelay_.setFeedback(tapeParams_.feedback.load(std::memory_order_relaxed));
+    tapeDelay_.setMix(tapeParams_.mix.load(std::memory_order_relaxed));
+    // Output level already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = tapeParams_.outputLevel.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        tapeDelay_.setOutputLevel(dB);
+    }
+    // Head enables
+    tapeDelay_.setHeadEnabled(0, tapeParams_.head1Enabled.load(std::memory_order_relaxed));
+    tapeDelay_.setHeadEnabled(1, tapeParams_.head2Enabled.load(std::memory_order_relaxed));
+    tapeDelay_.setHeadEnabled(2, tapeParams_.head3Enabled.load(std::memory_order_relaxed));
+    // Head levels (convert linear to dB)
+    {
+        float linearGain = tapeParams_.head1Level.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        tapeDelay_.setHeadLevel(0, dB);
+    }
+    {
+        float linearGain = tapeParams_.head2Level.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        tapeDelay_.setHeadLevel(1, dB);
+    }
+    {
+        float linearGain = tapeParams_.head3Level.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        tapeDelay_.setHeadLevel(2, dB);
+    }
+    // Head pans (-1 to +1 -> -100 to +100)
+    tapeDelay_.setHeadPan(0, tapeParams_.head1Pan.load(std::memory_order_relaxed) * 100.0f);
+    tapeDelay_.setHeadPan(1, tapeParams_.head2Pan.load(std::memory_order_relaxed) * 100.0f);
+    tapeDelay_.setHeadPan(2, tapeParams_.head3Pan.load(std::memory_order_relaxed) * 100.0f);
+
+    // ==========================================================================
+    // Process audio through TapeDelay (in series after ReverseDelay)
+    // ==========================================================================
+
+    tapeDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples));
+
     // Apply output gain
     for (Steinberg::int32 i = 0; i < data.numSamples; ++i) {
         outputL[i] *= currentGain;
@@ -213,6 +422,12 @@ Steinberg::tresult PLUGIN_API Processor::getState(Steinberg::IBStream* state) {
 
     // Save mode-specific parameter packs
     saveGranularParams(granularParams_, streamer);
+    saveSpectralParams(spectralParams_, streamer);
+    saveDuckingParams(duckingParams_, streamer);
+    saveFreezeParams(freezeParams_, streamer);
+    saveReverseParams(reverseParams_, streamer);
+    saveShimmerParams(shimmerParams_, streamer);
+    saveTapeParams(tapeParams_, streamer);
 
     return Steinberg::kResultTrue;
 }
@@ -235,6 +450,12 @@ Steinberg::tresult PLUGIN_API Processor::setState(Steinberg::IBStream* state) {
 
     // Restore mode-specific parameter packs
     loadGranularParams(granularParams_, streamer);
+    loadSpectralParams(spectralParams_, streamer);
+    loadDuckingParams(duckingParams_, streamer);
+    loadFreezeParams(freezeParams_, streamer);
+    loadReverseParams(reverseParams_, streamer);
+    loadShimmerParams(shimmerParams_, streamer);
+    loadTapeParams(tapeParams_, streamer);
 
     return Steinberg::kResultTrue;
 }
@@ -291,13 +512,34 @@ void Processor::processParameterChanges(Steinberg::Vst::IParameterChanges* chang
             }
         }
         else if (paramId >= kGranularBaseId && paramId <= kGranularEndId) {
-            // Granular Delay parameters (100-119) - spec 034
+            // Granular Delay parameters (100-199) - spec 034
             handleGranularParamChange(granularParams_, paramId, value);
         }
-        // Future mode handlers will be added here:
-        // else if (paramId >= kSpectralBaseId && paramId <= kSpectralEndId) { ... }
-        // else if (paramId >= kShimmerBaseId && paramId <= kShimmerEndId) { ... }
-        // etc.
+        else if (paramId >= kSpectralBaseId && paramId <= kSpectralEndId) {
+            // Spectral Delay parameters (200-299) - spec 033
+            handleSpectralParamChange(spectralParams_, paramId, value);
+        }
+        else if (paramId >= kShimmerBaseId && paramId <= kShimmerEndId) {
+            // Shimmer Delay parameters (300-399) - spec 029
+            handleShimmerParamChange(shimmerParams_, paramId, value);
+        }
+        else if (paramId >= kTapeBaseId && paramId <= kTapeEndId) {
+            // Tape Delay parameters (400-499) - spec 024
+            handleTapeParamChange(tapeParams_, paramId, value);
+        }
+        else if (paramId >= kReverseBaseId && paramId <= kReverseEndId) {
+            // Reverse Delay parameters (800-899) - spec 030
+            handleReverseParamChange(reverseParams_, paramId, value);
+        }
+        else if (paramId >= kFreezeBaseId && paramId <= kFreezeEndId) {
+            // Freeze Mode parameters (1000-1099) - spec 031
+            handleFreezeParamChange(freezeParams_, paramId, value);
+        }
+        else if (paramId >= kDuckingBaseId && paramId <= kDuckingEndId) {
+            // Ducking Delay parameters (1100-1199) - spec 032
+            handleDuckingParamChange(duckingParams_, paramId, value);
+        }
+        // Future mode handlers will be added here
     }
 }
 

@@ -18,18 +18,12 @@
 #include <algorithm>
 #include <array>
 
-// Layer 0 Core Utilities - dB/linear conversion
+// Layer 0 Core Utilities
 #include "core/db_utils.h"
+#include "core/math_constants.h"
 
 namespace Iterum {
 namespace DSP {
-
-// ==============================================================================
-// Constants
-// ==============================================================================
-
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kTwoPi = 2.0f * kPi;
 
 // ==============================================================================
 // Gain Utilities - Use Iterum::DSP (core/db_utils.h)

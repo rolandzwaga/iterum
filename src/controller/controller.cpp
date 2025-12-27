@@ -4,7 +4,13 @@
 
 #include "controller.h"
 #include "plugin_ids.h"
+#include "parameters/ducking_params.h"
+#include "parameters/freeze_params.h"
 #include "parameters/granular_params.h"
+#include "parameters/reverse_params.h"
+#include "parameters/shimmer_params.h"
+#include "parameters/spectral_params.h"
+#include "parameters/tape_params.h"
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ustring.h"
@@ -60,7 +66,12 @@ Steinberg::tresult PLUGIN_API Controller::initialize(FUnknown* context) {
     // ==========================================================================
 
     registerGranularParams(parameters);  // Granular Delay (spec 034)
-    // Future modes: registerSpectralParams(parameters), etc.
+    registerSpectralParams(parameters);  // Spectral Delay (spec 033)
+    registerDuckingParams(parameters);   // Ducking Delay (spec 032)
+    registerFreezeParams(parameters);    // Freeze Mode (spec 031)
+    registerReverseParams(parameters);   // Reverse Delay (spec 030)
+    registerShimmerParams(parameters);   // Shimmer Delay (spec 029)
+    registerTapeParams(parameters);      // Tape Delay (spec 024)
 
     return Steinberg::kResultTrue;
 }
@@ -101,11 +112,16 @@ Steinberg::tresult PLUGIN_API Controller::setComponentState(
     }
 
     // ==========================================================================
-    // Sync mode-specific parameters
+    // Sync mode-specific parameters (order MUST match Processor::getState)
     // ==========================================================================
 
     syncGranularParamsToController(streamer, *this);  // Granular Delay (spec 034)
-    // Future modes: syncSpectralParamsToController(streamer, *this), etc.
+    syncSpectralParamsToController(streamer, *this);  // Spectral Delay (spec 033)
+    syncDuckingParamsToController(streamer, *this);   // Ducking Delay (spec 032)
+    syncFreezeParamsToController(streamer, *this);    // Freeze Mode (spec 031)
+    syncReverseParamsToController(streamer, *this);   // Reverse Delay (spec 030)
+    syncShimmerParamsToController(streamer, *this);   // Shimmer Delay (spec 029)
+    syncTapeParamsToController(streamer, *this);      // Tape Delay (spec 024)
 
     return Steinberg::kResultTrue;
 }
@@ -194,13 +210,34 @@ Steinberg::tresult PLUGIN_API Controller::getParamStringByValue(
         }
     }
     else if (id >= kGranularBaseId && id <= kGranularEndId) {
-        // Granular Delay parameters (100-119) - spec 034
+        // Granular Delay parameters (100-199) - spec 034
         return formatGranularParam(id, valueNormalized, string);
     }
-    // Future mode formatters will be added here:
-    // else if (id >= kSpectralBaseId && id <= kSpectralEndId) { ... }
-    // else if (id >= kShimmerBaseId && id <= kShimmerEndId) { ... }
-    // etc.
+    else if (id >= kSpectralBaseId && id <= kSpectralEndId) {
+        // Spectral Delay parameters (200-299) - spec 033
+        return formatSpectralParam(id, valueNormalized, string);
+    }
+    else if (id >= kShimmerBaseId && id <= kShimmerEndId) {
+        // Shimmer Delay parameters (300-399) - spec 029
+        return formatShimmerParam(id, valueNormalized, string);
+    }
+    else if (id >= kTapeBaseId && id <= kTapeEndId) {
+        // Tape Delay parameters (400-499) - spec 024
+        return formatTapeParam(id, valueNormalized, string);
+    }
+    else if (id >= kReverseBaseId && id <= kReverseEndId) {
+        // Reverse Delay parameters (800-899) - spec 030
+        return formatReverseParam(id, valueNormalized, string);
+    }
+    else if (id >= kFreezeBaseId && id <= kFreezeEndId) {
+        // Freeze Mode parameters (1000-1099) - spec 031
+        return formatFreezeParam(id, valueNormalized, string);
+    }
+    else if (id >= kDuckingBaseId && id <= kDuckingEndId) {
+        // Ducking Delay parameters (1100-1199) - spec 032
+        return formatDuckingParam(id, valueNormalized, string);
+    }
+    // Future mode formatters will be added here
 
     return EditControllerEx1::getParamStringByValue(id, valueNormalized, string);
 }
