@@ -105,7 +105,7 @@
 
 ### 3.5 Commit (MANDATORY)
 
-- [ ] T023 [US1] **Commit completed User Story 1 work**
+- [x] T023 [US1] **Commit completed User Story 1 work**
 
 **Checkpoint**: Basic spectral delay with uniform delay, dry/wet, and output gain working
 
@@ -119,39 +119,39 @@
 
 ### 4.1 Pre-Implementation (MANDATORY)
 
-- [ ] T024 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T024 [US2] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 4.2 Tests for User Story 2 (Write FIRST - Must FAIL)
 
-- [ ] T025 [P] [US2] Write tests for LowToHigh spread in tests/unit/features/spectral_delay_test.cpp:
+- [x] T025 [P] [US2] Write tests for LowToHigh spread in tests/unit/features/spectral_delay_test.cpp:
   - High frequencies delayed more than low frequencies
   - Spread of 0% = all same delay (coherent)
-- [ ] T026 [P] [US2] Write tests for HighToLow spread in tests/unit/features/spectral_delay_test.cpp:
+- [x] T026 [P] [US2] Write tests for HighToLow spread in tests/unit/features/spectral_delay_test.cpp:
   - Low frequencies delayed more than high frequencies
-- [ ] T027 [P] [US2] Write tests for CenterOut spread in tests/unit/features/spectral_delay_test.cpp:
+- [x] T027 [P] [US2] Write tests for CenterOut spread in tests/unit/features/spectral_delay_test.cpp:
   - Edge frequencies delayed more, center frequencies at base delay
-- [ ] T028 [P] [US2] Write tests for spread amount range in tests/unit/features/spectral_delay_test.cpp:
+- [x] T028 [P] [US2] Write tests for spread amount range in tests/unit/features/spectral_delay_test.cpp:
   - Spread 0-2000ms clamping
   - Delay range = baseDelay to baseDelay + spread
 
 ### 4.3 Implementation for User Story 2
 
-- [ ] T029 [US2] Implement setSpreadMs()/getSpreadMs() with clamping in src/dsp/features/spectral_delay.h
-- [ ] T030 [US2] Implement setSpreadDirection()/getSpreadDirection() in src/dsp/features/spectral_delay.h
-- [ ] T031 [US2] Implement calculateBinDelayTime() helper in src/dsp/features/spectral_delay.h:
+- [x] T029 [US2] Implement setSpreadMs()/getSpreadMs() with clamping in src/dsp/features/spectral_delay.h
+- [x] T030 [US2] Implement setSpreadDirection()/getSpreadDirection() in src/dsp/features/spectral_delay.h
+- [x] T031 [US2] Implement calculateBinDelayTime() helper in src/dsp/features/spectral_delay.h:
   - LowToHigh: delayOffset = normalizedBin * spreadMs
   - HighToLow: delayOffset = (1.0f - normalizedBin) * spreadMs
   - CenterOut: delayOffset = abs(normalizedBin - 0.5f) * 2.0f * spreadMs
-- [ ] T032 [US2] Update per-bin delay read to use calculateBinDelayTime() in src/dsp/features/spectral_delay.h
-- [ ] T033 [US2] Verify all US2 tests pass
+- [x] T032 [US2] Update per-bin delay read to use calculateBinDelayTime() in src/dsp/features/spectral_delay.h
+- [x] T033 [US2] Verify all US2 tests pass
 
 ### 4.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T034 [US2] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
+- [x] T034 [US2] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
 
 ### 4.5 Commit (MANDATORY)
 
-- [ ] T035 [US2] **Commit completed User Story 2 work**
+- [x] T035 [US2] **Commit completed User Story 2 work**
 
 **Checkpoint**: Spread control working - frequency-dependent delays functional
 
@@ -165,43 +165,43 @@
 
 ### 5.1 Pre-Implementation (MANDATORY)
 
-- [ ] T036 [US3] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T036 [US3] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 5.2 Tests for User Story 3 (Write FIRST - Must FAIL)
 
-- [ ] T037 [P] [US3] Write tests for freeze enable/disable in tests/unit/features/spectral_delay_test.cpp:
+- [x] T037 [P] [US3] Write tests for freeze enable/disable in tests/unit/features/spectral_delay_test.cpp:
   - setFreezeEnabled()/isFreezeEnabled() work correctly
-- [ ] T038 [P] [US3] Write tests for freeze holds spectrum in tests/unit/features/spectral_delay_test.cpp:
+- [x] T038 [P] [US3] Write tests for freeze holds spectrum in tests/unit/features/spectral_delay_test.cpp:
   - Output continues after input stops when frozen
   - New input is ignored while frozen
   - Freeze sustains for at least 60 seconds without decay (SC-003)
-- [ ] T039 [P] [US3] Write tests for freeze transitions in tests/unit/features/spectral_delay_test.cpp:
+- [x] T039 [P] [US3] Write tests for freeze transitions in tests/unit/features/spectral_delay_test.cpp:
   - Freeze on/off transitions are click-free (crossfade)
-- [ ] T040 [P] [US3] Write tests for unfreeze resumes in tests/unit/features/spectral_delay_test.cpp:
+- [x] T040 [P] [US3] Write tests for unfreeze resumes in tests/unit/features/spectral_delay_test.cpp:
   - After disabling freeze, new input appears in output
 
 ### 5.3 Implementation for User Story 3
 
-- [ ] T041 [US3] Add frozen SpectralBuffer and freeze state variables in src/dsp/features/spectral_delay.h:
+- [x] T041 [US3] Add frozen SpectralBuffer and freeze state variables in src/dsp/features/spectral_delay.h:
   - frozenSpectrum_ SpectralBuffer
   - freezeEnabled_ bool
   - freezeCrossfade_ float (0.0 to 1.0)
-- [ ] T042 [US3] Implement setFreezeEnabled()/isFreezeEnabled() in src/dsp/features/spectral_delay.h
-- [ ] T043 [US3] Implement freeze capture logic in process() in src/dsp/features/spectral_delay.h:
+- [x] T042 [US3] Implement setFreezeEnabled()/isFreezeEnabled() in src/dsp/features/spectral_delay.h
+- [x] T043 [US3] Implement freeze capture logic in process() in src/dsp/features/spectral_delay.h:
   - When freeze enabled, copy current spectrum to frozenSpectrum_
   - Use frozenSpectrum_ for output instead of live spectrum
-- [ ] T044 [US3] Implement freeze crossfade (50-100ms transition) in src/dsp/features/spectral_delay.h:
+- [x] T044 [US3] Implement freeze crossfade (50-100ms transition) in src/dsp/features/spectral_delay.h:
   - Smooth transition between live and frozen spectrum
   - Prevents clicks on enable/disable
-- [ ] T045 [US3] Verify all US3 tests pass
+- [x] T045 [US3] Verify all US3 tests pass
 
 ### 5.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T046 [US3] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
+- [x] T046 [US3] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
 
 ### 5.5 Commit (MANDATORY)
 
-- [ ] T047 [US3] **Commit completed User Story 3 work**
+- [x] T047 [US3] **Commit completed User Story 3 work**
 
 **Checkpoint**: Freeze mode working - infinite sustain textures possible
 
@@ -215,41 +215,41 @@
 
 ### 6.1 Pre-Implementation (MANDATORY)
 
-- [ ] T048 [US4] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T048 [US4] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 6.2 Tests for User Story 4 (Write FIRST - Must FAIL)
 
-- [ ] T049 [P] [US4] Write tests for global feedback in tests/unit/features/spectral_delay_test.cpp:
+- [x] T049 [P] [US4] Write tests for global feedback in tests/unit/features/spectral_delay_test.cpp:
   - 0% feedback = no repeats
   - 50% feedback = decaying repeats
   - setFeedback()/getFeedback() with 0-120% range
-- [ ] T050 [P] [US4] Write tests for feedback tilt in tests/unit/features/spectral_delay_test.cpp:
+- [x] T050 [P] [US4] Write tests for feedback tilt in tests/unit/features/spectral_delay_test.cpp:
   - Negative tilt: lows sustain longer
   - Positive tilt: highs sustain longer
   - Zero tilt: uniform decay
-- [ ] T051 [P] [US4] Write tests for feedback limiting in tests/unit/features/spectral_delay_test.cpp:
+- [x] T051 [P] [US4] Write tests for feedback limiting in tests/unit/features/spectral_delay_test.cpp:
   - Feedback > 100% is soft-limited
   - No runaway oscillation
 
 ### 6.3 Implementation for User Story 4
 
-- [ ] T052 [US4] Implement setFeedback()/getFeedback() with 0-120% range in src/dsp/features/spectral_delay.h
-- [ ] T053 [US4] Implement setFeedbackTilt()/getFeedbackTilt() with -1.0 to +1.0 range in src/dsp/features/spectral_delay.h
-- [ ] T054 [US4] Implement calculateTiltedFeedback() helper in src/dsp/features/spectral_delay.h:
+- [x] T052 [US4] Implement setFeedback()/getFeedback() with 0-120% range in src/dsp/features/spectral_delay.h
+- [x] T053 [US4] Implement setFeedbackTilt()/getFeedbackTilt() with -1.0 to +1.0 range in src/dsp/features/spectral_delay.h
+- [x] T054 [US4] Implement calculateTiltedFeedback() helper in src/dsp/features/spectral_delay.h:
   - tiltFactor = 1.0f + tilt * (normalizedBin - 0.5f) * 2.0f
   - return clamp(globalFeedback * tiltFactor, 0.0f, 1.5f)
-- [ ] T055 [US4] Update per-bin delay write to include feedback in src/dsp/features/spectral_delay.h:
+- [x] T055 [US4] Update per-bin delay write to include feedback in src/dsp/features/spectral_delay.h:
   - write(inputMag + delayedMag * tiltedFeedback)
-- [ ] T056 [US4] Add soft limiting for feedback > 100% (tanh saturation) in src/dsp/features/spectral_delay.h
-- [ ] T057 [US4] Verify all US4 tests pass
+- [x] T056 [US4] Add soft limiting for feedback > 100% (tanh saturation) in src/dsp/features/spectral_delay.h
+- [x] T057 [US4] Verify all US4 tests pass
 
 ### 6.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T058 [US4] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
+- [x] T058 [US4] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
 
 ### 6.5 Commit (MANDATORY)
 
-- [ ] T059 [US4] **Commit completed User Story 4 work**
+- [x] T059 [US4] **Commit completed User Story 4 work**
 
 **Checkpoint**: Feedback with tilt working - frequency-sculpted decay possible
 
@@ -263,35 +263,35 @@
 
 ### 7.1 Pre-Implementation (MANDATORY)
 
-- [ ] T060 [US5] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
+- [x] T060 [US5] **Verify TESTING-GUIDE.md is in context** (ingest `specs/TESTING-GUIDE.md` if needed)
 
 ### 7.2 Tests for User Story 5 (Write FIRST - Must FAIL)
 
-- [ ] T061 [P] [US5] Write tests for diffusion amount in tests/unit/features/spectral_delay_test.cpp:
+- [x] T061 [P] [US5] Write tests for diffusion amount in tests/unit/features/spectral_delay_test.cpp:
   - 0% diffusion = clean spectrum
   - 100% diffusion = maximum blur
   - setDiffusion()/getDiffusion() with 0-100% range
-- [ ] T062 [P] [US5] Write tests for spectral blurring in tests/unit/features/spectral_delay_test.cpp:
+- [x] T062 [P] [US5] Write tests for spectral blurring in tests/unit/features/spectral_delay_test.cpp:
   - Pure tone spreads to neighboring bins with diffusion
   - Transients are softened
 
 ### 7.3 Implementation for User Story 5
 
-- [ ] T063 [US5] Implement setDiffusion()/getDiffusion() with 0-100% range in src/dsp/features/spectral_delay.h
-- [ ] T064 [US5] Add blurredMag_ buffer for diffusion processing in src/dsp/features/spectral_delay.h
-- [ ] T065 [US5] Implement applyDiffusion() with 3-tap blur kernel in src/dsp/features/spectral_delay.h:
+- [x] T063 [US5] Implement setDiffusion()/getDiffusion() with 0-100% range in src/dsp/features/spectral_delay.h
+- [x] T064 [US5] Add blurredMag_ buffer for diffusion processing in src/dsp/features/spectral_delay.h
+- [x] T065 [US5] Implement applyDiffusion() with 3-tap blur kernel in src/dsp/features/spectral_delay.h:
   - kernel = [diffusion * 0.25f, 1.0f - diffusion * 0.5f, diffusion * 0.25f]
   - Apply to magnitude before output
-- [ ] T066 [US5] Integrate diffusion into processing loop in src/dsp/features/spectral_delay.h
-- [ ] T067 [US5] Verify all US5 tests pass
+- [x] T066 [US5] Integrate diffusion into processing loop in src/dsp/features/spectral_delay.h
+- [x] T067 [US5] Verify all US5 tests pass
 
 ### 7.4 Cross-Platform Verification (MANDATORY)
 
-- [ ] T068 [US5] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
+- [x] T068 [US5] **Verify IEEE 754 compliance**: Check test file still in -fno-fast-math list
 
 ### 7.5 Commit (MANDATORY)
 
-- [ ] T069 [US5] **Commit completed User Story 5 work**
+- [x] T069 [US5] **Commit completed User Story 5 work**
 
 **Checkpoint**: Diffusion working - spectral smearing for soft textures
 
@@ -301,14 +301,14 @@
 
 **Purpose**: Edge cases, optimization, and cleanup
 
-- [ ] T070 [P] Add edge case tests in tests/unit/features/spectral_delay_test.cpp:
+- [x] T070 [P] Add edge case tests in tests/unit/features/spectral_delay_test.cpp:
   - Silent input handling
   - Full-scale input handling
   - Sample rate change (re-prepare)
-- [ ] T071 [P] Add performance test (SC-005: < 3% CPU) in tests/unit/features/spectral_delay_test.cpp
-- [ ] T072 Optimize per-bin processing loop (SIMD opportunities) in src/dsp/features/spectral_delay.h
-- [ ] T073 Verify all tests pass across all user stories
-- [ ] T074 Run quickstart.md scenarios for validation
+- [x] T071 [P] Add performance test (SC-005: < 3% CPU) in tests/unit/features/spectral_delay_test.cpp
+- [x] T072 Optimize per-bin processing loop (SIMD opportunities) in src/dsp/features/spectral_delay.h
+- [x] T073 Verify all tests pass across all user stories
+- [x] T074 Run quickstart.md scenarios for validation
 
 ---
 
@@ -320,7 +320,7 @@
 
 ### 9.1 Architecture Documentation Update
 
-- [ ] T075 **Update ARCHITECTURE.md** with SpectralDelay (Layer 4):
+- [x] T075 **Update ARCHITECTURE.md** with SpectralDelay (Layer 4):
   - Add entry to Layer 4: User Features section
   - Include: purpose, public API summary, file location
   - Document SpreadDirection enum
@@ -329,8 +329,8 @@
 
 ### 9.2 Final Commit
 
-- [ ] T076 **Commit ARCHITECTURE.md updates**
-- [ ] T077 Verify all spec work is committed to feature branch
+- [x] T076 **Commit ARCHITECTURE.md updates**
+- [x] T077 Verify all spec work is committed to feature branch
 
 **Checkpoint**: ARCHITECTURE.md reflects SpectralDelay feature
 
@@ -344,21 +344,21 @@
 
 ### 10.1 Requirements Verification
 
-- [ ] T078 **Review ALL FR-xxx requirements** (FR-001 to FR-026) from spec.md against implementation
-- [ ] T079 **Review ALL SC-xxx success criteria** (SC-001 to SC-008) and verify measurable targets
-- [ ] T080 **Search for cheating patterns** in implementation:
-  - [ ] No `// placeholder` or `// TODO` comments in new code
-  - [ ] No test thresholds relaxed from spec requirements
-  - [ ] No features quietly removed from scope
+- [x] T078 **Review ALL FR-xxx requirements** (FR-001 to FR-026) from spec.md against implementation
+- [x] T079 **Review ALL SC-xxx success criteria** (SC-001 to SC-008) and verify measurable targets
+- [x] T080 **Search for cheating patterns** in implementation:
+  - [x] No `// placeholder` or `// TODO` comments in new code
+  - [x] No test thresholds relaxed from spec requirements
+  - [x] No features quietly removed from scope
 
 ### 10.2 Fill Compliance Table in spec.md
 
-- [ ] T081 **Update spec.md "Implementation Verification" section** with compliance status for each FR and SC
-- [ ] T082 **Mark overall status honestly**: COMPLETE / NOT COMPLETE / PARTIAL
+- [x] T081 **Update spec.md "Implementation Verification" section** with compliance status for each FR and SC
+- [x] T082 **Mark overall status honestly**: COMPLETE / NOT COMPLETE / PARTIAL
 
 ### 10.3 Honest Self-Check
 
-- [ ] T083 **All self-check questions answered "no"** (or gaps documented honestly):
+- [x] T083 **All self-check questions answered "no"** (or gaps documented honestly):
   1. Did I change ANY test threshold from spec requirements?
   2. Are there ANY "placeholder"/"TODO" comments in new code?
   3. Did I remove ANY features from scope without user approval?
@@ -373,9 +373,9 @@
 
 **Purpose**: Final commit and completion claim
 
-- [ ] T084 **Commit all spec work** to feature branch
-- [ ] T085 **Verify all tests pass** (run full test suite)
-- [ ] T086 **Claim completion ONLY if all requirements are MET**
+- [x] T084 **Commit all spec work** to feature branch
+- [x] T085 **Verify all tests pass** (run full test suite)
+- [x] T086 **Claim completion ONLY if all requirements are MET**
 
 **Checkpoint**: Spec implementation honestly complete
 

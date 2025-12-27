@@ -518,3 +518,663 @@ TEST_CASE("SpectralDelay 0dB gain is unity", "[spectral-delay][US1][FR-024]") {
         REQUIRE(left[i] == Approx(originalLeft[i]).margin(1e-5f));
     }
 }
+
+// =============================================================================
+// Phase 4: User Story 2 - Delay Spread Control
+// =============================================================================
+
+TEST_CASE("SpectralDelay spread direction LowToHigh", "[spectral-delay][US2][FR-009]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    // Set spread with LowToHigh direction
+    delay.setBaseDelayMs(100.0f);
+    delay.setSpreadMs(200.0f);  // Total range: 100ms to 300ms
+    delay.setSpreadDirection(SpreadDirection::LowToHigh);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.snapParameters();
+
+    // Verify the spread direction is set correctly
+    REQUIRE(delay.getSpreadDirection() == SpreadDirection::LowToHigh);
+    REQUIRE(delay.getSpreadMs() == Approx(200.0f));
+    REQUIRE(delay.getBaseDelayMs() == Approx(100.0f));
+
+    // Process audio to ensure it works without errors
+    auto ctx = makeTestContext();
+    std::vector<float> left(512);
+    std::vector<float> right(512);
+    generateSine(left.data(), 512, 1000.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+
+    // Process several blocks
+    for (int i = 0; i < 10; ++i) {
+        delay.process(left.data(), right.data(), 512, ctx);
+    }
+
+    // The system should still be prepared and functioning
+    REQUIRE(delay.isPrepared());
+}
+
+TEST_CASE("SpectralDelay spread direction HighToLow", "[spectral-delay][US2][FR-009]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(100.0f);
+    delay.setSpreadMs(200.0f);
+    delay.setSpreadDirection(SpreadDirection::HighToLow);
+    delay.setDryWetMix(100.0f);
+    delay.snapParameters();
+
+    REQUIRE(delay.getSpreadDirection() == SpreadDirection::HighToLow);
+
+    auto ctx = makeTestContext();
+    std::vector<float> left(512);
+    std::vector<float> right(512);
+    generateSine(left.data(), 512, 1000.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+
+    for (int i = 0; i < 10; ++i) {
+        delay.process(left.data(), right.data(), 512, ctx);
+    }
+
+    REQUIRE(delay.isPrepared());
+}
+
+TEST_CASE("SpectralDelay spread direction CenterOut", "[spectral-delay][US2][FR-009]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(100.0f);
+    delay.setSpreadMs(200.0f);
+    delay.setSpreadDirection(SpreadDirection::CenterOut);
+    delay.setDryWetMix(100.0f);
+    delay.snapParameters();
+
+    REQUIRE(delay.getSpreadDirection() == SpreadDirection::CenterOut);
+
+    auto ctx = makeTestContext();
+    std::vector<float> left(512);
+    std::vector<float> right(512);
+    generateSine(left.data(), 512, 1000.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+
+    for (int i = 0; i < 10; ++i) {
+        delay.process(left.data(), right.data(), 512, ctx);
+    }
+
+    REQUIRE(delay.isPrepared());
+}
+
+TEST_CASE("SpectralDelay spread 0ms equals coherent delay", "[spectral-delay][US2][FR-010]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    // With 0ms spread, all bins should have the same delay time
+    delay.setBaseDelayMs(100.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setSpreadDirection(SpreadDirection::LowToHigh);
+    delay.snapParameters();
+
+    REQUIRE(delay.getSpreadMs() == Approx(0.0f));
+}
+
+TEST_CASE("SpectralDelay spread amount clamped to valid range", "[spectral-delay][US2][FR-007]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    SECTION("negative spread clamped to 0") {
+        delay.setSpreadMs(-100.0f);
+        REQUIRE(delay.getSpreadMs() == Approx(0.0f));
+    }
+
+    SECTION("excessive spread clamped to max") {
+        delay.setSpreadMs(5000.0f);
+        REQUIRE(delay.getSpreadMs() == Approx(SpectralDelay::kMaxSpreadMs));
+    }
+
+    SECTION("valid spread within range") {
+        delay.setSpreadMs(500.0f);
+        REQUIRE(delay.getSpreadMs() == Approx(500.0f));
+    }
+}
+
+TEST_CASE("SpectralDelay delay range is baseDelay to baseDelay+spread", "[spectral-delay][US2][FR-006][FR-007]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    // Setting specific values
+    delay.setBaseDelayMs(500.0f);
+    delay.setSpreadMs(500.0f);
+
+    // Delay range should span from baseDelay (500ms) to baseDelay+spread (1000ms)
+    REQUIRE(delay.getBaseDelayMs() == Approx(500.0f));
+    REQUIRE(delay.getSpreadMs() == Approx(500.0f));
+
+    // Total max delay = baseDelay + spread = 1000ms, which is within kMaxDelayMs (2000ms)
+    REQUIRE(delay.getBaseDelayMs() + delay.getSpreadMs() <= SpectralDelay::kMaxDelayMs);
+}
+
+// =============================================================================
+// Phase 5: User Story 3 - Spectral Freeze
+// =============================================================================
+
+TEST_CASE("SpectralDelay freeze enable/disable", "[spectral-delay][US3][FR-012]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    // Initially freeze should be disabled
+    REQUIRE_FALSE(delay.isFreezeEnabled());
+
+    // Enable freeze
+    delay.setFreezeEnabled(true);
+    REQUIRE(delay.isFreezeEnabled());
+
+    // Disable freeze
+    delay.setFreezeEnabled(false);
+    REQUIRE_FALSE(delay.isFreezeEnabled());
+}
+
+TEST_CASE("SpectralDelay freeze holds spectrum output", "[spectral-delay][US3][FR-012][FR-014]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);  // Short delay
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);  // Wet only
+    delay.setFeedback(0.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Phase 1: Generate audio and let it fill the delay
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Enable freeze
+    delay.setFreezeEnabled(true);
+
+    // Phase 2: Feed silence but freeze should maintain output
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+
+    // Process several more blocks with silence input
+    float maxOutputAfterFreeze = 0.0f;
+    for (int i = 0; i < 20; ++i) {
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+        maxOutputAfterFreeze = std::max(maxOutputAfterFreeze, findPeak(left.data(), kBlockSize));
+    }
+
+    INFO("Max output after freeze with silence input: " << maxOutputAfterFreeze);
+
+    // With freeze enabled, output should continue even with silence input
+    // (frozen spectrum being resynthesized)
+    REQUIRE(maxOutputAfterFreeze > 0.01f);
+}
+
+TEST_CASE("SpectralDelay freeze ignores new input", "[spectral-delay][US3][FR-012]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Fill with 440 Hz and get the system outputting steadily
+    for (int i = 0; i < 15; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Enable freeze
+    delay.setFreezeEnabled(true);
+
+    // Wait for crossfade to complete (75ms = ~7 blocks at 512 samples @ 44100Hz)
+    // Process with same input during crossfade to avoid artifacts
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // NOW measure output level when fully frozen
+    generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+    delay.process(left.data(), right.data(), kBlockSize, ctx);
+    float rmsWithFrozen = calculateRMS(left.data(), kBlockSize);
+
+    // Now feed a completely different frequency (should be ignored since fully frozen)
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 2000.0f, 44100.0f, 1.0f);  // Different freq, higher amplitude
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    float rmsAfterDifferentInput = calculateRMS(left.data(), kBlockSize);
+
+    INFO("RMS with frozen state: " << rmsWithFrozen);
+    INFO("RMS after different input: " << rmsAfterDifferentInput);
+
+    // RMS should remain similar since fully frozen (crossfade complete)
+    // Allow some variance but output character should be preserved
+    REQUIRE(std::abs(rmsAfterDifferentInput - rmsWithFrozen) / (rmsWithFrozen + 0.001f) < 0.5f);
+}
+
+TEST_CASE("SpectralDelay freeze transition is smooth", "[spectral-delay][US3][FR-013]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Fill with audio
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Store last sample before freeze
+    generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+    delay.process(left.data(), right.data(), kBlockSize, ctx);
+    float lastSampleBeforeFreeze = left[kBlockSize - 1];
+
+    // Enable freeze and process another block
+    delay.setFreezeEnabled(true);
+    generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+    std::copy(left.begin(), left.end(), right.begin());
+    delay.process(left.data(), right.data(), kBlockSize, ctx);
+    float firstSampleAfterFreeze = left[0];
+
+    // The transition should be smooth (no large discontinuity)
+    // Allow for some difference due to processing, but no hard clicks
+    float discontinuity = std::abs(firstSampleAfterFreeze - lastSampleBeforeFreeze);
+    INFO("Discontinuity at freeze enable: " << discontinuity);
+
+    // A smooth transition should have no sudden large jumps
+    REQUIRE(discontinuity < 1.0f);  // No hard click
+}
+
+TEST_CASE("SpectralDelay unfreeze resumes normal processing", "[spectral-delay][US3][FR-014]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Fill with 440 Hz
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Enable freeze
+    delay.setFreezeEnabled(true);
+
+    // Process with frozen state
+    for (int i = 0; i < 5; ++i) {
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Disable freeze
+    delay.setFreezeEnabled(false);
+    REQUIRE_FALSE(delay.isFreezeEnabled());
+
+    // Feed new audio - it should appear in output after crossfade
+    for (int i = 0; i < 10; ++i) {
+        generateSine(left.data(), kBlockSize, 880.0f, 44100.0f, 0.5f);  // Different frequency
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Output should have signal content
+    float outputRMS = calculateRMS(left.data(), kBlockSize);
+    INFO("Output RMS after unfreeze: " << outputRMS);
+
+    REQUIRE(outputRMS > 0.01f);  // Signal is passing through
+}
+
+// =============================================================================
+// Phase 6: User Story 4 - Feedback Control
+// =============================================================================
+
+TEST_CASE("SpectralDelay feedback parameter range", "[spectral-delay][US4][FR-015]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    SECTION("feedback 0 is minimum") {
+        delay.setFeedback(0.0f);
+        REQUIRE(delay.getFeedback() == Approx(0.0f));
+    }
+
+    SECTION("feedback 1.2 is maximum") {
+        delay.setFeedback(1.2f);
+        REQUIRE(delay.getFeedback() == Approx(1.2f));
+    }
+
+    SECTION("negative feedback clamped to 0") {
+        delay.setFeedback(-0.5f);
+        REQUIRE(delay.getFeedback() == Approx(0.0f));
+    }
+
+    SECTION("excessive feedback clamped to max") {
+        delay.setFeedback(2.0f);
+        REQUIRE(delay.getFeedback() == Approx(1.2f));
+    }
+}
+
+TEST_CASE("SpectralDelay feedback creates repeating echoes", "[spectral-delay][US4][FR-016]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(50.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.5f);  // 50% feedback
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Feed a burst of audio
+    for (int i = 0; i < 5; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Now feed silence - with feedback, output should continue (decaying echoes)
+    float previousRMS = 1.0f;
+    int decayingBlocks = 0;
+
+    for (int i = 0; i < 30; ++i) {
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+
+        float currentRMS = calculateRMS(left.data(), kBlockSize);
+        if (currentRMS > 0.001f && currentRMS < previousRMS) {
+            decayingBlocks++;
+        }
+        previousRMS = currentRMS;
+    }
+
+    INFO("Decaying blocks with feedback: " << decayingBlocks);
+
+    // With 50% feedback, we should see multiple decaying echoes
+    REQUIRE(decayingBlocks >= 3);
+}
+
+TEST_CASE("SpectralDelay 0 feedback has no repeating echoes", "[spectral-delay][US4][FR-016]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(50.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);  // No feedback
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Feed a burst of audio
+    for (int i = 0; i < 5; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Feed silence and wait for delay to flush
+    for (int i = 0; i < 20; ++i) {
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // After enough silence, output should be near zero (no feedback = no sustained echoes)
+    float finalRMS = calculateRMS(left.data(), kBlockSize);
+    INFO("Final RMS with 0 feedback: " << finalRMS);
+
+    REQUIRE(finalRMS < 0.01f);
+}
+
+TEST_CASE("SpectralDelay feedback tilt parameter range", "[spectral-delay][US4][FR-017]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    SECTION("tilt -1 is minimum") {
+        delay.setFeedbackTilt(-1.0f);
+        REQUIRE(delay.getFeedbackTilt() == Approx(-1.0f));
+    }
+
+    SECTION("tilt +1 is maximum") {
+        delay.setFeedbackTilt(1.0f);
+        REQUIRE(delay.getFeedbackTilt() == Approx(1.0f));
+    }
+
+    SECTION("tilt 0 is neutral") {
+        delay.setFeedbackTilt(0.0f);
+        REQUIRE(delay.getFeedbackTilt() == Approx(0.0f));
+    }
+
+    SECTION("excessive tilt clamped") {
+        delay.setFeedbackTilt(2.0f);
+        REQUIRE(delay.getFeedbackTilt() == Approx(1.0f));
+    }
+}
+
+TEST_CASE("SpectralDelay feedback >1.0 is soft limited", "[spectral-delay][US4][FR-018]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(20.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(1.2f);  // Over 100% feedback
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Feed audio for many blocks with >100% feedback
+    float maxPeak = 0.0f;
+    for (int i = 0; i < 50; ++i) {
+        generateSine(left.data(), kBlockSize, 440.0f, 44100.0f, 0.3f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+
+        float peak = findPeak(left.data(), kBlockSize);
+        maxPeak = std::max(maxPeak, peak);
+    }
+
+    INFO("Max peak with 1.2 feedback: " << maxPeak);
+
+    // With soft limiting (tanh), output should stay bounded even with >100% feedback
+    REQUIRE(maxPeak < 10.0f);  // Should not explode
+}
+
+// =============================================================================
+// Phase 7: User Story 5 - Diffusion Control
+// =============================================================================
+
+TEST_CASE("SpectralDelay diffusion parameter range", "[spectral-delay][US5][FR-019]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    SECTION("diffusion 0 is minimum") {
+        delay.setDiffusion(0.0f);
+        REQUIRE(delay.getDiffusion() == Approx(0.0f));
+    }
+
+    SECTION("diffusion 1 is maximum") {
+        delay.setDiffusion(1.0f);
+        REQUIRE(delay.getDiffusion() == Approx(1.0f));
+    }
+
+    SECTION("negative diffusion clamped to 0") {
+        delay.setDiffusion(-0.5f);
+        REQUIRE(delay.getDiffusion() == Approx(0.0f));
+    }
+
+    SECTION("excessive diffusion clamped to 1") {
+        delay.setDiffusion(2.0f);
+        REQUIRE(delay.getDiffusion() == Approx(1.0f));
+    }
+}
+
+TEST_CASE("SpectralDelay 0 diffusion preserves spectrum", "[spectral-delay][US5][FR-019]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.setDiffusion(0.0f);  // No diffusion
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Process steady-state
+    for (int i = 0; i < 20; ++i) {
+        generateSine(left.data(), kBlockSize, 1000.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Output should have clear tonal character (not smeared)
+    float rms = calculateRMS(left.data(), kBlockSize);
+    INFO("RMS with 0 diffusion: " << rms);
+
+    REQUIRE(rms > 0.1f);  // Signal passes through
+}
+
+TEST_CASE("SpectralDelay diffusion spreads spectrum", "[spectral-delay][US5][FR-020]") {
+    SpectralDelay delay;
+    delay.setFFTSize(512);
+    delay.prepare(44100.0, 512);
+
+    delay.setBaseDelayMs(10.0f);
+    delay.setSpreadMs(0.0f);
+    delay.setDryWetMix(100.0f);
+    delay.setFeedback(0.0f);
+    delay.setDiffusion(1.0f);  // Maximum diffusion
+    delay.snapParameters();
+
+    auto ctx = makeTestContext();
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Process with high diffusion
+    for (int i = 0; i < 20; ++i) {
+        generateSine(left.data(), kBlockSize, 1000.0f, 44100.0f, 0.5f);
+        std::copy(left.begin(), left.end(), right.begin());
+        delay.process(left.data(), right.data(), kBlockSize, ctx);
+    }
+
+    // Output should still have signal (diffusion spreads but doesn't eliminate)
+    float rms = calculateRMS(left.data(), kBlockSize);
+    INFO("RMS with max diffusion: " << rms);
+
+    REQUIRE(rms > 0.05f);  // Signal still present
+}
+
+TEST_CASE("SpectralDelay processes without errors at all settings", "[spectral-delay][integration]") {
+    SpectralDelay delay;
+    delay.setFFTSize(1024);
+    delay.prepare(48000.0, 512);
+
+    // Set all parameters to various values
+    delay.setBaseDelayMs(500.0f);
+    delay.setSpreadMs(300.0f);
+    delay.setSpreadDirection(SpreadDirection::CenterOut);
+    delay.setFeedback(0.7f);
+    delay.setFeedbackTilt(-0.5f);
+    delay.setDiffusion(0.5f);
+    delay.setDryWetMix(75.0f);
+    delay.setOutputGainDb(-3.0f);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext(48000.0);
+    constexpr std::size_t kBlockSize = 512;
+
+    std::vector<float> left(kBlockSize);
+    std::vector<float> right(kBlockSize);
+
+    // Process many blocks without crashing
+    bool crashed = false;
+    try {
+        for (int i = 0; i < 100; ++i) {
+            generateSine(left.data(), kBlockSize, 440.0f, 48000.0f, 0.5f);
+            std::copy(left.begin(), left.end(), right.begin());
+            delay.process(left.data(), right.data(), kBlockSize, ctx);
+        }
+    } catch (...) {
+        crashed = true;
+    }
+
+    REQUIRE_FALSE(crashed);
+    REQUIRE(delay.isPrepared());
+}

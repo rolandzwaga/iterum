@@ -572,28 +572,46 @@ private:
                 feedbackMagR = std::tanh(feedbackMagR);
             }
 
-            binDelaysL_[bin].write(inputMagL + feedbackMagL);
-            binDelaysR_[bin].write(inputMagR + feedbackMagR);
+            // Only write to delay lines when not frozen
+            // This ensures freeze truly ignores new input
+            if (!freezing) {
+                binDelaysL_[bin].write(inputMagL + feedbackMagL);
+                binDelaysR_[bin].write(inputMagR + feedbackMagR);
+            }
 
             // Output is the delayed magnitude
             float outMagL = delayedMagL;
             float outMagR = delayedMagR;
 
+            // Determine output phase - use frozen phase when fully frozen
+            float outPhaseL = inputPhaseL;
+            float outPhaseR = inputPhaseR;
+
             // Apply freeze crossfade if active
             if (freezeCrossfade_ > 0.0f) {
                 const float frozenMagL = frozenSpectrumL_.getMagnitude(bin);
                 const float frozenMagR = frozenSpectrumR_.getMagnitude(bin);
+                const float frozenPhaseL = frozenSpectrumL_.getPhase(bin);
+                const float frozenPhaseR = frozenSpectrumR_.getPhase(bin);
+
                 outMagL = outMagL * (1.0f - freezeCrossfade_) +
                           frozenMagL * freezeCrossfade_;
                 outMagR = outMagR * (1.0f - freezeCrossfade_) +
                           frozenMagR * freezeCrossfade_;
+
+                // When fully frozen (crossfade >= 0.99), use frozen phase
+                // to ensure new input has no effect on output
+                if (freezeCrossfade_ >= 0.99f) {
+                    outPhaseL = frozenPhaseL;
+                    outPhaseR = frozenPhaseR;
+                }
             }
 
-            // Set output spectrum (pass through input phase)
+            // Set output spectrum
             outputL.setMagnitude(bin, outMagL);
-            outputL.setPhase(bin, inputPhaseL);
+            outputL.setPhase(bin, outPhaseL);
             outputR.setMagnitude(bin, outMagR);
-            outputR.setPhase(bin, inputPhaseR);
+            outputR.setPhase(bin, outPhaseR);
         }
 
         // Apply diffusion if enabled
