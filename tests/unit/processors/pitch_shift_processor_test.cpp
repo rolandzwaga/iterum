@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "dsp/processors/pitch_shift_processor.h"
+#include "dsp/core/pitch_utils.h"
 #include "dsp/primitives/fft.h"
 
 #include <array>
@@ -320,81 +321,81 @@ TEST_CASE("FFT frequency detection is accurate", "[pitch][diagnostic]") {
 // Phase 2: Foundational Utilities Tests
 // ==============================================================================
 
-TEST_CASE("pitchRatioFromSemitones converts semitones to pitch ratio", "[pitch][utility]") {
-    // T006: pitchRatioFromSemitones utility tests
+TEST_CASE("semitonesToRatio converts semitones to pitch ratio", "[pitch][utility]") {
+    // T006: semitonesToRatio utility tests (refactored from pitchRatioFromSemitones)
 
     SECTION("0 semitones returns unity ratio") {
-        REQUIRE(pitchRatioFromSemitones(0.0f) == Approx(1.0f));
+        REQUIRE(semitonesToRatio(0.0f) == Approx(1.0f));
     }
 
     SECTION("+12 semitones returns 2.0 (octave up)") {
-        REQUIRE(pitchRatioFromSemitones(12.0f) == Approx(2.0f).margin(1e-5f));
+        REQUIRE(semitonesToRatio(12.0f) == Approx(2.0f).margin(1e-5f));
     }
 
     SECTION("-12 semitones returns 0.5 (octave down)") {
-        REQUIRE(pitchRatioFromSemitones(-12.0f) == Approx(0.5f).margin(1e-5f));
+        REQUIRE(semitonesToRatio(-12.0f) == Approx(0.5f).margin(1e-5f));
     }
 
     SECTION("+7 semitones returns perfect fifth ratio (~1.498)") {
         // Perfect fifth = 2^(7/12) ≈ 1.4983
-        REQUIRE(pitchRatioFromSemitones(7.0f) == Approx(1.4983f).margin(1e-3f));
+        REQUIRE(semitonesToRatio(7.0f) == Approx(1.4983f).margin(1e-3f));
     }
 
     SECTION("+24 semitones returns 4.0 (two octaves up)") {
-        REQUIRE(pitchRatioFromSemitones(24.0f) == Approx(4.0f).margin(1e-4f));
+        REQUIRE(semitonesToRatio(24.0f) == Approx(4.0f).margin(1e-4f));
     }
 
     SECTION("-24 semitones returns 0.25 (two octaves down)") {
-        REQUIRE(pitchRatioFromSemitones(-24.0f) == Approx(0.25f).margin(1e-5f));
+        REQUIRE(semitonesToRatio(-24.0f) == Approx(0.25f).margin(1e-5f));
     }
 
     SECTION("+1 semitone returns semitone ratio (~1.0595)") {
         // Semitone = 2^(1/12) ≈ 1.05946
-        REQUIRE(pitchRatioFromSemitones(1.0f) == Approx(1.05946f).margin(1e-4f));
+        REQUIRE(semitonesToRatio(1.0f) == Approx(1.05946f).margin(1e-4f));
     }
 
     SECTION("fractional semitones work (0.5 = quarter tone)") {
         // Quarter tone = 2^(0.5/12) ≈ 1.02930
-        REQUIRE(pitchRatioFromSemitones(0.5f) == Approx(1.02930f).margin(1e-4f));
+        REQUIRE(semitonesToRatio(0.5f) == Approx(1.02930f).margin(1e-4f));
     }
 }
 
-TEST_CASE("semitonesFromPitchRatio converts pitch ratio to semitones", "[pitch][utility]") {
-    // T008: semitonesFromPitchRatio utility tests
+TEST_CASE("ratioToSemitones converts pitch ratio to semitones", "[pitch][utility]") {
+    // T008: ratioToSemitones utility tests (refactored from semitonesFromPitchRatio)
 
     SECTION("unity ratio returns 0 semitones") {
-        REQUIRE(semitonesFromPitchRatio(1.0f) == Approx(0.0f));
+        REQUIRE(ratioToSemitones(1.0f) == Approx(0.0f));
     }
 
     SECTION("2.0 ratio returns +12 semitones (octave up)") {
-        REQUIRE(semitonesFromPitchRatio(2.0f) == Approx(12.0f).margin(1e-4f));
+        REQUIRE(ratioToSemitones(2.0f) == Approx(12.0f).margin(1e-4f));
     }
 
     SECTION("0.5 ratio returns -12 semitones (octave down)") {
-        REQUIRE(semitonesFromPitchRatio(0.5f) == Approx(-12.0f).margin(1e-4f));
+        REQUIRE(ratioToSemitones(0.5f) == Approx(-12.0f).margin(1e-4f));
     }
 
     SECTION("4.0 ratio returns +24 semitones (two octaves up)") {
-        REQUIRE(semitonesFromPitchRatio(4.0f) == Approx(24.0f).margin(1e-4f));
+        REQUIRE(ratioToSemitones(4.0f) == Approx(24.0f).margin(1e-4f));
     }
 
     SECTION("0.25 ratio returns -24 semitones (two octaves down)") {
-        REQUIRE(semitonesFromPitchRatio(0.25f) == Approx(-24.0f).margin(1e-4f));
+        REQUIRE(ratioToSemitones(0.25f) == Approx(-24.0f).margin(1e-4f));
     }
 
     SECTION("invalid ratio (0) returns 0") {
-        REQUIRE(semitonesFromPitchRatio(0.0f) == 0.0f);
+        REQUIRE(ratioToSemitones(0.0f) == 0.0f);
     }
 
     SECTION("invalid ratio (negative) returns 0") {
-        REQUIRE(semitonesFromPitchRatio(-1.0f) == 0.0f);
+        REQUIRE(ratioToSemitones(-1.0f) == 0.0f);
     }
 
     SECTION("roundtrip: semitones -> ratio -> semitones") {
         // Test that conversion roundtrips correctly
         for (float semitones = -24.0f; semitones <= 24.0f; semitones += 1.0f) {
-            float ratio = pitchRatioFromSemitones(semitones);
-            float recovered = semitonesFromPitchRatio(ratio);
+            float ratio = semitonesToRatio(semitones);
+            float recovered = ratioToSemitones(ratio);
             REQUIRE(recovered == Approx(semitones).margin(1e-4f));
         }
     }

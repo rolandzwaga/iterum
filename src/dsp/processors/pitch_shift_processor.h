@@ -33,6 +33,7 @@
 // Layer 0 dependencies
 #include "dsp/core/db_utils.h"
 #include "dsp/core/math_constants.h"
+#include "dsp/core/pitch_utils.h"
 
 // Layer 1 dependencies
 #include "dsp/primitives/delay_line.h"
@@ -53,36 +54,6 @@ enum class PitchMode : std::uint8_t {
     Granular = 1,    ///< OLA grains, ~46ms latency, good quality
     PhaseVocoder = 2 ///< STFT-based, ~116ms latency, excellent quality
 };
-
-// ==============================================================================
-// Utility Functions
-// ==============================================================================
-
-/// @brief Convert semitones to pitch ratio
-///
-/// Formula: ratio = 2^(semitones/12)
-///
-/// @param semitones Pitch shift in semitones
-/// @return Pitch ratio (e.g., 12 semitones -> 2.0)
-[[nodiscard]] inline float pitchRatioFromSemitones(float semitones) noexcept {
-    // Using std::pow for runtime accuracy
-    // 2^(semitones/12) = exp(semitones * ln(2) / 12)
-    constexpr float kLn2Over12 = 0.05776226504666210911810267678818f; // ln(2)/12
-    return std::exp(semitones * kLn2Over12);
-}
-
-/// @brief Convert pitch ratio to semitones
-///
-/// Formula: semitones = 12 * log2(ratio)
-///
-/// @param ratio Pitch ratio (must be > 0)
-/// @return Pitch shift in semitones (e.g., 2.0 -> 12 semitones)
-[[nodiscard]] inline float semitonesFromPitchRatio(float ratio) noexcept {
-    if (ratio <= 0.0f) return 0.0f;
-    // 12 * log2(ratio) = 12 * ln(ratio) / ln(2)
-    constexpr float k12OverLn2 = 17.31234049066756088832381614082f; // 12/ln(2)
-    return std::log(ratio) * k12OverLn2;
-}
 
 // ==============================================================================
 // PitchShiftProcessor Class
@@ -1275,7 +1246,7 @@ inline void PitchShiftProcessor::process(const float* input, float* output,
     pImpl_->semitoneSmoother.snapToTarget();
     pImpl_->centsSmoother.snapToTarget();
 
-    float pitchRatio = pitchRatioFromSemitones(totalSemitones);
+    float pitchRatio = semitonesToRatio(totalSemitones);
 
     // Route to appropriate processor based on mode
     switch (pImpl_->mode) {
@@ -1321,7 +1292,7 @@ inline float PitchShiftProcessor::getCents() const noexcept {
 
 inline float PitchShiftProcessor::getPitchRatio() const noexcept {
     float totalSemitones = pImpl_->semitones + pImpl_->cents / 100.0f;
-    return pitchRatioFromSemitones(totalSemitones);
+    return semitonesToRatio(totalSemitones);
 }
 
 inline void PitchShiftProcessor::setFormantPreserve(bool enable) noexcept {
