@@ -16,6 +16,7 @@
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
 #include "dsp/dsp_utils.h"
+#include "dsp/features/granular_delay.h"
 
 #include <array>
 #include <atomic>
@@ -111,12 +112,28 @@ private:
     std::atomic<bool> bypass_{false};
 
     // ==========================================================================
-    // Pre-allocated Buffers
-    // Constitution Principle II & VI: Pre-allocate during setupProcessing()
+    // Granular Delay Parameters (spec 034)
     // ==========================================================================
 
-    // Add any pre-allocated buffers here
-    // Example: std::vector<float> delayBuffer_;
+    std::atomic<float> granularGrainSize_{100.0f};     // ms
+    std::atomic<float> granularDensity_{10.0f};        // grains/sec
+    std::atomic<float> granularDelayTime_{500.0f};     // ms
+    std::atomic<float> granularPitch_{0.0f};           // semitones
+    std::atomic<float> granularPitchSpray_{0.0f};      // 0-1
+    std::atomic<float> granularPositionSpray_{0.0f};   // 0-1
+    std::atomic<float> granularPanSpray_{0.0f};        // 0-1
+    std::atomic<float> granularReverseProb_{0.0f};     // 0-1
+    std::atomic<bool> granularFreeze_{false};
+    std::atomic<float> granularFeedback_{0.0f};        // 0-1.2
+    std::atomic<float> granularDryWet_{0.5f};          // 0-1
+    std::atomic<float> granularOutputGain_{0.0f};      // dB
+    std::atomic<int> granularEnvelopeType_{0};         // 0-3
+
+    // ==========================================================================
+    // DSP Components
+    // ==========================================================================
+
+    DSP::GranularDelay granularDelay_;
 };
 
 } // namespace Iterum

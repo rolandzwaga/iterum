@@ -62,13 +62,9 @@ Steinberg::tresult PLUGIN_API Processor::setupProcessing(
     // ==========================================================================
     // Constitution Principle II & VI: Pre-allocate ALL buffers HERE
     // ==========================================================================
-    // This is the ONLY place where memory allocation is permitted.
-    // Allocate all buffers, delay lines, lookup tables, etc. here.
-    //
-    // Example:
-    // delayBuffer_.resize(static_cast<size_t>(sampleRate_ * maxDelaySeconds_));
-    // std::fill(delayBuffer_.begin(), delayBuffer_.end(), 0.0f);
-    // ==========================================================================
+
+    // Prepare GranularDelay (spec 034)
+    granularDelay_.prepare(sampleRate_);
 
     return AudioEffect::setupProcessing(setup);
 }
@@ -76,9 +72,7 @@ Steinberg::tresult PLUGIN_API Processor::setupProcessing(
 Steinberg::tresult PLUGIN_API Processor::setActive(Steinberg::TBool state) {
     if (state) {
         // Activating: reset any processing state
-        // Clear delay lines, reset filters, etc.
-    } else {
-        // Deactivating: optional cleanup
+        granularDelay_.reset();
     }
 
     return AudioEffect::setActive(state);
@@ -133,36 +127,54 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
     // Main Audio Processing
     // ==========================================================================
 
-    // Verify we have valid I/O
+    // Verify we have valid stereo I/O
     if (data.numInputs == 0 || data.numOutputs == 0) {
         return Steinberg::kResultTrue;
     }
 
-    const Steinberg::int32 numChannels =
-        std::min(data.inputs[0].numChannels, data.outputs[0].numChannels);
-    const Steinberg::int32 numSamples = data.numSamples;
+    if (data.inputs[0].numChannels < 2 || data.outputs[0].numChannels < 2) {
+        return Steinberg::kResultTrue;
+    }
 
-    // Process each channel
-    for (Steinberg::int32 channel = 0; channel < numChannels; ++channel) {
-        float* inputBuffer = data.inputs[0].channelBuffers32[channel];
-        float* outputBuffer = data.outputs[0].channelBuffers32[channel];
+    float* inputL = data.inputs[0].channelBuffers32[0];
+    float* inputR = data.inputs[0].channelBuffers32[1];
+    float* outputL = data.outputs[0].channelBuffers32[0];
+    float* outputR = data.outputs[0].channelBuffers32[1];
 
-        if (!inputBuffer || !outputBuffer) {
-            continue;
-        }
+    if (!inputL || !inputR || !outputL || !outputR) {
+        return Steinberg::kResultTrue;
+    }
 
-        // ==========================================================================
-        // Constitution Principle IV: SIMD & DSP Optimization
-        // - Process samples in contiguous, sequential order
-        // - Minimize branching in inner loop
-        // - Consider SIMD intrinsics for production code
-        // ==========================================================================
+    // ==========================================================================
+    // Update GranularDelay parameters from atomics
+    // ==========================================================================
 
-        // Simple gain processing example
-        // In production, use DSP utilities from src/dsp/
-        for (Steinberg::int32 sample = 0; sample < numSamples; ++sample) {
-            outputBuffer[sample] = inputBuffer[sample] * currentGain;
-        }
+    granularDelay_.setGrainSize(granularGrainSize_.load(std::memory_order_relaxed));
+    granularDelay_.setDensity(granularDensity_.load(std::memory_order_relaxed));
+    granularDelay_.setDelayTime(granularDelayTime_.load(std::memory_order_relaxed));
+    granularDelay_.setPitch(granularPitch_.load(std::memory_order_relaxed));
+    granularDelay_.setPitchSpray(granularPitchSpray_.load(std::memory_order_relaxed));
+    granularDelay_.setPositionSpray(granularPositionSpray_.load(std::memory_order_relaxed));
+    granularDelay_.setPanSpray(granularPanSpray_.load(std::memory_order_relaxed));
+    granularDelay_.setReverseProbability(granularReverseProb_.load(std::memory_order_relaxed));
+    granularDelay_.setFreeze(granularFreeze_.load(std::memory_order_relaxed));
+    granularDelay_.setFeedback(granularFeedback_.load(std::memory_order_relaxed));
+    granularDelay_.setDryWet(granularDryWet_.load(std::memory_order_relaxed));
+    granularDelay_.setOutputGain(granularOutputGain_.load(std::memory_order_relaxed));
+    granularDelay_.setEnvelopeType(static_cast<DSP::GrainEnvelopeType>(
+        granularEnvelopeType_.load(std::memory_order_relaxed)));
+
+    // ==========================================================================
+    // Process audio through GranularDelay
+    // ==========================================================================
+
+    granularDelay_.process(inputL, inputR, outputL, outputR,
+                           static_cast<size_t>(data.numSamples));
+
+    // Apply output gain
+    for (Steinberg::int32 i = 0; i < data.numSamples; ++i) {
+        outputL[i] *= currentGain;
+        outputR[i] *= currentGain;
     }
 
     return Steinberg::kResultTrue;
@@ -199,6 +211,22 @@ Steinberg::tresult PLUGIN_API Processor::getState(Steinberg::IBStream* state) {
     Steinberg::int32 bypass = bypass_.load(std::memory_order_relaxed) ? 1 : 0;
     streamer.writeInt32(bypass);
 
+    // Save granular delay parameters (spec 034)
+    streamer.writeFloat(granularGrainSize_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularDensity_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularDelayTime_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularPitch_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularPitchSpray_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularPositionSpray_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularPanSpray_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularReverseProb_.load(std::memory_order_relaxed));
+    Steinberg::int32 freeze = granularFreeze_.load(std::memory_order_relaxed) ? 1 : 0;
+    streamer.writeInt32(freeze);
+    streamer.writeFloat(granularFeedback_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularDryWet_.load(std::memory_order_relaxed));
+    streamer.writeFloat(granularOutputGain_.load(std::memory_order_relaxed));
+    streamer.writeInt32(granularEnvelopeType_.load(std::memory_order_relaxed));
+
     return Steinberg::kResultTrue;
 }
 
@@ -215,6 +243,50 @@ Steinberg::tresult PLUGIN_API Processor::setState(Steinberg::IBStream* state) {
     Steinberg::int32 bypass = 0;
     if (streamer.readInt32(bypass)) {
         bypass_.store(bypass != 0, std::memory_order_relaxed);
+    }
+
+    // Restore granular delay parameters (spec 034)
+    float floatVal = 0.0f;
+    Steinberg::int32 intVal = 0;
+
+    if (streamer.readFloat(floatVal)) {
+        granularGrainSize_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularDensity_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularDelayTime_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularPitch_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularPitchSpray_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularPositionSpray_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularPanSpray_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularReverseProb_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        granularFreeze_.store(intVal != 0, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularFeedback_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularDryWet_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        granularOutputGain_.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        granularEnvelopeType_.store(intVal, std::memory_order_relaxed);
     }
 
     return Steinberg::kResultTrue;
@@ -260,6 +332,99 @@ void Processor::processParameterChanges(Steinberg::Vst::IParameterChanges* chang
 
             case kBypassId:
                 bypass_.store(value >= 0.5, std::memory_order_relaxed);
+                break;
+
+            // =====================================================================
+            // Granular Delay Parameters (spec 034)
+            // =====================================================================
+
+            case kGranularGrainSizeId:
+                // 10-500ms range
+                granularGrainSize_.store(
+                    static_cast<float>(10.0 + value * 490.0),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularDensityId:
+                // 1-100 grains/sec
+                granularDensity_.store(
+                    static_cast<float>(1.0 + value * 99.0),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularDelayTimeId:
+                // 0-2000ms
+                granularDelayTime_.store(
+                    static_cast<float>(value * 2000.0),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularPitchId:
+                // -24 to +24 semitones
+                granularPitch_.store(
+                    static_cast<float>(-24.0 + value * 48.0),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularPitchSprayId:
+                // 0-1 (already normalized)
+                granularPitchSpray_.store(
+                    static_cast<float>(value),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularPositionSprayId:
+                // 0-1 (already normalized)
+                granularPositionSpray_.store(
+                    static_cast<float>(value),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularPanSprayId:
+                // 0-1 (already normalized)
+                granularPanSpray_.store(
+                    static_cast<float>(value),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularReverseProbId:
+                // 0-1 (already normalized)
+                granularReverseProb_.store(
+                    static_cast<float>(value),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularFreezeId:
+                // Boolean switch
+                granularFreeze_.store(value >= 0.5, std::memory_order_relaxed);
+                break;
+
+            case kGranularFeedbackId:
+                // 0-1.2 range (allows self-oscillation)
+                granularFeedback_.store(
+                    static_cast<float>(value * 1.2),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularDryWetId:
+                // 0-1 (already normalized)
+                granularDryWet_.store(
+                    static_cast<float>(value),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularOutputGainId:
+                // -96 to +6 dB
+                granularOutputGain_.store(
+                    static_cast<float>(-96.0 + value * 102.0),
+                    std::memory_order_relaxed);
+                break;
+
+            case kGranularEnvelopeTypeId:
+                // 0-3 (Hann, Trapezoid, Sine, Blackman)
+                granularEnvelopeType_.store(
+                    static_cast<int>(value * 3.0 + 0.5),
+                    std::memory_order_relaxed);
                 break;
 
             default:

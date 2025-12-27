@@ -33,7 +33,22 @@ static const Steinberg::FUID kControllerUID(0x87654321, 0x87654321, 0x87654321, 
 enum ParameterIDs : Steinberg::Vst::ParamID {
     kBypassId = 0,
     kGainId = 1,
-    // Add more parameters here
+
+    // Granular Delay Parameters (spec 034)
+    kGranularGrainSizeId = 100,      // 10-500ms
+    kGranularDensityId = 101,        // 1-100 grains/sec
+    kGranularDelayTimeId = 102,      // 0-2000ms
+    kGranularPitchId = 103,          // -24 to +24 semitones
+    kGranularPitchSprayId = 104,     // 0-1
+    kGranularPositionSprayId = 105,  // 0-1
+    kGranularPanSprayId = 106,       // 0-1
+    kGranularReverseProbId = 107,    // 0-1
+    kGranularFreezeId = 108,         // on/off
+    kGranularFeedbackId = 109,       // 0-1.2
+    kGranularDryWetId = 110,         // 0-1
+    kGranularOutputGainId = 111,     // -96 to +6 dB
+    kGranularEnvelopeTypeId = 112,   // 0-3 (Hann, Trapezoid, Sine, Blackman)
+
     kNumParameters
 };
 

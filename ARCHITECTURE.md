@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-26 (031-freeze-mode)
+**Last Updated**: 2025-12-27 (034-granular-delay)
 
 ---
 
@@ -599,6 +599,72 @@ stereoCrossBlend(feedbackL, feedbackR, crossAmount, crossedL, crossedR);
 
 // Continue processing with crossedL, crossedR
 ```
+
+---
+
+### Pitch Utilities
+
+| | |
+|---|---|
+| **Purpose** | Convert between semitones and playback rate ratios for pitch shifting |
+| **Location** | [src/dsp/core/pitch_utils.h](src/dsp/core/pitch_utils.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    [[nodiscard]] constexpr float semitonesToRatio(float semitones) noexcept;
+    [[nodiscard]] constexpr float ratioToSemitones(float ratio) noexcept;
+}
+```
+
+**Behavior**:
+- `semitonesToRatio(12.0f)` → `2.0f` (one octave up)
+- `semitonesToRatio(-12.0f)` → `0.5f` (one octave down)
+- `semitonesToRatio(0.0f)` → `1.0f` (no pitch change)
+- `ratioToSemitones(2.0f)` → `12.0f` (octave = 12 semitones)
+
+**When to use**: Converting pitch shift parameters (in semitones) to playback rate multipliers for sample-rate conversion and granular synthesis.
+
+---
+
+### Grain Envelope
+
+| | |
+|---|---|
+| **Purpose** | Grain window shape generation and lookup for granular synthesis |
+| **Location** | [src/dsp/core/grain_envelope.h](src/dsp/core/grain_envelope.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Public API**:
+
+```cpp
+enum class GrainEnvelopeType : uint8_t {
+    Hann = 0,      // Raised cosine - smooth, general purpose
+    Trapezoid = 1, // Linear attack/release with sustain
+    Sine = 2,      // Half sine wave - gradual
+    Blackman = 3   // Low sidelobe - maximum isolation
+};
+
+class GrainEnvelope {
+public:
+    static void generate(float* buffer, size_t size, GrainEnvelopeType type) noexcept;
+    static float lookup(const float* table, size_t tableSize, float phase) noexcept;
+};
+```
+
+**Behavior**:
+- `generate()` fills buffer with window shape (0.0-1.0 range)
+- `lookup()` performs linear interpolation at fractional phase (0.0-1.0)
+
+**When to use**: Creating smooth amplitude envelopes for grains to prevent clicks at grain boundaries. Choose envelope type based on use case:
+- **Hann**: General purpose, good balance
+- **Trapezoid**: More sustain, less fade time
+- **Sine**: Gentle transitions, good for pitch shifting
+- **Blackman**: Maximum frequency isolation
 
 ---
 
@@ -1658,6 +1724,55 @@ for (size_t i = 0; i < numSamples; ++i) {
     output[i] = reverseBuffer.process(input[i]);
 }
 ```
+
+---
+
+### GrainPool
+
+| | |
+|---|---|
+| **Purpose** | Pre-allocated pool of grain state objects for real-time safe granular synthesis |
+| **Location** | [src/dsp/primitives/grain_pool.h](src/dsp/primitives/grain_pool.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Public API**:
+
+```cpp
+struct Grain {
+    float readPosition = 0.0f;      // Current position in delay buffer
+    float playbackRate = 1.0f;      // Pitch ratio (1.0 = original)
+    float envelopePhase = 0.0f;     // 0-1 envelope position
+    float envelopeIncrement = 0.0f; // Phase increment per sample
+    float amplitude = 1.0f;         // Grain amplitude
+    float panL = 1.0f;              // Left pan gain
+    float panR = 1.0f;              // Right pan gain
+    bool active = false;            // Currently playing
+    bool reverse = false;           // Playback direction
+    uint32_t startSample = 0;       // When grain was triggered
+};
+
+class GrainPool {
+public:
+    static constexpr size_t kMaxGrains = 64;
+
+    void prepare() noexcept;
+    void reset() noexcept;
+
+    Grain* acquireGrain() noexcept;   // Returns grain, steals oldest if full
+    void releaseGrain(Grain* grain) noexcept;
+
+    std::span<Grain> activeGrains() noexcept;
+    [[nodiscard]] size_t activeCount() const noexcept;
+};
+```
+
+**Behavior**:
+- Pre-allocates 64 grain slots at initialization
+- `acquireGrain()` returns first inactive grain, or steals oldest if all active
+- No memory allocation during process (real-time safe)
+
+**When to use**: Managing grain state in granular synthesis engines. The pool provides voice stealing when polyphony is exceeded.
 
 ---
 
@@ -2864,6 +2979,84 @@ feedbackNet.process(left, right, numSamples, ctx);
 
 ---
 
+### GrainScheduler
+
+| | |
+|---|---|
+| **Purpose** | Timing controller for grain triggering in granular synthesis |
+| **Location** | [src/dsp/processors/grain_scheduler.h](src/dsp/processors/grain_scheduler.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Public API**:
+
+```cpp
+class GrainScheduler {
+public:
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+    void seed(uint32_t seed) noexcept;
+
+    void setDensity(float grainsPerSecond) noexcept;  // 1-100
+    [[nodiscard]] bool process() noexcept;  // Returns true when grain should trigger
+};
+```
+
+**Behavior**:
+- Uses stochastic timing based on density parameter
+- `process()` returns true at randomized intervals based on target density
+- Produces reproducible sequences when seeded
+
+**When to use**: Controlling when new grains are triggered in granular engines. Asynchronous mode provides natural-sounding random timing variations.
+
+---
+
+### GrainProcessor
+
+| | |
+|---|---|
+| **Purpose** | Per-grain audio processing with envelope, pitch, and pan |
+| **Location** | [src/dsp/processors/grain_processor.h](src/dsp/processors/grain_processor.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Public API**:
+
+```cpp
+struct GrainOutput {
+    float left = 0.0f;
+    float right = 0.0f;
+};
+
+class GrainProcessor {
+public:
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+
+    void initializeGrain(Grain& grain, float positionSamples, float pitchSemitones,
+                         float pan, bool reverse, GrainEnvelopeType envType,
+                         float grainSizeMs) noexcept;
+
+    [[nodiscard]] GrainOutput processGrain(Grain& grain, const float* bufferL,
+                                           const float* bufferR, size_t bufferSize) noexcept;
+
+    [[nodiscard]] bool isGrainComplete(const Grain& grain) const noexcept;
+
+    void setEnvelopeType(GrainEnvelopeType type) noexcept;
+};
+```
+
+**Behavior**:
+- Initializes grain state with position, pitch, pan, direction
+- Reads from delay buffer with linear interpolation
+- Applies amplitude envelope from lookup table
+- Handles forward and reverse playback
+- Returns stereo output with pan law applied
+
+**When to use**: Processing individual grains in a granular synthesis engine. Handles the per-sample work of reading, enveloping, and panning each grain.
+
+---
+
 ## Layer 3: System Components
 
 Layer 3 components compose Layer 1-2 primitives and processors into complete audio building blocks ready for plugin integration.
@@ -3394,6 +3587,68 @@ for (size_t i = 0; i < 4; ++i) {
 ```
 
 **When to use**: Building multi-tap delay effects, rhythmic echoes, or any effect requiring multiple independently-controlled delay taps. Use preset patterns for quick rhythmic setups, or configure taps manually for custom effects. Compose with FeedbackNetwork for master feedback and ModulationMatrix for per-tap modulation.
+
+---
+
+### GranularEngine
+
+| | |
+|---|---|
+| **Purpose** | Core granular synthesis engine composing delay buffers, grain pool, scheduler, and processor |
+| **Location** | [src/dsp/systems/granular_engine.h](src/dsp/systems/granular_engine.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Dependencies**:
+- `DelayLine` (Layer 1) - Stereo delay buffer pair
+- `GrainPool` (Layer 1) - Voice management
+- `GrainScheduler` (Layer 2) - Timing control
+- `GrainProcessor` (Layer 2) - Per-grain processing
+- `OnePoleSmoother` (Layer 1) - Parameter smoothing
+
+**Public API**:
+
+```cpp
+class GranularEngine {
+public:
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+    void seed(uint32_t seed) noexcept;
+
+    // Grain parameters
+    void setGrainSize(float ms) noexcept;           // 10-500ms
+    void setDensity(float grainsPerSec) noexcept;   // 1-100
+    void setPosition(float ms) noexcept;            // 0-2000ms
+    void setEnvelopeType(GrainEnvelopeType type) noexcept;
+
+    // Per-grain spray/randomization
+    void setPitch(float semitones) noexcept;        // -24 to +24
+    void setPitchSpray(float amount) noexcept;      // 0-1
+    void setPositionSpray(float amount) noexcept;   // 0-1
+    void setPanSpray(float amount) noexcept;        // 0-1
+    void setReverseProbability(float prob) noexcept; // 0-1
+
+    // Freeze mode
+    void setFreeze(bool frozen) noexcept;
+    [[nodiscard]] bool isFrozen() const noexcept;
+
+    // Metering
+    [[nodiscard]] size_t activeGrainCount() const noexcept;
+
+    // Processing
+    void process(const float* inL, const float* inR,
+                 float* outL, float* outR, size_t numSamples) noexcept;
+};
+```
+
+**Behavior**:
+- Manages stereo delay buffer writing
+- Triggers new grains based on scheduler timing
+- Applies position/pitch/pan randomization per grain
+- Sums all active grain outputs
+- Freezes buffer writing when frozen
+
+**When to use**: Building granular delay effects and granular synthesis instruments. The engine handles all the complexity of grain scheduling, voice management, and parameter smoothing.
 
 ---
 
@@ -4462,6 +4717,111 @@ float gainReduction = delay.getGainReduction(); // 0 to -48 dB
 ```
 
 **When to use**: Creating delay effects that stay out of the way of primary audio content. Classic sidechain ducking automatically reduces delay output when the input signal is present, ideal for voiceover, podcasts, and live performance. Use Output mode for standard ducking, Feedback mode to reduce repeat buildup during performance, or Both for maximum clarity. The sidechain filter prevents bass-heavy content from causing unwanted ducking.
+
+---
+
+### GranularDelay
+
+| | |
+|---|---|
+| **Purpose** | Granular synthesis-based delay that breaks audio into grains with per-grain pitch, position, and direction control |
+| **Location** | [src/dsp/features/granular_delay.h](src/dsp/features/granular_delay.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.35 (034-granular-delay) |
+
+**Dependencies**:
+- `GranularEngine` (Layer 3) - Core granular synthesis engine
+- `OnePoleSmoother` (Layer 1) - Parameter smoothing for dry/wet and output gain
+- `GrainEnvelope` (Layer 0) - Grain window shapes
+
+**Features**:
+- **Grain Size**: 10-500ms configurable grain duration
+- **Density**: 1-100 grains/second with stochastic timing
+- **Pitch Shifting**: ±24 semitones per grain with pitch spray randomization
+- **Position Spray**: 0-100% randomization of delay tap position
+- **Reverse Probability**: 0-100% chance of reverse grain playback
+- **Freeze Mode**: Capture buffer for infinite sustain drones
+- **Feedback Path**: 0-120% with soft limiting for self-oscillation
+- **Pan Spray**: 0-100% stereo distribution of grains
+- **Envelope Types**: Hann, Trapezoid, Sine, Blackman windows
+
+**Public API**:
+
+```cpp
+class GranularDelay {
+public:
+    // Lifecycle
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+    void seed(uint32_t seed) noexcept;
+
+    // Grain Parameters
+    void setGrainSize(float ms) noexcept;           // 10-500ms
+    void setDensity(float grainsPerSec) noexcept;   // 1-100
+    void setDelayTime(float ms) noexcept;           // 0-2000ms
+    void setEnvelopeType(GrainEnvelopeType type) noexcept;
+
+    // Pitch Control
+    void setPitch(float semitones) noexcept;        // -24 to +24
+    void setPitchSpray(float amount) noexcept;      // 0-1
+
+    // Position Control
+    void setPositionSpray(float amount) noexcept;   // 0-1
+
+    // Direction Control
+    void setReverseProbability(float prob) noexcept; // 0-1
+
+    // Stereo Control
+    void setPanSpray(float amount) noexcept;        // 0-1
+
+    // Freeze Mode
+    void setFreeze(bool frozen) noexcept;
+    [[nodiscard]] bool isFrozen() const noexcept;
+
+    // Output Controls
+    void setFeedback(float amount) noexcept;        // 0-1.2
+    void setDryWet(float amount) noexcept;          // 0-1
+    void setOutputGain(float dB) noexcept;          // -96 to +6
+
+    // Metering
+    [[nodiscard]] size_t activeGrainCount() const noexcept;
+    [[nodiscard]] size_t getLatencySamples() const noexcept;
+
+    // Processing
+    void process(const float* inL, const float* inR,
+                 float* outL, float* outR, size_t numSamples) noexcept;
+};
+```
+
+**Usage Example**:
+
+```cpp
+#include "dsp/features/granular_delay.h"
+
+Iterum::DSP::GranularDelay delay;
+delay.prepare(44100.0);
+
+// Configure for shimmer-style granular
+delay.setGrainSize(100.0f);              // 100ms grains
+delay.setDensity(25.0f);                 // 25 grains/sec
+delay.setDelayTime(500.0f);              // 500ms base delay
+delay.setPitch(12.0f);                   // Octave up
+delay.setPitchSpray(0.2f);               // 20% pitch randomization
+delay.setPositionSpray(0.3f);            // 30% position scatter
+delay.setPanSpray(0.5f);                 // 50% stereo spread
+delay.setReverseProbability(0.15f);      // 15% reverse grains
+delay.setFeedback(0.6f);                 // 60% feedback
+delay.setDryWet(0.5f);                   // 50% wet
+delay.setEnvelopeType(GrainEnvelopeType::Hann);
+
+// For freeze drone
+delay.setFreeze(true);                   // Capture buffer
+
+// In process callback
+delay.process(inputL, inputR, outputL, outputR, blockSize);
+```
+
+**When to use**: Creating evolving granular textures, shimmer delays, time-smearing effects, and infinite sustain drones. Ideal for ambient music, experimental sound design, and transforming any audio source into complex, evolving textures. The freeze mode allows capturing any moment and sustaining it indefinitely with continuous grain regeneration.
 
 ---
 
