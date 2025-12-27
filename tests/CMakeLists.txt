@@ -114,6 +114,7 @@ add_executable(dsp_tests
     unit/features/reverse_delay_test.cpp
     unit/features/freeze_mode_test.cpp
     unit/features/ducking_delay_test.cpp
+    unit/features/spectral_delay_test.cpp
 )
 
 target_include_directories(dsp_tests
@@ -187,6 +188,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/features/reverse_delay_test.cpp
         unit/features/freeze_mode_test.cpp
         unit/features/ducking_delay_test.cpp
+        unit/features/spectral_delay_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
@@ -350,6 +352,24 @@ target_include_directories(benchmark_shimmer_delay
 
 # Release optimizations for accurate benchmarking
 target_compile_options(benchmark_shimmer_delay PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
+    $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
+)
+
+# SpectralDelay benchmark (SC-005: <3% CPU at 44.1kHz stereo with 2048 FFT)
+add_executable(benchmark_spectral_delay
+    benchmark_spectral_delay.cpp
+)
+
+target_include_directories(benchmark_spectral_delay
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+# Release optimizations for accurate benchmarking
+target_compile_options(benchmark_spectral_delay PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>

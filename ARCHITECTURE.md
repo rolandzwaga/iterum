@@ -4133,6 +4133,114 @@ reverseDelay.process(leftChannel, rightChannel, blockSize, ctx);
 
 ---
 
+### SpectralDelay
+
+Frequency-domain delay that applies independent delay times to each frequency bin.
+
+**File**: `src/dsp/features/spectral_delay.h`
+
+**Purpose**: Layer 4 user feature providing spectral delay processing using STFT analysis/resynthesis. Creates unique frequency-dependent echo effects where different frequency bands can have different delay times, enabling ethereal textures, spectral smearing, and freeze effects.
+
+**Composes**:
+- STFT (Layer 1): 2 instances for stereo spectral analysis
+- OverlapAdd (Layer 1): 2 instances for stereo resynthesis
+- SpectralBuffer (Layer 1): 6 instances (input L/R, output L/R, frozen L/R)
+- DelayLine (Layer 1): numBins * 2 instances for per-bin magnitude delays
+- OnePoleSmoother (Layer 1): 7 instances for click-free parameter changes
+
+**User Controls**:
+- FFT Size: 512, 1024, 2048, or 4096 (configurable before prepare)
+- Base Delay: 0-2000ms base delay time
+- Spread: 0-2000ms additional spread across frequency bins
+- Spread Direction: LowToHigh, HighToLow, or CenterOut
+- Feedback: 0-120% (>100% soft-limited with tanh)
+- Feedback Tilt: -1.0 to +1.0 (frequency-dependent feedback)
+- Diffusion: 0-100% spectral blur
+- Freeze: Enable/disable spectral freeze with 75ms crossfade
+- Mix: Dry/wet balance 0-100%
+- Output Gain: -96dB to +6dB
+
+**Enumerations**:
+
+```cpp
+enum class SpreadDirection : std::uint8_t {
+    LowToHigh,  // Higher bins get longer delays (rising effect)
+    HighToLow,  // Lower bins get longer delays (falling effect)
+    CenterOut   // Edge bins get longer delays, center is base delay
+};
+```
+
+**Public API**:
+
+```cpp
+class SpectralDelay {
+public:
+    // Lifecycle
+    void prepare(double sampleRate, std::size_t maxBlockSize) noexcept;
+    void reset() noexcept;
+    void snapParameters() noexcept;
+
+    // FFT Configuration (call before prepare)
+    void setFFTSize(std::size_t fftSize) noexcept;
+    [[nodiscard]] std::size_t getFFTSize() const noexcept;
+    [[nodiscard]] std::size_t getLatencySamples() const noexcept;
+
+    // Delay Control
+    void setBaseDelayMs(float ms) noexcept;
+    void setSpreadMs(float ms) noexcept;
+    void setSpreadDirection(SpreadDirection dir) noexcept;
+
+    // Feedback Control
+    void setFeedback(float amount) noexcept;        // 0-1.2
+    void setFeedbackTilt(float tilt) noexcept;      // -1.0 to +1.0
+
+    // Freeze
+    void setFreezeEnabled(bool enabled) noexcept;
+    [[nodiscard]] bool isFreezeEnabled() const noexcept;
+
+    // Diffusion
+    void setDiffusion(float amount) noexcept;       // 0-1.0
+
+    // Output
+    void setDryWetMix(float percent) noexcept;      // 0-100%
+    void setOutputGainDb(float dB) noexcept;
+
+    // Processing
+    void process(float* left, float* right, std::size_t numSamples,
+                 const BlockContext& ctx) noexcept;
+};
+```
+
+**Usage Example**:
+
+```cpp
+Iterum::DSP::SpectralDelay spectralDelay;
+spectralDelay.setFFTSize(1024);                        // 1024-point FFT
+spectralDelay.prepare(44100.0, 512);
+
+// Configure rising delay spread
+spectralDelay.setBaseDelayMs(100.0f);                  // 100ms base
+spectralDelay.setSpreadMs(500.0f);                     // 500ms spread
+spectralDelay.setSpreadDirection(SpreadDirection::LowToHigh);
+spectralDelay.setFeedback(0.5f);                       // 50% feedback
+spectralDelay.setFeedbackTilt(0.3f);                   // Slightly brighter decay
+spectralDelay.setDiffusion(0.2f);                      // Light spectral blur
+spectralDelay.setDryWetMix(50.0f);                     // 50/50 mix
+spectralDelay.snapParameters();
+
+// Freeze for infinite sustain
+spectralDelay.setFreezeEnabled(true);                  // Captures current spectrum
+
+// In process callback
+BlockContext ctx;
+ctx.sampleRate = 44100.0;
+spectralDelay.process(leftChannel, rightChannel, blockSize, ctx);
+```
+
+**When to use**: Creating ethereal, frequency-dependent delay effects. Use spread control to make high frequencies delay more than lows (or vice versa), creating "shimmering" or "smeared" textures. Freeze mode captures the current spectrum for infinite drone/pad sustains. Diffusion adds spectral blur for softer, more ambient character. Ideal for ambient music, pad textures, and experimental sound design.
+
+---
+
 ### FreezeMode
 
 | | |
@@ -4519,3 +4627,10 @@ Quick lookup by functionality:
 | Set duck amount | `DuckingDelay::setDuckAmount()` | features/ducking_delay.h |
 | Set duck target | `DuckingDelay::setDuckTarget()` | features/ducking_delay.h |
 | Get ducking gain reduction | `DuckingDelay::getGainReduction()` | features/ducking_delay.h |
+| Create spectral delay | `Iterum::DSP::SpectralDelay` | features/spectral_delay.h |
+| Set spectral delay FFT size | `SpectralDelay::setFFTSize()` | features/spectral_delay.h |
+| Set spectral spread | `SpectralDelay::setSpreadMs()` | features/spectral_delay.h |
+| Set spectral spread direction | `SpectralDelay::setSpreadDirection()` | features/spectral_delay.h |
+| Set spectral feedback tilt | `SpectralDelay::setFeedbackTilt()` | features/spectral_delay.h |
+| Enable spectral freeze | `SpectralDelay::setFreezeEnabled()` | features/spectral_delay.h |
+| Set spectral diffusion | `SpectralDelay::setDiffusion()` | features/spectral_delay.h |

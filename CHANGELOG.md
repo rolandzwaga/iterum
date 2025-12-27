@@ -5,6 +5,88 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.34] - 2025-12-27
+
+### Added
+
+- **Layer 4 User Feature: SpectralDelay** (`src/dsp/features/spectral_delay.h`)
+  - Frequency-domain delay effect using STFT analysis/resynthesis
+  - Per-bin delay lines for ethereal, frequency-dependent echo effects
+  - Composes STFT, OverlapAdd, SpectralBuffer, DelayLine (all Layer 1)
+  - Complete feature set with 5 user stories:
+    - **US1: Basic Spectral Delay**: Per-bin delays with configurable FFT (512-4096)
+    - **US2: Delay Spread Control**: LowToHigh, HighToLow, CenterOut spread modes
+    - **US3: Spectral Freeze**: Capture and hold spectrum indefinitely with crossfade
+    - **US4: Frequency-Dependent Feedback**: Global feedback with tilt control
+    - **US5: Spectral Diffusion**: 3-tap blur kernel for spectral smearing
+
+- **SpreadDirection enum**: LowToHigh, HighToLow, CenterOut delay distribution
+
+- **Spectral delay parameters**:
+  - **FFT Size**: 512, 1024, 2048, 4096 (tradeoff: resolution vs latency)
+  - **Base Delay**: 0-2000ms base delay time
+  - **Spread**: 0-2000ms offset range across frequency bins
+  - **Feedback**: 0-120% with tanh() soft limiting
+  - **Feedback Tilt**: -100% to +100% (low vs high frequency emphasis)
+  - **Diffusion**: 0-100% spectral blur amount
+  - **Dry/Wet Mix**: 0-100% with parameter smoothing
+  - **Output Gain**: -96dB to +6dB
+
+- **Spectral freeze mode**:
+  - Captures magnitude AND phase for true spectrum hold
+  - 75ms crossfade for click-free transitions
+  - Ignores new input when fully frozen
+
+- **Comprehensive test suite** (33 test cases, 1,100 assertions)
+  - All 26 functional requirements verified
+  - 7/8 success criteria measured (1 PARTIAL: 60s test impractical)
+  - All sample rates verified (44.1kHz to 192kHz)
+
+- **Performance benchmark** (`benchmark_spectral_delay.exe`)
+  - 0.93% CPU at 2048 FFT (target <3%) [PASS]
+  - All FFT sizes under 1.1% CPU
+
+### Technical Details
+
+- **Layer 4 architecture**: Composes Layer 1 primitives only
+  - Uses: `STFT` (L1) - spectral analysis
+  - Uses: `OverlapAdd` (L1) - spectral resynthesis
+  - Uses: `SpectralBuffer` (L1) - magnitude/phase storage
+  - Uses: `DelayLine` (L1) x numBins - per-bin delay lines
+  - Uses: `OnePoleSmoother` (L1) x 7 - parameter smoothing
+
+- **Latency**: Equals FFT size samples (analysis window fill time)
+- **Real-time safe**: `noexcept`, no allocations in `process()`
+- **Constitution compliance**: Principles II, III, IX, X, XII, XIII, XIV, XV
+
+### Usage
+
+```cpp
+#include "dsp/features/spectral_delay.h"
+
+Iterum::DSP::SpectralDelay delay;
+delay.setFFTSize(2048);
+delay.prepare(44100.0, 512);
+
+// Configure spectral delay
+delay.setBaseDelayMs(500.0f);
+delay.setSpreadMs(300.0f);
+delay.setSpreadDirection(SpreadDirection::LowToHigh);
+delay.setFeedback(0.5f);
+delay.setFeedbackTilt(0.2f);
+delay.setDiffusion(0.3f);
+delay.setDryWetMix(50.0f);
+delay.snapParameters();
+
+// Enable freeze for drone textures
+delay.setFreezeEnabled(true);
+
+// In audio callback
+delay.process(left, right, numSamples, ctx);
+```
+
+---
+
 ## [0.0.33] - 2025-12-26
 
 ### Added

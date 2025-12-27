@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # Project Configuration
 # ==============================================================================
 project(Iterum
-    VERSION 0.0.33
+    VERSION 0.0.34
     DESCRIPTION "Iterum VST3 Delay Plugin"
     LANGUAGES CXX
 )
