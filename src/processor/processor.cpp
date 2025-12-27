@@ -85,6 +85,18 @@ Steinberg::tresult PLUGIN_API Processor::setupProcessing(
     // Prepare TapeDelay (spec 024)
     tapeDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 2000.0f);
 
+    // Prepare BBDDelay (spec 025)
+    bbdDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 1000.0f);
+
+    // Prepare DigitalDelay (spec 026)
+    digitalDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 10000.0f);
+
+    // Prepare PingPongDelay (spec 027)
+    pingPongDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 10000.0f);
+
+    // Prepare MultiTapDelay (spec 028)
+    multiTapDelay_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_), 5000.0f);
+
     return AudioEffect::setupProcessing(setup);
 }
 
@@ -98,6 +110,10 @@ Steinberg::tresult PLUGIN_API Processor::setActive(Steinberg::TBool state) {
         reverseDelay_.reset();
         shimmerDelay_.reset();
         tapeDelay_.reset();
+        bbdDelay_.reset();
+        digitalDelay_.reset();
+        pingPongDelay_.reset();
+        multiTapDelay_.reset();
     }
 
     return AudioEffect::setActive(state);
@@ -380,6 +396,123 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
 
     tapeDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples));
 
+    // ==========================================================================
+    // Update BBDDelay parameters from param pack
+    // ==========================================================================
+
+    bbdDelay_.setTime(bbdParams_.delayTime.load(std::memory_order_relaxed));
+    bbdDelay_.setFeedback(bbdParams_.feedback.load(std::memory_order_relaxed));
+    bbdDelay_.setModulation(bbdParams_.modulationDepth.load(std::memory_order_relaxed));
+    bbdDelay_.setModulationRate(bbdParams_.modulationRate.load(std::memory_order_relaxed));
+    bbdDelay_.setAge(bbdParams_.age.load(std::memory_order_relaxed));
+    bbdDelay_.setEra(static_cast<DSP::BBDChipModel>(
+        bbdParams_.era.load(std::memory_order_relaxed)));
+    bbdDelay_.setMix(bbdParams_.mix.load(std::memory_order_relaxed));
+    // Output level already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = bbdParams_.outputLevel.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        bbdDelay_.setOutputLevel(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through BBDDelay (in series after TapeDelay)
+    // ==========================================================================
+
+    bbdDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples));
+
+    // ==========================================================================
+    // Update DigitalDelay parameters from param pack
+    // ==========================================================================
+
+    digitalDelay_.setTime(digitalParams_.delayTime.load(std::memory_order_relaxed));
+    digitalDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+        digitalParams_.timeMode.load(std::memory_order_relaxed)));
+    digitalDelay_.setNoteValue(static_cast<DSP::NoteValue>(
+        digitalParams_.noteValue.load(std::memory_order_relaxed)));
+    digitalDelay_.setFeedback(digitalParams_.feedback.load(std::memory_order_relaxed));
+    digitalDelay_.setLimiterCharacter(static_cast<DSP::LimiterCharacter>(
+        digitalParams_.limiterCharacter.load(std::memory_order_relaxed)));
+    digitalDelay_.setEra(static_cast<DSP::DigitalEra>(
+        digitalParams_.era.load(std::memory_order_relaxed)));
+    digitalDelay_.setAge(digitalParams_.age.load(std::memory_order_relaxed));
+    digitalDelay_.setModulationDepth(digitalParams_.modulationDepth.load(std::memory_order_relaxed));
+    digitalDelay_.setModulationRate(digitalParams_.modulationRate.load(std::memory_order_relaxed));
+    digitalDelay_.setModulationWaveform(static_cast<DSP::Waveform>(
+        digitalParams_.modulationWaveform.load(std::memory_order_relaxed)));
+    digitalDelay_.setMix(digitalParams_.mix.load(std::memory_order_relaxed));
+    // Output level already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = digitalParams_.outputLevel.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -96.0f : 20.0f * std::log10(linearGain);
+        digitalDelay_.setOutputLevel(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through DigitalDelay (in series after BBDDelay)
+    // ==========================================================================
+
+    digitalDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update PingPongDelay parameters from param pack
+    // ==========================================================================
+
+    pingPongDelay_.setDelayTimeMs(pingPongParams_.delayTime.load(std::memory_order_relaxed));
+    pingPongDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+        pingPongParams_.timeMode.load(std::memory_order_relaxed)));
+    pingPongDelay_.setNoteValue(static_cast<DSP::NoteValue>(
+        pingPongParams_.noteValue.load(std::memory_order_relaxed)));
+    pingPongDelay_.setLRRatio(static_cast<DSP::LRRatio>(
+        pingPongParams_.lrRatio.load(std::memory_order_relaxed)));
+    pingPongDelay_.setFeedback(pingPongParams_.feedback.load(std::memory_order_relaxed));
+    pingPongDelay_.setCrossFeedback(pingPongParams_.crossFeedback.load(std::memory_order_relaxed));
+    pingPongDelay_.setWidth(pingPongParams_.width.load(std::memory_order_relaxed));
+    pingPongDelay_.setModulationDepth(pingPongParams_.modulationDepth.load(std::memory_order_relaxed));
+    pingPongDelay_.setModulationRate(pingPongParams_.modulationRate.load(std::memory_order_relaxed));
+    pingPongDelay_.setMix(pingPongParams_.mix.load(std::memory_order_relaxed));
+    // Output level already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = pingPongParams_.outputLevel.load(std::memory_order_relaxed);
+        float dB = (linearGain <= 0.0f) ? -120.0f : 20.0f * std::log10(linearGain);
+        pingPongDelay_.setOutputLevel(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through PingPongDelay (in series after DigitalDelay)
+    // ==========================================================================
+
+    pingPongDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
+    // ==========================================================================
+    // Update MultiTapDelay parameters from param pack
+    // ==========================================================================
+
+    multiTapDelay_.loadTimingPattern(static_cast<DSP::TimingPattern>(
+        multiTapParams_.timingPattern.load(std::memory_order_relaxed)),
+        static_cast<size_t>(multiTapParams_.tapCount.load(std::memory_order_relaxed)));
+    multiTapDelay_.applySpatialPattern(static_cast<DSP::SpatialPattern>(
+        multiTapParams_.spatialPattern.load(std::memory_order_relaxed)));
+    multiTapDelay_.setBaseTimeMs(multiTapParams_.baseTime.load(std::memory_order_relaxed));
+    multiTapDelay_.setTempo(multiTapParams_.tempo.load(std::memory_order_relaxed));
+    multiTapDelay_.setFeedbackAmount(multiTapParams_.feedback.load(std::memory_order_relaxed));
+    multiTapDelay_.setFeedbackLPCutoff(multiTapParams_.feedbackLPCutoff.load(std::memory_order_relaxed));
+    multiTapDelay_.setFeedbackHPCutoff(multiTapParams_.feedbackHPCutoff.load(std::memory_order_relaxed));
+    multiTapDelay_.setMorphTime(multiTapParams_.morphTime.load(std::memory_order_relaxed));
+    multiTapDelay_.setDryWetMix(multiTapParams_.dryWet.load(std::memory_order_relaxed));
+    // Output level already in linear form, need to convert to dB for the setter
+    {
+        float linearGain = multiTapParams_.outputLevel.load(std::memory_order_relaxed);
+        float dB = 20.0f * std::log10(linearGain);
+        multiTapDelay_.setOutputLevel(dB);
+    }
+
+    // ==========================================================================
+    // Process audio through MultiTapDelay (in series after PingPongDelay)
+    // ==========================================================================
+
+    multiTapDelay_.process(outputL, outputR, static_cast<size_t>(data.numSamples), ctx);
+
     // Apply output gain
     for (Steinberg::int32 i = 0; i < data.numSamples; ++i) {
         outputL[i] *= currentGain;
@@ -428,6 +561,10 @@ Steinberg::tresult PLUGIN_API Processor::getState(Steinberg::IBStream* state) {
     saveReverseParams(reverseParams_, streamer);
     saveShimmerParams(shimmerParams_, streamer);
     saveTapeParams(tapeParams_, streamer);
+    saveBBDParams(bbdParams_, streamer);
+    saveDigitalParams(digitalParams_, streamer);
+    savePingPongParams(pingPongParams_, streamer);
+    saveMultiTapParams(multiTapParams_, streamer);
 
     return Steinberg::kResultTrue;
 }
@@ -456,6 +593,10 @@ Steinberg::tresult PLUGIN_API Processor::setState(Steinberg::IBStream* state) {
     loadReverseParams(reverseParams_, streamer);
     loadShimmerParams(shimmerParams_, streamer);
     loadTapeParams(tapeParams_, streamer);
+    loadBBDParams(bbdParams_, streamer);
+    loadDigitalParams(digitalParams_, streamer);
+    loadPingPongParams(pingPongParams_, streamer);
+    loadMultiTapParams(multiTapParams_, streamer);
 
     return Steinberg::kResultTrue;
 }
@@ -527,9 +668,25 @@ void Processor::processParameterChanges(Steinberg::Vst::IParameterChanges* chang
             // Tape Delay parameters (400-499) - spec 024
             handleTapeParamChange(tapeParams_, paramId, value);
         }
+        else if (paramId >= kBBDBaseId && paramId <= kBBDEndId) {
+            // BBD Delay parameters (500-599) - spec 025
+            handleBBDParamChange(bbdParams_, paramId, value);
+        }
+        else if (paramId >= kDigitalBaseId && paramId <= kDigitalEndId) {
+            // Digital Delay parameters (600-699) - spec 026
+            handleDigitalParamChange(digitalParams_, paramId, value);
+        }
+        else if (paramId >= kPingPongBaseId && paramId <= kPingPongEndId) {
+            // PingPong Delay parameters (700-799) - spec 027
+            handlePingPongParamChange(pingPongParams_, paramId, value);
+        }
         else if (paramId >= kReverseBaseId && paramId <= kReverseEndId) {
             // Reverse Delay parameters (800-899) - spec 030
             handleReverseParamChange(reverseParams_, paramId, value);
+        }
+        else if (paramId >= kMultiTapBaseId && paramId <= kMultiTapEndId) {
+            // MultiTap Delay parameters (900-999) - spec 028
+            handleMultiTapParamChange(multiTapParams_, paramId, value);
         }
         else if (paramId >= kFreezeBaseId && paramId <= kFreezeEndId) {
             // Freeze Mode parameters (1000-1099) - spec 031
@@ -539,7 +696,6 @@ void Processor::processParameterChanges(Steinberg::Vst::IParameterChanges* chang
             // Ducking Delay parameters (1100-1199) - spec 032
             handleDuckingParamChange(duckingParams_, paramId, value);
         }
-        // Future mode handlers will be added here
     }
 }
 

@@ -132,21 +132,49 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     // BBD Delay Parameters (500-599) - spec 025
     // ==========================================================================
     kBBDBaseId = 500,
-    // Parameters to be added during integration
+    kBBDDelayTimeId = 500,           // 20-1000ms
+    kBBDFeedbackId = 501,            // 0-120%
+    kBBDModulationDepthId = 502,     // 0-100%
+    kBBDModulationRateId = 503,      // 0.1-10Hz
+    kBBDAgeId = 504,                 // 0-100%
+    kBBDEraId = 505,                 // 0-3 (MN3005, MN3007, MN3205, SAD1024)
+    kBBDMixId = 506,                 // 0-100%
+    kBBDOutputLevelId = 507,         // -96 to +12 dB
     kBBDEndId = 599,
 
     // ==========================================================================
     // Digital Delay Parameters (600-699) - spec 026
     // ==========================================================================
     kDigitalBaseId = 600,
-    // Parameters to be added during integration
+    kDigitalDelayTimeId = 600,       // 1-10000ms
+    kDigitalTimeModeId = 601,        // 0-1 (Free, Synced)
+    kDigitalNoteValueId = 602,       // 0-9 (note values)
+    kDigitalFeedbackId = 603,        // 0-120%
+    kDigitalLimiterCharacterId = 604, // 0-2 (Soft, Medium, Hard)
+    kDigitalEraId = 605,             // 0-2 (Pristine, 80s, LoFi)
+    kDigitalAgeId = 606,             // 0-100%
+    kDigitalModDepthId = 607,        // 0-100%
+    kDigitalModRateId = 608,         // 0.1-10Hz
+    kDigitalModWaveformId = 609,     // 0-5 (waveforms)
+    kDigitalMixId = 610,             // 0-100%
+    kDigitalOutputLevelId = 611,     // -96 to +12 dB
     kDigitalEndId = 699,
 
     // ==========================================================================
     // PingPong Delay Parameters (700-799) - spec 027
     // ==========================================================================
     kPingPongBaseId = 700,
-    // Parameters to be added during integration
+    kPingPongDelayTimeId = 700,      // 1-10000ms
+    kPingPongTimeModeId = 701,       // 0-1 (Free, Synced)
+    kPingPongNoteValueId = 702,      // 0-9 (note values)
+    kPingPongLRRatioId = 703,        // 0-6 (ratio presets)
+    kPingPongFeedbackId = 704,       // 0-120%
+    kPingPongCrossFeedbackId = 705,  // 0-100%
+    kPingPongWidthId = 706,          // 0-200%
+    kPingPongModDepthId = 707,       // 0-100%
+    kPingPongModRateId = 708,        // 0.1-10Hz
+    kPingPongMixId = 709,            // 0-100%
+    kPingPongOutputLevelId = 710,    // -120 to +12 dB
     kPingPongEndId = 799,
 
     // ==========================================================================
@@ -168,7 +196,17 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     // MultiTap Delay Parameters (900-999) - spec 028
     // ==========================================================================
     kMultiTapBaseId = 900,
-    // Parameters to be added during integration
+    kMultiTapTimingPatternId = 900,  // 0-19 (pattern presets)
+    kMultiTapSpatialPatternId = 901, // 0-6 (spatial presets)
+    kMultiTapTapCountId = 902,       // 2-16 taps
+    kMultiTapBaseTimeId = 903,       // 1-5000ms
+    kMultiTapTempoId = 904,          // 20-300 BPM
+    kMultiTapFeedbackId = 905,       // 0-110%
+    kMultiTapFeedbackLPCutoffId = 906, // 20-20000Hz
+    kMultiTapFeedbackHPCutoffId = 907, // 20-20000Hz
+    kMultiTapMorphTimeId = 908,      // 50-2000ms
+    kMultiTapDryWetId = 909,         // 0-100%
+    kMultiTapOutputLevelId = 910,    // -12 to +12 dB
     kMultiTapEndId = 999,
 
     // ==========================================================================

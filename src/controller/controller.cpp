@@ -4,9 +4,13 @@
 
 #include "controller.h"
 #include "plugin_ids.h"
+#include "parameters/bbd_params.h"
+#include "parameters/digital_params.h"
 #include "parameters/ducking_params.h"
 #include "parameters/freeze_params.h"
 #include "parameters/granular_params.h"
+#include "parameters/multitap_params.h"
+#include "parameters/pingpong_params.h"
 #include "parameters/reverse_params.h"
 #include "parameters/shimmer_params.h"
 #include "parameters/spectral_params.h"
@@ -72,6 +76,10 @@ Steinberg::tresult PLUGIN_API Controller::initialize(FUnknown* context) {
     registerReverseParams(parameters);   // Reverse Delay (spec 030)
     registerShimmerParams(parameters);   // Shimmer Delay (spec 029)
     registerTapeParams(parameters);      // Tape Delay (spec 024)
+    registerBBDParams(parameters);       // BBD Delay (spec 025)
+    registerDigitalParams(parameters);   // Digital Delay (spec 026)
+    registerPingPongParams(parameters);  // PingPong Delay (spec 027)
+    registerMultiTapParams(parameters);  // MultiTap Delay (spec 028)
 
     return Steinberg::kResultTrue;
 }
@@ -122,6 +130,10 @@ Steinberg::tresult PLUGIN_API Controller::setComponentState(
     syncReverseParamsToController(streamer, *this);   // Reverse Delay (spec 030)
     syncShimmerParamsToController(streamer, *this);   // Shimmer Delay (spec 029)
     syncTapeParamsToController(streamer, *this);      // Tape Delay (spec 024)
+    syncBBDParamsToController(streamer, *this);       // BBD Delay (spec 025)
+    syncDigitalParamsToController(streamer, *this);   // Digital Delay (spec 026)
+    syncPingPongParamsToController(streamer, *this);  // PingPong Delay (spec 027)
+    syncMultiTapParamsToController(streamer, *this);  // MultiTap Delay (spec 028)
 
     return Steinberg::kResultTrue;
 }
@@ -225,9 +237,25 @@ Steinberg::tresult PLUGIN_API Controller::getParamStringByValue(
         // Tape Delay parameters (400-499) - spec 024
         return formatTapeParam(id, valueNormalized, string);
     }
+    else if (id >= kBBDBaseId && id <= kBBDEndId) {
+        // BBD Delay parameters (500-599) - spec 025
+        return formatBBDParam(id, valueNormalized, string);
+    }
+    else if (id >= kDigitalBaseId && id <= kDigitalEndId) {
+        // Digital Delay parameters (600-699) - spec 026
+        return formatDigitalParam(id, valueNormalized, string);
+    }
+    else if (id >= kPingPongBaseId && id <= kPingPongEndId) {
+        // PingPong Delay parameters (700-799) - spec 027
+        return formatPingPongParam(id, valueNormalized, string);
+    }
     else if (id >= kReverseBaseId && id <= kReverseEndId) {
         // Reverse Delay parameters (800-899) - spec 030
         return formatReverseParam(id, valueNormalized, string);
+    }
+    else if (id >= kMultiTapBaseId && id <= kMultiTapEndId) {
+        // MultiTap Delay parameters (900-999) - spec 028
+        return formatMultiTapParam(id, valueNormalized, string);
     }
     else if (id >= kFreezeBaseId && id <= kFreezeEndId) {
         // Freeze Mode parameters (1000-1099) - spec 031
@@ -237,7 +265,6 @@ Steinberg::tresult PLUGIN_API Controller::getParamStringByValue(
         // Ducking Delay parameters (1100-1199) - spec 032
         return formatDuckingParam(id, valueNormalized, string);
     }
-    // Future mode formatters will be added here
 
     return EditControllerEx1::getParamStringByValue(id, valueNormalized, string);
 }

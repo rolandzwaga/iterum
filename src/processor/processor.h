@@ -16,16 +16,24 @@
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
 #include "dsp/dsp_utils.h"
+#include "dsp/features/bbd_delay.h"
+#include "dsp/features/digital_delay.h"
 #include "dsp/features/ducking_delay.h"
 #include "dsp/features/freeze_mode.h"
 #include "dsp/features/granular_delay.h"
+#include "dsp/features/multi_tap_delay.h"
+#include "dsp/features/ping_pong_delay.h"
 #include "dsp/features/reverse_delay.h"
 #include "dsp/features/shimmer_delay.h"
 #include "dsp/features/spectral_delay.h"
 #include "dsp/features/tape_delay.h"
+#include "parameters/bbd_params.h"
+#include "parameters/digital_params.h"
 #include "parameters/ducking_params.h"
 #include "parameters/freeze_params.h"
 #include "parameters/granular_params.h"
+#include "parameters/multitap_params.h"
+#include "parameters/pingpong_params.h"
 #include "parameters/reverse_params.h"
 #include "parameters/shimmer_params.h"
 #include "parameters/spectral_params.h"
@@ -135,6 +143,10 @@ private:
     ReverseParams reverseParams_;     // Reverse Delay (spec 030)
     ShimmerParams shimmerParams_;     // Shimmer Delay (spec 029)
     TapeParams tapeParams_;           // Tape Delay (spec 024)
+    BBDParams bbdParams_;             // BBD Delay (spec 025)
+    DigitalParams digitalParams_;     // Digital Delay (spec 026)
+    PingPongParams pingPongParams_;   // PingPong Delay (spec 027)
+    MultiTapParams multiTapParams_;   // MultiTap Delay (spec 028)
 
     // ==========================================================================
     // DSP Components
@@ -147,6 +159,10 @@ private:
     DSP::ReverseDelay reverseDelay_;
     DSP::ShimmerDelay shimmerDelay_;
     DSP::TapeDelay tapeDelay_;
+    DSP::BBDDelay bbdDelay_;
+    DSP::DigitalDelay digitalDelay_;
+    DSP::PingPongDelay pingPongDelay_;
+    DSP::MultiTapDelay multiTapDelay_;
 };
 
 } // namespace Iterum
