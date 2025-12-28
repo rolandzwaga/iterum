@@ -40,9 +40,10 @@ jobs:
           restore-keys: |
             fetchcontent-${{ runner.os }}-
 
-      # Note: No compiler cache on Windows - VST3 SDK's /Zi flag conflicts with sccache
+      # Note: sccache/ccache with Ninja causes PDB conflicts with VSTGUI's /Zi flag
+      # Visual Studio generator handles PDB files correctly via mspdbsrv.exe
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
       - name: Build Tests
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests vst_tests --parallel
