@@ -3837,8 +3837,7 @@ Classic tape echo emulation (Roland RE-201, Echoplex, Watkins Copicat style).
 **Purpose**: Layer 4 user feature providing vintage tape delay character with motor inertia, wow/flutter, and multi-head echo patterns.
 
 **Composes**:
-- TapManager (Layer 3): Multi-head echo patterns at fixed ratios (1x, 1.5x, 2x)
-- FeedbackNetwork (Layer 3): Feedback with progressive darkening (uses CrossfadingDelayLine for click-free changes)
+- TapManager (Layer 3): Multi-head echo patterns at fixed ratios (1x, 1.5x, 2x) with per-tap feedback
 - CharacterProcessor (Layer 3): Tape character (wow/flutter, hiss, saturation, rolloff)
 
 **User Controls**:

@@ -5,8 +5,7 @@
 // Emulates vintage tape echo units (Roland RE-201, Echoplex, Watkins Copicat).
 //
 // Composes:
-// - TapManager (Layer 3): Multi-head echo patterns
-// - FeedbackNetwork (Layer 3): Feedback with filtering and saturation
+// - TapManager (Layer 3): Multi-head echo patterns with per-tap feedback
 // - CharacterProcessor (Layer 3): Tape character (wow/flutter, hiss, rolloff)
 //
 // Feature: 024-tape-delay
@@ -23,11 +22,9 @@
 
 #pragma once
 
-#include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/systems/character_processor.h"
-#include "dsp/systems/feedback_network.h"
 #include "dsp/systems/tap_manager.h"
 
 #include <algorithm>
@@ -243,12 +240,6 @@ public:
             tapManager_.setTapPan(i, heads_[i].pan);
         }
 
-        // Prepare feedback network
-        feedbackNetwork_.prepare(sampleRate, maxBlockSize, maxDelayMs_);
-        feedbackNetwork_.setFilterEnabled(true);
-        feedbackNetwork_.setFilterType(FilterType::Lowpass);
-        feedbackNetwork_.setFilterCutoff(8000.0f);  // Progressive darkening
-
         // Prepare character processor in Tape mode
         character_.prepare(sampleRate, maxBlockSize);
         character_.setMode(CharacterMode::Tape);
@@ -270,7 +261,6 @@ public:
     void reset() noexcept {
         motor_.reset();
         tapManager_.reset();
-        feedbackNetwork_.reset();
         character_.reset();
 
         feedbackSmoother_.snapTo(feedback_);
@@ -526,8 +516,6 @@ public:
     void process(float* left, float* right, size_t numSamples) noexcept {
         if (!prepared_ || numSamples == 0) return;
 
-        BlockContext ctx;
-
         // Calculate splice click duration in samples
         const size_t spliceClickSamples = static_cast<size_t>(
             kSpliceClickDurationMs * 0.001 * sampleRate_);
@@ -536,23 +524,18 @@ public:
             // Get smoothed motor delay and update head times
             const float currentDelayMs = motor_.process();
 
-            // Store dry samples
-            const float dryL = left[i];
-            const float dryR = right[i];
-
             // Update head delay times based on motor speed
             for (size_t h = 0; h < kNumHeads; ++h) {
                 const float headDelay = currentDelayMs * heads_[h].ratio;
                 tapManager_.setTapTimeMs(h, std::min(headDelay, maxDelayMs_));
             }
 
-            // Update feedback network - use minimal delay (just for feedback loop, not additional delay)
-            // TapManager already provides the tape head delays
-            feedbackNetwork_.setDelayTimeMs(1.0f);  // Minimal delay - feedback only
-            feedbackNetwork_.setFeedbackAmount(feedbackSmoother_.process());
+            // Advance feedback smoother for consistent parameter processing
+            (void)feedbackSmoother_.process();
         }
 
         // Update per-tap feedback amounts from master feedback
+        // All taps get the same feedback, providing master feedback behavior
         const float currentFeedback = feedbackSmoother_.getCurrentValue() * 100.0f;  // Convert to percentage
         for (size_t h = 0; h < kNumHeads; ++h) {
             if (heads_[h].enabled) {
@@ -560,7 +543,7 @@ public:
             }
         }
 
-        // Process through TapManager (multi-head delay with feedback)
+        // Process through TapManager (multi-head delay with master feedback via per-tap)
         tapManager_.process(left, right, left, right, numSamples);
 
         // Process through CharacterProcessor (tape character)
@@ -806,7 +789,6 @@ private:
 
     // Layer 3 components
     TapManager tapManager_;
-    FeedbackNetwork feedbackNetwork_;
     CharacterProcessor character_;
 
     // Tape heads (3 fixed-ratio heads)
