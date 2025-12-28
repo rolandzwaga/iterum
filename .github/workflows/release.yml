@@ -1,0 +1,211 @@
+name: Release
+
+# Trigger on version tags (FR-001)
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Prevent duplicate runs
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build and test on all platforms using the CI workflow (FR-002)
+  build:
+    name: Build & Test
+    uses: ./.github/workflows/ci.yml
+
+  # Windows installer using Inno Setup (FR-010 through FR-016)
+  windows-installer:
+    name: Windows Installer
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Download Windows build artifact (FR-003)
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Iterum-Windows-x64
+          path: artifact
+
+      # Extract version from tag (FR-006)
+      - name: Get Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building installer for version: $VERSION"
+
+      # Copy plugin to Inno Setup working directory
+      - name: Prepare Installer Files
+        run: |
+          Copy-Item -Path "artifact\*" -Destination "installers\windows\" -Recurse -Force
+
+      # Compile installer using Inno Setup (FR-010)
+      - name: Build Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: installers/windows/setup.iss
+          options: /DVersion=${{ steps.version.outputs.version }}
+
+      # Upload installer artifact
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installers/windows/Iterum-${{ steps.version.outputs.version }}-Windows-x64.exe
+          if-no-files-found: error
+
+  # macOS installer using pkgbuild (FR-020 through FR-023)
+  macos-installer:
+    name: macOS Installer
+    needs: build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Download macOS build artifact (FR-003)
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Iterum-macOS
+          path: artifact
+
+      # Extract version from tag (FR-006)
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building installer for version: $VERSION"
+
+      # Create staging directory structure for pkgbuild
+      - name: Prepare Installer Files
+        run: |
+          mkdir -p staging/Library/Audio/Plug-Ins/VST3
+          cp -R artifact/Iterum.vst3 staging/Library/Audio/Plug-Ins/VST3/
+
+      # Build pkg installer using pkgbuild (FR-020)
+      - name: Build Installer
+        run: |
+          pkgbuild \
+            --root staging \
+            --identifier com.krateaudio.iterum.vst3 \
+            --version ${{ steps.version.outputs.version }} \
+            --install-location / \
+            Iterum-${{ steps.version.outputs.version }}-macOS.pkg
+
+      # Upload installer artifact
+      - name: Upload Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: Iterum-${{ steps.version.outputs.version }}-macOS.pkg
+          if-no-files-found: error
+
+  # Linux archive with README (FR-030 through FR-032)
+  linux-archive:
+    name: Linux Archive
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Download Linux build artifact (FR-003)
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Iterum-Linux-x64
+          path: artifact
+
+      # Extract version from tag (FR-006)
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building archive for version: $VERSION"
+
+      # Prepare archive contents (FR-031)
+      - name: Prepare Archive Files
+        run: |
+          mkdir -p staging
+          cp -R artifact/Iterum.vst3 staging/
+          cp installers/linux/README.txt staging/
+
+      # Create tar.gz archive (FR-030)
+      - name: Create Archive
+        run: |
+          cd staging
+          tar -czvf ../Iterum-${{ steps.version.outputs.version }}-Linux-x64.tar.gz *
+
+      # Upload archive artifact
+      - name: Upload Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-archive
+          path: Iterum-${{ steps.version.outputs.version }}-Linux-x64.tar.gz
+          if-no-files-found: error
+
+  # Create GitHub Release with all installers (FR-004, FR-005)
+  release:
+    name: Create Release
+    needs: [windows-installer, macos-installer, linux-archive]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Extract version from tag
+      - name: Get Version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Download all installer artifacts
+      - name: Download Windows Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: installers
+
+      - name: Download macOS Installer
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installer
+          path: installers
+
+      - name: Download Linux Archive
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-archive
+          path: installers
+
+      # List downloaded files for verification
+      - name: List Installers
+        run: ls -la installers/
+
+      # Create GitHub Release (FR-005)
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Iterum ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            installers/Iterum-${{ steps.version.outputs.version }}-Windows-x64.exe
+            installers/Iterum-${{ steps.version.outputs.version }}-macOS.pkg
+            installers/Iterum-${{ steps.version.outputs.version }}-Linux-x64.tar.gz

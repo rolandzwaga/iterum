@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_call:
+    # Allows this workflow to be called by release.yml
 
 # Cancel in-progress runs when a new commit is pushed
 concurrency:
