@@ -31,14 +31,14 @@ jobs:
         with:
           submodules: recursive
 
-      # Cache CMake FetchContent downloads
+      # Cache CMake FetchContent downloads (key includes 'vs' to avoid Ninja cache conflicts)
       - name: Cache FetchContent
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
+          key: fetchcontent-${{ runner.os }}-vs-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt') }}
           restore-keys: |
-            fetchcontent-${{ runner.os }}-
+            fetchcontent-${{ runner.os }}-vs-
 
       # Note: sccache/ccache with Ninja causes PDB conflicts with VSTGUI's /Zi flag
       # Visual Studio generator handles PDB files correctly via mspdbsrv.exe
