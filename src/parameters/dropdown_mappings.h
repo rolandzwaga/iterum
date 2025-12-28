@@ -1,5 +1,5 @@
 // ==============================================================================
-// Dropdown Mappings - Type-Safe UI to DSP Conversion
+// Parameter Dropdown Mappings - Type-Safe UI to DSP Conversion
 // ==============================================================================
 // Type-safe mapping functions from UI dropdown indices to DSP enum values.
 // These mappings provide explicit, auditable conversion instead of fragile
@@ -11,11 +11,10 @@
 // - Direct casts are silent failures if enum/dropdown desync
 // - Explicit mappings are testable and self-documenting
 //
-// This header centralizes all enums that need UI dropdown mapping:
-// - BBDChipModel: BBD chip era selection
-// - LRRatio: Ping-pong L/R timing ratios
-// - TimingPattern: Multi-tap rhythm patterns
-// - SpatialPattern: Multi-tap pan/level patterns
+// Architecture:
+// - Enums are defined in their respective DSP feature headers
+// - Mapping functions live here in the parameters layer
+// - This creates clean separation: DSP layer has no UI knowledge
 //
 // Constitution Compliance:
 // - Principle III: Modern C++ (constexpr, type-safe)
@@ -24,10 +23,12 @@
 
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+// Include DSP headers to get enum types
+#include "dsp/features/bbd_delay.h"        // BBDChipModel
+#include "dsp/features/ping_pong_delay.h"  // LRRatio
+#include "dsp/features/multi_tap_delay.h"  // TimingPattern, SpatialPattern
 
-namespace Iterum::DSP {
+namespace Iterum::Parameters {
 
 // =============================================================================
 // Dropdown Count Constants
@@ -46,105 +47,6 @@ inline constexpr int kTimingPatternDropdownCount = 20;
 inline constexpr int kSpatialPatternDropdownCount = 7;
 
 // =============================================================================
-// BBDChipModel Enumeration
-// =============================================================================
-
-/// @brief BBD chip era selection for analog delay emulation
-///
-/// Different BBD chips have characteristic frequency responses and noise:
-/// - MN3005: Panasonic 4096-stage (Memory Man era) - widest bandwidth, lowest noise
-/// - MN3007: Panasonic 1024-stage - medium-dark character
-/// - MN3205: Panasonic 4096-stage budget - darker, noisier
-/// - SAD1024: Reticon 1024-stage early chip - most noise, limited bandwidth
-enum class BBDChipModel : uint8_t {
-    MN3005 = 0,   ///< Panasonic 4096-stage (Memory Man) - widest BW, lowest noise
-    MN3007 = 1,   ///< Panasonic 1024-stage - medium-dark character
-    MN3205 = 2,   ///< Panasonic 4096-stage budget - darker, noisier
-    SAD1024 = 3   ///< Reticon 1024-stage early chip - most noise, limited BW
-};
-
-// =============================================================================
-// LRRatio Enumeration (PingPong delay L/R timing ratios)
-// =============================================================================
-
-/// @brief Preset L/R timing ratios for polyrhythmic ping-pong effects
-///
-/// Each ratio defines multipliers for left and right delay times:
-/// - OneToOne: Classic even ping-pong (L=1.0, R=1.0)
-/// - TwoToOne: Right is double speed (L=1.0, R=0.5)
-/// - ThreeToTwo: Polyrhythmic triplet feel (L=1.0, R=0.667)
-/// - FourToThree: Subtle polyrhythm (L=1.0, R=0.75)
-/// - OneToTwo: Left is double speed (L=0.5, R=1.0)
-/// - TwoToThree: Inverse triplet feel (L=0.667, R=1.0)
-/// - ThreeToFour: Inverse subtle polyrhythm (L=0.75, R=1.0)
-enum class LRRatio : uint8_t {
-    OneToOne = 0,      ///< 1:1 - Classic even ping-pong
-    TwoToOne = 1,      ///< 2:1 - R is double speed
-    ThreeToTwo = 2,    ///< 3:2 - Polyrhythmic triplet feel
-    FourToThree = 3,   ///< 4:3 - Subtle polyrhythm
-    OneToTwo = 4,      ///< 1:2 - L is double speed
-    TwoToThree = 5,    ///< 2:3 - Inverse triplet feel
-    ThreeToFour = 6    ///< 3:4 - Inverse subtle polyrhythm
-};
-
-// =============================================================================
-// TimingPattern Enumeration (MultiTap rhythm patterns)
-// =============================================================================
-
-/// @brief Tap timing patterns for multi-tap delay
-///
-/// Basic note values map to rhythmic divisions of the beat.
-/// Mathematical patterns provide non-rhythmic options.
-enum class TimingPattern : uint8_t {
-    // Rhythmic patterns - basic note values
-    WholeNote = 0,
-    HalfNote,
-    QuarterNote,
-    EighthNote,
-    SixteenthNote,
-    ThirtySecondNote,
-
-    // Rhythmic patterns - dotted variants
-    DottedHalf,
-    DottedQuarter,
-    DottedEighth,
-    DottedSixteenth,
-
-    // Rhythmic patterns - triplet variants
-    TripletHalf,
-    TripletQuarter,
-    TripletEighth,
-    TripletSixteenth,
-
-    // Mathematical patterns
-    GoldenRatio,      ///< Each tap = previous * 1.618
-    Fibonacci,        ///< Taps follow 1, 1, 2, 3, 5, 8... sequence
-    Exponential,      ///< Taps at 1x, 2x, 4x, 8x... base time
-    PrimeNumbers,     ///< Taps at 2x, 3x, 5x, 7x, 11x... base time
-    LinearSpread,     ///< Equal spacing from min to max time
-
-    // Custom pattern
-    Custom            ///< User-defined time ratios
-};
-
-// =============================================================================
-// SpatialPattern Enumeration (MultiTap pan/level patterns)
-// =============================================================================
-
-/// @brief Spatial distribution patterns for multi-tap delay
-///
-/// Controls pan position and level distribution across taps.
-enum class SpatialPattern : uint8_t {
-    Cascade = 0,      ///< Pan sweeps L->R across taps
-    Alternating,      ///< Pan alternates L, R, L, R...
-    Centered,         ///< All taps center pan
-    WideningStereo,   ///< Pan spreads progressively wider
-    DecayingLevel,    ///< Each tap -3dB from previous
-    FlatLevel,        ///< All taps equal level
-    Custom            ///< User-defined pan/level
-};
-
-// =============================================================================
 // BBD Era Dropdown Mapping
 // =============================================================================
 
@@ -152,7 +54,9 @@ enum class SpatialPattern : uint8_t {
 /// @param index Dropdown index (0-3)
 /// @return BBDChipModel enum value, defaults to MN3005 for out-of-range
 /// @note Lookup table approach for O(1) access and explicit mapping
-inline constexpr BBDChipModel getBBDEraFromDropdown(int index) noexcept {
+inline constexpr DSP::BBDChipModel getBBDEraFromDropdown(int index) noexcept {
+    using DSP::BBDChipModel;
+
     // Explicit lookup table - order matches UI dropdown
     constexpr BBDChipModel kLookup[] = {
         BBDChipModel::MN3005,   // Index 0: Matsushita 4096-stage (classic)
@@ -175,7 +79,9 @@ inline constexpr BBDChipModel getBBDEraFromDropdown(int index) noexcept {
 /// @brief Convert dropdown index to LRRatio enum
 /// @param index Dropdown index (0-6)
 /// @return LRRatio enum value, defaults to OneToOne for out-of-range
-inline constexpr LRRatio getLRRatioFromDropdown(int index) noexcept {
+inline constexpr DSP::LRRatio getLRRatioFromDropdown(int index) noexcept {
+    using DSP::LRRatio;
+
     // Explicit lookup table - order matches UI dropdown
     constexpr LRRatio kLookup[] = {
         LRRatio::OneToOne,      // Index 0: 1:1
@@ -201,7 +107,9 @@ inline constexpr LRRatio getLRRatioFromDropdown(int index) noexcept {
 /// @brief Convert dropdown index to TimingPattern enum
 /// @param index Dropdown index (0-19)
 /// @return TimingPattern enum value, defaults to QuarterNote for out-of-range
-inline constexpr TimingPattern getTimingPatternFromDropdown(int index) noexcept {
+inline constexpr DSP::TimingPattern getTimingPatternFromDropdown(int index) noexcept {
+    using DSP::TimingPattern;
+
     // Explicit lookup table - order matches UI dropdown
     constexpr TimingPattern kLookup[] = {
         // Basic note values (0-5)
@@ -249,7 +157,9 @@ inline constexpr TimingPattern getTimingPatternFromDropdown(int index) noexcept 
 /// @brief Convert dropdown index to SpatialPattern enum
 /// @param index Dropdown index (0-6)
 /// @return SpatialPattern enum value, defaults to Centered for out-of-range
-inline constexpr SpatialPattern getSpatialPatternFromDropdown(int index) noexcept {
+inline constexpr DSP::SpatialPattern getSpatialPatternFromDropdown(int index) noexcept {
+    using DSP::SpatialPattern;
+
     // Explicit lookup table - order matches UI dropdown
     constexpr SpatialPattern kLookup[] = {
         SpatialPattern::Cascade,        // Index 0: L->R sweep
@@ -268,4 +178,4 @@ inline constexpr SpatialPattern getSpatialPatternFromDropdown(int index) noexcep
     return kLookup[index];
 }
 
-} // namespace Iterum::DSP
+} // namespace Iterum::Parameters

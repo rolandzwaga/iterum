@@ -321,7 +321,7 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
             bbdDelay_.setModulation(bbdParams_.modulationDepth.load(std::memory_order_relaxed));
             bbdDelay_.setModulationRate(bbdParams_.modulationRate.load(std::memory_order_relaxed));
             bbdDelay_.setAge(bbdParams_.age.load(std::memory_order_relaxed));
-            bbdDelay_.setEra(DSP::getBBDEraFromDropdown(
+            bbdDelay_.setEra(Parameters::getBBDEraFromDropdown(
                 bbdParams_.era.load(std::memory_order_relaxed)));
             bbdDelay_.setMix(bbdParams_.mix.load(std::memory_order_relaxed));
             // Output level is already in dB (no conversion needed)
@@ -373,7 +373,7 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
                 const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
                 pingPongDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
             }
-            pingPongDelay_.setLRRatio(DSP::getLRRatioFromDropdown(
+            pingPongDelay_.setLRRatio(Parameters::getLRRatioFromDropdown(
                 pingPongParams_.lrRatio.load(std::memory_order_relaxed)));
             pingPongDelay_.setFeedback(pingPongParams_.feedback.load(std::memory_order_relaxed));
             pingPongDelay_.setCrossFeedback(pingPongParams_.crossFeedback.load(std::memory_order_relaxed));
@@ -414,10 +414,10 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
 
         case DelayMode::MultiTap:
             // Update MultiTap parameters
-            multiTapDelay_.loadTimingPattern(DSP::getTimingPatternFromDropdown(
+            multiTapDelay_.loadTimingPattern(Parameters::getTimingPatternFromDropdown(
                 multiTapParams_.timingPattern.load(std::memory_order_relaxed)),
                 static_cast<size_t>(multiTapParams_.tapCount.load(std::memory_order_relaxed)));
-            multiTapDelay_.applySpatialPattern(DSP::getSpatialPatternFromDropdown(
+            multiTapDelay_.applySpatialPattern(Parameters::getSpatialPatternFromDropdown(
                 multiTapParams_.spatialPattern.load(std::memory_order_relaxed)));
             multiTapDelay_.setBaseTimeMs(multiTapParams_.baseTime.load(std::memory_order_relaxed));
             multiTapDelay_.setTempo(multiTapParams_.tempo.load(std::memory_order_relaxed));

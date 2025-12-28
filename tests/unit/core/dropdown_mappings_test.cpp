@@ -11,9 +11,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include "dsp/core/dropdown_mappings.h"
+#include "parameters/dropdown_mappings.h"
 
-using namespace Iterum::DSP;
+using namespace Iterum::DSP;         // For enum types (BBDChipModel, LRRatio, etc.)
+using namespace Iterum::Parameters;  // For mapping functions (getBBDEraFromDropdown, etc.)
 
 // =============================================================================
 // BBDChipModel Dropdown Mapping Tests

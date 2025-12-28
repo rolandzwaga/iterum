@@ -26,7 +26,6 @@
 
 #include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
-#include "dsp/core/dropdown_mappings.h"  // TimingPattern, SpatialPattern enums
 #include "dsp/core/note_value.h"
 #include "dsp/core/math_constants.h"
 #include "dsp/primitives/smoother.h"
@@ -45,10 +44,67 @@ namespace Iterum {
 namespace DSP {
 
 // =============================================================================
+// TimingPattern Enumeration (FR-002, FR-002a)
+// =============================================================================
+
+/// @brief Preset timing patterns for multi-tap delay
+///
+/// Provides 20 timing pattern options:
+/// - 14 rhythmic patterns (basic notes, dotted, triplet variants)
+/// - 5 mathematical patterns (golden ratio, fibonacci, exponential, etc.)
+/// - 1 custom pattern for user-defined timing
+enum class TimingPattern : uint8_t {
+    // Rhythmic patterns - basic note values (FR-002)
+    WholeNote = 0,
+    HalfNote,
+    QuarterNote,
+    EighthNote,
+    SixteenthNote,
+    ThirtySecondNote,
+
+    // Rhythmic patterns - dotted variants (FR-002)
+    DottedHalf,
+    DottedQuarter,
+    DottedEighth,
+    DottedSixteenth,
+
+    // Rhythmic patterns - triplet variants (FR-002)
+    TripletHalf,
+    TripletQuarter,
+    TripletEighth,
+    TripletSixteenth,
+
+    // Mathematical patterns (FR-002a)
+    GoldenRatio,      ///< Each tap = previous × 1.618
+    Fibonacci,        ///< Taps follow 1, 1, 2, 3, 5, 8... sequence
+    Exponential,      ///< Taps at 1×, 2×, 4×, 8×... base time
+    PrimeNumbers,     ///< Taps at 2×, 3×, 5×, 7×, 11×... base time
+    LinearSpread,     ///< Equal spacing from min to max time
+
+    // Custom pattern (FR-003)
+    Custom            ///< User-defined time ratios
+};
+
+// =============================================================================
+// SpatialPattern Enumeration (FR-002b)
+// =============================================================================
+
+/// @brief Preset spatial/level patterns for multi-tap delay
+///
+/// Controls pan and level distribution across taps.
+enum class SpatialPattern : uint8_t {
+    Cascade = 0,      ///< Pan sweeps L→R across taps
+    Alternating,      ///< Pan alternates L, R, L, R...
+    Centered,         ///< All taps center pan
+    WideningStereo,   ///< Pan spreads progressively wider
+    DecayingLevel,    ///< Each tap -3dB from previous
+    FlatLevel,        ///< All taps equal level
+    Custom            ///< User-defined pan/level
+};
+
+// =============================================================================
 // TapConfiguration Structure (FR-004)
 // =============================================================================
-// Note: TimingPattern and SpatialPattern enums are defined in
-// dsp/core/dropdown_mappings.h to support type-safe dropdown mapping functions.
 
 /// @brief Runtime configuration for a single delay tap
 ///

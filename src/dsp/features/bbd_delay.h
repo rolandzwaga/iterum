@@ -32,7 +32,6 @@
 
 #include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
-#include "dsp/core/dropdown_mappings.h"  // BBDChipModel enum
 #include "dsp/primitives/lfo.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/systems/character_processor.h"
@@ -49,10 +48,23 @@ namespace Iterum {
 namespace DSP {
 
 // =============================================================================
+// BBDChipModel Enumeration (FR-024 to FR-029)
+// =============================================================================
+
+/// @brief BBD chip model selection for era-based character
+///
+/// Each chip model provides distinct tonal characteristics based on
+/// historical BBD IC behavior.
+enum class BBDChipModel : uint8_t {
+    MN3005 = 0,   ///< Panasonic 4096-stage (Memory Man) - widest BW, lowest noise
+    MN3007 = 1,   ///< Panasonic 1024-stage - medium-dark character
+    MN3205 = 2,   ///< Panasonic 4096-stage budget - darker, noisier
+    SAD1024 = 3   ///< Reticon 1024-stage early chip - most noise, limited BW
+};
+
+// =============================================================================
 // BBDDelay Class (FR-001 to FR-041)
 // =============================================================================
-// Note: BBDChipModel enum is defined in dsp/core/dropdown_mappings.h
-// to support type-safe dropdown mapping functions.
 
 /// @brief Layer 4 User Feature - Classic BBD Delay Emulation
 ///

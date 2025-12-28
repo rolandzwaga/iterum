@@ -38,6 +38,7 @@
 #include "parameters/shimmer_params.h"
 #include "parameters/spectral_params.h"
 #include "parameters/tape_params.h"
+#include "parameters/dropdown_mappings.h"
 
 #include <array>
 #include <atomic>

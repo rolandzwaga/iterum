@@ -28,7 +28,6 @@
 
 #include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
-#include "dsp/core/dropdown_mappings.h"  // LRRatio enum
 #include "dsp/core/note_value.h"
 #include "dsp/core/stereo_utils.h"
 #include "dsp/primitives/delay_line.h"
@@ -47,10 +46,32 @@ namespace Iterum {
 namespace DSP {
 
 // =============================================================================
+// LRRatio Enumeration (FR-005)
+// =============================================================================
+
+/// @brief Preset L/R timing ratios for polyrhythmic ping-pong effects
+///
+/// Each ratio defines multipliers for left and right delay times:
+/// - OneToOne: Classic even ping-pong (L=1.0, R=1.0)
+/// - TwoToOne: Right is double speed (L=1.0, R=0.5)
+/// - ThreeToTwo: Polyrhythmic triplet feel (L=1.0, R=0.667)
+/// - FourToThree: Subtle polyrhythm (L=1.0, R=0.75)
+/// - OneToTwo: Left is double speed (L=0.5, R=1.0)
+/// - TwoToThree: Inverse triplet feel (L=0.667, R=1.0)
+/// - ThreeToFour: Inverse subtle polyrhythm (L=0.75, R=1.0)
+enum class LRRatio : uint8_t {
+    OneToOne = 0,     ///< 1:1 - Classic even ping-pong
+    TwoToOne = 1,     ///< 2:1 - R is double speed
+    ThreeToTwo = 2,   ///< 3:2 - Polyrhythmic triplet feel
+    FourToThree = 3,  ///< 4:3 - Subtle polyrhythm
+    OneToTwo = 4,     ///< 1:2 - L is double speed
+    TwoToThree = 5,   ///< 2:3 - Inverse triplet feel
+    ThreeToFour = 6   ///< 3:4 - Inverse subtle polyrhythm
+};
+
+// =============================================================================
 // PingPongDelay Class
 // =============================================================================
-// Note: LRRatio enum is defined in dsp/core/dropdown_mappings.h (Layer 0)
-// to support type-safe dropdown mapping functions.
 
 /// @brief Layer 4 User Feature - Ping-Pong Delay
 ///
