@@ -1,0 +1,8 @@
+{
+  "version": "0.1.0",
+  "name": "Iterum",
+  "description": "VST3 Delay Plugin",
+  "publisher": "Krate Audio",
+  "url": "https://github.com/rolandzwaga/iterum",
+  "copyright": "Copyright (c) 2025 Krate Audio"
+}

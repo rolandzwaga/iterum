@@ -1,11 +1,24 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ==============================================================================
+# Version from version.json (Single Source of Truth)
+# ==============================================================================
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/version.json" VERSION_JSON)
+string(JSON ITERUM_VERSION GET ${VERSION_JSON} "version")
+string(JSON ITERUM_NAME GET ${VERSION_JSON} "name")
+string(JSON ITERUM_DESCRIPTION GET ${VERSION_JSON} "description")
+string(JSON ITERUM_PUBLISHER GET ${VERSION_JSON} "publisher")
+string(JSON ITERUM_URL GET ${VERSION_JSON} "url")
+string(JSON ITERUM_COPYRIGHT GET ${VERSION_JSON} "copyright")
+
+message(STATUS "[ITERUM] Version: ${ITERUM_VERSION}")
+
+# ==============================================================================
 # Project Configuration
 # ==============================================================================
-project(Iterum
-    VERSION 0.1.0
-    DESCRIPTION "Iterum VST3 Delay Plugin"
+project(${ITERUM_NAME}
+    VERSION ${ITERUM_VERSION}
+    DESCRIPTION "${ITERUM_DESCRIPTION}"
     LANGUAGES CXX
 )
 
