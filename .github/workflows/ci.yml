@@ -44,7 +44,7 @@ jobs:
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 
       - name: Build Tests
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests --parallel
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests vst_tests --parallel
 
       - name: Build Plugin and Validator
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target Iterum validator --parallel
@@ -98,7 +98,7 @@ jobs:
         run: cmake -S . -B build -G Xcode -DUSE_CCACHE=ON
 
       - name: Build Tests
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests --parallel
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests vst_tests --parallel
 
       - name: Build Plugin and Validator
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target Iterum validator --parallel
@@ -167,7 +167,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build Tests
-        run: cmake --build build --target dsp_tests approval_tests --parallel
+        run: cmake --build build --target dsp_tests approval_tests vst_tests --parallel
 
       - name: Build Plugin and Validator
         run: cmake --build build --target Iterum validator --parallel
