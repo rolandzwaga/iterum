@@ -45,6 +45,8 @@ jobs:
     name: Windows Installer
     needs: [version, build]
     runs-on: windows-latest
+    permissions:
+      actions: read
 
     steps:
       - name: Checkout
@@ -55,6 +57,10 @@ jobs:
         with:
           name: Iterum-Windows-x64
           path: artifact
+          github-token: ${{ github.token }}
+
+      - name: List Downloaded Artifact
+        run: Get-ChildItem -Recurse artifact | Format-Table FullName
 
       - name: Prepare Installer Files
         run: |
@@ -85,6 +91,8 @@ jobs:
     name: macOS Installer
     needs: [version, build]
     runs-on: macos-latest
+    permissions:
+      actions: read
 
     steps:
       - name: Checkout
@@ -95,6 +103,10 @@ jobs:
         with:
           name: Iterum-macOS
           path: artifact
+          github-token: ${{ github.token }}
+
+      - name: List Downloaded Artifact
+        run: ls -laR artifact
 
       - name: Prepare Installer Files
         run: |
@@ -122,6 +134,8 @@ jobs:
     name: Linux Archive
     needs: [version, build]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
 
     steps:
       - name: Checkout
@@ -132,6 +146,10 @@ jobs:
         with:
           name: Iterum-Linux-x64
           path: artifact
+          github-token: ${{ github.token }}
+
+      - name: List Downloaded Artifact
+        run: ls -laR artifact
 
       - name: Prepare Archive Files
         run: |
