@@ -67,6 +67,34 @@ CRITICAL: Follow these guidelines when using tools operating on file paths EXCEP
 }
 ```
 
+#### ⚠️ CROSS-PLATFORM REQUIREMENT (CRITICAL)
+
+**This plugin MUST be fully cross-platform (Windows, macOS, Linux).** Platform-specific solutions are FORBIDDEN.
+
+**NEVER do these:**
+- Switch from VSTGUI generic menus to native Windows popups
+- Use Win32 APIs (GetTickCount, WM_* messages, HWND, etc.) for UI functionality
+- Use macOS-native APIs (Cocoa, AppKit) for UI functionality
+- Suggest "try the native popup" as a fix for VSTGUI issues
+- Use ANY platform-specific UI solution without explicit user approval
+
+**ALWAYS do these:**
+- Use VSTGUI's cross-platform abstractions (COptionMenu, CFileSelector, etc.)
+- When VSTGUI offers native vs generic options, PREFER generic (cross-platform)
+- When debugging UI issues, find cross-platform solutions, not Windows workarounds
+
+**Platform-specific code is ONLY acceptable for:**
+- Debug logging (guarded by `#if defined(_DEBUG) && defined(_WIN32)`)
+- Performance timing that has cross-platform fallbacks
+- Workarounds for platform-specific bugs WITH documented justification AND user approval
+
+**Why this matters:** Every time you suggest "try the Windows native popup", you're proposing a solution that:
+1. Won't work on macOS or Linux
+2. Defeats the entire purpose of using VSTGUI
+3. Creates technical debt and platform fragmentation
+
+**If a VSTGUI feature doesn't work correctly, the fix must also use VSTGUI.**
+
 
 ### 1. Real-Time Audio Thread Safety
 
@@ -893,7 +921,118 @@ If you cannot meet a requirement, be HONEST:
 requires additional work to meet SC-003 (0.1dB flatness).
 ```
 
-This is a constitution-level requirement (Principle XV).
+This is a constitution-level requirement (Principle XVI).
+
+## Debugging Discipline (MANDATORY)
+
+**CRITICAL**: This section describes non-negotiable requirements for troubleshooting framework-based solutions. Premature pivoting to alternative approaches is FORBIDDEN.
+
+### The Anti-Pivot Rule
+
+When a framework-based solution (VSTGUI, VST3 SDK, etc.) doesn't work:
+
+1. **DO NOT** immediately try a different approach
+2. **DO NOT** assume the framework has a bug
+3. **DO NOT** switch to platform-native code
+4. **DO** investigate deeply until you understand WHY it's not working
+
+### Required Investigation Before Pivoting
+
+Before proposing ANY alternative approach, you MUST complete this checklist:
+
+1. [ ] **Read debug logs**: Check `%TEMP%\iterum_debug.log` and console output
+2. [ ] **Add targeted logging**: Trace actual values through the problematic code path
+3. [ ] **Read framework source**: VSTGUI is in `extern/vst3sdk/vstgui4/vstgui/`
+4. [ ] **Identify divergence point**: Find the EXACT line where behavior differs from expectation
+5. [ ] **Document findings**: Explain what you learned and why the approach cannot work
+6. [ ] **Propose alternative**: ONLY with user approval, after steps 1-5 are complete
+
+### Forbidden Pivot Patterns
+
+| Pattern | Why It's Wrong |
+|---------|----------------|
+| "It didn't work, let me try something else" | You didn't investigate WHY |
+| "Maybe VSTGUI has a bug" | VSTGUI works in thousands of plugins - you have a usage error |
+| "Let me try a manual workaround" | Workarounds create technical debt and often introduce new bugs |
+| "I'll use native Windows code" | Violates cross-platform requirements |
+| Trying 3+ approaches without reading logs | Guessing instead of debugging |
+
+### Framework Commitment
+
+When using VSTGUI or VST3 SDK features:
+
+1. These frameworks are designed to solve your problem
+2. They are battle-tested across thousands of commercial plugins
+3. If something isn't working, **YOU are doing something wrong**
+4. Your job is to find WHAT you're doing wrong, not to abandon the framework
+5. Custom workarounds are the LAST resort, not the first
+
+### Self-Check Questions
+
+Before switching approaches, ask yourself:
+
+1. Have I read the debug log output from the last test?
+2. Can I trace the exact value flow from input to incorrect output?
+3. Have I read the framework source for this feature?
+4. Do I understand what SHOULD happen vs what IS happening?
+5. Have I spent at least 30 minutes investigating?
+
+**If any answer is "no", you cannot pivot to an alternative approach.**
+
+### Lesson Learned
+
+The mode switching incident wasted hours pivoting between:
+- `template-switch-control` automatic binding
+- Manual `setParamNormalized` with SDK's `toPlain()`
+- Native Windows popup menus
+
+None of these approaches were properly debugged. The actual values flowing through the system were never traced. The framework source was never read. This principle exists to prevent repeating this waste.
+
+This is a constitution-level requirement (Principle XII).
+
+## VST-GUIDE.md (MANDATORY)
+
+**CRITICAL**: Before any VSTGUI or VST3 SDK implementation work, you MUST read `specs/VST-GUIDE.md`.
+
+### Pre-Task Requirement
+
+Before starting ANY task involving:
+- Parameter registration or handling
+- COptionMenu or other VSTGUI controls
+- UIViewSwitchContainer or view switching
+- Custom UI controls or bindings
+- Value normalization or conversion
+
+You MUST:
+1. **Read VST-GUIDE.md** to check for documented pitfalls
+2. **Ingest it into context** if not already present
+3. This check MUST appear as an explicit todo item: "Read VST-GUIDE.md (ingest if needed)"
+
+### Post-Discovery Requirement
+
+When a debugging session reveals non-obvious framework behavior:
+
+1. **Immediately** add findings to VST-GUIDE.md after confirming the fix works
+2. Add to the Incident Log section with:
+   - Date, symptom, root cause, solution
+   - Time wasted (to emphasize importance)
+   - Lesson learned
+3. Update the version and date at the top of the file
+
+### Quick Reference: Common Pitfalls
+
+| Pitfall | Solution | See Section |
+|---------|----------|-------------|
+| `toPlain()` returns normalized value | Use `StringListParameter` or `RangeParameter` | §1 |
+| Custom `value * 10 + 0.5` formulas | Use `param->toPlain(normalized)` | §1 |
+| UIViewSwitchContainer doesn't switch | Check parameter type and template-switch-control | §3 |
+| Feedback loops resetting values | VSTGUI handles this - check parameter type | §4 |
+
+### Why This Matters
+
+The mode switching bug wasted hours because we didn't know that basic `Parameter::toPlain()` just returns the input unchanged. This knowledge is now in VST-GUIDE.md. Reading it before starting would have prevented the entire debugging session.
+
+This is a constitution-level requirement (Principle XVII).
 
 ## Build Commands
 

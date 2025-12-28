@@ -8,6 +8,7 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -231,17 +232,11 @@ inline void registerDuckingParams(Steinberg::Vst::ParameterContainer& parameters
         STR16("Hold")
     );
 
-    // Duck Target: Output, Feedback, Both
-    parameters.addParameter(
-        STR16("Duck Target"),
-        nullptr,
-        2,  // stepCount 2 = 3 discrete values
-        0.0,  // Output default
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDuckingDuckTargetId,
-        0,
-        STR16("Tgt")
-    );
+    // Duck Target: Output, Feedback, Both - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Duck Target"), kDuckingDuckTargetId,
+        {STR16("Output"), STR16("Feedback"), STR16("Both")}
+    ));
 
     // Sidechain Filter Enabled: on/off toggle
     parameters.addParameter(
@@ -383,14 +378,7 @@ inline Steinberg::tresult formatDuckingParam(
             return kResultTrue;
         }
 
-        case kDuckingDuckTargetId: {
-            // 0-2 (Output, Feedback, Both)
-            int target = static_cast<int>(valueNormalized * 2.0 + 0.5);
-            const char* names[] = {"Output", "Feedback", "Both"};
-            UString(string, 128).fromAscii(
-                names[target < 0 ? 0 : (target > 2 ? 2 : target)]);
-            return kResultTrue;
-        }
+        // kDuckingDuckTargetId: handled by StringListParameter::toString() automatically
 
         case kDuckingSidechainFilterCutoffId: {
             // 20-500Hz

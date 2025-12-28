@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+    <bitmaps/>
+    <fonts>
+        <font name="label-font" font-name="Arial" size="14"/>
+    </fonts>
+    <colors>
+        <color name="background" rgba="#ff0000ff"/>
+        <color name="text" rgba="#ffffffff"/>
+    </colors>
+    <control-tags>
+        <control-tag name="Bypass" tag="0"/>
+        <control-tag name="Gain" tag="1"/>
+    </control-tags>
+    <template
+        name="Editor"
+        class="CViewContainer"
+        origin="0, 0"
+        size="400, 300"
+        background-color="background">
+        <view class="CTextLabel"
+              origin="100, 130"
+              size="200, 40"
+              title="Iterum Test"
+              font="label-font"
+              font-color="text"
+              text-alignment="center"
+              transparent="true"/>
+    </template>
+</vstgui-ui-description>

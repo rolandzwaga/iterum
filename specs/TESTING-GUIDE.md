@@ -64,6 +64,7 @@ When building on Windows from Git Bash, note these important details:
 | Target | vcxproj Location |
 |--------|------------------|
 | dsp_tests | `build/tests/dsp_tests.vcxproj` |
+| vst_tests | `build/tests/vst_tests.vcxproj` |
 | approval_tests | `build/tests/approval_tests.vcxproj` |
 | Iterum (plugin) | `build/Iterum.vcxproj` |
 
@@ -103,6 +104,51 @@ build\bin\Debug\dsp_tests.exe "~[slow]"
 
 # List all available tests
 build\bin\Debug\dsp_tests.exe --list-tests
+```
+
+### Test Suite Architecture
+
+The project has **two separate test executables** to maintain clean dependency separation:
+
+| Executable | Purpose | SDK Dependencies |
+|------------|---------|------------------|
+| `dsp_tests` | Pure DSP algorithm tests | None (Catch2 only) |
+| `vst_tests` | VST3-specific functionality tests | VST3 SDK |
+
+**Why two suites?**
+
+1. **Build speed**: `dsp_tests` compiles faster without VST3 SDK headers
+2. **Isolation**: DSP algorithms remain testable without VST3 infrastructure
+3. **Layered architecture**: Enforces that Layer 0-4 DSP code has no VST3 dependencies
+4. **CI flexibility**: Can run DSP tests on machines without VST3 SDK
+
+**`dsp_tests`** - Pure DSP Tests:
+- Tests in `tests/unit/core/`, `tests/unit/primitives/`, `tests/unit/processors/`, `tests/unit/systems/`, `tests/unit/features/`
+- No VST3 SDK includes allowed
+- Tests NoteValue mapping, BlockContext, tempo sync utilities, delay lines, filters, etc.
+
+```bash
+# Run all DSP tests
+build\bin\Debug\dsp_tests.exe
+
+# Run tempo sync tests
+build\bin\Debug\dsp_tests.exe "[tempo]"
+
+# Run Layer 0 core tests
+build\bin\Debug\dsp_tests.exe "[core]"
+```
+
+**`vst_tests`** - VST3 Integration Tests:
+- Tests in `tests/unit/vst/`
+- Links against VST3 SDK (`sdk`, `base`, `pluginterfaces`)
+- Tests StringListParameter behavior, parameter normalization, state persistence, etc.
+
+```bash
+# Run all VST3 tests
+build\bin\Debug\vst_tests.exe
+
+# Run parameter tests
+build\bin\Debug\vst_tests.exe "[parameter]"
 ```
 
 ### Test Helpers Location
@@ -1148,20 +1194,25 @@ tests/
 │   ├── buffer_comparison.h    #   Comparison utilities
 │   └── allocation_detector.h  #   Real-time safety checking
 ├── unit/                      # Unit tests by layer
-│   ├── core/                  #   Layer 0 tests
+│   ├── core/                  #   Layer 0 tests (→ dsp_tests)
 │   │   ├── test_fast_math.cpp
-│   │   └── test_simd_ops.cpp
-│   ├── primitives/            #   Layer 1 tests
+│   │   ├── note_value_test.cpp
+│   │   ├── note_value_mapping_test.cpp  # Tempo sync utilities
+│   │   └── block_context_test.cpp
+│   ├── primitives/            #   Layer 1 tests (→ dsp_tests)
 │   │   ├── test_delay_line.cpp
 │   │   ├── test_biquad.cpp
 │   │   └── test_lfo.cpp
-│   ├── processors/            #   Layer 2 tests
+│   ├── processors/            #   Layer 2 tests (→ dsp_tests)
 │   │   ├── test_filter.cpp
 │   │   └── test_saturator.cpp
-│   ├── systems/               #   Layer 3 tests
+│   ├── systems/               #   Layer 3 tests (→ dsp_tests)
 │   │   └── test_delay_engine.cpp
-│   └── features/              #   Layer 4 tests
-│       └── test_tape_mode.cpp
+│   ├── features/              #   Layer 4 tests (→ dsp_tests)
+│   │   └── test_tape_mode.cpp
+│   └── vst/                   #   VST3 SDK tests (→ vst_tests)
+│       ├── string_list_parameter_test.cpp  # Dropdown behavior
+│       └── parameter_normalization_test.cpp
 ├── integration/               # Integration tests
 │   ├── test_plugin_load.cpp
 │   ├── test_state_persistence.cpp
@@ -1172,6 +1223,8 @@ tests/
     │   └── shimmer_ref.wav
     └── test_regression.cpp
 ```
+
+**Note:** The arrow notation (→ dsp_tests, → vst_tests) indicates which executable includes tests from that directory.
 
 ### Naming Conventions
 

@@ -8,7 +8,9 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "pluginterfaces/base/ftypes.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -233,17 +235,11 @@ inline void registerFreezeParams(Steinberg::Vst::ParameterContainer& parameters)
         ParameterInfo::kCanAutomate,
         kFreezeFilterEnabledId);
 
-    // Filter Type (LowPass, HighPass, BandPass)
-    auto* filterTypeParam = parameters.addParameter(
-        STR16("Freeze Filter Type"),
-        nullptr,
-        2,  // stepCount: 3 values (0, 1, 2)
-        0,  // default: LowPass
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kFreezeFilterTypeId);
-    if (filterTypeParam) {
-        filterTypeParam->getInfo().stepCount = 2;
-    }
+    // Filter Type (LowPass, HighPass, BandPass) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Freeze Filter Type"), kFreezeFilterTypeId,
+        {STR16("LowPass"), STR16("HighPass"), STR16("BandPass")}
+    ));
 
     // Filter Cutoff (20-20000Hz)
     parameters.addParameter(
@@ -339,13 +335,7 @@ inline Steinberg::tresult formatFreezeParam(
                 normalizedValue >= 0.5 ? STR16("On") : STR16("Off"));
             return kResultOk;
 
-        case kFreezeFilterTypeId: {
-            int type = static_cast<int>(normalizedValue * 2.0 + 0.5);
-            const char* names[] = {"LowPass", "HighPass", "BandPass"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[type < 0 ? 0 : (type > 2 ? 2 : type)]);
-            return kResultOk;
-        }
+        // kFreezeFilterTypeId: handled by StringListParameter::toString() automatically
 
         case kFreezeFilterCutoffId: {
             float hz = static_cast<float>(20.0 * std::pow(1000.0, normalizedValue));

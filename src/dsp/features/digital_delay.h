@@ -126,7 +126,7 @@ public:
     static constexpr float kDefaultMix = 0.5f;         ///< Default mix
     static constexpr float kDefaultModRate = 1.0f;     ///< Default mod rate Hz
     static constexpr float kSmoothingTimeMs = 20.0f;   ///< Parameter smoothing (FR-033)
-    static constexpr size_t kMaxDryBufferSize = 8192;  ///< Max samples for dry buffer
+    static constexpr size_t kDefaultDryBufferSize = 8192;  ///< Default dry buffer (resized in prepare)
 
     // Limiter constants (per plan.md)
     static constexpr float kLimiterThresholdDb = -0.5f;  ///< Limiter threshold
@@ -213,6 +213,13 @@ public:
         antiAliasFilterR_.configure(FilterType::Lowpass, k80sAntiAliasHz, 0.707f, 0.0f,
                                     static_cast<float>(sampleRate));
 
+        // Allocate dry buffers sized for maxBlockSize (REGRESSION FIX: was static 8192)
+        // This prevents discontinuities when processing blocks larger than 8192 samples
+        dryBufferL_.resize(maxBlockSize);
+        dryBufferR_.resize(maxBlockSize);
+        std::fill(dryBufferL_.begin(), dryBufferL_.end(), 0.0f);
+        std::fill(dryBufferR_.begin(), dryBufferR_.end(), 0.0f);
+
         prepared_ = true;
     }
 
@@ -271,9 +278,11 @@ public:
 
     /// @brief Set note value for tempo sync (FR-003)
     /// @param value Note value (quarter, eighth, etc.)
-    void setNoteValue(NoteValue value) noexcept {
+    /// @param modifier Note modifier (none, dotted, triplet)
+    void setNoteValue(NoteValue value, NoteModifier modifier = NoteModifier::None) noexcept {
         noteValue_ = value;
-        delayEngine_.setNoteValue(value);
+        noteModifier_ = modifier;
+        delayEngine_.setNoteValue(value, modifier);
     }
 
     /// @brief Get current note value
@@ -436,11 +445,21 @@ public:
                  const BlockContext& ctx) noexcept {
         if (!prepared_ || numSamples == 0) return;
 
-        // Store dry signal for mixing
-        for (size_t i = 0; i < numSamples && i < kMaxDryBufferSize; ++i) {
+        // Store dry signal for mixing (buffer sized in prepare() for maxBlockSize)
+        const size_t samplesToStore = std::min(numSamples, dryBufferL_.size());
+        for (size_t i = 0; i < samplesToStore; ++i) {
             dryBufferL_[i] = left[i];
             dryBufferR_[i] = right[i];
         }
+
+        // Calculate base delay time (handle tempo sync using Layer 0 utility)
+        float baseDelayMs = delayTimeMs_;
+        if (timeMode_ == TimeMode::Synced) {
+            // Use Layer 0 noteToDelayMs() for consistent tempo sync calculation
+            baseDelayMs = noteToDelayMs(noteValue_, noteModifier_, ctx.tempoBPM);
+            baseDelayMs = std::clamp(baseDelayMs, kMinDelayMs, maxDelayMs_);
+        }
+        timeSmoother_.setTarget(baseDelayMs);
 
         // Sample-by-sample processing for parameter smoothing
         for (size_t i = 0; i < numSamples; ++i) {
@@ -461,16 +480,13 @@ public:
                 (void)modulationLfo_.process(); // Keep LFO running
             }
 
-            // Update delay engine
-            delayEngine_.setDelayTimeMs(modulatedDelay);
-
-            // Update feedback network
+            // Update feedback network with modulated delay
             feedbackNetwork_.setDelayTimeMs(modulatedDelay);
             feedbackNetwork_.setFeedbackAmount(currentFeedback);
         }
 
-        // Process through delay engine
-        delayEngine_.process(left, right, numSamples, ctx);
+        // Process through feedback network (has delay + feedback built-in)
+        feedbackNetwork_.process(left, right, numSamples, ctx);
 
         // Apply anti-aliasing filter for 80s/Lo-Fi era (FR-009)
         // Simulates the Nyquist filter of early ~32kHz ADCs
@@ -493,14 +509,13 @@ public:
         }
 
         // Mix dry/wet, add noise, and apply output level
-        for (size_t i = 0; i < numSamples; ++i) {
+        // REGRESSION FIX: Use samplesToStore to avoid accessing beyond stored dry samples
+        for (size_t i = 0; i < samplesToStore; ++i) {
             const float currentMix = mixSmoother_.process();
             const float currentOutputGain = outputLevelSmoother_.process();
 
             const float wetMix = currentMix;
             const float dryMix = 1.0f - wetMix;
-
-            const size_t bufIdx = i % kMaxDryBufferSize;
 
             // Add era-specific noise floor (FR-010)
             float noiseL = 0.0f;
@@ -510,8 +525,8 @@ public:
                 noiseR = noiseRng_.nextFloat() * noiseGain_;
             }
 
-            left[i] = (dryBufferL_[bufIdx] * dryMix + (left[i] + noiseL) * wetMix) * currentOutputGain;
-            right[i] = (dryBufferR_[bufIdx] * dryMix + (right[i] + noiseR) * wetMix) * currentOutputGain;
+            left[i] = (dryBufferL_[i] * dryMix + (left[i] + noiseL) * wetMix) * currentOutputGain;
+            right[i] = (dryBufferR_[i] * dryMix + (right[i] + noiseR) * wetMix) * currentOutputGain;
         }
     }
 
@@ -616,6 +631,7 @@ private:
     LimiterCharacter limiterCharacter_ = LimiterCharacter::Soft;
     TimeMode timeMode_ = TimeMode::Free;
     NoteValue noteValue_ = NoteValue::Quarter;
+    NoteModifier noteModifier_ = NoteModifier::None;
     Waveform modulationWaveform_ = Waveform::Sine;
 
     // Smoothers
@@ -626,9 +642,9 @@ private:
     OnePoleSmoother modulationDepthSmoother_;
     OnePoleSmoother ageSmoother_;
 
-    // Dry signal buffer for mixing (avoid allocation in process)
-    std::array<float, kMaxDryBufferSize> dryBufferL_ = {};
-    std::array<float, kMaxDryBufferSize> dryBufferR_ = {};
+    // Dry signal buffer for mixing (allocated in prepare, not in process)
+    std::vector<float> dryBufferL_;
+    std::vector<float> dryBufferR_;
 
     // 80s era anti-aliasing filter (FR-009)
     Biquad antiAliasFilterL_;

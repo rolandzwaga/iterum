@@ -2,23 +2,18 @@
 ================================================================================
 SYNC IMPACT REPORT
 ================================================================================
-Version Change: 1.6.0 → 1.7.0
+Version Change: 1.8.0 → 1.9.0
 Modified Principles: None
 Added Sections:
-  - Principle XV: Honest Completion (Anti-Cheating Enforcement)
-    - Defines what "done" means for spec requirements
-    - Forbids placeholder implementations claimed as complete
-    - Forbids relaxing test thresholds to make tests pass
-    - Requires explicit FR/SC verification before claiming completion
-    - Mandates honest compliance table in completion report
-    - Lesson learned from 006-oversampler incident
+  - Principle XVII: Framework Knowledge Documentation (VST-GUIDE.md)
+    - REQUIRES maintaining specs/VST-GUIDE.md with framework insights
+    - MANDATES reading VST-GUIDE.md before any VSTGUI/VST3 SDK work
+    - REQUIRES documenting new findings immediately after discovery
+    - Incident log for tracking debugging sessions and solutions
 Removed Sections: None
-Templates Updated (COMPLETED):
-  - spec-template.md: Added Implementation Verification section ✅
-  - CLAUDE.md: Added Completion Honesty Enforcement section ✅
-  - tasks-template.md: Added Phase N-1 Completion Verification section ✅
-Follow-up TODOs:
-  - Update /speckit.implement to include compliance verification step
+Templates Updated:
+  - CLAUDE.md: Added VST-GUIDE section ✅
+Follow-up TODOs: None
 ================================================================================
 -->
 
@@ -104,7 +99,32 @@ User interface development MUST use VSTGUI properly and maintain complete separa
 
 **Rationale:** VSTGUI is the official Steinberg toolkit designed for VST3. Proper usage ensures compatibility, maintainability, and correct thread separation.
 
-### VI. Memory Architecture
+### VI. Cross-Platform Compatibility (CRITICAL)
+
+This plugin MUST be fully cross-platform (Windows, macOS, Linux). Platform-specific solutions are FORBIDDEN unless absolutely necessary and explicitly approved.
+
+**Non-Negotiable Rules:**
+- NEVER use Windows-native APIs (Win32, COM, WM_* messages) for UI or core functionality
+- NEVER use macOS-native APIs (Cocoa, AppKit) for UI or core functionality
+- NEVER use platform-specific popup menus, dialogs, or controls
+- ALWAYS use VSTGUI's cross-platform abstractions (COptionMenu, CFileSelector, etc.)
+- When VSTGUI offers both native and generic implementations, PREFER the generic (cross-platform) version
+- Platform-specific code is ONLY acceptable for:
+  - Debug logging (guarded by `#if defined(_DEBUG) && defined(_WIN32)` etc.)
+  - Platform-specific optimizations that have cross-platform fallbacks
+  - Workarounds for platform-specific bugs with documented justification
+- ANY platform-specific solution MUST be explicitly approved by the user before implementation
+- CI/CD MUST build and test on all three platforms before merge
+
+**Common Violations to AVOID:**
+- Switching from VSTGUI generic menus to native Windows popups "because it might fix the issue"
+- Using `GetTickCount()` without a cross-platform alternative
+- Using Windows message handling instead of VSTGUI's event system
+- Assuming Windows-specific behavior will work on macOS/Linux
+
+**Rationale:** VSTGUI exists specifically to provide cross-platform UI. Using native APIs defeats the purpose and creates maintenance burden across platforms.
+
+### VII. Memory Architecture
 
 Memory management MUST be designed for real-time safety and predictable performance.
 
@@ -356,7 +376,7 @@ Before optimization work:
 - Thread safety requirements MUST be documented in header comments
 - Parameter ranges and semantics MUST be documented
 
-### XIII. Living Architecture Documentation
+### XIV. Living Architecture Documentation
 
 The project MUST maintain an `ARCHITECTURE.md` file that serves as a living inventory of all functional domains, components, and APIs.
 
@@ -370,7 +390,7 @@ The project MUST maintain an `ARCHITECTURE.md` file that serves as a living inve
 
 **Rationale:** A living architecture document prevents reinventing existing functionality, enables proper composition of components, and provides a single source of truth for what exists in the codebase.
 
-### XIV. Pre-Implementation Research (ODR Prevention)
+### XV. Pre-Implementation Research (ODR Prevention)
 
 Before implementing ANY new class, struct, or significant component, the codebase MUST be searched for existing implementations to prevent One Definition Rule (ODR) violations and duplicate functionality.
 
@@ -390,7 +410,7 @@ Before implementing ANY new class, struct, or significant component, the codebas
 
 **Rationale:** ODR violations cause silent, hard-to-diagnose bugs. A simple grep search before creating new types prevents hours of debugging. The 005-parameter-smoother incident demonstrated that debugging NaN handling for hours was wasted when the real issue was a duplicate `OnePoleSmoother` class discoverable with a 5-second search.
 
-### XV. Honest Completion (Anti-Cheating Enforcement)
+### XVI. Honest Completion (Anti-Cheating Enforcement)
 
 Spec implementations MUST be honestly assessed for completion. Claiming "done" when requirements are not met is a violation of trust and undermines project integrity.
 
@@ -535,7 +555,58 @@ All components MUST meet defined performance targets to ensure the complete plug
 
 **Rationale:** Performance budgets prevent feature creep from making the plugin unusable and ensure compositions of components remain efficient.
 
-### XII. Test-First Development
+### XII. Debugging Discipline (Anti-Pivot Enforcement)
+
+When a framework-based solution doesn't work, you MUST deeply investigate WHY before considering alternatives. Superficial troubleshooting and premature pivoting are FORBIDDEN.
+
+**Non-Negotiable Rules:**
+
+- **Debug Before Pivot**: When code doesn't work as expected:
+  1. Read ALL available debug logs and error messages
+  2. Add targeted logging to trace actual values at each step
+  3. Read the framework source code to understand what should happen
+  4. Identify the EXACT point where behavior diverges from expectation
+  5. ONLY after steps 1-4 fail repeatedly may you consider a different approach
+
+- **Framework Commitment**: When using a framework feature (VSTGUI, VST3 SDK, etc.):
+  1. The framework is designed to solve this problem - it works in thousands of plugins
+  2. If it's not working, YOU are doing something wrong
+  3. Your job is to find WHAT you're doing wrong, not to abandon the framework
+  4. Custom workarounds are the LAST resort, not the first
+
+- **Forbidden Pivot Patterns**:
+  | Pattern | Why It's Wrong |
+  |---------|----------------|
+  | "It didn't work, let me try something else" | You didn't investigate WHY |
+  | "Maybe the framework has a bug" | Framework is battle-tested; you have a usage error |
+  | "Let me try a manual workaround" | Workarounds create technical debt and often introduce new bugs |
+  | "I'll switch to native platform code" | Violates cross-platform requirements |
+  | Trying 3+ approaches without reading debug output | Guessing instead of debugging |
+
+- **Required Investigation Before Pivoting**:
+  1. [ ] Read all log files and console output
+  2. [ ] Add logging to trace actual values through the problematic code path
+  3. [ ] Read framework source code for the feature in question
+  4. [ ] Identify specific line where behavior diverges from documentation
+  5. [ ] Document what you learned and why the approach cannot work
+  6. [ ] ONLY THEN propose an alternative (with user approval)
+
+- **Framework Source Code Reading**:
+  - VSTGUI source is in `extern/vst3sdk/vstgui4/vstgui/`
+  - VST3 SDK source is in `extern/vst3sdk/`
+  - Reading source code is NOT optional when debugging framework issues
+  - Treat frameworks as readable code, NOT black boxes
+
+**Diagnostic Questions Before Pivoting**:
+1. Have I read the debug log output from the last test?
+2. Can I trace the exact value flow from input to incorrect output?
+3. Have I read the framework source for this feature?
+4. Do I understand what the framework SHOULD do vs what it's doing?
+5. Have I spent at least 30 minutes investigating before considering alternatives?
+
+**Rationale:** Hours are wasted when problems are "solved" by trying random alternatives instead of understanding root causes. The mode switching incident demonstrated that pivoting between template-switch-control, manual SDK calls, and native menus accomplished nothing because the actual bug was never investigated. Deep debugging of ONE approach is always more productive than shallow attempts at many approaches.
+
+### XIII. Test-First Development
 
 All implementation work MUST follow test-first methodology. Testing guidance MUST be actively referenced during development.
 
@@ -556,4 +627,40 @@ All implementation work MUST follow test-first methodology. Testing guidance MUS
 
 **Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied.
 
-**Version**: 1.7.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-23
+### XVII. Framework Knowledge Documentation (VST-GUIDE.md)
+
+Hard-won insights about VST3 SDK and VSTGUI MUST be documented in `specs/VST-GUIDE.md` to prevent repeating expensive debugging sessions.
+
+**Non-Negotiable Rules:**
+
+- **Read Before Working**: Before any VSTGUI or VST3 SDK implementation work, READ `specs/VST-GUIDE.md` to check for relevant documented pitfalls and solutions
+- **Context Verification**: VST-GUIDE.md MUST be ingested into context before any UI or parameter-related work
+- **Document Discoveries**: When a debugging session reveals non-obvious framework behavior, document it in VST-GUIDE.md IMMEDIATELY after the fix is confirmed
+- **Incident Logging**: Every significant debugging session MUST be logged in the Incident Log section with:
+  - Date
+  - Symptom
+  - Root cause
+  - Solution
+  - Time wasted (if applicable)
+  - Lesson learned
+
+**Required Documentation Categories:**
+
+| Category | What to Document |
+|----------|-----------------|
+| Parameter Types | Differences between Parameter, RangeParameter, StringListParameter |
+| Control Bindings | How template-switch-control, control-tag, and menu population work |
+| Value Conversions | When toPlain()/toNormalized() behave unexpectedly |
+| Feedback Loops | How VSTGUI prevents feedback and when custom guards are needed |
+| Common Pitfalls | Mistakes that waste debugging time |
+
+**Update Protocol:**
+
+1. Confirm the fix works in the actual plugin
+2. Document the finding in the appropriate section of VST-GUIDE.md
+3. Add to the Incident Log with full details
+4. Update the version and date at the top of VST-GUIDE.md
+
+**Rationale:** The mode switching incident wasted hours because the same Parameter type pitfall could have been documented from earlier work. Framework-specific knowledge is expensive to acquire and must be preserved for future reference.
+
+**Version**: 1.9.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-28

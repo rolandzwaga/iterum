@@ -121,6 +121,11 @@ target_link_libraries(${PLUGIN_NAME}
         vstgui_support
 )
 
+# Note: VSTGUI bundle support on Windows is automatically enabled by
+# vstgui_support when SMTG_CREATE_BUNDLE_FOR_WINDOWS is ON (default).
+# The vstgui_support library adds SMTG_MODULE_IS_BUNDLE=1 as PUBLIC
+# and includes the bundle support source files.
+
 # Include directories (Constitution Principle VII: include/<project>/ style)
 target_include_directories(${PLUGIN_NAME}
     PRIVATE
@@ -154,6 +159,7 @@ endif()
 smtg_target_add_plugin_resources(${PLUGIN_NAME}
     RESOURCES
         resources/editor.uidesc
+        resources/editor_minimal.uidesc
 )
 
 # ==============================================================================

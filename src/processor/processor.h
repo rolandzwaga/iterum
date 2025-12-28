@@ -131,6 +131,7 @@ private:
 
     std::atomic<float> gain_{1.0f};
     std::atomic<bool> bypass_{false};
+    std::atomic<int> mode_{0};  // DelayMode enum value (0 = Granular)
 
     // ==========================================================================
     // Mode-Specific Parameter Packs

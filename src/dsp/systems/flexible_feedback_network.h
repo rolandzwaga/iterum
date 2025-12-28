@@ -28,7 +28,7 @@
 #pragma once
 
 #include "dsp/systems/i_feedback_processor.h"
-#include "dsp/primitives/delay_line.h"
+#include "dsp/primitives/crossfading_delay_line.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/processors/multimode_filter.h"
 #include "dsp/processors/dynamics_processor.h"
@@ -177,12 +177,17 @@ public:
             // Effective feedback amount (interpolate to 100% in freeze mode)
             const float effectiveFeedback = feedback + freezeMix * (1.0f - feedback);
 
-            // Convert delay time to samples (subtract 1 for read-before-write timing)
-            const float delaySamples = std::max(0.0f, delayTimeSamples - 1.0f);
+            // Convert delay time to ms for CrossfadingDelayLine
+            const float delayMs = delayTimeSamples / static_cast<float>(sampleRate_) * 1000.0f;
+
+            // Set delay time on crossfading delay lines (handles large changes smoothly)
+            delayL_.setDelayMs(delayMs);
+            delayR_.setDelayMs(delayMs);
 
             // Read delayed sample FIRST (read-before-write pattern)
-            const float delayedL = delayL_.readLinear(delaySamples);
-            const float delayedR = delayR_.readLinear(delaySamples);
+            // CrossfadingDelayLine handles the crossfading internally
+            const float delayedL = delayL_.read();
+            const float delayedR = delayR_.read();
 
             // Calculate feedback signal using processed feedback from previous block
             const float feedbackSignalL = lastProcessedFeedbackL_ * effectiveFeedback;
@@ -388,6 +393,10 @@ public:
         processorMixSmoother_.snapTo(processorMix_);
         freezeMixSmoother_.snapTo(freezeEnabled_ ? 1.0f : 0.0f);
         delayTimeSmoother_.snapTo(msToSamples(delayTimeMs_));
+
+        // Also snap CrossfadingDelayLines to avoid crossfade transient on init
+        delayL_.snapToDelayMs(delayTimeMs_);
+        delayR_.snapToDelayMs(delayTimeMs_);
     }
 
 private:
@@ -395,9 +404,9 @@ private:
     double sampleRate_ = 44100.0;
     std::size_t maxBlockSize_ = 512;
 
-    // Delay lines (stereo)
-    DelayLine delayL_;
-    DelayLine delayR_;
+    // Delay lines (stereo) - CrossfadingDelayLine for click-free delay time changes
+    CrossfadingDelayLine delayL_;
+    CrossfadingDelayLine delayR_;
 
     // Injected processor
     IFeedbackProcessor* processor_ = nullptr;

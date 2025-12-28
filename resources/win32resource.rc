@@ -2,9 +2,17 @@
 // Windows Resource File
 // ==============================================================================
 // Required for Windows VST3 plugins to embed version information
+// and VSTGUI resources (uidesc files)
 // ==============================================================================
 
 #include "winresrc.h"
+
+// ==============================================================================
+// Note: VSTGUI resources (uidesc files) are NOT embedded via DATA directive.
+// Instead, they are copied to Contents/Resources/ folder by CMake's
+// smtg_target_add_plugin_resources() function, and VSTGUI loads them
+// from the filesystem when SMTG_CREATE_BUNDLE_FOR_WINDOWS is ON.
+// ==============================================================================
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 1,0,0,1

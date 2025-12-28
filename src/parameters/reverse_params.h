@@ -8,7 +8,9 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "pluginterfaces/base/ftypes.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -129,17 +131,11 @@ inline void registerReverseParams(Steinberg::Vst::ParameterContainer& parameters
         ParameterInfo::kCanAutomate,
         kReverseCrossfadeId);
 
-    // Playback Mode (FullReverse, Alternating, Random)
-    auto* playbackModeParam = parameters.addParameter(
-        STR16("Reverse Playback Mode"),
-        nullptr,
-        2,  // stepCount: 3 values (0, 1, 2)
-        0,  // default: FullReverse
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kReversePlaybackModeId);
-    if (playbackModeParam) {
-        playbackModeParam->getInfo().stepCount = 2;
-    }
+    // Playback Mode (FullReverse, Alternating, Random) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Reverse Playback Mode"), kReversePlaybackModeId,
+        {STR16("Full Reverse"), STR16("Alternating"), STR16("Random")}
+    ));
 
     // Feedback (0-120%)
     parameters.addParameter(
@@ -168,17 +164,11 @@ inline void registerReverseParams(Steinberg::Vst::ParameterContainer& parameters
         ParameterInfo::kCanAutomate,
         kReverseFilterCutoffId);
 
-    // Filter Type (LowPass, HighPass, BandPass)
-    auto* filterTypeParam = parameters.addParameter(
-        STR16("Reverse Filter Type"),
-        nullptr,
-        2,  // stepCount: 3 values (0, 1, 2)
-        0,  // default: LowPass
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kReverseFilterTypeId);
-    if (filterTypeParam) {
-        filterTypeParam->getInfo().stepCount = 2;
-    }
+    // Filter Type (LowPass, HighPass, BandPass) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Reverse Filter Type"), kReverseFilterTypeId,
+        {STR16("LowPass"), STR16("HighPass"), STR16("BandPass")}
+    ));
 
     // Dry/Wet Mix (0-100%)
     parameters.addParameter(
@@ -227,13 +217,7 @@ inline Steinberg::tresult formatReverseParam(
             return kResultOk;
         }
 
-        case kReversePlaybackModeId: {
-            int mode = static_cast<int>(normalizedValue * 2.0 + 0.5);
-            const char* names[] = {"Full Reverse", "Alternating", "Random"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[mode < 0 ? 0 : (mode > 2 ? 2 : mode)]);
-            return kResultOk;
-        }
+        // kReversePlaybackModeId: handled by StringListParameter::toString() automatically
 
         case kReverseFeedbackId: {
             float percent = static_cast<float>(normalizedValue * 120.0);
@@ -260,13 +244,7 @@ inline Steinberg::tresult formatReverseParam(
             return kResultOk;
         }
 
-        case kReverseFilterTypeId: {
-            int type = static_cast<int>(normalizedValue * 2.0 + 0.5);
-            const char* names[] = {"LowPass", "HighPass", "BandPass"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[type < 0 ? 0 : (type > 2 ? 2 : type)]);
-            return kResultOk;
-        }
+        // kReverseFilterTypeId: handled by StringListParameter::toString() automatically
 
         case kReverseDryWetId: {
             float percent = static_cast<float>(normalizedValue * 100.0);

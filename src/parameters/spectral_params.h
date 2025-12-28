@@ -8,6 +8,7 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -137,17 +138,12 @@ inline void registerSpectralParams(Steinberg::Vst::ParameterContainer& parameter
     using namespace Steinberg;
     using namespace Steinberg::Vst;
 
-    // FFT Size: 512, 1024, 2048, 4096 (4 discrete values)
-    parameters.addParameter(
-        STR16("FFT Size"),
-        nullptr,
-        3,  // stepCount 3 = 4 discrete values
-        0.333,  // 1024 default (index 1 of 4)
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kSpectralFFTSizeId,
-        0,
-        STR16("FFT")
-    );
+    // FFT Size: 512, 1024, 2048, 4096 - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("FFT Size"), kSpectralFFTSizeId,
+        1,  // default: 1024 (index 1)
+        {STR16("512"), STR16("1024"), STR16("2048"), STR16("4096")}
+    ));
 
     // Base Delay: 0-2000ms
     parameters.addParameter(
@@ -173,17 +169,11 @@ inline void registerSpectralParams(Steinberg::Vst::ParameterContainer& parameter
         STR16("Spread")
     );
 
-    // Spread Direction: LowToHigh, HighToLow, CenterOut
-    parameters.addParameter(
-        STR16("Spread Dir"),
-        nullptr,
-        2,  // stepCount 2 = 3 discrete values
-        0.0,  // LowToHigh default
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kSpectralSpreadDirectionId,
-        0,
-        STR16("Dir")
-    );
+    // Spread Direction: LowToHigh, HighToLow, CenterOut - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Spread Dir"), kSpectralSpreadDirectionId,
+        {STR16("Low->High"), STR16("High->Low"), STR16("Center Out")}
+    ));
 
     // Feedback: 0-120%
     parameters.addParameter(
@@ -272,14 +262,7 @@ inline Steinberg::tresult formatSpectralParam(
     using namespace Steinberg;
 
     switch (id) {
-        case kSpectralFFTSizeId: {
-            // 0-3 -> 512, 1024, 2048, 4096
-            int index = static_cast<int>(valueNormalized * 3.0 + 0.5);
-            const char* names[] = {"512", "1024", "2048", "4096"};
-            UString(string, 128).fromAscii(
-                names[index < 0 ? 0 : (index > 3 ? 3 : index)]);
-            return kResultTrue;
-        }
+        // kSpectralFFTSizeId: handled by StringListParameter::toString() automatically
 
         case kSpectralBaseDelayId:
         case kSpectralSpreadId: {
@@ -291,14 +274,7 @@ inline Steinberg::tresult formatSpectralParam(
             return kResultTrue;
         }
 
-        case kSpectralSpreadDirectionId: {
-            // 0-2 (LowToHigh, HighToLow, CenterOut)
-            int dir = static_cast<int>(valueNormalized * 2.0 + 0.5);
-            const char* names[] = {"Low->High", "High->Low", "Center Out"};
-            UString(string, 128).fromAscii(
-                names[dir < 0 ? 0 : (dir > 2 ? 2 : dir)]);
-            return kResultTrue;
-        }
+        // kSpectralSpreadDirectionId: handled by StringListParameter::toString() automatically
 
         case kSpectralFeedbackId: {
             // 0-120%

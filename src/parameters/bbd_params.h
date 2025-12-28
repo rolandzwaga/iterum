@@ -8,7 +8,9 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "pluginterfaces/base/ftypes.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -152,16 +154,20 @@ inline void registerBBDParams(Steinberg::Vst::ParameterContainer& parameters) {
         ParameterInfo::kCanAutomate,
         kBBDAgeId);
 
-    // Era (4 chip models)
-    auto* eraParam = parameters.addParameter(
-        STR16("BBD Era"),
-        nullptr,
-        3,  // stepCount: 4 values (0-3)
-        0,  // default: MN3005
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kBBDEraId);
-    if (eraParam) {
-        eraParam->getInfo().stepCount = 3;
+    // Era (4 chip models) - MUST use StringListParameter for correct toPlain()
+    // DIAGNOSTIC: Using explicit calls like Mode selector to test if helper is the issue
+    {
+        auto* eraParam = new Steinberg::Vst::StringListParameter(
+            STR16("BBD Era"),
+            kBBDEraId,
+            nullptr,
+            ParameterInfo::kCanAutomate | ParameterInfo::kIsList
+        );
+        eraParam->appendString(STR16("MN3005"));
+        eraParam->appendString(STR16("MN3007"));
+        eraParam->appendString(STR16("MN3205"));
+        eraParam->appendString(STR16("SAD1024"));
+        parameters.addParameter(eraParam);
     }
 
     // Mix (0-100%)
@@ -235,13 +241,7 @@ inline Steinberg::tresult formatBBDParam(
             return kResultOk;
         }
 
-        case kBBDEraId: {
-            int era = static_cast<int>(normalizedValue * 3.0 + 0.5);
-            const char* names[] = {"MN3005", "MN3007", "MN3205", "SAD1024"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[era < 0 ? 0 : (era > 3 ? 3 : era)]);
-            return kResultOk;
-        }
+        // kBBDEraId: handled by StringListParameter::toString() automatically
 
         case kBBDMixId: {
             float percent = static_cast<float>(normalizedValue * 100.0);

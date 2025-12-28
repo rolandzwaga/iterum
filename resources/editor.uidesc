@@ -1,158 +1,578 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 ==============================================================================
-VSTGUI UIDescription
+VSTGUI UIDescription - Iterum Delay Plugin
 ==============================================================================
-Constitution Principle V: VSTGUI Development
-- Use UIDescription XML and the WYSIWYG editor for UI layout
-- This file can be edited with VSTGUI's inline editor during development
-
-To enable inline editing in Debug builds:
-1. Right-click on the plugin UI in your DAW
-2. Select "Open UIDescription Editor"
-3. Make changes and save
+11 delay modes with 113+ automatable parameters.
+Uses CViewSwitchContainer to show only the selected mode's panel.
 ==============================================================================
 -->
 <vstgui-ui-description version="1">
 
-    <!-- ======================================================================
-         Bitmaps (images for knobs, buttons, backgrounds)
-         Add your graphics here
-         ====================================================================== -->
-    <bitmaps>
-        <!-- Example:
-        <bitmap name="background" path="background.png"/>
-        <bitmap name="knob" path="knob.png"/>
-        -->
-    </bitmaps>
+    <bitmaps/>
 
-    <!-- ======================================================================
-         Fonts
-         ====================================================================== -->
     <fonts>
-        <font name="label-font" font-name="Arial" size="12"/>
-        <font name="title-font" font-name="Arial" size="16" bold="true"/>
+        <font name="title-font" font-name="Arial" size="18" bold="true"/>
+        <font name="section-font" font-name="Arial" size="14" bold="true"/>
+        <font name="label-font" font-name="Arial" size="11"/>
+        <font name="value-font" font-name="Arial" size="10"/>
+        <font name="mode-font" font-name="Arial" size="12"/>
     </fonts>
 
-    <!-- ======================================================================
-         Colors
-         ====================================================================== -->
     <colors>
-        <color name="background" rgba="#303030ff"/>
-        <color name="panel" rgba="#404040ff"/>
+        <color name="background" rgba="#252525ff"/>
+        <color name="header" rgba="#1a1a1aff"/>
+        <color name="sidebar" rgba="#2d2d2dff"/>
+        <color name="panel" rgba="#353535ff"/>
+        <color name="section" rgba="#3a3a3aff"/>
         <color name="text" rgba="#ffffffff"/>
+        <color name="text-dim" rgba="#888888ff"/>
         <color name="accent" rgba="#4a90d9ff"/>
-        <color name="knob-track" rgba="#606060ff"/>
+        <color name="slider-track" rgba="#505050ff"/>
+        <color name="border" rgba="#404040ff"/>
     </colors>
 
     <!-- ======================================================================
-         Control Tags (link to parameter IDs)
+         Control Tags - All Parameters
          ====================================================================== -->
     <control-tags>
+        <!-- Global (0-99) -->
         <control-tag name="Bypass" tag="0"/>
         <control-tag name="Gain" tag="1"/>
+        <control-tag name="Mode" tag="2"/>
+
+        <!-- Granular (100-112) -->
+        <control-tag name="GranularGrainSize" tag="100"/>
+        <control-tag name="GranularDensity" tag="101"/>
+        <control-tag name="GranularDelayTime" tag="102"/>
+        <control-tag name="GranularPitch" tag="103"/>
+        <control-tag name="GranularPitchSpray" tag="104"/>
+        <control-tag name="GranularPositionSpray" tag="105"/>
+        <control-tag name="GranularPanSpray" tag="106"/>
+        <control-tag name="GranularReverseProb" tag="107"/>
+        <control-tag name="GranularFreeze" tag="108"/>
+        <control-tag name="GranularFeedback" tag="109"/>
+        <control-tag name="GranularDryWet" tag="110"/>
+        <control-tag name="GranularOutputGain" tag="111"/>
+        <control-tag name="GranularEnvelopeType" tag="112"/>
+
+        <!-- Spectral (200-209) -->
+        <control-tag name="SpectralFFTSize" tag="200"/>
+        <control-tag name="SpectralBaseDelay" tag="201"/>
+        <control-tag name="SpectralSpread" tag="202"/>
+        <control-tag name="SpectralSpreadDirection" tag="203"/>
+        <control-tag name="SpectralFeedback" tag="204"/>
+        <control-tag name="SpectralFeedbackTilt" tag="205"/>
+        <control-tag name="SpectralFreeze" tag="206"/>
+        <control-tag name="SpectralDiffusion" tag="207"/>
+        <control-tag name="SpectralDryWet" tag="208"/>
+        <control-tag name="SpectralOutputGain" tag="209"/>
+
+        <!-- Shimmer (300-310) -->
+        <control-tag name="ShimmerDelayTime" tag="300"/>
+        <control-tag name="ShimmerPitchSemitones" tag="301"/>
+        <control-tag name="ShimmerPitchCents" tag="302"/>
+        <control-tag name="ShimmerShimmerMix" tag="303"/>
+        <control-tag name="ShimmerFeedback" tag="304"/>
+        <control-tag name="ShimmerDiffusionAmount" tag="305"/>
+        <control-tag name="ShimmerDiffusionSize" tag="306"/>
+        <control-tag name="ShimmerFilterEnabled" tag="307"/>
+        <control-tag name="ShimmerFilterCutoff" tag="308"/>
+        <control-tag name="ShimmerDryWet" tag="309"/>
+        <control-tag name="ShimmerOutputGain" tag="310"/>
+
+        <!-- Tape (400-418) -->
+        <control-tag name="TapeMotorSpeed" tag="400"/>
+        <control-tag name="TapeMotorInertia" tag="401"/>
+        <control-tag name="TapeWear" tag="402"/>
+        <control-tag name="TapeSaturation" tag="403"/>
+        <control-tag name="TapeAge" tag="404"/>
+        <control-tag name="TapeSpliceEnabled" tag="405"/>
+        <control-tag name="TapeSpliceIntensity" tag="406"/>
+        <control-tag name="TapeFeedback" tag="407"/>
+        <control-tag name="TapeMix" tag="408"/>
+        <control-tag name="TapeOutputLevel" tag="409"/>
+        <control-tag name="TapeHead1Enabled" tag="410"/>
+        <control-tag name="TapeHead2Enabled" tag="411"/>
+        <control-tag name="TapeHead3Enabled" tag="412"/>
+        <control-tag name="TapeHead1Level" tag="413"/>
+        <control-tag name="TapeHead2Level" tag="414"/>
+        <control-tag name="TapeHead3Level" tag="415"/>
+        <control-tag name="TapeHead1Pan" tag="416"/>
+        <control-tag name="TapeHead2Pan" tag="417"/>
+        <control-tag name="TapeHead3Pan" tag="418"/>
+
+        <!-- BBD (500-507) -->
+        <control-tag name="BBDDelayTime" tag="500"/>
+        <control-tag name="BBDFeedback" tag="501"/>
+        <control-tag name="BBDModulationDepth" tag="502"/>
+        <control-tag name="BBDModulationRate" tag="503"/>
+        <control-tag name="BBDAge" tag="504"/>
+        <control-tag name="BBDEra" tag="505"/>
+        <control-tag name="BBDMix" tag="506"/>
+        <control-tag name="BBDOutputLevel" tag="507"/>
+
+        <!-- Digital (600-611) -->
+        <control-tag name="DigitalDelayTime" tag="600"/>
+        <control-tag name="DigitalTimeMode" tag="601"/>
+        <control-tag name="DigitalNoteValue" tag="602"/>
+        <control-tag name="DigitalFeedback" tag="603"/>
+        <control-tag name="DigitalLimiterCharacter" tag="604"/>
+        <control-tag name="DigitalEra" tag="605"/>
+        <control-tag name="DigitalAge" tag="606"/>
+        <control-tag name="DigitalModDepth" tag="607"/>
+        <control-tag name="DigitalModRate" tag="608"/>
+        <control-tag name="DigitalModWaveform" tag="609"/>
+        <control-tag name="DigitalMix" tag="610"/>
+        <control-tag name="DigitalOutputLevel" tag="611"/>
+
+        <!-- PingPong (700-710) -->
+        <control-tag name="PingPongDelayTime" tag="700"/>
+        <control-tag name="PingPongTimeMode" tag="701"/>
+        <control-tag name="PingPongNoteValue" tag="702"/>
+        <control-tag name="PingPongLRRatio" tag="703"/>
+        <control-tag name="PingPongFeedback" tag="704"/>
+        <control-tag name="PingPongCrossFeedback" tag="705"/>
+        <control-tag name="PingPongWidth" tag="706"/>
+        <control-tag name="PingPongModDepth" tag="707"/>
+        <control-tag name="PingPongModRate" tag="708"/>
+        <control-tag name="PingPongMix" tag="709"/>
+        <control-tag name="PingPongOutputLevel" tag="710"/>
+
+        <!-- Reverse (800-808) -->
+        <control-tag name="ReverseChunkSize" tag="800"/>
+        <control-tag name="ReverseCrossfade" tag="801"/>
+        <control-tag name="ReversePlaybackMode" tag="802"/>
+        <control-tag name="ReverseFeedback" tag="803"/>
+        <control-tag name="ReverseFilterEnabled" tag="804"/>
+        <control-tag name="ReverseFilterCutoff" tag="805"/>
+        <control-tag name="ReverseFilterType" tag="806"/>
+        <control-tag name="ReverseDryWet" tag="807"/>
+        <control-tag name="ReverseOutputGain" tag="808"/>
+
+        <!-- MultiTap (900-910) -->
+        <control-tag name="MultiTapTimingPattern" tag="900"/>
+        <control-tag name="MultiTapSpatialPattern" tag="901"/>
+        <control-tag name="MultiTapTapCount" tag="902"/>
+        <control-tag name="MultiTapBaseTime" tag="903"/>
+        <control-tag name="MultiTapTempo" tag="904"/>
+        <control-tag name="MultiTapFeedback" tag="905"/>
+        <control-tag name="MultiTapFeedbackLPCutoff" tag="906"/>
+        <control-tag name="MultiTapFeedbackHPCutoff" tag="907"/>
+        <control-tag name="MultiTapMorphTime" tag="908"/>
+        <control-tag name="MultiTapDryWet" tag="909"/>
+        <control-tag name="MultiTapOutputLevel" tag="910"/>
+
+        <!-- Freeze (1000-1013) -->
+        <control-tag name="FreezeEnabled" tag="1000"/>
+        <control-tag name="FreezeDelayTime" tag="1001"/>
+        <control-tag name="FreezeFeedback" tag="1002"/>
+        <control-tag name="FreezePitchSemitones" tag="1003"/>
+        <control-tag name="FreezePitchCents" tag="1004"/>
+        <control-tag name="FreezeShimmerMix" tag="1005"/>
+        <control-tag name="FreezeDecay" tag="1006"/>
+        <control-tag name="FreezeDiffusionAmount" tag="1007"/>
+        <control-tag name="FreezeDiffusionSize" tag="1008"/>
+        <control-tag name="FreezeFilterEnabled" tag="1009"/>
+        <control-tag name="FreezeFilterType" tag="1010"/>
+        <control-tag name="FreezeFilterCutoff" tag="1011"/>
+        <control-tag name="FreezeDryWet" tag="1012"/>
+        <control-tag name="FreezeOutputGain" tag="1013"/>
+
+        <!-- Ducking (1100-1112) -->
+        <control-tag name="DuckingEnabled" tag="1100"/>
+        <control-tag name="DuckingThreshold" tag="1101"/>
+        <control-tag name="DuckingDuckAmount" tag="1102"/>
+        <control-tag name="DuckingAttackTime" tag="1103"/>
+        <control-tag name="DuckingReleaseTime" tag="1104"/>
+        <control-tag name="DuckingHoldTime" tag="1105"/>
+        <control-tag name="DuckingDuckTarget" tag="1106"/>
+        <control-tag name="DuckingSidechainFilterEnabled" tag="1107"/>
+        <control-tag name="DuckingSidechainFilterCutoff" tag="1108"/>
+        <control-tag name="DuckingDelayTime" tag="1109"/>
+        <control-tag name="DuckingFeedback" tag="1110"/>
+        <control-tag name="DuckingDryWet" tag="1111"/>
+        <control-tag name="DuckingOutputGain" tag="1112"/>
     </control-tags>
 
     <!-- ======================================================================
-         Templates (reusable UI components)
+         Mode Panel Templates - Each mode has its own template
+         Order MUST match Mode parameter values: 0-10
          ====================================================================== -->
-    <templates>
-        <!-- Main Editor View -->
-        <template
+
+    <!-- Mode 0: GRANULAR -->
+    <template name="GranularPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="GRANULAR DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Grain Size" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="GranularGrainSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Density" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="GranularDensity" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 53" size="120, 20" control-tag="GranularDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="120, 20" control-tag="GranularPitch" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 53" size="120, 20" control-tag="GranularFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="660, 35" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="660, 53" size="120, 20" control-tag="GranularDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Pitch Spray" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="GranularPitchSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="Pos Spray" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="GranularPositionSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Pan Spray" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 103" size="120, 20" control-tag="GranularPanSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 85" size="90, 16" title="Reverse %" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 103" size="120, 20" control-tag="GranularReverseProb" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 103" size="120, 20" control-tag="GranularOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 3 -->
+        <view class="CTextLabel" origin="10, 135" size="90, 16" title="Envelope" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="10, 153" size="120, 22" control-tag="GranularEnvelopeType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="140, 135" size="90, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="140, 153" size="50, 22" control-tag="GranularFreeze"/>
+    </template>
+
+    <!-- Mode 1: SPECTRAL -->
+    <template name="SpectralPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="SPECTRAL DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="FFT Size" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="10, 53" size="120, 22" control-tag="SpectralFFTSize" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Base Delay" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="SpectralBaseDelay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Spread" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 53" size="120, 20" control-tag="SpectralSpread" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Direction" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="400, 53" size="120, 22" control-tag="SpectralSpreadDirection" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="530, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 53" size="120, 20" control-tag="SpectralFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="FB Tilt" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="SpectralFeedbackTilt" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="Diffusion" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="SpectralDiffusion" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 103" size="120, 20" control-tag="SpectralDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 103" size="120, 20" control-tag="SpectralOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 85" size="90, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="530, 103" size="50, 22" control-tag="SpectralFreeze"/>
+    </template>
+
+    <!-- Mode 2: SHIMMER -->
+    <template name="ShimmerPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="SHIMMER DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="ShimmerDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Pitch (st)" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="ShimmerPitchSemitones" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Pitch (cents)" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 53" size="120, 20" control-tag="ShimmerPitchCents" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Shimmer Mix" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="120, 20" control-tag="ShimmerShimmerMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 53" size="120, 20" control-tag="ShimmerFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="660, 35" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="660, 53" size="120, 20" control-tag="ShimmerDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Diff Amt" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="ShimmerDiffusionAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="ShimmerDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="270, 103" size="50, 22" control-tag="ShimmerFilterEnabled"/>
+        <view class="CTextLabel" origin="330, 85" size="90, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="330, 103" size="120, 20" control-tag="ShimmerFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="460, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="460, 103" size="120, 20" control-tag="ShimmerOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 3: TAPE -->
+    <template name="TapePanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="TAPE DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Motor Speed" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="TapeMotorSpeed" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Inertia" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="TapeMotorInertia" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Wear" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 53" size="120, 20" control-tag="TapeWear" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Saturation" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="120, 20" control-tag="TapeSaturation" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 35" size="90, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 53" size="120, 20" control-tag="TapeAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="660, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="660, 53" size="120, 20" control-tag="TapeFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Splice" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="10, 103" size="50, 22" control-tag="TapeSpliceEnabled"/>
+        <view class="CTextLabel" origin="70, 85" size="90, 16" title="Intensity" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="70, 103" size="120, 20" control-tag="TapeSpliceIntensity" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="200, 85" size="90, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="200, 103" size="120, 20" control-tag="TapeMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="330, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="330, 103" size="120, 20" control-tag="TapeOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 3: Heads -->
+        <view class="CTextLabel" origin="10, 140" size="280, 16" title="Head 1" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="60, 158" size="40, 20" control-tag="TapeHead1Enabled"/>
+        <view class="CSlider" origin="105, 158" size="80, 18" control-tag="TapeHead1Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CSlider" origin="190, 158" size="80, 18" control-tag="TapeHead1Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="280, 140" size="280, 16" title="Head 2" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="330, 158" size="40, 20" control-tag="TapeHead2Enabled"/>
+        <view class="CSlider" origin="375, 158" size="80, 18" control-tag="TapeHead2Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CSlider" origin="460, 158" size="80, 18" control-tag="TapeHead2Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="550, 140" size="280, 16" title="Head 3" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="600, 158" size="40, 20" control-tag="TapeHead3Enabled"/>
+        <view class="CSlider" origin="645, 158" size="80, 18" control-tag="TapeHead3Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CSlider" origin="730, 158" size="80, 18" control-tag="TapeHead3Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 4: BBD -->
+    <template name="BBDPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="BBD DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="BBDDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="BBDFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 53" size="120, 20" control-tag="BBDModulationDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Mod Rate" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="120, 20" control-tag="BBDModulationRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 35" size="90, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 53" size="120, 20" control-tag="BBDAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="660, 35" size="50, 16" title="Era" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="660, 53" size="80, 22" control-tag="BBDEra" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="50, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="BBDMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="50, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="BBDOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 5: DIGITAL -->
+    <template name="DigitalPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="DIGITAL DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="DigitalDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="140, 53" size="80, 22" control-tag="DigitalTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="230, 35" size="90, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="230, 53" size="80, 22" control-tag="DigitalNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="320, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="320, 53" size="100, 20" control-tag="DigitalFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="430, 35" size="90, 16" title="Limiter" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="430, 53" size="80, 22" control-tag="DigitalLimiterCharacter" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="520, 35" size="50, 16" title="Era" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="520, 53" size="80, 22" control-tag="DigitalEra" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="610, 35" size="50, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="610, 53" size="80, 20" control-tag="DigitalAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="DigitalModDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="Mod Rate" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="DigitalModRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Waveform" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="270, 103" size="100, 22" control-tag="DigitalModWaveform" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="380, 85" size="90, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="380, 103" size="120, 20" control-tag="DigitalMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="510, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="510, 103" size="120, 20" control-tag="DigitalOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 6: PINGPONG -->
+    <template name="PingPongPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="PING PONG DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="PingPongDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="140, 53" size="80, 22" control-tag="PingPongTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="230, 35" size="90, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="230, 53" size="80, 22" control-tag="PingPongNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="320, 35" size="90, 16" title="L/R Ratio" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="320, 53" size="80, 22" control-tag="PingPongLRRatio" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="410, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="410, 53" size="100, 20" control-tag="PingPongFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="520, 35" size="90, 16" title="Cross FB" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="520, 53" size="100, 20" control-tag="PingPongCrossFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="630, 35" size="90, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="630, 53" size="100, 20" control-tag="PingPongWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="PingPongModDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="Mod Rate" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="PingPongModRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 103" size="120, 20" control-tag="PingPongMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 103" size="120, 20" control-tag="PingPongOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 7: REVERSE -->
+    <template name="ReversePanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="REVERSE DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Chunk Size" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 53" size="120, 20" control-tag="ReverseChunkSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 35" size="90, 16" title="Crossfade" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 53" size="120, 20" control-tag="ReverseCrossfade" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 35" size="90, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="270, 53" size="100, 22" control-tag="ReversePlaybackMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="380, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="380, 53" size="100, 20" control-tag="ReverseFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="490, 35" size="50, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="490, 53" size="40, 22" control-tag="ReverseFilterEnabled"/>
+        <view class="CTextLabel" origin="540, 35" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="540, 53" size="80, 20" control-tag="ReverseFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="630, 35" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="630, 53" size="70, 22" control-tag="ReverseFilterType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="60, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="ReverseDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="60, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="ReverseOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 8: MULTITAP -->
+    <template name="MultiTapPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="MULTI-TAP DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Timing" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="10, 53" size="100, 22" control-tag="MultiTapTimingPattern" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="120, 35" size="90, 16" title="Spatial" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="120, 53" size="100, 22" control-tag="MultiTapSpatialPattern" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="230, 35" size="90, 16" title="Tap Count" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="230, 53" size="100, 20" control-tag="MultiTapTapCount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="340, 35" size="90, 16" title="Base Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="340, 53" size="100, 20" control-tag="MultiTapBaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="450, 35" size="90, 16" title="Tempo" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="450, 53" size="100, 20" control-tag="MultiTapTempo" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="560, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="560, 53" size="100, 20" control-tag="MultiTapFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="FB LP" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="120, 20" control-tag="MultiTapFeedbackLPCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="140, 85" size="90, 16" title="FB HP" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="140, 103" size="120, 20" control-tag="MultiTapFeedbackHPCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="270, 85" size="90, 16" title="Morph" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="270, 103" size="120, 20" control-tag="MultiTapMorphTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 85" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 103" size="120, 20" control-tag="MultiTapDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="530, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="530, 103" size="120, 20" control-tag="MultiTapOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 9: FREEZE -->
+    <template name="FreezePanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="FREEZE MODE" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="60, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="10, 53" size="50, 22" control-tag="FreezeEnabled"/>
+        <view class="CTextLabel" origin="70, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="70, 53" size="100, 20" control-tag="FreezeDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="180, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="180, 53" size="100, 20" control-tag="FreezeFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="290, 35" size="90, 16" title="Pitch (st)" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="290, 53" size="100, 20" control-tag="FreezePitchSemitones" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Pitch (c)" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="100, 20" control-tag="FreezePitchCents" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="510, 35" size="90, 16" title="Shimmer" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="510, 53" size="100, 20" control-tag="FreezeShimmerMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="620, 35" size="90, 16" title="Decay" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="620, 53" size="100, 20" control-tag="FreezeDecay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="90, 16" title="Diff Amt" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="10, 103" size="100, 20" control-tag="FreezeDiffusionAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="120, 85" size="90, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="120, 103" size="100, 20" control-tag="FreezeDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="230, 85" size="60, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="230, 103" size="40, 22" control-tag="FreezeFilterEnabled"/>
+        <view class="CTextLabel" origin="280, 85" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="280, 103" size="70, 22" control-tag="FreezeFilterType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="360, 85" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="360, 103" size="100, 20" control-tag="FreezeFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="470, 85" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="470, 103" size="100, 20" control-tag="FreezeDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="580, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="580, 103" size="100, 20" control-tag="FreezeOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- Mode 10: DUCKING -->
+    <template name="DuckingPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
+        <view class="CTextLabel" origin="10, 5" size="200, 22" title="DUCKING DELAY" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Row 1 -->
+        <view class="CTextLabel" origin="10, 35" size="60, 16" title="Enable" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="10, 53" size="50, 22" control-tag="DuckingEnabled"/>
+        <view class="CTextLabel" origin="70, 35" size="90, 16" title="Threshold" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="70, 53" size="100, 20" control-tag="DuckingThreshold" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="180, 35" size="90, 16" title="Duck Amt" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="180, 53" size="100, 20" control-tag="DuckingDuckAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="290, 35" size="90, 16" title="Attack" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="290, 53" size="100, 20" control-tag="DuckingAttackTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="400, 35" size="90, 16" title="Release" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="400, 53" size="100, 20" control-tag="DuckingReleaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="510, 35" size="90, 16" title="Hold" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="510, 53" size="100, 20" control-tag="DuckingHoldTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="620, 35" size="90, 16" title="Target" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="620, 53" size="80, 22" control-tag="DuckingDuckTarget" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <!-- Row 2 -->
+        <view class="CTextLabel" origin="10, 85" size="60, 16" title="SC Filt" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COnOffButton" origin="10, 103" size="40, 22" control-tag="DuckingSidechainFilterEnabled"/>
+        <view class="CTextLabel" origin="60, 85" size="90, 16" title="SC Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="60, 103" size="100, 20" control-tag="DuckingSidechainFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="170, 85" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="170, 103" size="100, 20" control-tag="DuckingDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="280, 85" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="280, 103" size="100, 20" control-tag="DuckingFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="390, 85" size="90, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="390, 103" size="100, 20" control-tag="DuckingDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="500, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="500, 103" size="100, 20" control-tag="DuckingOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+    </template>
+
+    <!-- ======================================================================
+         Main Editor Template
+         ====================================================================== -->
+    <template
             name="Editor"
             class="CViewContainer"
             origin="0, 0"
-            size="400, 300"
+            size="900, 600"
             background-color="background"
-            minSize="400, 300"
-            maxSize="800, 600"
+            minSize="900, 600"
+            maxSize="1200, 900"
             autosize="left right top bottom">
 
-            <!-- Title -->
-            <view
-                class="CTextLabel"
-                origin="20, 20"
-                size="360, 30"
-                title="Iterum"
-                font="title-font"
-                font-color="text"
-                text-alignment="center"
-                transparent="true"/>
-
-            <!-- Gain Control Panel -->
-            <view
-                class="CViewContainer"
-                origin="50, 70"
-                size="300, 150"
-                background-color="panel"
-                autosize="left right">
-
-                <!-- Gain Label -->
-                <view
-                    class="CTextLabel"
-                    origin="10, 10"
-                    size="280, 20"
-                    title="Gain"
-                    font="label-font"
-                    font-color="text"
-                    text-alignment="center"
-                    transparent="true"/>
-
-                <!-- Gain Slider -->
-                <view
-                    class="CSlider"
-                    origin="30, 40"
-                    size="240, 30"
-                    control-tag="Gain"
-                    default-value="0.5"
-                    min-value="0"
-                    max-value="1"
-                    orientation="horizontal"
-                    handle-offset="0, 0"
-                    draw-frame="true"
-                    draw-back="true"
-                    draw-value="true"
-                    draw-value-inverted="false"
-                    frame-color="accent"
-                    back-color="knob-track"
-                    value-color="accent"/>
-
-                <!-- Gain Value Display -->
-                <view
-                    class="CTextEdit"
-                    origin="100, 80"
-                    size="100, 25"
-                    control-tag="Gain"
-                    font="label-font"
-                    font-color="text"
-                    back-color="panel"
-                    frame-color="accent"
-                    text-alignment="center"
-                    style-round-rect="true"
-                    round-rect-radius="3"/>
-
-                <!-- Bypass Button -->
-                <view
-                    class="COnOffButton"
-                    origin="125, 115"
-                    size="50, 25"
-                    control-tag="Bypass"
-                    default-value="0"/>
-
+            <!-- Header -->
+            <view class="CViewContainer" origin="0, 0" size="900, 50" background-color="header" autosize="left right" mouse-enabled="true">
+                <view class="CTextLabel" origin="15, 10" size="120, 30" title="ITERUM" font="title-font" font-color="accent" text-alignment="left" transparent="true"/>
+                <view class="CTextLabel" origin="150, 14" size="80, 22" title="Mode:" font="label-font" font-color="text-dim" text-alignment="right" transparent="true"/>
+                <view class="COptionMenu" origin="235, 12" size="160, 26" control-tag="Mode" default-value="0" font="~ NormalFont" font-color="text" back-color="panel" frame-color="border" frame-width="1" menu-popup-style="true" menu-check-style="true" mouse-enabled="true" transparent="false" wants-focus="true" text-alignment="left" text-inset="5, 0"/>
+                <view class="CTextButton" origin="820, 12" size="65, 26" title="Bypass" control-tag="Bypass" font="label-font" font-color="text" frame-color="border" round-radius="3" gradient-start-color="sidebar" gradient-end-color="sidebar" gradient-start-color-highlighted="accent" gradient-end-color-highlighted="accent"/>
             </view>
 
-            <!-- Version Label -->
-            <view
-                class="CTextLabel"
-                origin="20, 270"
-                size="360, 20"
-                title="v1.0.0"
-                font="label-font"
-                font-color="text"
-                text-alignment="right"
-                transparent="true"/>
+            <!-- Mode Panel - UIViewSwitchContainer automatically controlled by Mode parameter -->
+            <view class="UIViewSwitchContainer" origin="20, 60" size="860, 400" background-color="panel" transparent="false" template-names="GranularPanel,SpectralPanel,ShimmerPanel,TapePanel,BBDPanel,DigitalPanel,PingPongPanel,ReversePanel,MultiTapPanel,FreezePanel,DuckingPanel" template-switch-control="Mode"/>
 
-        </template>
-    </templates>
+            <!-- Global Output Section (always visible) -->
+            <view class="CViewContainer" origin="20, 480" size="860, 70" background-color="section">
+                <view class="CTextLabel" origin="10, 5" size="200, 22" title="GLOBAL OUTPUT" font="section-font" font-color="text" transparent="true"/>
+                <view class="CTextLabel" origin="10, 32" size="90, 16" title="Output Gain" font="label-font" font-color="text-dim" transparent="true"/>
+                <view class="CSlider" origin="100, 32" size="650, 22" control-tag="Gain" default-value="0.5" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+                <view class="CTextEdit" origin="770, 32" size="70, 22" control-tag="Gain" font="value-font" font-color="text" back-color="panel" frame-color="border" text-alignment="center" style-round-rect="true" round-rect-radius="2"/>
+            </view>
+
+            <!-- Footer -->
+            <view class="CViewContainer" origin="0, 560" size="900, 40" background-color="header" autosize="left right bottom">
+                <view class="CTextLabel" origin="15, 12" size="200, 16" title="Iterum v1.0.0" font="value-font" font-color="text-dim" transparent="true"/>
+                <view class="CTextLabel" origin="680, 12" size="200, 16" title="11 Delay Modes" font="value-font" font-color="text-dim" text-alignment="right" transparent="true"/>
+            </view>
+
+    </template>
 
 </vstgui-ui-description>

@@ -70,6 +70,7 @@ add_executable(dsp_tests
     unit/core/window_functions_test.cpp
     unit/core/random_test.cpp
     unit/core/note_value_test.cpp
+    unit/core/note_value_mapping_test.cpp
     unit/core/block_context_test.cpp
     unit/core/fast_math_test.cpp
     unit/core/interpolation_test.cpp
@@ -77,6 +78,7 @@ add_executable(dsp_tests
     unit/core/pitch_utils_test.cpp
     unit/core/grain_envelope_test.cpp
     unit/primitives/delay_line_test.cpp
+    unit/primitives/crossfading_delay_line_test.cpp
     unit/primitives/lfo_test.cpp
     unit/primitives/biquad_test.cpp
     unit/primitives/smoother_test.cpp
@@ -164,6 +166,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/core/math_constants_test.cpp
         unit/core/window_functions_test.cpp
         unit/core/note_value_test.cpp
+        unit/core/note_value_mapping_test.cpp
         unit/core/block_context_test.cpp
         unit/core/fast_math_test.cpp
         unit/core/interpolation_test.cpp
@@ -412,3 +415,31 @@ target_compile_options(benchmark_spectral_delay PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
 )
+
+# ==============================================================================
+# VST3 SDK Unit Tests
+# ==============================================================================
+# Tests for VST3-specific functionality (parameters, controller, etc.)
+# These tests link against the VST3 SDK, unlike dsp_tests which are pure C++
+
+add_executable(vst_tests
+    unit/vst/string_list_parameter_test.cpp
+)
+
+target_include_directories(vst_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${vst3sdk_SOURCE_DIR}
+)
+
+target_link_libraries(vst_tests
+    PRIVATE
+        Catch2::Catch2
+        sdk
+)
+
+target_compile_features(vst_tests PRIVATE cxx_std_20)
+
+# Register with CTest
+catch_discover_tests(vst_tests)

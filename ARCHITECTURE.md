@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-27 (034-granular-delay)
+**Last Updated**: 2025-12-28 (VST3 parameter integration, CrossfadingDelayLine, tempo sync utilities)
 
 ---
 
@@ -294,21 +294,22 @@ if (rng.nextUnipolar() < clickProb) {
 
 ---
 
-### NoteValue Enums
+### NoteValue Enums and Tempo Sync Utilities
 
 | | |
 |---|---|
-| **Purpose** | Musical note duration constants for tempo-synced features |
+| **Purpose** | Musical note duration constants and tempo-sync calculations for delay effects |
 | **Location** | [src/dsp/core/note_value.h](src/dsp/core/note_value.h) |
 | **Namespace** | `Iterum::DSP` |
-| **Added** | 0.0.17 (017-layer0-utilities) |
+| **Added** | 0.0.17 (017-layer0-utilities), expanded 0.0.19 |
 
 **Public API**:
 
 ```cpp
 namespace Iterum::DSP {
+    // Note value enumeration (shortest to longest)
     enum class NoteValue : uint8_t {
-        Whole, Half, Quarter, Eighth, Sixteenth, ThirtySecond
+        DoubleWhole, Whole, Half, Quarter, Eighth, Sixteenth, ThirtySecond, SixtyFourth
     };
 
     enum class NoteModifier : uint8_t {
@@ -316,13 +317,44 @@ namespace Iterum::DSP {
     };
 
     // Beats per note value (Quarter = 1.0 beat)
-    constexpr std::array<float, 6> kBeatsPerNote = {
-        4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f
+    inline constexpr float kBeatsPerNote[] = {
+        8.0f, 4.0f, 2.0f, 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f
     };
 
     // Get total beats including modifier
     [[nodiscard]] constexpr float getBeatsForNote(NoteValue value,
                                                    NoteModifier modifier = NoteModifier::None) noexcept;
+
+    // =========================================================================
+    // Dropdown Index Mapping (UI → DSP)
+    // =========================================================================
+
+    /// Result of mapping a dropdown index to note value + modifier
+    struct NoteValueMapping {
+        NoteValue note;
+        NoteModifier modifier;
+    };
+
+    /// Lookup table: dropdown index 0-9 → (NoteValue, NoteModifier)
+    /// Order: 1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1
+    inline constexpr NoteValueMapping kNoteValueDropdownMapping[10];
+
+    /// Convert dropdown index (0-9) to NoteValueMapping
+    [[nodiscard]] constexpr NoteValueMapping getNoteValueFromDropdown(int dropdownIndex) noexcept;
+
+    // =========================================================================
+    // Tempo Sync Calculations
+    // =========================================================================
+
+    inline constexpr double kMinTempoSyncBPM = 20.0;
+    inline constexpr double kMaxTempoSyncBPM = 300.0;
+
+    /// Convert note value + modifier to delay time in milliseconds
+    [[nodiscard]] constexpr float noteToDelayMs(NoteValue note, NoteModifier modifier,
+                                                 double tempoBPM) noexcept;
+
+    /// Convert dropdown index directly to delay time in milliseconds
+    [[nodiscard]] constexpr float dropdownToDelayMs(int dropdownIndex, double tempoBPM) noexcept;
 }
 ```
 
@@ -330,11 +362,44 @@ namespace Iterum::DSP {
 - `getBeatsForNote(Quarter, None)` → `1.0f`
 - `getBeatsForNote(Quarter, Dotted)` → `1.5f` (×1.5)
 - `getBeatsForNote(Quarter, Triplet)` → `0.667f` (×2/3)
+- `noteToDelayMs(Quarter, None, 120.0)` → `500.0f` ms
+- `dropdownToDelayMs(4, 120.0)` → `250.0f` ms (1/8 at 120 BPM)
+
+**Dropdown Index Mapping**:
+
+| Index | Label | NoteValue | Modifier |
+|-------|-------|-----------|----------|
+| 0 | 1/32 | ThirtySecond | None |
+| 1 | 1/16T | Sixteenth | Triplet |
+| 2 | 1/16 | Sixteenth | None |
+| 3 | 1/8T | Eighth | Triplet |
+| 4 | 1/8 | Eighth | None |
+| 5 | 1/4T | Quarter | Triplet |
+| 6 | 1/4 | Quarter | None |
+| 7 | 1/2T | Half | Triplet |
+| 8 | 1/2 | Half | None |
+| 9 | 1/1 | Whole | None |
 
 **When to use**:
-- Tempo-synced delay time calculations
-- LFO rate synchronization
-- Any musical timing where note values are needed
+
+| Use Case | Function |
+|----------|----------|
+| Tempo-synced delay calculation | `noteToDelayMs()` |
+| UI dropdown → delay time | `dropdownToDelayMs()` |
+| UI dropdown → note/modifier pair | `getNoteValueFromDropdown()` |
+| Beat duration calculation | `getBeatsForNote()` |
+
+**Example**:
+```cpp
+#include "dsp/core/note_value.h"
+using namespace Iterum::DSP;
+
+// User selects "1/8 Triplet" (index 3) at 100 BPM
+float delayMs = dropdownToDelayMs(3, 100.0);  // 200ms
+
+// Or using explicit note values
+float dotted8th = noteToDelayMs(NoteValue::Eighth, NoteModifier::Dotted, 120.0);  // 375ms
+```
 
 ---
 
@@ -746,6 +811,112 @@ float chorus = delay.readLinear(lfoDelay);
 
 // Feedback network (fractional comb filter)
 float comb = delay.readAllpass(100.5f);  // Fixed fractional delay
+```
+
+---
+
+### CrossfadingDelayLine
+
+| | |
+|---|---|
+| **Purpose** | Delay line with click-free delay time changes using two-tap crossfading |
+| **Location** | [src/dsp/primitives/crossfading_delay_line.h](src/dsp/primitives/crossfading_delay_line.h) |
+| **Namespace** | `Iterum::DSP` |
+| **Added** | 0.0.19 (019-feedback-network enhancement) |
+| **Dependencies** | DelayLine (L1) |
+
+**Public API**:
+
+```cpp
+namespace Iterum::DSP {
+    class CrossfadingDelayLine {
+    public:
+        // Constants
+        static constexpr float kDefaultCrossfadeTimeMs = 20.0f;
+        static constexpr float kMinCrossfadeTimeMs = 5.0f;
+        static constexpr float kMaxCrossfadeTimeMs = 100.0f;
+        static constexpr float kCrossfadeThresholdSamples = 100.0f;
+
+        // Lifecycle (call before audio processing)
+        void prepare(double sampleRate, float maxDelaySeconds) noexcept;
+        void reset() noexcept;
+
+        // Configuration
+        void setCrossfadeTime(float timeMs) noexcept;  // [5, 100] ms
+
+        // Delay Time Control
+        void setDelaySamples(float delaySamples) noexcept;  // Triggers crossfade if drift >= 100 samples
+        void setDelayMs(float delayMs) noexcept;            // Convenience wrapper
+        void snapToDelaySamples(float delaySamples) noexcept;  // Immediate jump, no crossfade
+        void snapToDelayMs(float delayMs) noexcept;            // Convenience wrapper
+
+        // Processing (real-time safe, O(1))
+        void write(float sample) noexcept;
+        [[nodiscard]] float read() noexcept;  // Crossfaded output from both taps
+        [[nodiscard]] float process(float input) noexcept;  // write + read
+
+        // Query
+        [[nodiscard]] bool isCrossfading() const noexcept;
+        [[nodiscard]] float getCurrentDelaySamples() const noexcept;  // Weighted average
+        [[nodiscard]] size_t maxDelaySamples() const noexcept;
+    };
+}
+```
+
+**Behavior**:
+- **Two-tap crossfading**: Maintains two read positions (taps) with independent gains
+- **Drift detection**: Crossfade triggers when target drifts ≥100 samples from active tap position
+- **Active/inactive pattern**: Active tap stays fixed (fading out), inactive tap tracks target (fading in)
+- **Crossfade duration**: Default 20ms linear crossfade (882 samples at 44.1kHz)
+- **snapTo methods**: For initialization without crossfade transient
+
+**Algorithm**:
+When delay time changes:
+1. Inactive tap immediately jumps to new position (at 0 gain, inaudible)
+2. If drift from active tap ≥ threshold, crossfade begins
+3. During crossfade: active tap fades out, inactive tap fades in
+4. After crossfade: roles swap, ready for next change
+
+**Why use CrossfadingDelayLine instead of DelayLine?**
+
+| Scenario | DelayLine | CrossfadingDelayLine |
+|----------|-----------|---------------------|
+| Fixed delay time | ✓ Use `read()` | Overkill |
+| LFO modulation (small, continuous) | ✓ Use `readLinear()` | Overkill |
+| User knob changes (large jumps) | Pitch artifacts | ✓ Click-free |
+| Tempo sync switching | Audible discontinuity | ✓ Smooth transition |
+| Feedback loops | Use `readAllpass()` | ✓ Integrates well |
+
+**When to use**:
+
+| Use Case | Why |
+|----------|-----|
+| FeedbackNetwork delay | Large delay time changes from tempo sync or user input |
+| Delay effects with UI knobs | User adjustments cause large jumps |
+| Preset changes | Delay time snaps to new value |
+| DAW automation | Abrupt parameter changes from automation lanes |
+
+**Important**: For small, continuous modulation (chorus, flanger, vibrato), use plain `DelayLine::readLinear()` instead. CrossfadingDelayLine's 100-sample threshold is designed for user-initiated changes, not LFO modulation.
+
+**Example**:
+```cpp
+#include "dsp/primitives/crossfading_delay_line.h"
+
+Iterum::DSP::CrossfadingDelayLine delay;
+
+// In prepare() - allocates memory
+delay.prepare(44100.0, 2.0f);  // 2 second max delay
+delay.snapToDelayMs(500.0f);   // Initialize without transient
+
+// In processBlock() - real-time safe
+for (size_t i = 0; i < numSamples; ++i) {
+    delay.setDelayMs(currentDelayMs);  // May trigger crossfade
+    delay.write(inputSample);
+    float output = delay.read();  // Crossfaded output
+}
+
+// Large delay change (e.g., tempo sync) - automatic crossfade
+delay.setDelayMs(1000.0f);  // Crossfades smoothly from 500ms to 1000ms
 ```
 
 ---
@@ -3157,7 +3328,7 @@ delay.process(buffer, numSamples, ctx);  // Delay = 750ms (dotted quarter at 120
 | **Location** | [src/dsp/systems/feedback_network.h](src/dsp/systems/feedback_network.h) |
 | **Namespace** | `Iterum::DSP` |
 | **Added** | 0.0.19 (019-feedback-network) |
-| **Dependencies** | DelayLine (L1), MultimodeFilter (L2), SaturationProcessor (L2), OnePoleSmoother (L1), BlockContext (L0) |
+| **Dependencies** | CrossfadingDelayLine (L1), MultimodeFilter (L2), SaturationProcessor (L2), OnePoleSmoother (L1), BlockContext (L0), stereoCrossBlend (L0) |
 
 **Public API**:
 
@@ -3204,6 +3375,7 @@ namespace Iterum::DSP {
 - **Freeze mode**: Mutes input while maintaining 100% feedback for infinite sustain
 - **Filter placement**: In feedback path for progressive tone shaping on each repeat
 - **Saturation**: Soft limits feedback to prevent runaway oscillation at high settings
+- **Click-free delay changes**: Uses CrossfadingDelayLine for smooth delay time transitions without zipper noise
 
 **When to use**:
 - Building delay effects with feedback control
@@ -3666,7 +3838,7 @@ Classic tape echo emulation (Roland RE-201, Echoplex, Watkins Copicat style).
 
 **Composes**:
 - TapManager (Layer 3): Multi-head echo patterns at fixed ratios (1x, 1.5x, 2x)
-- FeedbackNetwork (Layer 3): Feedback with progressive darkening
+- FeedbackNetwork (Layer 3): Feedback with progressive darkening (uses CrossfadingDelayLine for click-free changes)
 - CharacterProcessor (Layer 3): Tape character (wow/flutter, hiss, saturation, rolloff)
 
 **User Controls**:
@@ -3908,10 +4080,11 @@ Clean digital delay with era presets (Lexicon PCM42, Roland SDE-3000, vintage sa
 
 **Composes**:
 - DelayEngine (Layer 3): Core delay with tempo sync
-- FeedbackNetwork (Layer 3): Feedback path with filtering
+- FeedbackNetwork (Layer 3): Feedback path with filtering (uses CrossfadingDelayLine for click-free delay changes)
 - CharacterProcessor (Layer 3): DigitalVintage mode for 80s/Lo-Fi character
 - DynamicsProcessor (Layer 2): Program-dependent feedback limiter
 - LFO (Layer 1): Modulation with 6 waveform shapes
+- noteToDelayMs (Layer 0): Tempo sync calculations via dropdown mapping
 
 **User Controls**:
 - Time: Delay time 1-10000ms with tempo sync option
@@ -4145,10 +4318,10 @@ Pitch-shifted delay with cascading octaves for ambient/ethereal textures.
 **Purpose**: Layer 4 user feature providing ambient shimmer delay with pitch shifting in the feedback path. Creates cascading harmonics (each repeat pitched higher/lower than the previous) for ethereal pads and ambient textures. Inspired by effects like Strymon BigSky, Eventide Space, and Valhalla Shimmer.
 
 **Composes**:
-- DelayLine (Layer 1): 2 instances for stereo delay buffers
-- PitchShiftProcessor (Layer 2): 2 instances for mono L/R pitch shifting in feedback path
+- FlexibleFeedbackNetwork (Layer 3): Feedback loop with processor injection (uses CrossfadingDelayLine for click-free changes)
+- PitchShiftProcessor (Layer 2): Implements IFeedbackProcessor for shimmer effect
 - DiffusionNetwork (Layer 2): Temporal smearing for reverb-like texture
-- MultimodeFilter (Layer 2): 2 instances for feedback filtering
+- MultimodeFilter (Layer 2): Feedback filtering via FlexibleFeedbackNetwork
 - DynamicsProcessor (Layer 2): Limiting for feedback > 100%
 - OnePoleSmoother (Layer 1): 6 instances for click-free parameter changes
 - ModulationMatrix (Layer 3): Optional pointer for external modulation routing
@@ -4288,7 +4461,7 @@ Reverse delay effect that captures audio in chunks and plays it back reversed.
 **Purpose**: Layer 4 user feature providing reverse delay effects with chunk-based backward playback, multiple playback modes, crossfade between chunks, and feedback with optional filtering.
 
 **Composes**:
-- FlexibleFeedbackNetwork (Layer 3): Feedback path with filtering and limiting
+- FlexibleFeedbackNetwork (Layer 3): Feedback path with filtering and limiting (uses CrossfadingDelayLine for click-free changes)
 - ReverseFeedbackProcessor (Layer 2): Injected processor for stereo reverse processing
 - OnePoleSmoother (Layer 1): Parameter smoothing for dry/wet and output gain
 
@@ -4506,7 +4679,7 @@ spectralDelay.process(leftChannel, rightChannel, blockSize, ctx);
 | **Added** | 0.0.32 (031-freeze-mode) |
 
 **Dependencies**:
-- `FlexibleFeedbackNetwork` (Layer 3) - Delay line with built-in freeze support
+- `FlexibleFeedbackNetwork` (Layer 3) - Delay line with built-in freeze support (uses CrossfadingDelayLine for click-free changes)
 - `PitchShiftProcessor` (Layer 2) - Shimmer effect via pitch shifting
 - `DiffusionNetwork` (Layer 2) - Smearing for pad-like textures
 - `MultimodeFilter` (Layer 2) - Feedback filtering via FFN
@@ -4614,7 +4787,7 @@ freeze.setFreezeEnabled(false); // Return to normal delay operation
 | **Added** | 0.0.33 (032-ducking-delay) |
 
 **Dependencies**:
-- `FlexibleFeedbackNetwork` (Layer 3) - Delay engine with feedback and filtering
+- `FlexibleFeedbackNetwork` (Layer 3) - Delay engine with feedback and filtering (uses CrossfadingDelayLine for click-free changes)
 - `DuckingProcessor` (Layer 2) - Sidechain-triggered gain reduction (2 instances)
 - `OnePoleSmoother` (Layer 1) - Parameter smoothing
 

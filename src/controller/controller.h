@@ -71,6 +71,11 @@ public:
         Steinberg::Vst::TChar* string,
         Steinberg::Vst::ParamValue& valueNormalized) override;
 
+    /// Handle parameter changes - DEBUG: logs all Mode parameter changes
+    Steinberg::tresult PLUGIN_API setParamNormalized(
+        Steinberg::Vst::ParamID id,
+        Steinberg::Vst::ParamValue value) override;
+
     // ===========================================================================
     // VST3EditorDelegate (VSTGUI)
     // ===========================================================================
@@ -112,11 +117,10 @@ public:
 private:
     // ==========================================================================
     // UI State
-    // Constitution Principle V: Use getParameterObject() for UI-only state
     // ==========================================================================
 
-    // Example: Store last selected tab, scroll position, etc.
-    // These are saved in getState/setState but don't affect audio
+    // Active editor instance
+    VSTGUI::VST3Editor* activeEditor_ = nullptr;
 };
 
 } // namespace Iterum

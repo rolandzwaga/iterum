@@ -8,7 +8,9 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "pluginterfaces/base/ftypes.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -144,29 +146,19 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         ParameterInfo::kCanAutomate,
         kDigitalDelayTimeId);
 
-    // Time Mode (Free/Synced)
-    auto* timeModeParam = parameters.addParameter(
-        STR16("Digital Time Mode"),
-        nullptr,
-        1,  // stepCount: 2 values
-        0,  // default: Free
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDigitalTimeModeId);
-    if (timeModeParam) {
-        timeModeParam->getInfo().stepCount = 1;
-    }
+    // Time Mode (Free/Synced) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Digital Time Mode"), kDigitalTimeModeId,
+        {STR16("Free"), STR16("Synced")}
+    ));
 
-    // Note Value
-    auto* noteValueParam = parameters.addParameter(
-        STR16("Digital Note Value"),
-        nullptr,
-        9,  // stepCount: 10 values
-        0.444,  // default: Quarter note
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDigitalNoteValueId);
-    if (noteValueParam) {
-        noteValueParam->getInfo().stepCount = 9;
-    }
+    // Note Value - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Digital Note Value"), kDigitalNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Feedback (0-120%)
     parameters.addParameter(
@@ -177,29 +169,17 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         ParameterInfo::kCanAutomate,
         kDigitalFeedbackId);
 
-    // Limiter Character
-    auto* limiterParam = parameters.addParameter(
-        STR16("Digital Limiter"),
-        nullptr,
-        2,  // stepCount: 3 values
-        0,  // default: Soft
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDigitalLimiterCharacterId);
-    if (limiterParam) {
-        limiterParam->getInfo().stepCount = 2;
-    }
+    // Limiter Character - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Digital Limiter"), kDigitalLimiterCharacterId,
+        {STR16("Soft"), STR16("Medium"), STR16("Hard")}
+    ));
 
-    // Era
-    auto* eraParam = parameters.addParameter(
-        STR16("Digital Era"),
-        nullptr,
-        2,  // stepCount: 3 values
-        0,  // default: Pristine
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDigitalEraId);
-    if (eraParam) {
-        eraParam->getInfo().stepCount = 2;
-    }
+    // Era - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Digital Era"), kDigitalEraId,
+        {STR16("Pristine"), STR16("80s Digital"), STR16("Lo-Fi")}
+    ));
 
     // Age (0-100%)
     parameters.addParameter(
@@ -228,17 +208,11 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         ParameterInfo::kCanAutomate,
         kDigitalModRateId);
 
-    // Modulation Waveform
-    auto* waveformParam = parameters.addParameter(
-        STR16("Digital Mod Waveform"),
-        nullptr,
-        5,  // stepCount: 6 values
-        0,  // default: Sine
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kDigitalModWaveformId);
-    if (waveformParam) {
-        waveformParam->getInfo().stepCount = 5;
-    }
+    // Modulation Waveform - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Digital Mod Waveform"), kDigitalModWaveformId,
+        {STR16("Sine"), STR16("Triangle"), STR16("Saw Up"), STR16("Saw Down"), STR16("Square"), STR16("Random")}
+    ));
 
     // Mix (0-100%)
     parameters.addParameter(
@@ -283,19 +257,8 @@ inline Steinberg::tresult formatDigitalParam(
             return kResultOk;
         }
 
-        case kDigitalTimeModeId: {
-            Steinberg::UString(string, 128).fromAscii(
-                normalizedValue >= 0.5 ? "Synced" : "Free");
-            return kResultOk;
-        }
-
-        case kDigitalNoteValueId: {
-            int note = static_cast<int>(normalizedValue * 9.0 + 0.5);
-            const char* names[] = {"1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T", "1/4", "1/2T", "1/2", "1/1"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[note < 0 ? 0 : (note > 9 ? 9 : note)]);
-            return kResultOk;
-        }
+        // kDigitalTimeModeId: handled by StringListParameter::toString() automatically
+        // kDigitalNoteValueId: handled by StringListParameter::toString() automatically
 
         case kDigitalFeedbackId: {
             float percent = static_cast<float>(normalizedValue * 120.0);
@@ -305,21 +268,8 @@ inline Steinberg::tresult formatDigitalParam(
             return kResultOk;
         }
 
-        case kDigitalLimiterCharacterId: {
-            int limiter = static_cast<int>(normalizedValue * 2.0 + 0.5);
-            const char* names[] = {"Soft", "Medium", "Hard"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[limiter < 0 ? 0 : (limiter > 2 ? 2 : limiter)]);
-            return kResultOk;
-        }
-
-        case kDigitalEraId: {
-            int era = static_cast<int>(normalizedValue * 2.0 + 0.5);
-            const char* names[] = {"Pristine", "80s Digital", "Lo-Fi"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[era < 0 ? 0 : (era > 2 ? 2 : era)]);
-            return kResultOk;
-        }
+        // kDigitalLimiterCharacterId: handled by StringListParameter::toString() automatically
+        // kDigitalEraId: handled by StringListParameter::toString() automatically
 
         case kDigitalAgeId: {
             float percent = static_cast<float>(normalizedValue * 100.0);
@@ -345,13 +295,7 @@ inline Steinberg::tresult formatDigitalParam(
             return kResultOk;
         }
 
-        case kDigitalModWaveformId: {
-            int waveform = static_cast<int>(normalizedValue * 5.0 + 0.5);
-            const char* names[] = {"Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Random"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[waveform < 0 ? 0 : (waveform > 5 ? 5 : waveform)]);
-            return kResultOk;
-        }
+        // kDigitalModWaveformId: handled by StringListParameter::toString() automatically
 
         case kDigitalMixId: {
             float percent = static_cast<float>(normalizedValue * 100.0);

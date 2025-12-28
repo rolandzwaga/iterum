@@ -8,6 +8,7 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -302,17 +303,11 @@ inline void registerGranularParams(Steinberg::Vst::ParameterContainer& parameter
         STR16("Out")
     );
 
-    // Envelope Type: 0-3 (Hann, Trapezoid, Sine, Blackman)
-    parameters.addParameter(
-        STR16("Envelope"),
-        nullptr,
-        3,  // stepCount 3 = 4 discrete values
-        0.0,  // Hann default
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kGranularEnvelopeTypeId,
-        0,
-        STR16("Env")
-    );
+    // Envelope Type: 0-3 (Hann, Trapezoid, Sine, Blackman) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Envelope"), kGranularEnvelopeTypeId,
+        {STR16("Hann"), STR16("Trapezoid"), STR16("Sine"), STR16("Blackman")}
+    ));
 }
 
 // ==============================================================================
@@ -406,14 +401,7 @@ inline Steinberg::tresult formatGranularParam(
             return kResultTrue;
         }
 
-        case kGranularEnvelopeTypeId: {
-            // 0-3 (Hann, Trapezoid, Sine, Blackman)
-            int type = static_cast<int>(valueNormalized * 3.0 + 0.5);
-            const char* names[] = {"Hann", "Trapezoid", "Sine", "Blackman"};
-            UString(string, 128).fromAscii(
-                names[type < 0 ? 0 : (type > 3 ? 3 : type)]);
-            return kResultTrue;
-        }
+        // kGranularEnvelopeTypeId: handled by StringListParameter::toString() automatically
 
         default:
             return Steinberg::kResultFalse;

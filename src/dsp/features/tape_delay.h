@@ -546,12 +546,21 @@ public:
                 tapManager_.setTapTimeMs(h, std::min(headDelay, maxDelayMs_));
             }
 
-            // Update feedback network delay
-            feedbackNetwork_.setDelayTimeMs(currentDelayMs);
+            // Update feedback network - use minimal delay (just for feedback loop, not additional delay)
+            // TapManager already provides the tape head delays
+            feedbackNetwork_.setDelayTimeMs(1.0f);  // Minimal delay - feedback only
             feedbackNetwork_.setFeedbackAmount(feedbackSmoother_.process());
         }
 
-        // Process through TapManager (multi-head delay)
+        // Update per-tap feedback amounts from master feedback
+        const float currentFeedback = feedbackSmoother_.getCurrentValue() * 100.0f;  // Convert to percentage
+        for (size_t h = 0; h < kNumHeads; ++h) {
+            if (heads_[h].enabled) {
+                tapManager_.setTapFeedback(h, currentFeedback);
+            }
+        }
+
+        // Process through TapManager (multi-head delay with feedback)
         tapManager_.process(left, right, left, right, numSamples);
 
         // Process through CharacterProcessor (tape character)
@@ -610,7 +619,15 @@ public:
             }
         }
 
-        // Process mono through tap manager
+        // Update per-tap feedback amounts from master feedback
+        const float currentFeedback = feedback_ * 100.0f;  // Convert to percentage
+        for (size_t h = 0; h < kNumHeads; ++h) {
+            if (heads_[h].enabled) {
+                tapManager_.setTapFeedback(h, currentFeedback);
+            }
+        }
+
+        // Process mono through tap manager (with feedback)
         tapManager_.process(buffer, buffer, buffer, buffer, numSamples);
 
         // Process through character

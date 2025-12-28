@@ -8,7 +8,9 @@
 // ==============================================================================
 
 #include "plugin_ids.h"
+#include "controller/parameter_helpers.h"
 #include "pluginterfaces/base/ftypes.h"
+#include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -128,29 +130,22 @@ inline void registerMultiTapParams(Steinberg::Vst::ParameterContainer& parameter
     using namespace Steinberg;
     using namespace Steinberg::Vst;
 
-    // Timing Pattern (20 patterns)
-    auto* timingParam = parameters.addParameter(
-        STR16("MultiTap Timing Pattern"),
-        nullptr,
-        19,  // stepCount: 20 values
-        0.105,  // default: QuarterNote (index 2)
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kMultiTapTimingPatternId);
-    if (timingParam) {
-        timingParam->getInfo().stepCount = 19;
-    }
+    // Timing Pattern (20 patterns) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("MultiTap Timing Pattern"), kMultiTapTimingPatternId,
+        2,  // default: Quarter (index 2)
+        {STR16("Whole"), STR16("Half"), STR16("Quarter"), STR16("Eighth"), STR16("16th"), STR16("32nd"),
+         STR16("Dotted Half"), STR16("Dotted Qtr"), STR16("Dotted 8th"), STR16("Dotted 16th"),
+         STR16("Triplet Half"), STR16("Triplet Qtr"), STR16("Triplet 8th"), STR16("Triplet 16th"),
+         STR16("Golden Ratio"), STR16("Fibonacci"), STR16("Exponential"), STR16("Primes"), STR16("Linear"), STR16("Custom")}
+    ));
 
-    // Spatial Pattern (7 patterns)
-    auto* spatialParam = parameters.addParameter(
-        STR16("MultiTap Spatial Pattern"),
-        nullptr,
-        6,  // stepCount: 7 values
-        0.333,  // default: Centered (index 2)
-        ParameterInfo::kCanAutomate | ParameterInfo::kIsList,
-        kMultiTapSpatialPatternId);
-    if (spatialParam) {
-        spatialParam->getInfo().stepCount = 6;
-    }
+    // Spatial Pattern (7 patterns) - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("MultiTap Spatial Pattern"), kMultiTapSpatialPatternId,
+        2,  // default: Centered (index 2)
+        {STR16("Cascade"), STR16("Alternating"), STR16("Centered"), STR16("Widening"), STR16("Decaying"), STR16("Flat"), STR16("Custom")}
+    ));
 
     // Tap Count (2-16)
     parameters.addParameter(
@@ -246,26 +241,8 @@ inline Steinberg::tresult formatMultiTapParam(
     using namespace Steinberg;
 
     switch (id) {
-        case kMultiTapTimingPatternId: {
-            int pattern = static_cast<int>(normalizedValue * 19.0 + 0.5);
-            const char* names[] = {
-                "Whole", "Half", "Quarter", "Eighth", "16th", "32nd",
-                "Dotted Half", "Dotted Qtr", "Dotted 8th", "Dotted 16th",
-                "Triplet Half", "Triplet Qtr", "Triplet 8th", "Triplet 16th",
-                "Golden Ratio", "Fibonacci", "Exponential", "Primes", "Linear", "Custom"
-            };
-            Steinberg::UString(string, 128).fromAscii(
-                names[pattern < 0 ? 0 : (pattern > 19 ? 19 : pattern)]);
-            return kResultOk;
-        }
-
-        case kMultiTapSpatialPatternId: {
-            int pattern = static_cast<int>(normalizedValue * 6.0 + 0.5);
-            const char* names[] = {"Cascade", "Alternating", "Centered", "Widening", "Decaying", "Flat", "Custom"};
-            Steinberg::UString(string, 128).fromAscii(
-                names[pattern < 0 ? 0 : (pattern > 6 ? 6 : pattern)]);
-            return kResultOk;
-        }
+        // kMultiTapTimingPatternId: handled by StringListParameter::toString() automatically
+        // kMultiTapSpatialPatternId: handled by StringListParameter::toString() automatically
 
         case kMultiTapTapCountId: {
             int count = static_cast<int>(2.0 + normalizedValue * 14.0 + 0.5);

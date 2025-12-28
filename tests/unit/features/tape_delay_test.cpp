@@ -745,6 +745,210 @@ TEST_CASE("FR-023: Splice artifacts at tape loop point", "[features][tape-delay]
 }
 
 // =============================================================================
+// Signal Flow: Feedback Network Tests (BUG FIX VALIDATION)
+// =============================================================================
+// These tests verify that the FeedbackNetwork is actually being used.
+// The bug: FeedbackNetwork was configured but never processed.
+
+TEST_CASE("TapeDelay feedback produces multiple repeats", "[features][tape-delay][feedback][signal-flow]") {
+    TapeDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+
+    SECTION("impulse with feedback produces multiple decaying echoes") {
+        // Set up: short delay so we can see multiple echoes in a reasonable buffer
+        delay.setMotorSpeed(50.0f);  // 50ms delay = 2205 samples at 44.1kHz
+        delay.setFeedback(0.5f);     // 50% feedback - each repeat is half amplitude
+        delay.setMix(1.0f);          // Full wet
+        delay.setWear(0.0f);         // Disable wow/flutter
+        delay.setSaturation(0.0f);   // Disable saturation
+        delay.setAge(0.0f);          // Disable degradation
+
+        // Disable extra heads so we only test feedback, not multi-tap
+        delay.setHeadEnabled(1, false);
+        delay.setHeadEnabled(2, false);
+
+        // Need to snap motor to target immediately
+        delay.reset();
+
+        // Create input buffer with impulse
+        const size_t bufferSize = 22050;  // 500ms = enough for ~10 repeats at 50ms
+        std::vector<float> left(bufferSize, 0.0f);
+        std::vector<float> right(bufferSize, 0.0f);
+        left[0] = 1.0f;   // Impulse
+        right[0] = 1.0f;
+
+        // Process
+        delay.process(left.data(), right.data(), bufferSize);
+
+        // Verify we get echoes at expected positions
+        // At 50ms delay and 44100Hz: echo at sample 2205, 4410, 6615, ...
+        const size_t delaySamples = 2205;
+
+        // Find peaks in the output
+        std::vector<float> peakAmplitudes;
+        for (size_t i = 0; i < bufferSize; i += delaySamples) {
+            // Search for peak near expected echo position
+            float maxInRegion = 0.0f;
+            size_t searchStart = (i > 100) ? i - 100 : 0;
+            size_t searchEnd = std::min(i + 100, bufferSize);
+            for (size_t j = searchStart; j < searchEnd; ++j) {
+                maxInRegion = std::max(maxInRegion, std::abs(left[j]));
+            }
+            if (maxInRegion > 0.01f) {
+                peakAmplitudes.push_back(maxInRegion);
+            }
+        }
+
+        // With 50% feedback, we should get at least 3-4 audible echoes
+        // (1.0 -> 0.5 -> 0.25 -> 0.125 -> 0.0625...)
+        REQUIRE(peakAmplitudes.size() >= 3);
+
+        // Verify echoes are decaying (each should be smaller than previous)
+        for (size_t i = 1; i < peakAmplitudes.size(); ++i) {
+            REQUIRE(peakAmplitudes[i] < peakAmplitudes[i - 1]);
+        }
+    }
+
+    SECTION("zero feedback produces only one echo") {
+        delay.setMotorSpeed(50.0f);
+        delay.setFeedback(0.0f);     // No feedback
+        delay.setMix(1.0f);
+        delay.setWear(0.0f);
+        delay.setSaturation(0.0f);
+        delay.setAge(0.0f);
+        delay.setHeadEnabled(1, false);
+        delay.setHeadEnabled(2, false);
+        delay.reset();
+
+        const size_t bufferSize = 11025;  // 250ms
+        std::vector<float> left(bufferSize, 0.0f);
+        std::vector<float> right(bufferSize, 0.0f);
+        left[0] = 1.0f;
+        right[0] = 1.0f;
+
+        delay.process(left.data(), right.data(), bufferSize);
+
+        // Count significant peaks after the first echo
+        const size_t delaySamples = 2205;
+        size_t echoCount = 0;
+        for (size_t i = delaySamples + 500; i < bufferSize; i += delaySamples) {
+            float maxInRegion = 0.0f;
+            size_t searchStart = (i > 100) ? i - 100 : 0;
+            size_t searchEnd = std::min(i + 100, bufferSize);
+            for (size_t j = searchStart; j < searchEnd; ++j) {
+                maxInRegion = std::max(maxInRegion, std::abs(left[j]));
+            }
+            if (maxInRegion > 0.05f) {  // Significant echo
+                echoCount++;
+            }
+        }
+
+        // With zero feedback, there should be no additional echoes after first
+        REQUIRE(echoCount == 0);
+    }
+
+    SECTION("higher feedback produces more audible repeats") {
+        delay.setMotorSpeed(50.0f);
+        delay.setMix(1.0f);
+        delay.setWear(0.0f);
+        delay.setSaturation(0.0f);
+        delay.setAge(0.0f);
+        delay.setHeadEnabled(1, false);
+        delay.setHeadEnabled(2, false);
+
+        const size_t bufferSize = 22050;
+        const size_t delaySamples = 2205;
+
+        // Test with low feedback
+        delay.setFeedback(0.25f);
+        delay.reset();
+        std::vector<float> lowFbLeft(bufferSize, 0.0f);
+        std::vector<float> lowFbRight(bufferSize, 0.0f);
+        lowFbLeft[0] = 1.0f;
+        lowFbRight[0] = 1.0f;
+        delay.process(lowFbLeft.data(), lowFbRight.data(), bufferSize);
+
+        // Test with high feedback
+        delay.setFeedback(0.75f);
+        delay.reset();
+        std::vector<float> highFbLeft(bufferSize, 0.0f);
+        std::vector<float> highFbRight(bufferSize, 0.0f);
+        highFbLeft[0] = 1.0f;
+        highFbRight[0] = 1.0f;
+        delay.process(highFbLeft.data(), highFbRight.data(), bufferSize);
+
+        // Count audible echoes for each
+        auto countEchoes = [&](const std::vector<float>& buffer) {
+            size_t count = 0;
+            for (size_t i = delaySamples; i < bufferSize; i += delaySamples) {
+                float maxInRegion = 0.0f;
+                size_t searchStart = (i > 100) ? i - 100 : 0;
+                size_t searchEnd = std::min(i + 100, bufferSize);
+                for (size_t j = searchStart; j < searchEnd; ++j) {
+                    maxInRegion = std::max(maxInRegion, std::abs(buffer[j]));
+                }
+                if (maxInRegion > 0.02f) {
+                    count++;
+                }
+            }
+            return count;
+        };
+
+        size_t lowFbEchoes = countEchoes(lowFbLeft);
+        size_t highFbEchoes = countEchoes(highFbLeft);
+
+        // Higher feedback should produce more audible echoes
+        REQUIRE(highFbEchoes > lowFbEchoes);
+    }
+}
+
+TEST_CASE("TapeDelay produces delayed output", "[features][tape-delay][signal-flow]") {
+    TapeDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+
+    SECTION("impulse appears at correct delay time") {
+        delay.setMotorSpeed(100.0f);  // 100ms delay
+        delay.setFeedback(0.0f);
+        delay.setMix(1.0f);           // Full wet to see only delayed signal
+        delay.setWear(0.0f);
+        delay.setSaturation(0.0f);
+        delay.setAge(0.0f);
+        delay.setHeadEnabled(1, false);
+        delay.setHeadEnabled(2, false);
+        delay.reset();
+
+        // Need enough samples to see the echo (100ms = 4410 samples)
+        const size_t bufferSize = 8820;  // 200ms
+        std::vector<float> left(bufferSize, 0.0f);
+        std::vector<float> right(bufferSize, 0.0f);
+        left[0] = 1.0f;
+        right[0] = 1.0f;
+
+        delay.process(left.data(), right.data(), bufferSize);
+
+        // Find the peak (echo position)
+        size_t peakPos = 0;
+        float peakValue = 0.0f;
+        for (size_t i = 1000; i < bufferSize; ++i) {  // Skip initial samples
+            if (std::abs(left[i]) > peakValue) {
+                peakValue = std::abs(left[i]);
+                peakPos = i;
+            }
+        }
+
+        // Expected echo at ~4410 samples (100ms at 44.1kHz)
+        // Allow ±5% tolerance for motor inertia and interpolation
+        const size_t expectedPos = 4410;
+        const size_t tolerance = 220;  // 5ms tolerance
+
+        // Echo should be significant (attenuation through processing chain is normal)
+        REQUIRE(peakValue > 0.2f);
+        REQUIRE(peakPos >= expectedPos - tolerance);
+        REQUIRE(peakPos <= expectedPos + tolerance);
+    }
+}
+
+// =============================================================================
 // FR-024: Age Control Affects Artifact Intensity
 // =============================================================================
 

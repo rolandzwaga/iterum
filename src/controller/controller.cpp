@@ -4,6 +4,89 @@
 
 #include "controller.h"
 #include "plugin_ids.h"
+
+#include "public.sdk/source/vst/vstparameters.h"
+
+#include "vstgui/lib/cframe.h"
+#include "vstgui/lib/platform/iplatformframe.h"
+#include "vstgui/lib/controls/ccontrol.h"
+#include "vstgui/lib/controls/coptionmenu.h"
+#include "vstgui/uidescription/uiviewswitchcontainer.h"
+
+#if defined(_DEBUG) && defined(_WIN32)
+#include "vstgui/lib/platform/win32/win32factory.h"
+#include "vstgui/uidescription/uiattributes.h"
+#include <windows.h>
+#include <fstream>
+#include <sstream>
+
+// Debug helper to log view hierarchy
+static void logViewHierarchy(VSTGUI::CView* view, std::ofstream& log, int depth = 0) {
+    if (!view) return;
+
+    std::string indent(depth * 2, ' ');
+
+    // Get class name
+    const char* className = "Unknown";
+    if (dynamic_cast<VSTGUI::UIViewSwitchContainer*>(view)) {
+        className = "UIViewSwitchContainer";
+    } else if (dynamic_cast<VSTGUI::COptionMenu*>(view)) {
+        className = "COptionMenu";
+    } else if (dynamic_cast<VSTGUI::CControl*>(view)) {
+        className = "CControl";
+    } else if (view->asViewContainer()) {
+        className = "CViewContainer";
+    } else {
+        className = "CView";
+    }
+
+    // Get control tag if it's a control
+    int32_t tag = -1;
+    if (auto* control = dynamic_cast<VSTGUI::CControl*>(view)) {
+        tag = control->getTag();
+    }
+
+    auto size = view->getViewSize();
+    log << indent << className;
+    if (tag >= 0) {
+        log << " [tag=" << tag << "]";
+    }
+    log << " size=" << size.getWidth() << "x" << size.getHeight();
+    log << "\n";
+
+    // Recurse into containers
+    if (auto* container = view->asViewContainer()) {
+        VSTGUI::ViewIterator it(container);
+        while (*it) {
+            logViewHierarchy(*it, log, depth + 1);
+            ++it;
+        }
+    }
+}
+
+// Debug helper to find control by tag
+static VSTGUI::CControl* findControlByTag(VSTGUI::CViewContainer* container, int32_t tag) {
+    if (!container) return nullptr;
+
+    VSTGUI::ViewIterator it(container);
+    while (*it) {
+        if (auto* control = dynamic_cast<VSTGUI::CControl*>(*it)) {
+            if (control->getTag() == tag) {
+                return control;
+            }
+        }
+        if (auto* childContainer = (*it)->asViewContainer()) {
+            if (auto* found = findControlByTag(childContainer, tag)) {
+                return found;
+            }
+        }
+        ++it;
+    }
+    return nullptr;
+}
+
+#endif
+
 #include "parameters/bbd_params.h"
 #include "parameters/digital_params.h"
 #include "parameters/ducking_params.h"
@@ -29,6 +112,18 @@ namespace Iterum {
 // ==============================================================================
 
 Steinberg::tresult PLUGIN_API Controller::initialize(FUnknown* context) {
+#if defined(_DEBUG) && defined(_WIN32)
+    // Debug: Write to log file during initialization
+    {
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        std::string logPath = std::string(tempPath) + "iterum_debug.log";
+        std::ofstream log(logPath, std::ios::app);
+        log << "=== Iterum Controller::initialize called ===\n";
+        log.flush();
+    }
+#endif
+
     // Always call parent first
     Steinberg::tresult result = EditControllerEx1::initialize(context);
     if (result != Steinberg::kResultTrue) {
@@ -64,6 +159,29 @@ Steinberg::tresult PLUGIN_API Controller::initialize(FUnknown* context) {
         0,                          // unitId
         STR16("Gain")              // shortTitle
     );
+
+    // Mode parameter (selects active delay mode)
+    // MUST use StringListParameter for proper toPlain() scaling!
+    // Basic Parameter::toPlain() just returns normalized value unchanged.
+    auto* modeParam = new Steinberg::Vst::StringListParameter(
+        STR16("Mode"),             // title
+        kModeId,                    // parameter ID
+        nullptr,                    // units
+        Steinberg::Vst::ParameterInfo::kCanAutomate |
+        Steinberg::Vst::ParameterInfo::kIsList
+    );
+    modeParam->appendString(STR16("Granular"));
+    modeParam->appendString(STR16("Spectral"));
+    modeParam->appendString(STR16("Shimmer"));
+    modeParam->appendString(STR16("Tape"));
+    modeParam->appendString(STR16("BBD"));
+    modeParam->appendString(STR16("Digital"));
+    modeParam->appendString(STR16("PingPong"));
+    modeParam->appendString(STR16("Reverse"));
+    modeParam->appendString(STR16("MultiTap"));
+    modeParam->appendString(STR16("Freeze"));
+    modeParam->appendString(STR16("Ducking"));
+    parameters.addParameter(modeParam);
 
     // ==========================================================================
     // Mode-Specific Parameter Registration
@@ -119,6 +237,12 @@ Steinberg::tresult PLUGIN_API Controller::setComponentState(
         setParamNormalized(kBypassId, bypass ? 1.0 : 0.0);
     }
 
+    Steinberg::int32 mode = 0;
+    if (streamer.readInt32(mode)) {
+        // Convert mode index (0-10) to normalized (0.0-1.0)
+        setParamNormalized(kModeId, static_cast<double>(mode) / 10.0);
+    }
+
     // ==========================================================================
     // Sync mode-specific parameters (order MUST match Processor::getState)
     // ==========================================================================
@@ -167,12 +291,52 @@ Steinberg::IPlugView* PLUGIN_API Controller::createView(
     // ==========================================================================
 
     if (Steinberg::FIDStringsEqual(name, Steinberg::Vst::ViewType::kEditor)) {
+#if defined(_DEBUG) && defined(_WIN32)
+        // Debug: Write info to log file for easy diagnosis
+        {
+            char tempPath[MAX_PATH];
+            GetTempPathA(MAX_PATH, tempPath);
+            std::string logPath = std::string(tempPath) + "iterum_debug.log";
+            std::ofstream log(logPath, std::ios::app);
+
+            log << "=== Iterum createView called ===\n";
+
+            if (auto* factory = VSTGUI::getPlatformFactory().asWin32Factory()) {
+                log << "Got Win32Factory: OK\n";
+
+                if (auto path = factory->getResourceBasePath()) {
+                    std::string basePath(*path);
+                    std::string fullPath = basePath + "\\editor.uidesc";
+                    log << "Resource base path: " << basePath << "\n";
+
+                    // Check if file actually exists
+                    DWORD attribs = GetFileAttributesA(fullPath.c_str());
+                    if (attribs != INVALID_FILE_ATTRIBUTES) {
+                        log << "editor.uidesc EXISTS at path: OK\n";
+                    } else {
+                        log << "ERROR: editor.uidesc NOT FOUND at: " << fullPath << "\n";
+                        log << "GetLastError: " << GetLastError() << "\n";
+                    }
+                } else {
+                    log << "ERROR: Resource base path is NOT SET!\n";
+                    log << "This means setupVSTGUIBundleSupport was not called.\n";
+                }
+            } else {
+                log << "ERROR: Cannot get Win32Factory!\n";
+            }
+
+            log << "Creating VST3Editor with editor.uidesc...\n";
+            log.flush();
+        }
+#endif
+
         // Create VSTGUI editor from UIDescription file
         auto* editor = new VSTGUI::VST3Editor(
             this,                           // controller
             "Editor",                       // viewName (matches uidesc)
             "editor.uidesc"                 // UIDescription file
         );
+
         return editor;
     }
 
@@ -216,57 +380,65 @@ Steinberg::tresult PLUGIN_API Controller::getParamStringByValue(
                 return Steinberg::kResultTrue;
             }
 
+            // kModeId is handled by StringListParameter automatically
+
             default:
                 return EditControllerEx1::getParamStringByValue(
                     id, valueNormalized, string);
         }
     }
-    else if (id >= kGranularBaseId && id <= kGranularEndId) {
-        // Granular Delay parameters (100-199) - spec 034
-        return formatGranularParam(id, valueNormalized, string);
+    // =========================================================================
+    // Mode-Specific Parameter Formatting
+    // =========================================================================
+    // Each formatXxxParam function handles continuous parameters but returns
+    // kResultFalse for StringListParameters (dropdowns), which must be handled
+    // by the base class EditControllerEx1::getParamStringByValue().
+    // =========================================================================
+
+    Steinberg::tresult result = Steinberg::kResultFalse;
+
+    if (id >= kGranularBaseId && id <= kGranularEndId) {
+        result = formatGranularParam(id, valueNormalized, string);
     }
     else if (id >= kSpectralBaseId && id <= kSpectralEndId) {
-        // Spectral Delay parameters (200-299) - spec 033
-        return formatSpectralParam(id, valueNormalized, string);
+        result = formatSpectralParam(id, valueNormalized, string);
     }
     else if (id >= kShimmerBaseId && id <= kShimmerEndId) {
-        // Shimmer Delay parameters (300-399) - spec 029
-        return formatShimmerParam(id, valueNormalized, string);
+        result = formatShimmerParam(id, valueNormalized, string);
     }
     else if (id >= kTapeBaseId && id <= kTapeEndId) {
-        // Tape Delay parameters (400-499) - spec 024
-        return formatTapeParam(id, valueNormalized, string);
+        result = formatTapeParam(id, valueNormalized, string);
     }
     else if (id >= kBBDBaseId && id <= kBBDEndId) {
-        // BBD Delay parameters (500-599) - spec 025
-        return formatBBDParam(id, valueNormalized, string);
+        result = formatBBDParam(id, valueNormalized, string);
     }
     else if (id >= kDigitalBaseId && id <= kDigitalEndId) {
-        // Digital Delay parameters (600-699) - spec 026
-        return formatDigitalParam(id, valueNormalized, string);
+        result = formatDigitalParam(id, valueNormalized, string);
     }
     else if (id >= kPingPongBaseId && id <= kPingPongEndId) {
-        // PingPong Delay parameters (700-799) - spec 027
-        return formatPingPongParam(id, valueNormalized, string);
+        result = formatPingPongParam(id, valueNormalized, string);
     }
     else if (id >= kReverseBaseId && id <= kReverseEndId) {
-        // Reverse Delay parameters (800-899) - spec 030
-        return formatReverseParam(id, valueNormalized, string);
+        result = formatReverseParam(id, valueNormalized, string);
     }
     else if (id >= kMultiTapBaseId && id <= kMultiTapEndId) {
-        // MultiTap Delay parameters (900-999) - spec 028
-        return formatMultiTapParam(id, valueNormalized, string);
+        result = formatMultiTapParam(id, valueNormalized, string);
     }
     else if (id >= kFreezeBaseId && id <= kFreezeEndId) {
-        // Freeze Mode parameters (1000-1099) - spec 031
-        return formatFreezeParam(id, valueNormalized, string);
+        result = formatFreezeParam(id, valueNormalized, string);
     }
     else if (id >= kDuckingBaseId && id <= kDuckingEndId) {
-        // Ducking Delay parameters (1100-1199) - spec 032
-        return formatDuckingParam(id, valueNormalized, string);
+        result = formatDuckingParam(id, valueNormalized, string);
     }
 
-    return EditControllerEx1::getParamStringByValue(id, valueNormalized, string);
+    // If the mode-specific formatter didn't handle it (returns kResultFalse),
+    // fall back to base class. This is essential for StringListParameters
+    // (dropdowns) which use their own toString() method.
+    if (result != Steinberg::kResultOk) {
+        return EditControllerEx1::getParamStringByValue(id, valueNormalized, string);
+    }
+
+    return result;
 }
 
 Steinberg::tresult PLUGIN_API Controller::getParamValueByString(
@@ -294,6 +466,139 @@ Steinberg::tresult PLUGIN_API Controller::getParamValueByString(
             return EditControllerEx1::getParamValueByString(
                 id, string, valueNormalized);
     }
+}
+
+// ==============================================================================
+// IEditController - Parameter Changes (DEBUG LOGGING)
+// ==============================================================================
+
+Steinberg::tresult PLUGIN_API Controller::setParamNormalized(
+    Steinberg::Vst::ParamID id,
+    Steinberg::Vst::ParamValue value) {
+
+#if defined(_DEBUG) && defined(_WIN32)
+    if (id == kModeId) {
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        std::string logPath = std::string(tempPath) + "iterum_debug.log";
+        std::ofstream log(logPath, std::ios::app);
+
+        log << "\n=== setParamNormalized kModeId ===\n";
+        log << "  Input normalized value: " << value << "\n";
+
+        // Use SDK toPlain() to get the mode index
+        if (auto* param = getParameterObject(kModeId)) {
+            auto plainValue = param->toPlain(value);
+            log << "  SDK toPlain() result: " << plainValue << "\n";
+            log << "  As integer index: " << static_cast<int>(plainValue) << "\n";
+
+            // Log parameter info using the ParameterInfo struct
+            log << "  Parameter stepCount: " << param->getInfo().stepCount << "\n";
+            log << "  Parameter defaultNormalized: " << param->getInfo().defaultNormalizedValue << "\n";
+        } else {
+            log << "  ERROR: getParameterObject(kModeId) returned nullptr!\n";
+        }
+
+        // Log the current state of the UI if editor is open
+        if (activeEditor_) {
+            if (auto* frame = activeEditor_->getFrame()) {
+                // Find the Mode COptionMenu
+                auto* modeControl = findControlByTag(frame, kModeId);
+                if (modeControl) {
+                    log << "  COptionMenu state BEFORE update:\n";
+                    log << "    getValue(): " << modeControl->getValue() << "\n";
+                    log << "    getValueNormalized(): " << modeControl->getValueNormalized() << "\n";
+                    if (auto* optMenu = dynamic_cast<VSTGUI::COptionMenu*>(modeControl)) {
+                        log << "    getCurrentIndex(): " << optMenu->getCurrentIndex() << "\n";
+                        log << "    getNbEntries(): " << optMenu->getNbEntries() << "\n";
+                    }
+                }
+
+                // Find UIViewSwitchContainer and log its state
+                VSTGUI::ViewIterator it(frame);
+                while (*it) {
+                    if (auto* viewSwitch = dynamic_cast<VSTGUI::UIViewSwitchContainer*>(*it)) {
+                        log << "  UIViewSwitchContainer state BEFORE update:\n";
+                        log << "    currentViewIndex: " << viewSwitch->getCurrentViewIndex() << "\n";
+                        break;
+                    }
+                    // Check child containers
+                    if (auto* container = (*it)->asViewContainer()) {
+                        VSTGUI::ViewIterator childIt(container);
+                        while (*childIt) {
+                            if (auto* viewSwitch = dynamic_cast<VSTGUI::UIViewSwitchContainer*>(*childIt)) {
+                                log << "  UIViewSwitchContainer state BEFORE update:\n";
+                                log << "    currentViewIndex: " << viewSwitch->getCurrentViewIndex() << "\n";
+                                break;
+                            }
+                            ++childIt;
+                        }
+                    }
+                    ++it;
+                }
+            }
+        }
+
+        log << "  Calling EditControllerEx1::setParamNormalized...\n";
+        log.flush();
+    }
+#endif
+
+    // Call base class - this is the ONLY thing that actually happens
+    auto result = EditControllerEx1::setParamNormalized(id, value);
+
+#if defined(_DEBUG) && defined(_WIN32)
+    if (id == kModeId) {
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        std::string logPath = std::string(tempPath) + "iterum_debug.log";
+        std::ofstream log(logPath, std::ios::app);
+
+        log << "  Base class returned: " << (result == Steinberg::kResultTrue ? "kResultTrue" : "other") << "\n";
+
+        // Log state AFTER the base class update
+        if (activeEditor_) {
+            if (auto* frame = activeEditor_->getFrame()) {
+                auto* modeControl = findControlByTag(frame, kModeId);
+                if (modeControl) {
+                    log << "  COptionMenu state AFTER update:\n";
+                    log << "    getValue(): " << modeControl->getValue() << "\n";
+                    log << "    getValueNormalized(): " << modeControl->getValueNormalized() << "\n";
+                    if (auto* optMenu = dynamic_cast<VSTGUI::COptionMenu*>(modeControl)) {
+                        log << "    getCurrentIndex(): " << optMenu->getCurrentIndex() << "\n";
+                    }
+                }
+
+                // Find UIViewSwitchContainer AFTER update
+                VSTGUI::ViewIterator it(frame);
+                while (*it) {
+                    if (auto* viewSwitch = dynamic_cast<VSTGUI::UIViewSwitchContainer*>(*it)) {
+                        log << "  UIViewSwitchContainer state AFTER update:\n";
+                        log << "    currentViewIndex: " << viewSwitch->getCurrentViewIndex() << "\n";
+                        break;
+                    }
+                    if (auto* container = (*it)->asViewContainer()) {
+                        VSTGUI::ViewIterator childIt(container);
+                        while (*childIt) {
+                            if (auto* viewSwitch = dynamic_cast<VSTGUI::UIViewSwitchContainer*>(*childIt)) {
+                                log << "  UIViewSwitchContainer state AFTER update:\n";
+                                log << "    currentViewIndex: " << viewSwitch->getCurrentViewIndex() << "\n";
+                                break;
+                            }
+                            ++childIt;
+                        }
+                    }
+                    ++it;
+                }
+            }
+        }
+
+        log << "=== END setParamNormalized ===\n\n";
+        log.flush();
+    }
+#endif
+
+    return result;
 }
 
 // ==============================================================================
@@ -325,15 +630,91 @@ VSTGUI::CView* Controller::createCustomView(
 }
 
 void Controller::didOpen(VSTGUI::VST3Editor* editor) {
-    // Called when editor is opened
-    // Good place to start timers, fetch initial state, etc.
-    (void)editor;
+    // Store editor reference for manual UI control
+    activeEditor_ = editor;
+
+    // =========================================================================
+    // Option Menu Configuration
+    //
+    // Native Windows popup (setupGenericOptionMenu false):
+    //   + Click to open, click to select (standard behavior)
+    //   - May have WM_COMMAND message issues in some hosts
+    //
+    // Generic VSTGUI menu (setupGenericOptionMenu true):
+    //   + Works reliably across all hosts
+    //   - Uses hold-to-select behavior (hold mouse, drag to item, release)
+    //
+    // Currently: Using native Windows popup for standard click behavior
+    // If selection doesn't work in your host, enable the generic menu below
+    // =========================================================================
+    if (editor) {
+        if (auto* frame = editor->getFrame()) {
+            if (auto* platformFrame = frame->getPlatformFrame()) {
+                // Use generic VSTGUI menu for reliable cross-host behavior
+                platformFrame->setupGenericOptionMenu(true);
+            }
+            // UIViewSwitchContainer is automatically controlled via
+            // template-switch-control="Mode" in editor.uidesc
+        }
+    }
+
+#if defined(_DEBUG) && defined(_WIN32)
+    {
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        std::string logPath = std::string(tempPath) + "iterum_debug.log";
+        std::ofstream log(logPath, std::ios::app);
+
+        log << "\n========================================\n";
+        log << "=== didOpen called ===\n";
+        log << "========================================\n";
+
+        if (editor) {
+            log << "Editor pointer: OK\n";
+
+            if (auto* frame = editor->getFrame()) {
+                log << "Frame exists\n";
+                auto size = frame->getViewSize();
+                log << "Frame size: " << size.getWidth() << "x" << size.getHeight() << "\n";
+                log << "Frame has " << frame->getNbViews() << " child views\n";
+
+                // Log full view hierarchy
+                log << "\n--- VIEW HIERARCHY ---\n";
+                logViewHierarchy(frame, log, 0);
+
+                // Find and log Mode control (tag 2)
+                log << "\n--- MODE CONTROL SEARCH ---\n";
+                auto* modeControl = findControlByTag(frame, kModeId);
+                if (modeControl) {
+                    log << "Found Mode control at tag " << kModeId << "\n";
+                    log << "  Value: " << modeControl->getValue() << "\n";
+                    log << "  ValueNormalized: " << modeControl->getValueNormalized() << "\n";
+                    if (auto* optMenu = dynamic_cast<VSTGUI::COptionMenu*>(modeControl)) {
+                        log << "  Type: COptionMenu\n";
+                        log << "  Current index: " << optMenu->getCurrentIndex() << "\n";
+                        log << "  Nb entries: " << optMenu->getNbEntries() << "\n";
+                    }
+                } else {
+                    log << "ERROR: Mode control (tag " << kModeId << ") NOT FOUND!\n";
+                }
+
+                log << "\n--- END OF DIDOPEN LOG ---\n";
+            } else {
+                log << "ERROR: Frame is NULL!\n";
+            }
+        } else {
+            log << "ERROR: Editor pointer is NULL!\n";
+        }
+
+        log.flush();
+    }
+#endif
 }
 
 void Controller::willClose(VSTGUI::VST3Editor* editor) {
     // Called before editor closes
-    // Clean up any resources created in didOpen
     (void)editor;
+    activeEditor_ = nullptr;
 }
 
 } // namespace Iterum

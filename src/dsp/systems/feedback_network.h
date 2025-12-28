@@ -26,7 +26,7 @@
 
 #include "dsp/core/block_context.h"
 #include "dsp/core/stereo_utils.h"
-#include "dsp/primitives/delay_line.h"
+#include "dsp/primitives/crossfading_delay_line.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/processors/multimode_filter.h"
 #include "dsp/processors/saturation_processor.h"
@@ -174,11 +174,12 @@ public:
             const float delayMs = delaySmoother_.process();
             const float inputGain = inputMuteSmoother_.process();
 
-            // Convert delay to samples (subtract 1 for read-before-write timing)
-            const float delaySamples = std::max(0.0f, msToSamples(delayMs) - 1.0f);
+            // Set delay time on crossfading delay line (handles large changes smoothly)
+            delayLineL_.setDelayMs(delayMs);
 
             // Read delayed sample first (read-before-write pattern)
-            const float delayed = delayLineL_.readLinear(delaySamples);
+            // CrossfadingDelayLine handles the crossfading internally
+            const float delayed = delayLineL_.read();
 
             // Calculate feedback signal
             float feedbackSignal = delayed;
@@ -224,12 +225,14 @@ public:
             const float crossFeedback = crossFeedbackSmoother_.process();
             const float inputGain = inputMuteSmoother_.process();
 
-            // Convert delay to samples (subtract 1 for read-before-write timing)
-            const float delaySamples = std::max(0.0f, msToSamples(delayMs) - 1.0f);
+            // Set delay time on crossfading delay lines (handles large changes smoothly)
+            delayLineL_.setDelayMs(delayMs);
+            delayLineR_.setDelayMs(delayMs);
 
             // Read delayed samples first (read-before-write pattern)
-            const float delayedL = delayLineL_.readLinear(delaySamples);
-            const float delayedR = delayLineR_.readLinear(delaySamples);
+            // CrossfadingDelayLine handles the crossfading internally
+            const float delayedL = delayLineL_.read();
+            const float delayedR = delayLineR_.read();
 
             // Calculate feedback signal
             float feedbackL = delayedL;
@@ -315,6 +318,9 @@ public:
         // If not yet processing, snap immediately for instant setup
         if (!hasProcessed_) {
             delaySmoother_.snapTo(ms);
+            // Also snap the CrossfadingDelayLines to avoid crossfade transient
+            delayLineL_.snapToDelayMs(ms);
+            delayLineR_.snapToDelayMs(ms);
         }
     }
 
@@ -419,8 +425,8 @@ public:
 
 private:
     // Layer 1 primitives
-    DelayLine delayLineL_;
-    DelayLine delayLineR_;
+    CrossfadingDelayLine delayLineL_;
+    CrossfadingDelayLine delayLineR_;
     OnePoleSmoother feedbackSmoother_;
     OnePoleSmoother delaySmoother_;
     OnePoleSmoother crossFeedbackSmoother_;
