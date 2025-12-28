@@ -50,13 +50,15 @@ jobs:
             fetchcontent-${{ runner.os }}-ninja-
 
       # Use Ninja with sccache for faster builds
-      # The /Zi -> /Z7 workaround in CMakeLists.txt enables PDB-free compilation
+      # - CMAKE_DISABLE_PRECOMPILE_HEADERS=ON: VSTGUI's PCH uses /Yc /Fp which sccache can't cache
+      # - /Zi -> /Z7 workaround in CMakeLists.txt enables PDB-free compilation
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
 
       - name: Build Tests
         run: cmake --build build --target dsp_tests approval_tests vst_tests --parallel
@@ -114,8 +116,9 @@ jobs:
 
       # Use Xcode generator with ccache via TheLartians/Ccache.cmake wrapper scripts
       # This works around Xcode ignoring CMAKE_<LANG>_COMPILER_LAUNCHER
+      # CMAKE_DISABLE_PRECOMPILE_HEADERS=ON: VSTGUI's PCH is incompatible with ccache
       - name: Configure CMake
-        run: cmake -S . -B build -G Xcode -DUSE_CCACHE=ON
+        run: cmake -S . -B build -G Xcode -DUSE_CCACHE=ON -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
 
       - name: Build Tests
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests vst_tests --parallel
@@ -179,12 +182,14 @@ jobs:
           restore-keys: |
             fetchcontent-${{ runner.os }}-
 
+      # CMAKE_DISABLE_PRECOMPILE_HEADERS=ON: VSTGUI's PCH is incompatible with ccache
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
 
       - name: Build Tests
         run: cmake --build build --target dsp_tests approval_tests vst_tests --parallel
@@ -197,6 +202,11 @@ jobs:
 
       - name: Run VST3 Validator (Extensive)
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure -R "vst3_validator_extensive"
+
+      # Show ccache statistics for debugging cache effectiveness
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
       - name: Upload Plugin Artifact
         uses: actions/upload-artifact@v4
