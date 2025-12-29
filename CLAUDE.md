@@ -95,6 +95,58 @@ CRITICAL: Follow these guidelines when using tools operating on file paths EXCEP
 
 **If a VSTGUI feature doesn't work correctly, the fix must also use VSTGUI.**
 
+#### ⚠️ BUILD-BEFORE-TEST DISCIPLINE (MANDATORY)
+
+**CRITICAL**: After ANY code changes, you MUST verify the code builds BEFORE attempting to run tests.
+
+**Mandatory Workflow:**
+
+1. **Write code changes**
+2. **Build immediately**: `cmake --build build --config Release --target <target>`
+3. **Check for compilation errors**: Scan build output for `error` keywords
+4. **Fix any errors**: If build fails, fix compilation errors BEFORE doing anything else
+5. **Verify clean build**: Build must complete with ZERO compilation errors
+6. **ONLY THEN run tests**
+
+**Forbidden Patterns:**
+
+- ❌ Writing code and immediately running tests without building
+- ❌ Blaming "CMake cache issues" when you haven't verified compilation succeeds
+- ❌ Looping on test execution when you haven't confirmed the code compiles
+- ❌ Assuming code is fine just because you wrote it
+- ❌ Trying to run tests multiple times with different flags when build is broken
+
+**When Tests Don't Work:**
+
+If tests don't run/appear/pass, follow this checklist IN ORDER:
+
+1. **FIRST**: Re-run the build and check for compilation errors (`grep -i error`)
+2. **SECOND**: Check test binary exists and has recent timestamp
+3. **THIRD**: Verify test is registered in CMakeLists.txt
+4. **FOURTH**: Check test discovery/registration (CTest, Catch2)
+5. **LAST**: Consider tooling/cache issues
+
+**Why This Matters:**
+
+- Running tests on code that doesn't compile wastes time debugging phantom issues
+- Test frameworks cannot register tests from code that failed to compile
+- "CMake cache issues" are rarely the root cause - broken code is
+- Compilation errors provide immediate, actionable feedback
+- Build output tells you EXACTLY what's wrong with your code
+
+**Real Example of Failure:**
+
+- Wrote `int32 currentMode` instead of `Steinberg::int32 currentMode`
+- Tried to run tests without building
+- Tests didn't appear, blamed "CMake cache"
+- Spent 10+ tool calls trying different test invocations
+- Never looked at build output which showed `error C2065: 'int32': undeclared identifier`
+- Wasted massive time because compilation was never verified
+
+**The Rule:**
+
+**NO TESTS WITHOUT A CLEAN BUILD. PERIOD.**
+
 
 ### 1. Real-Time Audio Thread Safety
 

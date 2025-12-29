@@ -106,6 +106,134 @@ build\bin\Debug\dsp_tests.exe "~[slow]"
 build\bin\Debug\dsp_tests.exe --list-tests
 ```
 
+---
+
+## Build Verification Before Testing (CRITICAL)
+
+**MANDATORY**: You MUST verify your code compiles successfully BEFORE attempting to run any tests.
+
+### The Rule
+
+**Tests cannot run if the code doesn't compile. Period.**
+
+### Required Workflow
+
+When writing or modifying test code, follow this exact sequence:
+
+1. **Write your test code** (following test-first development)
+2. **Build the test target**:
+   ```bash
+   cmake --build build --config Debug --target dsp_tests
+   ```
+3. **Check for compilation errors**:
+   - Look for `error` or `error C` in build output
+   - If ANY errors appear, **STOP** and fix them
+4. **Verify clean build**: Build must succeed with zero errors
+5. **Check test binary timestamp**:
+   ```bash
+   ls -la build/bin/Debug/dsp_tests.exe
+   ```
+   Ensure the timestamp is recent (just updated)
+6. **ONLY THEN run the tests**
+
+### When Tests Don't Appear or Fail Unexpectedly
+
+If tests don't show up in test lists or fail in unexpected ways, follow this troubleshooting checklist **IN ORDER**:
+
+#### 1. Verify Build Success (FIRST)
+```bash
+# Rebuild and check for errors
+cmake --build build --config Debug --target dsp_tests 2>&1 | grep -i "error"
+```
+- If you see ANY compilation errors, fix them before proceeding
+- Common errors: missing includes, type mismatches, syntax errors
+
+#### 2. Verify Test Binary Exists and Is Current
+```bash
+# Check if binary exists
+ls -la build/bin/Debug/dsp_tests.exe
+
+# Check timestamp - should be within last few minutes
+stat build/bin/Debug/dsp_tests.exe
+```
+
+#### 3. Verify Test Registration
+- Check that test file is listed in `tests/CMakeLists.txt`
+- For `dsp_tests`: File must be in `add_executable(dsp_tests ...)` block
+- For `vst_tests`: File must be in `add_executable(vst_tests ...)` block
+
+#### 4. Force Clean Rebuild
+```bash
+# Delete object files and rebuild
+cmake --build build --config Debug --target dsp_tests --clean-first
+```
+
+#### 5. Check Catch2 Test Registration
+```bash
+# List all registered tests
+build/bin/Debug/dsp_tests.exe --list-tests
+```
+
+#### 6. LAST RESORT: CMake Reconfigure
+```bash
+# Only if steps 1-5 didn't reveal the issue
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Debug --target dsp_tests
+```
+
+### Anti-Patterns (DO NOT DO THESE)
+
+❌ **Writing code and immediately running tests without building**
+- You don't know if your code even compiles
+- Test failures could be compilation errors, not logic errors
+
+❌ **Blaming "CMake cache issues" without checking build output**
+- 95% of the time, the code simply doesn't compile
+- Build errors tell you exactly what's wrong
+
+❌ **Looping on test execution with different flags**
+- If tests don't appear after multiple runs, **BUILD FIRST**
+- Running tests 10 different ways won't fix compilation errors
+
+❌ **Assuming code is correct because you wrote it**
+- Typos happen: `int32` vs `Steinberg::int32`
+- Missing includes, wrong namespaces, etc.
+- **Always verify the build succeeds**
+
+### Real Example: The int32 Incident
+
+**What Happened:**
+1. Wrote `int32 currentMode = ...` in controller.cpp
+2. Immediately tried to run tests
+3. Tests didn't appear in test list
+4. Blamed "CMake cache issues"
+5. Spent 10+ attempts trying different test invocations
+6. **Never checked build output**
+7. Build output clearly showed: `error C2065: 'int32': undeclared identifier`
+8. Should have been `Steinberg::int32`
+
+**What Should Have Happened:**
+1. Wrote code
+2. **Built immediately**: `cmake --build build --config Debug --target vst_tests`
+3. **Saw compilation error in output**
+4. Fixed error (changed to `Steinberg::int32`)
+5. Rebuilt successfully
+6. Ran tests
+7. Problem solved in 2 minutes instead of 20
+
+### Key Takeaway
+
+**If something doesn't work with your tests, the FIRST question is always: "Did I verify the code compiles?"**
+
+Not:
+- "Is CMake cache corrupted?"
+- "Is Catch2 discovery broken?"
+- "Is CTest misconfigured?"
+
+The answer is almost always: **Your code doesn't compile. Build it and look at the errors.**
+
+---
+
 ### Test Suite Architecture
 
 The project has **two separate test executables** to maintain clean dependency separation:

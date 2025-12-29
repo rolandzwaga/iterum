@@ -5,6 +5,38 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-12-29
+
+### Added
+
+- **Conditional Visibility for Delay Time Controls**
+  - Delay time knobs now automatically hide when time mode is set to "Synced"
+  - In synced mode, only note values control delay time, so the time knob is hidden to reduce UI clutter
+  - Applies to both Digital Delay and PingPong Delay modes
+  - Thread-safe implementation using VST3's IDependent mechanism
+  - Updates run on UI thread at 30Hz via UpdateHandler
+  - View-switch-safe: Uses dynamic tag-based control lookup instead of cached pointers
+  - Survives mode switching between Digital ↔ PingPong without losing functionality
+
+### Changed
+
+- **Default Time Mode**: Digital and PingPong delays now default to "Synced" instead of "Free"
+  - Tempo-synced delays are more common in modern production
+  - Users can still switch to "Free" mode for millisecond-based timing
+  - Delay time controls are hidden by default since synced mode ignores them
+
+### Fixed
+
+- **Thread Safety**: Visibility updates no longer cause crashes when triggered by automation or state loading
+  - Previously called `setVisible()` directly from parameter callbacks (can be called from any thread)
+  - Now uses IDependent pattern to defer updates to UI thread
+- **View-Switch Safety**: Visibility updates continue working after switching between Digital and PingPong modes
+  - UIViewSwitchContainer destroys/recreates controls when switching templates
+  - Fixed by using dynamic tag-based lookup instead of caching control pointers
+  - Added regression test documenting the dangling reference bug
+
+---
+
 ## [0.1.1] - 2025-12-28
 
 ### Fixed
