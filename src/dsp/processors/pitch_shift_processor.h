@@ -443,8 +443,6 @@ private:
         // The window extends from 0 to 2*quefrencySamples_ in positive quefrencies
         // and is mirrored for negative quefrencies
 
-        const std::size_t windowLen = quefrencySamples_ * 2;
-
         for (std::size_t q = 0; q <= quefrencySamples_; ++q) {
             // Hann window: 0.5 * (1 + cos(π * q / quefrencySamples_))
             float t = static_cast<float>(q) / static_cast<float>(quefrencySamples_);
