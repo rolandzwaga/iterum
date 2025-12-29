@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <cstddef>  // size_t
 #include <cstdint>
 
 namespace Iterum {
