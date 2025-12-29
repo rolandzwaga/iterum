@@ -430,6 +430,7 @@ target_compile_options(benchmark_spectral_delay PRIVATE
 
 add_executable(vst_tests
     unit/vst/string_list_parameter_test.cpp
+    unit/vst/control_visibility_test.cpp
 )
 
 target_include_directories(vst_tests

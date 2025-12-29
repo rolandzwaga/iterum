@@ -121,6 +121,19 @@ private:
 
     // Active editor instance
     VSTGUI::VST3Editor* activeEditor_ = nullptr;
+
+    // Control references for conditional visibility
+    // These controls are hidden when their corresponding time mode is "Synced"
+    VSTGUI::CControl* digitalDelayTimeControl_ = nullptr;
+    VSTGUI::CControl* pingPongDelayTimeControl_ = nullptr;
+
+    // ==========================================================================
+    // Helper Methods
+    // ==========================================================================
+
+    /// Update visibility of delay time control based on time mode parameter value
+    /// @param timeModeId Parameter ID of the time mode (kDigitalTimeModeId or kPingPongTimeModeId)
+    void updateDelayTimeVisibility(Steinberg::Vst::ParamID timeModeId);
 };
 
 } // namespace Iterum

@@ -549,6 +549,11 @@ Steinberg::tresult PLUGIN_API Controller::setParamNormalized(
     // Call base class - this is the ONLY thing that actually happens
     auto result = EditControllerEx1::setParamNormalized(id, value);
 
+    // Handle time mode changes for conditional visibility
+    if (id == kDigitalTimeModeId || id == kPingPongTimeModeId) {
+        updateDelayTimeVisibility(id);
+    }
+
 #if defined(_DEBUG) && defined(_WIN32)
     if (id == kModeId) {
         char tempPath[MAX_PATH];
@@ -657,6 +662,44 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
             }
             // UIViewSwitchContainer is automatically controlled via
             // template-switch-control="Mode" in editor.uidesc
+
+#if defined(_DEBUG) && defined(_WIN32)
+            // Get delay time control references for conditional visibility
+            digitalDelayTimeControl_ = findControlByTag(frame, kDigitalDelayTimeId);
+            pingPongDelayTimeControl_ = findControlByTag(frame, kPingPongDelayTimeId);
+#else
+            // In release builds, walk the view hierarchy to find controls
+            // (findControlByTag is only available in debug builds)
+            auto findControl = [frame](int32_t tag) -> VSTGUI::CControl* {
+                std::function<VSTGUI::CControl*(VSTGUI::CViewContainer*)> search;
+                search = [tag, &search](VSTGUI::CViewContainer* container) -> VSTGUI::CControl* {
+                    if (!container) return nullptr;
+                    VSTGUI::ViewIterator it(container);
+                    while (*it) {
+                        if (auto* control = dynamic_cast<VSTGUI::CControl*>(*it)) {
+                            if (control->getTag() == tag) {
+                                return control;
+                            }
+                        }
+                        if (auto* childContainer = (*it)->asViewContainer()) {
+                            if (auto* found = search(childContainer)) {
+                                return found;
+                            }
+                        }
+                        ++it;
+                    }
+                    return nullptr;
+                };
+                return search(frame);
+            };
+
+            digitalDelayTimeControl_ = findControl(kDigitalDelayTimeId);
+            pingPongDelayTimeControl_ = findControl(kPingPongDelayTimeId);
+#endif
+
+            // Initialize visibility based on current time mode values
+            updateDelayTimeVisibility(kDigitalTimeModeId);
+            updateDelayTimeVisibility(kPingPongTimeModeId);
         }
     }
 
@@ -716,7 +759,41 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
 void Controller::willClose(VSTGUI::VST3Editor* editor) {
     // Called before editor closes
     (void)editor;
+    digitalDelayTimeControl_ = nullptr;
+    pingPongDelayTimeControl_ = nullptr;
     activeEditor_ = nullptr;
+}
+
+void Controller::updateDelayTimeVisibility(Steinberg::Vst::ParamID timeModeId) {
+    // Determine which delay time control to update
+    VSTGUI::CControl* delayTimeControl = nullptr;
+
+    if (timeModeId == kDigitalTimeModeId) {
+        delayTimeControl = digitalDelayTimeControl_;
+    } else if (timeModeId == kPingPongTimeModeId) {
+        delayTimeControl = pingPongDelayTimeControl_;
+    } else {
+        return;  // Not a time mode parameter we handle
+    }
+
+    // Check if control exists
+    if (!delayTimeControl) return;
+
+    // Get current time mode value (0 = Free, 1 = Synced)
+    auto param = getParameterObject(timeModeId);
+    if (!param) return;
+
+    float normalizedValue = param->getNormalized();
+
+    // Show when Free (0), hide when Synced (1)
+    // Threshold: < 0.5 = Free (visible), >= 0.5 = Synced (hidden)
+    bool isFreeMode = (normalizedValue < 0.5f);
+    delayTimeControl->setVisible(isFreeMode);
+
+    // Mark for redraw if visible state changed
+    if (delayTimeControl->getFrame()) {
+        delayTimeControl->invalid();
+    }
 }
 
 } // namespace Iterum
