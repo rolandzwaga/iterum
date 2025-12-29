@@ -220,6 +220,75 @@ TEST_CASE("Noise has minimum floor at silence", "[features][digital-delay][envel
 }
 
 // ==============================================================================
+// Test: Age Controls Noise Level
+// ==============================================================================
+
+TEST_CASE("Age parameter controls base noise level", "[features][digital-delay][envelope][SC-004]") {
+    // This test verifies that Age controls the base noise gain (before envelope modulation)
+    // Age 0% should be nearly silent, Age 100% should be loud
+    //
+    // CRITICAL: Use silence as input so we measure ONLY the noise floor
+    // (otherwise the delayed signal dominates the RMS measurement)
+    DigitalDelay delay;
+    delay.prepare(kSampleRate, kBlockSize);
+    delay.setEra(DigitalEra::LoFi);
+    delay.setMix(1.0f);  // 100% wet
+    delay.setDelayTime(10.0f);  // Short delay
+    delay.setFeedback(0.0f);  // No feedback
+
+    std::array<float, kTestBufferSize> left{};
+    std::array<float, kTestBufferSize> right{};
+
+    BlockContext ctx{
+        .sampleRate = kSampleRate,
+        .blockSize = kTestBufferSize,
+        .tempoBPM = 120.0,
+        .isPlaying = false
+    };
+
+    // Test 1: Age 0% should produce very quiet noise
+    delay.setAge(0.0f);  // 0% age = -80dB noise
+    delay.snapParameters();
+
+    // Use SILENCE as input - we're measuring the noise floor only
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+
+    delay.process(left.data(), right.data(), kTestBufferSize, ctx);
+    float rmsAge0 = measureRMS(left.data(), 500, 1000);
+
+    // Test 2: Age 100% should produce loud noise
+    delay.reset();
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+
+    delay.setAge(1.0f);  // 100% age = -40dB noise
+    delay.snapParameters();
+
+    delay.process(left.data(), right.data(), kTestBufferSize, ctx);
+    float rmsAge100 = measureRMS(left.data(), 500, 1000);
+
+    // Test 3: Age 50% should be in between
+    delay.reset();
+    std::fill(left.begin(), left.end(), 0.0f);
+    std::fill(right.begin(), right.end(), 0.0f);
+
+    delay.setAge(0.5f);  // 50% age = -60dB noise
+    delay.snapParameters();
+
+    delay.process(left.data(), right.data(), kTestBufferSize, ctx);
+    float rmsAge50 = measureRMS(left.data(), 500, 1000);
+
+    // Verify noise level increases with Age
+    REQUIRE(rmsAge0 < rmsAge50);   // 0% < 50%
+    REQUIRE(rmsAge50 < rmsAge100); // 50% < 100%
+
+    // Verify substantial difference (at least 10x between 0% and 100%)
+    // -80dB vs -40dB = 40dB difference = 100x in linear amplitude
+    REQUIRE(rmsAge100 > rmsAge0 * 10.0f);
+}
+
+// ==============================================================================
 // Test: Dynamic Noise Behavior
 // ==============================================================================
 
