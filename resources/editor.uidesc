@@ -112,7 +112,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <control-tag name="BBDMix" tag="506"/>
         <control-tag name="BBDOutputLevel" tag="507"/>
 
-        <!-- Digital (600-611) -->
+        <!-- Digital (600-612) -->
         <control-tag name="DigitalDelayTime" tag="600"/>
         <control-tag name="DigitalTimeMode" tag="601"/>
         <control-tag name="DigitalNoteValue" tag="602"/>
@@ -125,6 +125,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <control-tag name="DigitalModWaveform" tag="609"/>
         <control-tag name="DigitalMix" tag="610"/>
         <control-tag name="DigitalOutputLevel" tag="611"/>
+        <control-tag name="DigitalWidth" tag="612"/>
 
         <!-- PingPong (700-710) -->
         <control-tag name="PingPongDelayTime" tag="700"/>
@@ -382,6 +383,8 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CSlider" origin="380, 103" size="120, 20" control-tag="DigitalMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="510, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="510, 103" size="120, 20" control-tag="DigitalOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+        <view class="CTextLabel" origin="640, 85" size="90, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CSlider" origin="640, 103" size="100, 20" control-tag="DigitalWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
     </template>
 
     <!-- Mode 6: PINGPONG -->
