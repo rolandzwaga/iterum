@@ -194,6 +194,11 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <control-tag name="DuckingFeedback" tag="1110"/>
         <control-tag name="DuckingDryWet" tag="1111"/>
         <control-tag name="DuckingOutputGain" tag="1112"/>
+
+        <!-- UI Label Tags (9900+) - for conditional visibility -->
+        <control-tag name="DigitalDelayTimeLabel" tag="9901"/>
+        <control-tag name="DigitalAgeLabel" tag="9902"/>
+        <control-tag name="PingPongDelayTimeLabel" tag="9903"/>
     </control-tags>
 
     <!-- ======================================================================
@@ -358,7 +363,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
     <template name="DigitalPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
         <view class="CTextLabel" origin="10, 5" size="200, 22" title="DIGITAL DELAY" font="section-font" font-color="accent" transparent="true"/>
         <!-- Row 1 -->
-        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CTextLabel" control-tag="DigitalDelayTimeLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="10, 53" size="120, 20" control-tag="DigitalDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="140, 35" size="90, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="COptionMenu" origin="140, 53" size="80, 22" control-tag="DigitalTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
@@ -370,7 +375,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="COptionMenu" origin="430, 53" size="80, 22" control-tag="DigitalLimiterCharacter" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         <view class="CTextLabel" origin="520, 35" size="50, 16" title="Era" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="COptionMenu" origin="520, 53" size="80, 22" control-tag="DigitalEra" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-        <view class="CTextLabel" origin="610, 35" size="50, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CTextLabel" control-tag="DigitalAgeLabel" origin="610, 35" size="50, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="610, 53" size="80, 20" control-tag="DigitalAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <!-- Row 2 -->
         <view class="CTextLabel" origin="10, 85" size="90, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
@@ -391,7 +396,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
     <template name="PingPongPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
         <view class="CTextLabel" origin="10, 5" size="200, 22" title="PING PONG DELAY" font="section-font" font-color="accent" transparent="true"/>
         <!-- Row 1 -->
-        <view class="CTextLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="CTextLabel" control-tag="PingPongDelayTimeLabel" origin="10, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="10, 53" size="120, 20" control-tag="PingPongDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="140, 35" size="90, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="COptionMenu" origin="140, 53" size="80, 22" control-tag="PingPongTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>

@@ -17,6 +17,8 @@
 
 #include "base/source/fobject.h"
 
+#include <vector>
+
 #if defined(_DEBUG) && defined(_WIN32)
 #include "vstgui/lib/platform/win32/win32factory.h"
 #include "vstgui/uidescription/uiattributes.h"
@@ -113,12 +115,12 @@ public:
     VisibilityController(
         VSTGUI::VST3Editor* editor,
         Steinberg::Vst::Parameter* watchedParam,
-        Steinberg::int32 controlTag,
+        std::initializer_list<Steinberg::int32> controlTags,
         float visibilityThreshold = 0.5f,
         bool showWhenBelow = true)
     : editor_(editor)
     , watchedParam_(watchedParam)
-    , controlTag_(controlTag)
+    , controlTags_(controlTags)
     , visibilityThreshold_(visibilityThreshold)
     , showWhenBelow_(showWhenBelow)
     {
@@ -140,26 +142,29 @@ public:
     // IDependent::update - called on UI thread via deferred update mechanism
     void PLUGIN_API update(Steinberg::FUnknown* changedUnknown, Steinberg::int32 message) override {
         if (message == IDependent::kChanged && watchedParam_ && editor_) {
-            // CRITICAL: Look up control DYNAMICALLY on each update
-            // UIViewSwitchContainer destroys/recreates controls on view switch,
-            // so cached pointers become dangling references
-            auto* control = findControlByTag(controlTag_);
+            // Get current parameter value (normalized: 0.0 to 1.0)
+            float normalizedValue = watchedParam_->getNormalized();
 
-            if (control) {
-                // Get current parameter value (normalized: 0.0 to 1.0)
-                float normalizedValue = watchedParam_->getNormalized();
+            // Determine visibility based on threshold and direction
+            bool shouldBeVisible = showWhenBelow_ ?
+                (normalizedValue < visibilityThreshold_) :
+                (normalizedValue >= visibilityThreshold_);
 
-                // Determine visibility based on threshold and direction
-                bool shouldBeVisible = showWhenBelow_ ?
-                    (normalizedValue < visibilityThreshold_) :
-                    (normalizedValue >= visibilityThreshold_);
+            // Update visibility for all associated controls (label + slider)
+            for (Steinberg::int32 tag : controlTags_) {
+                // CRITICAL: Look up control DYNAMICALLY on each update
+                // UIViewSwitchContainer destroys/recreates controls on view switch,
+                // so cached pointers become dangling references
+                auto* control = findControlByTag(tag);
 
-                // SAFE: This is called on UI thread via UpdateHandler::deferedUpdate()
-                control->setVisible(shouldBeVisible);
+                if (control) {
+                    // SAFE: This is called on UI thread via UpdateHandler::deferedUpdate()
+                    control->setVisible(shouldBeVisible);
 
-                // Trigger redraw if needed
-                if (control->getFrame()) {
-                    control->invalid();
+                    // Trigger redraw if needed
+                    if (control->getFrame()) {
+                        control->invalid();
+                    }
                 }
             }
         }
@@ -204,7 +209,7 @@ private:
 
     VSTGUI::VST3Editor* editor_;
     Steinberg::Vst::Parameter* watchedParam_;
-    Steinberg::int32 controlTag_;
+    std::vector<Steinberg::int32> controlTags_;
     float visibilityThreshold_;
     bool showWhenBelow_;
 };
@@ -805,25 +810,25 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
             // =====================================================================
 
             // Create visibility controllers for Digital mode
-            // Hide delay time when time mode is "Synced" (>= 0.5)
+            // Hide delay time label + control when time mode is "Synced" (>= 0.5)
             if (auto* digitalTimeMode = getParameterObject(kDigitalTimeModeId)) {
                 digitalDelayTimeVisibilityController_ = new VisibilityController(
-                    editor, digitalTimeMode, kDigitalDelayTimeId, 0.5f, true);
+                    editor, digitalTimeMode, {9901, kDigitalDelayTimeId}, 0.5f, true);
             }
 
-            // Hide Age control when Era is "Pristine" (< 0.25)
+            // Hide Age label + control when Era is "Pristine" (< 0.25)
             // Era values: 0 = Pristine (0.0), 1 = 80s (0.5), 2 = LoFi (1.0)
             // Show Age when Era >= 0.25 (80s or LoFi)
             if (auto* digitalEra = getParameterObject(kDigitalEraId)) {
                 digitalAgeVisibilityController_ = new VisibilityController(
-                    editor, digitalEra, kDigitalAgeId, 0.25f, false);
+                    editor, digitalEra, {9902, kDigitalAgeId}, 0.25f, false);
             }
 
             // Create visibility controllers for PingPong mode
-            // Hide delay time when time mode is "Synced" (>= 0.5)
+            // Hide delay time label + control when time mode is "Synced" (>= 0.5)
             if (auto* pingPongTimeMode = getParameterObject(kPingPongTimeModeId)) {
                 pingPongDelayTimeVisibilityController_ = new VisibilityController(
-                    editor, pingPongTimeMode, kPingPongDelayTimeId, 0.5f, true);
+                    editor, pingPongTimeMode, {9903, kPingPongDelayTimeId}, 0.5f, true);
             }
 
             // =====================================================================
