@@ -358,8 +358,9 @@ target_include_directories(benchmark_tanh
 )
 
 # Release optimizations for accurate benchmarking
+# MSVC: Only add /O2 in non-Debug builds to avoid conflict with /RTC1
 target_compile_options(benchmark_tanh PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
 )
@@ -376,8 +377,9 @@ target_include_directories(benchmark_feedback_network
 )
 
 # Release optimizations for accurate benchmarking
+# MSVC: Only add /O2 in non-Debug builds to avoid conflict with /RTC1
 target_compile_options(benchmark_feedback_network PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
 )
@@ -394,8 +396,9 @@ target_include_directories(benchmark_shimmer_delay
 )
 
 # Release optimizations for accurate benchmarking
+# MSVC: Only add /O2 in non-Debug builds to avoid conflict with /RTC1
 target_compile_options(benchmark_shimmer_delay PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
 )
@@ -412,8 +415,9 @@ target_include_directories(benchmark_spectral_delay
 )
 
 # Release optimizations for accurate benchmarking
+# MSVC: Only add /O2 in non-Debug builds to avoid conflict with /RTC1
 target_compile_options(benchmark_spectral_delay PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/O2 /fp:fast>
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<CONFIG:Debug>>>:/O2 /fp:fast>
     $<$<CXX_COMPILER_ID:GNU>:-O3 -ffast-math>
     $<$<CXX_COMPILER_ID:Clang>:-O3 -ffast-math>
 )
