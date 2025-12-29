@@ -27,7 +27,7 @@ namespace Iterum {
 
 struct PingPongParams {
     std::atomic<float> delayTime{500.0f};       // 1-10000ms
-    std::atomic<int> timeMode{0};               // 0=Free, 1=Synced
+    std::atomic<int> timeMode{1};               // 0=Free, 1=Synced (default: Synced)
     std::atomic<int> noteValue{4};              // 0-9 (note values)
     std::atomic<int> lrRatio{0};                // 0-6 (ratio presets)
     std::atomic<float> feedback{0.5f};          // 0-1.2
@@ -139,8 +139,9 @@ inline void registerPingPongParams(Steinberg::Vst::ParameterContainer& parameter
         kPingPongDelayTimeId);
 
     // Time Mode (Free/Synced) - MUST use StringListParameter
-    parameters.addParameter(createDropdownParameter(
+    parameters.addParameter(createDropdownParameterWithDefault(
         STR16("PingPong Time Mode"), kPingPongTimeModeId,
+        1,  // default: Synced (index 1)
         {STR16("Free"), STR16("Synced")}
     ));
 

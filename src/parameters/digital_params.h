@@ -27,7 +27,7 @@ namespace Iterum {
 
 struct DigitalParams {
     std::atomic<float> delayTime{500.0f};       // 1-10000ms
-    std::atomic<int> timeMode{0};               // 0=Free, 1=Synced
+    std::atomic<int> timeMode{1};               // 0=Free, 1=Synced (default: Synced)
     std::atomic<int> noteValue{4};              // 0-9 (note values)
     std::atomic<float> feedback{0.4f};          // 0-1.2
     std::atomic<int> limiterCharacter{0};       // 0=Soft, 1=Medium, 2=Hard
@@ -146,8 +146,9 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         kDigitalDelayTimeId);
 
     // Time Mode (Free/Synced) - MUST use StringListParameter
-    parameters.addParameter(createDropdownParameter(
+    parameters.addParameter(createDropdownParameterWithDefault(
         STR16("Digital Time Mode"), kDigitalTimeModeId,
+        1,  // default: Synced (index 1)
         {STR16("Free"), STR16("Synced")}
     ));
 
