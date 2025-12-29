@@ -2,17 +2,17 @@
 ================================================================================
 SYNC IMPACT REPORT
 ================================================================================
-Version Change: 1.8.0 → 1.9.0
+Version Change: 1.9.0 → 1.10.0
 Modified Principles: None
 Added Sections:
-  - Principle XVII: Framework Knowledge Documentation (VST-GUIDE.md)
-    - REQUIRES maintaining specs/VST-GUIDE.md with framework insights
-    - MANDATES reading VST-GUIDE.md before any VSTGUI/VST3 SDK work
-    - REQUIRES documenting new findings immediately after discovery
-    - Incident log for tracking debugging sessions and solutions
+  - Principle XVIII: Spec Numbering (Specs Directory is Source of Truth)
+    - REQUIRES using specs/ directory as sole source of truth for spec numbers
+    - FORBIDS checking branches (local or remote) for spec numbering
+    - MANDATES finding highest numbered spec in specs/ directory
+    - Provides command: ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1
+    - New spec number = highest + 1, regardless of feature name
 Removed Sections: None
-Templates Updated:
-  - CLAUDE.md: Added VST-GUIDE section ✅
+Templates Updated: None required (spec numbering is handled by /speckit.specify workflow)
 Follow-up TODOs: None
 ================================================================================
 -->
@@ -663,4 +663,48 @@ Hard-won insights about VST3 SDK and VSTGUI MUST be documented in `specs/VST-GUI
 
 **Rationale:** The mode switching incident wasted hours because the same Parameter type pitfall could have been documented from earlier work. Framework-specific knowledge is expensive to acquire and must be preserved for future reference.
 
-**Version**: 1.9.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-28
+### XVIII. Spec Numbering (Specs Directory is Source of Truth)
+
+When creating new specifications, the specs directory is the ONLY source of truth for determining the next spec number. Branch existence is MEANINGLESS because branches are deleted after merging.
+
+**Non-Negotiable Rules:**
+
+- **NEVER check branches for spec numbering**: Branches (local or remote) are deleted after merge - they cannot be trusted as a source of truth
+- **ALWAYS check specs/ directory**: Find the highest numbered directory in `specs/` regardless of feature name
+- **Command to find highest spec number**: `ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1`
+- **New spec number = highest + 1**: If highest is 035, new spec is 036
+- **This applies to ALL features**: Even if no spec with the same short-name exists, you still increment from the global highest number
+
+**Correct Workflow:**
+
+```bash
+# 1. Find highest spec number in specs/ directory (source of truth)
+HIGHEST=$(ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1)
+
+# 2. Calculate next number
+NEXT=$((HIGHEST + 1))
+
+# 3. Create spec with correct number
+.specify/scripts/powershell/create-new-feature.ps1 -Number $NEXT -ShortName "feature-name" "description"
+```
+
+**Wrong Workflow (DO NOT DO THIS):**
+
+```bash
+# ❌ WRONG: Checking for branches with specific name
+git ls-remote --heads origin | grep 'digital-stereo-width'  # MEANINGLESS - branches are deleted!
+
+# ❌ WRONG: Starting from 001 because no branch exists
+# This ignores 035 existing specs and creates chaos
+```
+
+**Why This Matters:**
+
+- Branches are ephemeral - they're deleted after merge to keep the repo clean
+- The specs/ directory persists forever and contains the complete feature history
+- Using branch existence leads to duplicate numbers and spec collisions
+- The constitution author has explicitly stated: "I fucking delete spec branches after they're merged, goddamnit."
+
+**Rationale:** Spec numbers must be unique and sequential. Branches are temporary and deleted after merge. Only the specs/ directory provides a permanent, reliable record of all specifications created.
+
+**Version**: 1.10.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-29
