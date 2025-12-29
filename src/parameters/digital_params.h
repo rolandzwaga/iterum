@@ -38,6 +38,7 @@ struct DigitalParams {
     std::atomic<int> modulationWaveform{0};     // 0-5 (waveforms)
     std::atomic<float> mix{0.5f};               // 0-1
     std::atomic<float> outputLevel{0.0f};        // dB (-96 to +12)
+    std::atomic<float> width{100.0f};           // 0-200% (spec 036)
 };
 
 // ==============================================================================
@@ -124,6 +125,12 @@ inline void handleDigitalParamChange(
                 float dB = static_cast<float>(-96.0 + normalizedValue * 108.0);
                 params.outputLevel.store(dB, std::memory_order_relaxed);
             }
+            break;
+        case kDigitalWidthId:
+            // 0-200%
+            params.width.store(
+                static_cast<float>(normalizedValue * 200.0),
+                std::memory_order_relaxed);
             break;
     }
 }
@@ -231,6 +238,15 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         0.889,  // default: 0dB
         ParameterInfo::kCanAutomate,
         kDigitalOutputLevelId);
+
+    // Width (0-200%)
+    parameters.addParameter(
+        STR16("Digital Width"),
+        STR16("%"),
+        0,
+        0.5,  // default: 100%
+        ParameterInfo::kCanAutomate,
+        kDigitalWidthId);
 }
 
 // ==============================================================================
@@ -316,6 +332,14 @@ inline Steinberg::tresult formatDigitalParam(
             Steinberg::UString(string, 128).fromAscii(text);
             return kResultOk;
         }
+
+        case kDigitalWidthId: {
+            float percent = static_cast<float>(normalizedValue * 200.0);
+            char8 text[32];
+            snprintf(text, sizeof(text), "%.0f%%", percent);
+            Steinberg::UString(string, 128).fromAscii(text);
+            return kResultOk;
+        }
     }
 
     return Steinberg::kResultFalse;
@@ -338,6 +362,7 @@ inline void saveDigitalParams(const DigitalParams& params, Steinberg::IBStreamer
     streamer.writeInt32(params.modulationWaveform.load(std::memory_order_relaxed));
     streamer.writeFloat(params.mix.load(std::memory_order_relaxed));
     streamer.writeFloat(params.outputLevel.load(std::memory_order_relaxed));
+    streamer.writeFloat(params.width.load(std::memory_order_relaxed));
 }
 
 inline void loadDigitalParams(DigitalParams& params, Steinberg::IBStreamer& streamer) {
@@ -379,6 +404,9 @@ inline void loadDigitalParams(DigitalParams& params, Steinberg::IBStreamer& stre
 
     streamer.readFloat(floatVal);
     params.outputLevel.store(floatVal, std::memory_order_relaxed);
+
+    streamer.readFloat(floatVal);
+    params.width.store(floatVal, std::memory_order_relaxed);
 }
 
 // ==============================================================================
@@ -465,6 +493,12 @@ inline void syncDigitalParamsToController(
         double dB = (floatVal <= 0.0f) ? -96.0 : 20.0 * std::log10(floatVal);
         controller.setParamNormalized(kDigitalOutputLevelId,
             (dB + 96.0) / 108.0);
+    }
+
+    // Width: 0-200% -> normalized = val/200
+    if (streamer.readFloat(floatVal)) {
+        controller.setParamNormalized(kDigitalWidthId,
+            static_cast<double>(floatVal / 200.0f));
     }
 }
 

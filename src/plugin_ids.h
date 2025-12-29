@@ -180,6 +180,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kDigitalModWaveformId = 609,     // 0-5 (waveforms)
     kDigitalMixId = 610,             // 0-100%
     kDigitalOutputLevelId = 611,     // -96 to +12 dB
+    kDigitalWidthId = 612,           // 0-200% (spec 036)
     kDigitalEndId = 699,
 
     // ==========================================================================

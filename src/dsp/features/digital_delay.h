@@ -156,6 +156,14 @@ public:
     // Lifecycle Methods (FR-038 to FR-040)
     // =========================================================================
 
+    /// @brief Prepare for processing (allocates memory) - convenience overload
+    /// @param sampleRate Audio sample rate in Hz
+    /// @param maxBlockSize Maximum samples per process() call
+    /// @post Ready for process() calls with default max delay
+    void prepare(double sampleRate, size_t maxBlockSize) noexcept {
+        prepare(sampleRate, maxBlockSize, kMaxDelayMs);
+    }
+
     /// @brief Prepare for processing (allocates memory)
     /// @param sampleRate Audio sample rate in Hz
     /// @param maxBlockSize Maximum samples per process() call
@@ -197,6 +205,7 @@ public:
         outputLevelSmoother_.configure(kSmoothingTimeMs, static_cast<float>(sampleRate));
         modulationDepthSmoother_.configure(kSmoothingTimeMs, static_cast<float>(sampleRate));
         ageSmoother_.configure(kSmoothingTimeMs, static_cast<float>(sampleRate));
+        widthSmoother_.configure(kSmoothingTimeMs, static_cast<float>(sampleRate));
 
         // Initialize to defaults
         timeSmoother_.snapTo(kDefaultDelayMs);
@@ -205,6 +214,7 @@ public:
         outputLevelSmoother_.snapTo(1.0f);
         modulationDepthSmoother_.snapTo(0.0f);
         ageSmoother_.snapTo(0.0f);
+        widthSmoother_.snapTo(100.0f);
 
         // Configure 80s era anti-aliasing filters (FR-009)
         // Lowpass at 14kHz to simulate ~32kHz ADC Nyquist
@@ -240,6 +250,18 @@ public:
         outputLevelSmoother_.snapTo(dbToGain(outputLevelDb_));
         modulationDepthSmoother_.snapTo(modulationDepth_);
         ageSmoother_.snapTo(age_);
+        widthSmoother_.snapTo(width_);
+    }
+
+    /// @brief Snap all parameters to current values (skip smoothing, for testing)
+    void snapParameters() noexcept {
+        timeSmoother_.snapTo(delayTimeMs_);
+        feedbackSmoother_.snapTo(feedback_);
+        mixSmoother_.snapTo(mix_);
+        outputLevelSmoother_.snapTo(dbToGain(outputLevelDb_));
+        modulationDepthSmoother_.snapTo(modulationDepth_);
+        ageSmoother_.snapTo(age_);
+        widthSmoother_.snapTo(width_);
     }
 
     /// @brief Check if prepared for processing
@@ -257,6 +279,11 @@ public:
         ms = std::clamp(ms, kMinDelayMs, maxDelayMs_);
         delayTimeMs_ = ms;
         timeSmoother_.setTarget(ms);
+    }
+
+    /// @brief Set delay time in milliseconds (alias for setTime)
+    void setDelayTime(float ms) noexcept {
+        setTime(ms);
     }
 
     /// @brief Get current delay time
@@ -431,6 +458,22 @@ public:
     }
 
     // =========================================================================
+    // Stereo Width Control (spec 036)
+    // =========================================================================
+
+    /// @brief Set stereo width
+    /// @param percent Width percentage [0, 200] (0 = mono, 100 = original, 200 = maximum)
+    void setWidth(float percent) noexcept {
+        width_ = std::clamp(percent, 0.0f, 200.0f);
+        widthSmoother_.setTarget(width_);
+    }
+
+    /// @brief Get stereo width
+    [[nodiscard]] float getWidth() const noexcept {
+        return width_;
+    }
+
+    // =========================================================================
     // Processing (FR-035 to FR-040)
     // =========================================================================
 
@@ -508,6 +551,19 @@ public:
             limiter_.process(right, numSamples);
         }
 
+        // Apply stereo width to wet signal (spec 036, FR-013, FR-016)
+        // Width processing uses Mid/Side: mid = (L+R)/2, side = (L-R)/2 * widthFactor
+        for (size_t i = 0; i < numSamples; ++i) {
+            const float currentWidth = widthSmoother_.process();
+            const float widthFactor = currentWidth / 100.0f;
+
+            const float mid = (left[i] + right[i]) * 0.5f;
+            const float side = (left[i] - right[i]) * 0.5f * widthFactor;
+
+            left[i] = mid + side;
+            right[i] = mid - side;
+        }
+
         // Mix dry/wet, add noise, and apply output level
         // REGRESSION FIX: Use samplesToStore to avoid accessing beyond stored dry samples
         for (size_t i = 0; i < samplesToStore; ++i) {
@@ -539,6 +595,35 @@ public:
 
         // Process as dual mono
         process(buffer, buffer, numSamples, ctx);
+    }
+
+    /// @brief Process stereo audio with separate input/output buffers (convenience for tests)
+    /// @param leftIn Left input buffer
+    /// @param rightIn Right input buffer
+    /// @param leftOut Left output buffer
+    /// @param rightOut Right output buffer
+    /// @param numSamples Number of samples per channel
+    void processStereo(const float* leftIn, const float* rightIn,
+                       float* leftOut, float* rightOut,
+                       size_t numSamples) noexcept {
+        if (!prepared_ || numSamples == 0) return;
+
+        // Copy input to output (process() works in-place)
+        for (size_t i = 0; i < numSamples; ++i) {
+            leftOut[i] = leftIn[i];
+            rightOut[i] = rightIn[i];
+        }
+
+        // Create default block context for testing
+        BlockContext ctx{
+            .sampleRate = sampleRate_,
+            .blockSize = numSamples,
+            .tempoBPM = 120.0,
+            .isPlaying = false
+        };
+
+        // Process in-place
+        process(leftOut, rightOut, numSamples, ctx);
     }
 
 private:
@@ -625,6 +710,7 @@ private:
     float age_ = 0.0f;                           ///< Age/degradation (FR-041)
     float mix_ = kDefaultMix;                    ///< Dry/wet mix (FR-031)
     float outputLevelDb_ = 0.0f;                 ///< Output level (FR-032)
+    float width_ = 100.0f;                       ///< Stereo width (spec 036)
 
     // Mode selections
     DigitalEra era_ = DigitalEra::Pristine;
@@ -641,6 +727,7 @@ private:
     OnePoleSmoother outputLevelSmoother_;
     OnePoleSmoother modulationDepthSmoother_;
     OnePoleSmoother ageSmoother_;
+    OnePoleSmoother widthSmoother_;
 
     // Dry signal buffer for mixing (allocated in prepare, not in process)
     std::vector<float> dryBufferL_;
