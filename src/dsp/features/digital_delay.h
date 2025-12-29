@@ -598,7 +598,6 @@ public:
         }
 
         // Mix dry/wet and apply output level
-        // No additional noise generation - dither noise from character processing already breathes with envelope
         for (size_t i = 0; i < samplesToStore; ++i) {
             const float currentMix = mixSmoother_.process();
             const float currentOutputGain = outputLevelSmoother_.process();
@@ -662,18 +661,18 @@ private:
             case DigitalEra::Pristine:
                 // Bypass character processing entirely (FR-006, FR-007, FR-042)
                 character_.setMode(CharacterMode::Clean);
+                character_.setDigitalDitherAmount(0.0f);  // No dither noise
                 feedbackNetwork_.setFilterEnabled(false);
-                // No anti-alias filter or noise in pristine mode
                 antiAliasEnabled_ = false;
-                noiseGain_ = 0.0f;
                 break;
 
             case DigitalEra::EightiesDigital:
                 // Moderate vintage character (FR-008, FR-009, FR-010)
                 character_.setMode(CharacterMode::DigitalVintage);
-                // Age 0-50% maps to subtle character
                 // Bit depth: 16 -> 12 as age increases
                 character_.setDigitalBitDepth(16.0f - age_ * 2.0f);
+                // Dither amount for -80dB noise floor (FR-010)
+                character_.setDigitalDitherAmount(1.0f);  // Full dither for -80dB noise floor
                 // Sample rate reduction: 1.0 -> 1.5 as age increases
                 character_.setDigitalSampleRateReduction(1.0f + age_ * 0.25f);
                 // High-frequency rolloff via feedback filter
@@ -682,16 +681,16 @@ private:
                 feedbackNetwork_.setFilterCutoff(12000.0f - age_ * 2000.0f); // 12-10kHz
                 // Enable anti-alias filter for 32kHz simulation (FR-009)
                 antiAliasEnabled_ = true;
-                // Add characteristic noise floor (FR-010)
-                noiseGain_ = dbToGain(k80sNoiseFloorDb);
                 break;
 
             case DigitalEra::LoFi:
                 // Aggressive degradation (FR-011, FR-012, FR-013)
                 character_.setMode(CharacterMode::DigitalVintage);
-                // Age 0-100% maps to aggressive bit/SR reduction
                 // Bit depth: 16 -> 4 as age increases (aggressive)
                 character_.setDigitalBitDepth(16.0f - age_ * 12.0f);
+                // Dither scales with Age: less dither at low age, more at high age
+                // Age 0% = 0.5 dither, Age 100% = 1.0 dither (more noise)
+                character_.setDigitalDitherAmount(0.5f + age_ * 0.5f);
                 // Sample rate reduction: TEMPORARILY DISABLED for dither testing
                 //character_.setDigitalSampleRateReduction(1.0f + age_ * 3.0f);
                 character_.setDigitalSampleRateReduction(1.0f); // No SR reduction
@@ -703,9 +702,6 @@ private:
                 // Enable anti-alias filter
                 //antiAliasEnabled_ = true; // TEMPORARILY DISABLED for testing
                 antiAliasEnabled_ = false;
-                // Noise floor scales with age: -80dB at age=0, -40dB at age=1.0
-                // This allows clean sound at low age, increasing noise as degradation increases
-                noiseGain_ = dbToGain(-80.0f + age_ * 40.0f);
                 break;
         }
     }
@@ -770,10 +766,6 @@ private:
     Biquad antiAliasFilterL_;
     Biquad antiAliasFilterR_;
     bool antiAliasEnabled_ = false;
-
-    // Lo-Fi era noise control (FR-010)
-    // noiseGain_ controls base dither level, envelope modulates it for breathing effect
-    float noiseGain_ = 0.0f;
 };
 
 } // namespace DSP

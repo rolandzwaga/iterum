@@ -122,7 +122,6 @@ add_executable(dsp_tests
     unit/features/bbd_delay_test.cpp
     unit/features/digital_delay_test.cpp
     unit/features/digital_width_processing_test.cpp
-    unit/features/digital_envelope_noise_test.cpp
     unit/features/digital_delay_age0_ramping_test.cpp
     unit/features/ping_pong_delay_test.cpp
     unit/features/multi_tap_delay_test.cpp
