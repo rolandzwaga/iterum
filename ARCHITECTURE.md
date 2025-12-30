@@ -4916,6 +4916,7 @@ float gainReduction = delay.getGainReduction(); // 0 to -48 dB
 - **Feedback Path**: 0-120% with soft limiting for self-oscillation
 - **Pan Spray**: 0-100% stereo distribution of grains
 - **Envelope Types**: Hann, Trapezoid, Sine, Blackman windows
+- **Tempo Sync**: Optional host tempo synchronization for grain position (spec 038)
 
 **Public API**:
 
@@ -4930,8 +4931,12 @@ public:
     // Grain Parameters
     void setGrainSize(float ms) noexcept;           // 10-500ms
     void setDensity(float grainsPerSec) noexcept;   // 1-100
-    void setDelayTime(float ms) noexcept;           // 0-2000ms
+    void setDelayTime(float ms) noexcept;           // 0-2000ms (Free mode position)
     void setEnvelopeType(GrainEnvelopeType type) noexcept;
+
+    // Tempo Sync (spec 038)
+    void setTimeMode(int mode) noexcept;            // 0=Free, 1=Synced
+    void setNoteValue(int index) noexcept;          // 0-9 (matches note_value.h)
 
     // Pitch Control
     void setPitch(float semitones) noexcept;        // -24 to +24
@@ -4961,9 +4966,19 @@ public:
 
     // Processing
     void process(const float* inL, const float* inR,
-                 float* outL, float* outR, size_t numSamples) noexcept;
+                 float* outL, float* outR, size_t numSamples) noexcept;  // Free mode
+    void process(const float* inL, const float* inR,
+                 float* outL, float* outR, size_t numSamples,
+                 const BlockContext& ctx) noexcept;  // Tempo sync (spec 038)
 };
 ```
+
+**Tempo Sync Notes** (spec 038):
+- Uses `TimeMode` from `delay_engine.h` (Free/Synced)
+- Uses `dropdownToDelayMs()` from `note_value.h` for note-to-ms conversion
+- In Synced mode, position is calculated from `BlockContext::tempoBPM`
+- Position Spray works with both Free and Synced modes
+- Falls back to 120 BPM if host tempo unavailable
 
 **Usage Example**:
 
@@ -4989,8 +5004,14 @@ delay.setEnvelopeType(GrainEnvelopeType::Hann);
 // For freeze drone
 delay.setFreeze(true);                   // Capture buffer
 
-// In process callback
+// In process callback (Free mode)
 delay.process(inputL, inputR, outputL, outputR, blockSize);
+
+// For tempo-synced grains (spec 038)
+delay.setTimeMode(1);                    // 1 = Synced
+delay.setNoteValue(4);                   // 4 = 1/8 note
+BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0, .isPlaying = true};
+delay.process(inputL, inputR, outputL, outputR, blockSize, ctx);
 ```
 
 **When to use**: Creating evolving granular textures, shimmer delays, time-smearing effects, and infinite sustain drones. Ideal for ambient music, experimental sound design, and transforming any audio source into complex, evolving textures. The freeze mode allows capturing any moment and sustaining it indefinitely with continuous grain regeneration.
