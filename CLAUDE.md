@@ -908,7 +908,8 @@ This ensures every bug fix becomes a permanent regression test, preventing the s
 4. [ ] Write failing tests for gainToDb function
 5. [ ] Implement gainToDb to make tests pass
 6. [ ] Verify all tests pass
-7. [ ] Commit completed work
+7. [ ] Run pluginval to verify plugin loads correctly
+8. [ ] Commit completed work
 ```
 
 ### Example Todo List for Bug Fix
@@ -920,12 +921,84 @@ This ensures every bug fix becomes a permanent regression test, preventing the s
 4. [ ] Fix the DC offset issue in FeedbackNetwork
 5. [ ] Verify bug reproduction test now passes
 6. [ ] Verify all other tests still pass
-7. [ ] Commit completed work
+7. [ ] Run pluginval to verify plugin loads correctly
+8. [ ] Commit completed work
 ```
 
 ### Enforcement
 
 If you find yourself writing implementation code without corresponding test files already created, STOP and write the tests first. This is a constitution-level requirement (Principle XIII).
+
+## Plugin Validation (MANDATORY)
+
+**CRITICAL**: After completing any task that modifies plugin source code, you MUST run pluginval to verify the plugin still loads and functions correctly.
+
+### When to Run Pluginval
+
+Run pluginval at the end of tasks that modify:
+- Any file in `src/` (processor, controller, DSP code)
+- Plugin resources (`resources/editor.uidesc`, etc.)
+- Plugin metadata (`plugin_ids.h`, `version.h`)
+- CMakeLists.txt build configuration for the plugin target
+
+### When NOT to Run Pluginval
+
+Skip pluginval for changes that don't affect the plugin binary:
+- Documentation files (`.md`, comments only)
+- GitHub Actions / CI configuration
+- Test files only (no production code changes)
+- Build scripts that don't change plugin output
+
+### Pluginval Command
+
+```bash
+# Run pluginval at strictness level 5 (recommended)
+tools/pluginval.exe --strictness-level 5 --validate "build/VST3/Debug/Iterum.vst3"
+
+# For Release builds
+tools/pluginval.exe --strictness-level 5 --validate "build/VST3/Release/Iterum.vst3"
+```
+
+### Required Todo Item
+
+For plugin-modifying tasks, the todo list MUST include:
+```
+[ ] Run pluginval to verify plugin loads correctly
+```
+
+This should appear AFTER "Verify all tests pass" and BEFORE "Commit completed work".
+
+### Updated Example Todo Lists
+
+**DSP Feature:**
+```
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write failing tests for dbToGain function
+3. [ ] Implement dbToGain to make tests pass
+4. [ ] Verify all tests pass
+5. [ ] Run pluginval to verify plugin loads correctly
+6. [ ] Commit completed work
+```
+
+**Bug Fix:**
+```
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write test reproducing the bug
+3. [ ] Verify test fails (confirms bug is captured)
+4. [ ] Fix the bug
+5. [ ] Verify bug reproduction test now passes
+6. [ ] Verify all other tests still pass
+7. [ ] Run pluginval to verify plugin loads correctly
+8. [ ] Commit completed work
+```
+
+### Why This Matters
+
+- Unit tests verify DSP logic but NOT plugin loading/hosting
+- Pluginval catches VST3 SDK compliance issues
+- Pluginval tests editor open/close cycles (catches lifecycle bugs)
+- A plugin that passes unit tests but fails pluginval is BROKEN
+- Strictness level 5 catches most common issues without being overly strict
 
 ## Completion Honesty Enforcement (MANDATORY)
 
