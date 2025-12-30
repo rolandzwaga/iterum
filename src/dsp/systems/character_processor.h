@@ -27,6 +27,7 @@
 #include "dsp/processors/noise_generator.h"
 #include "dsp/processors/multimode_filter.h"
 #include "dsp/core/db_utils.h"
+#include "dsp/core/crossfade_utils.h"
 
 #include <algorithm>
 #include <array>
@@ -252,10 +253,10 @@ private:
             // Process previous mode
             processMode(previousModeBufferL_.data(), numSamples, previousMode_);
 
-            // Crossfade between modes (equal power)
+            // Crossfade between modes (equal power) using Layer 0 utility
             for (size_t i = 0; i < numSamples; ++i) {
-                float fadeOut = std::cos(crossfadePosition_ * 1.5707963f); // pi/2
-                float fadeIn = std::sin(crossfadePosition_ * 1.5707963f);
+                float fadeOut, fadeIn;
+                equalPowerGains(crossfadePosition_, fadeOut, fadeIn);
 
                 buffer[i] = previousModeBufferL_[i] * fadeOut + buffer[i] * fadeIn;
 
