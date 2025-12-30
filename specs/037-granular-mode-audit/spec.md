@@ -67,6 +67,8 @@ A developer needs to confirm that the granular mode has integration tests verify
 - **FR-003**: The audit MUST verify unit tests cover lifecycle (prepare/reset), parameter control, and audio processing
 - **FR-004**: The audit MUST confirm integration tests exist that exercise the complete granular processing chain
 - **FR-005**: The audit MUST verify the implementation matches industry-standard granular synthesis patterns (as documented in web research)
+- **FR-006**: The audit MUST verify UI controls are correctly bound to parameters and parameters are propagated to DSP
+- **FR-007**: The audit MUST identify any gaps in end-to-end integration test coverage
 
 ### Key Entities
 
@@ -178,6 +180,75 @@ The GranularEngine tests (Layer 3) also provide integration coverage:
 - Tests verify scheduler -> pool -> processor interaction
 - Tests verify freeze mode affects buffer writing and grain output
 
+### UI-to-DSP Integration Analysis
+
+**Extended audit scope**: Verify the complete parameter flow from UI controls to DSP processing.
+
+#### Parameter Flow Chain
+
+```
+UI Control (editor.uidesc)
+    ↓ control-tag="GranularXxx" (tag=100-112)
+    ↓
+Controller::setParamNormalized()
+    ↓ normalized value (0.0-1.0)
+    ↓
+Processor::processParameterChanges()
+    ↓ handleGranularParamChange() denormalizes
+    ↓
+GranularParams struct (atomic storage)
+    ↓ granularParams_.xxx.load()
+    ↓
+Processor::process()
+    ↓ granularDelay_.setXxx(value)
+    ↓
+GranularDelay DSP processing
+```
+
+#### Component Verification
+
+| Layer | Component | Location | Status |
+|-------|-----------|----------|--------|
+| UI | Control tags | editor.uidesc:44-57 | ✅ All 13 params bound (tags 100-112) |
+| UI | GranularPanel | editor.uidesc:210-241 | ✅ Sliders for all params |
+| Controller | registerGranularParams | granular_params.h:158-311 | ✅ All 13 params registered |
+| Controller | formatGranularParam | granular_params.h:319-409 | ✅ Display formatting |
+| Controller | syncGranularParams | granular_params.h:491-572 | ✅ State sync to UI |
+| Processor | handleGranularParamChange | granular_params.h:52-150 | ✅ Denormalization |
+| Processor | process() param application | processor.cpp:221-235 | ✅ All 13 setters called |
+| State | save/load | granular_params.h:417-483 | ✅ Persistence |
+
+#### Test Coverage for Parameter Flow
+
+| Test Area | Test File | Coverage | Status |
+|-----------|-----------|----------|--------|
+| Normalization formulas | granular_params_test.cpp | 341 lines | ✅ All 13 params |
+| Round-trip accuracy | granular_params_test.cpp | Included | ✅ |
+| Boundary values | granular_params_test.cpp | Included | ✅ |
+| **VST Integration** | *None* | *Missing* | ⚠️ GAP |
+
+#### Integration Test Gap
+
+**Finding**: There are no end-to-end tests that verify the complete parameter flow from `processParameterChanges()` through to DSP setters.
+
+**What's tested:**
+- Normalization formulas (granular_params_test.cpp)
+- DSP behavior with parameters (granular_delay_test.cpp)
+
+**What's NOT tested:**
+- Processor instantiation with granular parameters
+- `handleGranularParamChange()` integration with `GranularParams` struct
+- Atomic parameter reads in `process()` loop
+- Complete chain: normalized value → atomic → GranularDelay setter
+
+**Risk Assessment**: LOW
+- The parameter handling code is straightforward (no complex logic)
+- Each piece is tested in isolation
+- The pattern is used consistently across all delay modes
+- pluginval validation at strictness 5 would catch major issues
+
+**Recommendation**: Consider adding a processor-level integration test that exercises `processParameterChanges()` → `process()` for key parameters.
+
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
@@ -228,6 +299,8 @@ The granular synthesis components are highly reusable:
 | FR-003 | MET | Tests cover lifecycle, parameters, audio processing |
 | FR-004 | MET | GranularDelay tests exercise complete chain |
 | FR-005 | MET | Comparison table shows industry alignment |
+| FR-006 | MET | UI-to-DSP integration verified (see Component Verification table) |
+| FR-007 | MET | Gap identified: No processor-level integration tests |
 | SC-001 | MET | All 10 aspects match industry standards |
 | SC-002 | MET | 5 test files confirmed |
 | SC-003 | MET | 1,876 lines > 1,500 threshold |
@@ -251,6 +324,10 @@ All requirements and success criteria have been verified. The granular mode impl
 - Follows industry-standard granular synthesis patterns
 - Has comprehensive test coverage (1,876 lines across 5 test files)
 - All 1,156 test assertions pass
+- UI controls correctly bound to parameters (all 13 verified)
+- Parameters correctly propagated to DSP (all 13 setters verified)
+
+**Gap Identified**: No processor-level integration tests exist that verify the complete chain from `processParameterChanges()` through to DSP setters. Risk is LOW due to straightforward code and isolated component testing. Consider adding such tests in future work.
 
 ## Research Sources
 
