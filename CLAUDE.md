@@ -907,9 +907,10 @@ This ensures every bug fix becomes a permanent regression test, preventing the s
 3. [ ] Implement dbToGain to make tests pass
 4. [ ] Write failing tests for gainToDb function
 5. [ ] Implement gainToDb to make tests pass
-6. [ ] Verify all tests pass
-7. [ ] Run pluginval to verify plugin loads correctly
-8. [ ] Commit completed work
+6. [ ] Fix all compiler warnings
+7. [ ] Verify all tests pass
+8. [ ] Run pluginval to verify plugin loads correctly
+9. [ ] Commit completed work
 ```
 
 ### Example Todo List for Bug Fix
@@ -919,10 +920,11 @@ This ensures every bug fix becomes a permanent regression test, preventing the s
 2. [ ] Write test reproducing the DC offset accumulation bug
 3. [ ] Verify test fails (confirms bug is captured)
 4. [ ] Fix the DC offset issue in FeedbackNetwork
-5. [ ] Verify bug reproduction test now passes
-6. [ ] Verify all other tests still pass
-7. [ ] Run pluginval to verify plugin loads correctly
-8. [ ] Commit completed work
+5. [ ] Fix all compiler warnings
+6. [ ] Verify bug reproduction test now passes
+7. [ ] Verify all other tests still pass
+8. [ ] Run pluginval to verify plugin loads correctly
+9. [ ] Commit completed work
 ```
 
 ### Enforcement
@@ -999,6 +1001,70 @@ This should appear AFTER "Verify all tests pass" and BEFORE "Commit completed wo
 - Pluginval tests editor open/close cycles (catches lifecycle bugs)
 - A plugin that passes unit tests but fails pluginval is BROKEN
 - Strictness level 5 catches most common issues without being overly strict
+
+## Compiler Warning Enforcement (MANDATORY)
+
+**CRITICAL**: All code changes MUST compile without warnings. Warnings indicate potential bugs, type mismatches, or undefined behavior.
+
+### Zero Warnings Policy
+
+After building, check for compiler warnings and fix ALL of them before committing:
+
+```bash
+# Build and check for warnings
+cmake --build build --config Debug 2>&1 | grep -i "warning C"
+```
+
+### Common Warning Fixes
+
+| Warning | Cause | Fix |
+|---------|-------|-----|
+| C4244 (double→float) | Using `10.0` instead of `10.0f` | Add `f` suffix to float literals |
+| C4834 ([[nodiscard]] discarded) | Ignoring return value | Cast to `(void)` or use the value |
+| C4267 (size_t→int) | Implicit narrowing | Use explicit cast or correct type |
+| C4100 (unreferenced parameter) | Unused function parameter | Use `(void)param;` or `[[maybe_unused]]` |
+
+### Required Todo Item
+
+For any code changes, the todo list MUST include:
+```
+[ ] Fix all compiler warnings
+```
+
+This should appear AFTER building and BEFORE running tests.
+
+### Updated Example Todo Lists
+
+**DSP Feature:**
+```
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write failing tests for dbToGain function
+3. [ ] Implement dbToGain to make tests pass
+4. [ ] Fix all compiler warnings
+5. [ ] Verify all tests pass
+6. [ ] Run pluginval to verify plugin loads correctly
+7. [ ] Commit completed work
+```
+
+**Bug Fix:**
+```
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write test reproducing the bug
+3. [ ] Verify test fails (confirms bug is captured)
+4. [ ] Fix the bug
+5. [ ] Fix all compiler warnings
+6. [ ] Verify bug reproduction test now passes
+7. [ ] Verify all other tests still pass
+8. [ ] Run pluginval to verify plugin loads correctly
+9. [ ] Commit completed work
+```
+
+### Why This Matters
+
+- Warnings often indicate real bugs (narrowing conversions, type mismatches)
+- Clean builds make it easier to spot new issues
+- Some warnings become errors on other compilers (Clang is stricter than MSVC)
+- Professional codebases maintain zero-warning policies
 
 ## Completion Honesty Enforcement (MANDATORY)
 
