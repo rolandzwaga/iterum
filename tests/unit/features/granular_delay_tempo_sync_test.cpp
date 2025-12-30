@@ -176,6 +176,100 @@ TEST_CASE("GranularDelay mode switching is smooth", "[features][granular-delay][
 }
 
 // =============================================================================
+// Note Value Accuracy Tests (US3) - T036-T044
+// =============================================================================
+
+TEST_CASE("GranularDelay note value calculations at 120 BPM", "[features][granular-delay][tempo-sync][layer4][note-values]") {
+    // These tests verify SC-001: Position accurate within 0.1ms across 20-300 BPM range
+    // At 120 BPM, one beat = 500ms
+
+    SECTION("T036: 1/32 note at 120 BPM = 62.5ms") {
+        float expected = 62.5f;
+        float actual = dropdownToDelayMs(0, 120.0);  // index 0 = 1/32
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T037: 1/16T triplet at 120 BPM = 83.33ms") {
+        float expected = 83.333333f;
+        float actual = dropdownToDelayMs(1, 120.0);  // index 1 = 1/16T
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T038: 1/16 note at 120 BPM = 125ms") {
+        float expected = 125.0f;
+        float actual = dropdownToDelayMs(2, 120.0);  // index 2 = 1/16
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T039: 1/8T triplet at 120 BPM = 166.67ms") {
+        float expected = 166.666666f;
+        float actual = dropdownToDelayMs(3, 120.0);  // index 3 = 1/8T
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("1/8 note at 120 BPM = 250ms") {
+        float expected = 250.0f;
+        float actual = dropdownToDelayMs(4, 120.0);  // index 4 = 1/8
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T040: 1/4T triplet at 120 BPM = 333.33ms") {
+        float expected = 333.333333f;
+        float actual = dropdownToDelayMs(5, 120.0);  // index 5 = 1/4T
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("1/4 note at 120 BPM = 500ms") {
+        float expected = 500.0f;
+        float actual = dropdownToDelayMs(6, 120.0);  // index 6 = 1/4
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T041: 1/2T triplet at 120 BPM = 666.67ms") {
+        float expected = 666.666666f;
+        float actual = dropdownToDelayMs(7, 120.0);  // index 7 = 1/2T
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T042: 1/2 note at 120 BPM = 1000ms") {
+        float expected = 1000.0f;
+        float actual = dropdownToDelayMs(8, 120.0);  // index 8 = 1/2
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+
+    SECTION("T043: 1/1 whole note at 120 BPM = 2000ms") {
+        float expected = 2000.0f;
+        float actual = dropdownToDelayMs(9, 120.0);  // index 9 = 1/1
+        REQUIRE(actual == Approx(expected).margin(0.1f));
+    }
+}
+
+TEST_CASE("GranularDelay note value accuracy across tempo range (SC-001)", "[features][granular-delay][tempo-sync][layer4][note-values]") {
+    SECTION("T044: Accuracy within 0.1ms across 20-300 BPM range") {
+        // Test 1/4 note (index 6) across various tempos
+        // Formula: delay_ms = (60000 / BPM) * beats_per_note
+        // For 1/4 note: delay_ms = 60000 / BPM
+
+        double tempos[] = {20.0, 60.0, 100.0, 120.0, 180.0, 240.0, 300.0};
+        for (double tempo : tempos) {
+            float expected = static_cast<float>(60000.0 / tempo);  // 1/4 = 1 beat
+            float actual = dropdownToDelayMs(6, tempo);
+            REQUIRE(actual == Approx(expected).margin(0.1f));
+        }
+    }
+
+    SECTION("Note values at extreme tempos") {
+        // 20 BPM (slow): 1/8 note = 1500ms
+        float slow8th = dropdownToDelayMs(4, 20.0);
+        REQUIRE(slow8th == Approx(1500.0f).margin(0.1f));
+
+        // 300 BPM (fast): 1/4 note = 200ms
+        float fast4th = dropdownToDelayMs(6, 300.0);
+        REQUIRE(fast4th == Approx(200.0f).margin(0.1f));
+    }
+}
+
+// =============================================================================
 // Edge Case Tests
 // =============================================================================
 
