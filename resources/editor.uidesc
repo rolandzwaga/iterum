@@ -237,7 +237,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="10, 135" size="90, 16" title="Envelope" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="COptionMenu" origin="10, 153" size="120, 22" control-tag="GranularEnvelopeType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         <view class="CTextLabel" origin="140, 135" size="90, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="140, 153" size="50, 22" control-tag="GranularFreeze"/>
+        <view class="CCheckBox" origin="140, 153" size="50, 22" control-tag="GranularFreeze" title="" font="value-font" font-color="text"/>
     </template>
 
     <!-- Mode 1: SPECTRAL -->
@@ -264,7 +264,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="400, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="400, 103" size="120, 20" control-tag="SpectralOutputGain" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="530, 85" size="90, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="530, 103" size="50, 22" control-tag="SpectralFreeze"/>
+        <view class="CCheckBox" origin="530, 103" size="50, 22" control-tag="SpectralFreeze" title="" font="value-font" font-color="text"/>
     </template>
 
     <!-- Mode 2: SHIMMER -->
@@ -289,7 +289,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="140, 85" size="90, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="140, 103" size="120, 20" control-tag="ShimmerDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="270, 85" size="90, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="270, 103" size="50, 22" control-tag="ShimmerFilterEnabled"/>
+        <view class="CCheckBox" origin="270, 103" size="50, 22" control-tag="ShimmerFilterEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="330, 85" size="90, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="330, 103" size="120, 20" control-tag="ShimmerFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="460, 85" size="90, 16" title="Output" font="label-font" font-color="text-dim" transparent="true"/>
@@ -314,7 +314,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CSlider" origin="660, 53" size="120, 20" control-tag="TapeFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <!-- Row 2 -->
         <view class="CTextLabel" origin="10, 85" size="90, 16" title="Splice" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="10, 103" size="50, 22" control-tag="TapeSpliceEnabled"/>
+        <view class="CCheckBox" origin="10, 103" size="50, 22" control-tag="TapeSpliceEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="70, 85" size="90, 16" title="Intensity" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="70, 103" size="120, 20" control-tag="TapeSpliceIntensity" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="200, 85" size="90, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
@@ -323,15 +323,15 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CSlider" origin="330, 103" size="120, 20" control-tag="TapeOutputLevel" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <!-- Row 3: Heads -->
         <view class="CTextLabel" origin="10, 140" size="280, 16" title="Head 1" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="60, 158" size="40, 20" control-tag="TapeHead1Enabled"/>
+        <view class="CCheckBox" origin="60, 158" size="40, 20" control-tag="TapeHead1Enabled" title="" font="value-font" font-color="text"/>
         <view class="CSlider" origin="105, 158" size="80, 18" control-tag="TapeHead1Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CSlider" origin="190, 158" size="80, 18" control-tag="TapeHead1Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="280, 140" size="280, 16" title="Head 2" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="330, 158" size="40, 20" control-tag="TapeHead2Enabled"/>
+        <view class="CCheckBox" origin="330, 158" size="40, 20" control-tag="TapeHead2Enabled" title="" font="value-font" font-color="text"/>
         <view class="CSlider" origin="375, 158" size="80, 18" control-tag="TapeHead2Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CSlider" origin="460, 158" size="80, 18" control-tag="TapeHead2Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="550, 140" size="280, 16" title="Head 3" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="600, 158" size="40, 20" control-tag="TapeHead3Enabled"/>
+        <view class="CCheckBox" origin="600, 158" size="40, 20" control-tag="TapeHead3Enabled" title="" font="value-font" font-color="text"/>
         <view class="CSlider" origin="645, 158" size="80, 18" control-tag="TapeHead3Level" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CSlider" origin="730, 158" size="80, 18" control-tag="TapeHead3Pan" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
     </template>
@@ -434,7 +434,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="380, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="380, 53" size="100, 20" control-tag="ReverseFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="490, 35" size="50, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="490, 53" size="40, 22" control-tag="ReverseFilterEnabled"/>
+        <view class="CCheckBox" origin="490, 53" size="40, 22" control-tag="ReverseFilterEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="540, 35" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="540, 53" size="80, 20" control-tag="ReverseFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="630, 35" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
@@ -480,7 +480,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="10, 5" size="200, 22" title="FREEZE MODE" font="section-font" font-color="accent" transparent="true"/>
         <!-- Row 1 -->
         <view class="CTextLabel" origin="10, 35" size="60, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="10, 53" size="50, 22" control-tag="FreezeEnabled"/>
+        <view class="CCheckBox" origin="10, 53" size="50, 22" control-tag="FreezeEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="70, 35" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="70, 53" size="100, 20" control-tag="FreezeDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="180, 35" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -499,7 +499,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="120, 85" size="90, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="120, 103" size="100, 20" control-tag="FreezeDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="230, 85" size="60, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="230, 103" size="40, 22" control-tag="FreezeFilterEnabled"/>
+        <view class="CCheckBox" origin="230, 103" size="40, 22" control-tag="FreezeFilterEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="280, 85" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="COptionMenu" origin="280, 103" size="70, 22" control-tag="FreezeFilterType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         <view class="CTextLabel" origin="360, 85" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
@@ -515,7 +515,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="CTextLabel" origin="10, 5" size="200, 22" title="DUCKING DELAY" font="section-font" font-color="accent" transparent="true"/>
         <!-- Row 1 -->
         <view class="CTextLabel" origin="10, 35" size="60, 16" title="Enable" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="10, 53" size="50, 22" control-tag="DuckingEnabled"/>
+        <view class="CCheckBox" origin="10, 53" size="50, 22" control-tag="DuckingEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="70, 35" size="90, 16" title="Threshold" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="70, 53" size="100, 20" control-tag="DuckingThreshold" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="180, 35" size="90, 16" title="Duck Amt" font="label-font" font-color="text-dim" transparent="true"/>
@@ -530,7 +530,7 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="COptionMenu" origin="620, 53" size="80, 22" control-tag="DuckingDuckTarget" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         <!-- Row 2 -->
         <view class="CTextLabel" origin="10, 85" size="60, 16" title="SC Filt" font="label-font" font-color="text-dim" transparent="true"/>
-        <view class="COnOffButton" origin="10, 103" size="40, 22" control-tag="DuckingSidechainFilterEnabled"/>
+        <view class="CCheckBox" origin="10, 103" size="40, 22" control-tag="DuckingSidechainFilterEnabled" title="" font="value-font" font-color="text"/>
         <view class="CTextLabel" origin="60, 85" size="90, 16" title="SC Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CSlider" origin="60, 103" size="100, 20" control-tag="DuckingSidechainFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         <view class="CTextLabel" origin="170, 85" size="90, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>

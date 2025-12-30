@@ -446,6 +446,7 @@ add_executable(vst_tests
     unit/vst/version_display_test.cpp
     unit/vst/digital_width_param_test.cpp
     unit/vst/editor_lifecycle_test.cpp
+    unit/vst/toggle_control_test.cpp
 )
 
 target_include_directories(vst_tests
