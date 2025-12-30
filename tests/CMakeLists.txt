@@ -131,6 +131,7 @@ add_executable(dsp_tests
     unit/features/ducking_delay_test.cpp
     unit/features/spectral_delay_test.cpp
     unit/features/granular_delay_test.cpp
+    unit/features/granular_delay_tempo_sync_test.cpp
     # Parameter Normalization Tests
     unit/parameters/bbd_params_test.cpp
     unit/parameters/digital_params_test.cpp
@@ -232,6 +233,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/features/ducking_delay_test.cpp
         unit/features/spectral_delay_test.cpp
         unit/features/granular_delay_test.cpp
+        unit/features/granular_delay_tempo_sync_test.cpp
         # Parameter Normalization Tests
         unit/parameters/bbd_params_test.cpp
         unit/parameters/digital_params_test.cpp
@@ -446,6 +448,8 @@ add_executable(vst_tests
     unit/vst/version_display_test.cpp
     unit/vst/digital_width_param_test.cpp
     unit/vst/editor_lifecycle_test.cpp
+    unit/vst/toggle_control_test.cpp
+    unit/vst/granular_tempo_sync_ui_test.cpp
 )
 
 target_include_directories(vst_tests

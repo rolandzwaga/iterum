@@ -1,10 +1,14 @@
 // Layer 4: User Feature - Granular Delay
 // Part of Granular Delay feature (spec 034)
+// Tempo sync additions: spec 038
 #pragma once
 
 #include "dsp/core/db_utils.h"
 #include "dsp/core/grain_envelope.h"
+#include "dsp/core/block_context.h"
+#include "dsp/core/note_value.h"
 #include "dsp/primitives/smoother.h"
+#include "dsp/systems/delay_engine.h"
 #include "dsp/systems/granular_engine.h"
 
 #include <algorithm>
@@ -109,9 +113,59 @@ public:
         gainSmoother_.setTarget(outputGainLinear_);
     }
 
+    // === Tempo Sync Controls (spec 038) ===
+
+    /// Set time mode: 0 = Free (ms), 1 = Synced (note value + tempo)
+    /// @param mode 0 for Free, 1 for Synced
+    void setTimeMode(int mode) noexcept {
+        timeMode_ = (mode == 1) ? TimeMode::Synced : TimeMode::Free;
+    }
+
+    /// Set note value index for tempo sync (0-9)
+    /// Maps to: 1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1
+    /// @param index Dropdown index (0-9), default 4 = 1/8 note
+    void setNoteValue(int index) noexcept {
+        noteValueIndex_ = std::clamp(index, 0, 9);
+    }
+
     // === Processing ===
 
-    /// Process a block of stereo audio
+    /// Process a block of stereo audio with tempo context (spec 038)
+    /// When in Synced mode, position is calculated from note value + tempo
+    /// @param leftIn Input left channel buffer
+    /// @param rightIn Input right channel buffer
+    /// @param leftOut Output left channel buffer
+    /// @param rightOut Output right channel buffer
+    /// @param numSamples Number of samples to process
+    /// @param ctx Block context containing tempo information
+    void process(const float* leftIn, const float* rightIn,
+                 float* leftOut, float* rightOut,
+                 size_t numSamples,
+                 const BlockContext& ctx) noexcept {
+        // Update position from tempo if in synced mode (FR-003)
+        if (timeMode_ == TimeMode::Synced) {
+            // Get tempo with fallback to 120 BPM if unavailable (FR-007)
+            double tempo = ctx.tempoBPM;
+            if (tempo <= 0.0) {
+                tempo = 120.0;  // Fallback default
+            }
+
+            // Calculate position from note value and tempo
+            float syncedMs = dropdownToDelayMs(noteValueIndex_, tempo);
+
+            // Clamp to max delay buffer (FR-006)
+            syncedMs = std::clamp(syncedMs, 0.0f, kMaxDelaySeconds * 1000.0f);
+
+            engine_.setPosition(syncedMs);
+        }
+        // In Free mode (FR-004), position is set via setDelayTime() - no change needed
+
+        // Delegate to core processing
+        processCore(leftIn, rightIn, leftOut, rightOut, numSamples);
+    }
+
+    /// Process a block of stereo audio (legacy overload without tempo context)
+    /// Uses Free mode behavior - position is set via setDelayTime()
     /// @param leftIn Input left channel buffer
     /// @param rightIn Input right channel buffer
     /// @param leftOut Output left channel buffer
@@ -120,6 +174,14 @@ public:
     void process(const float* leftIn, const float* rightIn,
                  float* leftOut, float* rightOut,
                  size_t numSamples) noexcept {
+        processCore(leftIn, rightIn, leftOut, rightOut, numSamples);
+    }
+
+private:
+    /// Core processing loop (shared by both process overloads)
+    void processCore(const float* leftIn, const float* rightIn,
+                     float* leftOut, float* rightOut,
+                     size_t numSamples) noexcept {
         for (size_t i = 0; i < numSamples; ++i) {
             // Get smoothed parameters
             const float feedback = feedbackSmoother_.process();
@@ -166,6 +228,7 @@ public:
         }
     }
 
+public:
     /// Get latency in samples
     /// Granular delay has no inherent latency (grains tap delay buffer)
     [[nodiscard]] size_t getLatencySamples() const noexcept { return 0; }
@@ -196,6 +259,10 @@ private:
     float outputGainLinear_ = 1.0f;
 
     double sampleRate_ = 44100.0;
+
+    // Tempo sync state (spec 038)
+    TimeMode timeMode_ = TimeMode::Free;  // Default: Free mode (milliseconds)
+    int noteValueIndex_ = 4;              // Default: 1/8 note (index 4)
 };
 
 }  // namespace Iterum::DSP

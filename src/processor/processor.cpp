@@ -232,7 +232,10 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
             granularDelay_.setOutputGain(granularParams_.outputGain.load(std::memory_order_relaxed));
             granularDelay_.setEnvelopeType(static_cast<DSP::GrainEnvelopeType>(
                 granularParams_.envelopeType.load(std::memory_order_relaxed)));
-            granularDelay_.process(inputL, inputR, outputL, outputR, numSamples);
+            // Tempo sync parameters (spec 038)
+            granularDelay_.setTimeMode(granularParams_.timeMode.load(std::memory_order_relaxed));
+            granularDelay_.setNoteValue(granularParams_.noteValue.load(std::memory_order_relaxed));
+            granularDelay_.process(inputL, inputR, outputL, outputR, numSamples, ctx);
             break;
 
         case DelayMode::Spectral:

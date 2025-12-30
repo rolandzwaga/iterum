@@ -90,6 +90,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kGranularDryWetId = 110,         // 0-1
     kGranularOutputGainId = 111,     // -96 to +6 dB
     kGranularEnvelopeTypeId = 112,   // 0-3 (Hann, Trapezoid, Sine, Blackman)
+    kGranularTimeModeId = 113,       // 0-1 (Free, Synced) - spec 038
+    kGranularNoteValueId = 114,      // 0-9 (note values) - spec 038
     kGranularEndId = 199,
 
     // ==========================================================================

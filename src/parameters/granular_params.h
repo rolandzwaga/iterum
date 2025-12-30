@@ -40,6 +40,8 @@ struct GranularParams {
     std::atomic<float> dryWet{0.5f};           // 0-1
     std::atomic<float> outputGain{0.0f};       // -96 to +6 dB
     std::atomic<int> envelopeType{0};          // 0-3 (Hann, Trapezoid, Sine, Blackman)
+    std::atomic<int> timeMode{0};              // 0=Free, 1=Synced (spec 038)
+    std::atomic<int> noteValue{4};             // 0-9 dropdown index, default 4 = 1/8 note (spec 038)
 };
 
 // ==============================================================================
@@ -141,6 +143,20 @@ inline void handleGranularParamChange(
             // 0-3 (Hann, Trapezoid, Sine, Blackman)
             params.envelopeType.store(
                 static_cast<int>(normalizedValue * 3.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularTimeModeId:
+            // 0=Free, 1=Synced (spec 038)
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularNoteValueId:
+            // 0-9 dropdown index (spec 038)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -308,6 +324,20 @@ inline void registerGranularParams(Steinberg::Vst::ParameterContainer& parameter
         STR16("Envelope"), kGranularEnvelopeTypeId,
         {STR16("Hann"), STR16("Trapezoid"), STR16("Sine"), STR16("Blackman")}
     ));
+
+    // Time Mode: 0=Free, 1=Synced (spec 038)
+    parameters.addParameter(createDropdownParameter(
+        STR16("Time Mode"), kGranularTimeModeId,
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value: 0-9 (1/32 through 1/1, default 4 = 1/8 note) (spec 038)
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Note Value"), kGranularNoteValueId,
+        4,  // default: 1/8 note (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 }
 
 // ==============================================================================
@@ -432,6 +462,9 @@ inline void saveGranularParams(
     streamer.writeFloat(params.dryWet.load(std::memory_order_relaxed));
     streamer.writeFloat(params.outputGain.load(std::memory_order_relaxed));
     streamer.writeInt32(params.envelopeType.load(std::memory_order_relaxed));
+    // Tempo sync parameters (spec 038) - appended for backward compatibility
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
 }
 
 inline void loadGranularParams(
@@ -479,6 +512,14 @@ inline void loadGranularParams(
     }
     if (streamer.readInt32(intVal)) {
         params.envelopeType.store(intVal, std::memory_order_relaxed);
+    }
+    // Tempo sync parameters (spec 038) - optional for backward compatibility
+    // If not present, defaults from struct initialization are used (Free mode, 1/8 note)
+    if (streamer.readInt32(intVal)) {
+        params.timeMode.store(intVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.noteValue.store(intVal, std::memory_order_relaxed);
     }
 }
 
@@ -568,6 +609,18 @@ inline void syncGranularParamsToController(
     if (streamer.readInt32(intVal)) {
         controller.setParamNormalized(kGranularEnvelopeTypeId,
             static_cast<double>(intVal) / 3.0);
+    }
+
+    // Time Mode: 0-1 -> normalized = val / 1 (spec 038)
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kGranularTimeModeId,
+            static_cast<double>(intVal));
+    }
+
+    // Note Value: 0-9 -> normalized = val / 9 (spec 038)
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kGranularNoteValueId,
+            static_cast<double>(intVal) / 9.0);
     }
 }
 

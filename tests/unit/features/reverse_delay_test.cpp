@@ -386,3 +386,125 @@ TEST_CASE("ReverseDelay sample rate support (SC-007)", "[reverse-delay][SC-007]"
         }
     }
 }
+
+// =============================================================================
+// BUG REGRESSION TEST: Filter enabling should not break reversal
+// =============================================================================
+// Bug: When filter is enabled, the delayed signal no longer gets reversed.
+// Expected: Filter should only apply filtering, not affect the reversal itself.
+// =============================================================================
+
+TEST_CASE("ReverseDelay filter does not break reversal", "[reverse-delay][filter][regression]") {
+    ReverseDelay delay;
+    delay.prepare(44100.0, 512, 2000.0f);
+    delay.setChunkSizeMs(10.0f);  // 441 samples for fast testing
+    delay.setDryWetMix(100.0f);    // 100% wet
+    delay.setFeedbackAmount(0.0f); // No feedback
+
+    // Helper lambda to detect reversal - checks for decreasing pattern
+    auto hasDecreasingPattern = [](const std::vector<float>& output, size_t startIdx, size_t checkLength) {
+        // Find peak value and its position
+        float maxVal = 0.0f;
+        size_t peakIdx = startIdx;
+        for (size_t i = startIdx; i < startIdx + checkLength && i < output.size(); ++i) {
+            if (output[i] > maxVal) {
+                maxVal = output[i];
+                peakIdx = i;
+            }
+        }
+
+        // Need substantial output to verify pattern
+        if (maxVal < 100.0f) return false;
+
+        // Check for decreasing pattern after peak (characteristic of reversal)
+        if (peakIdx + 10 >= output.size()) return false;
+        return output[peakIdx + 5] < output[peakIdx] &&
+               output[peakIdx + 10] < output[peakIdx + 5];
+    };
+
+    SECTION("reversal works without filter") {
+        delay.setFilterEnabled(false);
+        delay.snapParameters();
+        delay.reset();
+
+        // Process first chunk with ramp (0, 1, 2, ..., 440)
+        std::vector<float> left(441);
+        std::vector<float> right(441);
+        for (size_t i = 0; i < 441; ++i) {
+            left[i] = static_cast<float>(i);
+            right[i] = static_cast<float>(i);
+        }
+
+        BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0, .isPlaying = false};
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // Process second chunk (zeros) - should output reversed first chunk
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // Verify reversed pattern (decreasing after peak)
+        REQUIRE(hasDecreasingPattern(left, 0, 100));
+    }
+
+    SECTION("reversal still works with filter enabled") {
+        delay.setFilterEnabled(true);
+        delay.setFilterCutoff(4000.0f);  // Reasonable lowpass cutoff
+        delay.setFilterType(FilterType::Lowpass);
+        delay.snapParameters();
+        delay.reset();
+
+        // Process first chunk with ramp (0, 1, 2, ..., 440)
+        std::vector<float> left(441);
+        std::vector<float> right(441);
+        for (size_t i = 0; i < 441; ++i) {
+            left[i] = static_cast<float>(i);
+            right[i] = static_cast<float>(i);
+        }
+
+        BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0, .isPlaying = false};
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // Process second chunk (zeros) - should output reversed first chunk
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // Verify reversed pattern still present (filter should NOT break reversal)
+        // The pattern may be smoothed by the lowpass, but should still decrease
+        REQUIRE(hasDecreasingPattern(left, 0, 100));
+    }
+
+    SECTION("reversal works with highpass filter") {
+        delay.setFilterEnabled(true);
+        delay.setFilterCutoff(200.0f);  // Low highpass cutoff
+        delay.setFilterType(FilterType::Highpass);
+        delay.snapParameters();
+        delay.reset();
+
+        // Process first chunk with ramp
+        std::vector<float> left(441);
+        std::vector<float> right(441);
+        for (size_t i = 0; i < 441; ++i) {
+            left[i] = static_cast<float>(i);
+            right[i] = static_cast<float>(i);
+        }
+
+        BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0, .isPlaying = false};
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // Process second chunk
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        delay.process(left.data(), right.data(), 441, ctx);
+
+        // With highpass filter, the ramp output will be transformed,
+        // but there should still be substantial output from the reversal
+        float maxOutput = 0.0f;
+        for (float s : left) {
+            maxOutput = std::max(maxOutput, std::abs(s));
+        }
+        // Should have audible output (reversal is happening)
+        REQUIRE(maxOutput > 50.0f);
+    }
+}
