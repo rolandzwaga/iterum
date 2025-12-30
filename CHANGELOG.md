@@ -5,6 +5,54 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-30
+
+### Added
+
+- **Audio Unit v2 Support (macOS)** (spec 039)
+  - Iterum now available as an AU component for Logic Pro, GarageBand, and other AU-only hosts
+  - Universal Binary (arm64 + x86_64) for native performance on both Intel and Apple Silicon Macs
+  - AU validation (`auval`) runs automatically in CI to ensure compliance
+  - macOS installer now includes both VST3 and AU formats
+  - AU codes: `aufx` (effect), `KrAt` (Krate Audio), `Itrm` (Iterum)
+
+- **Granular Delay Tempo Sync** (spec 038)
+  - Added Time Mode parameter: "Free" (milliseconds) or "Synced" (note values)
+  - Synced mode locks grain position to musical divisions based on host tempo
+  - Same note value options as other delay modes (1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1)
+  - Smooth transitions when switching between Free and Synced modes
+  - UI shows Note Value dropdown only when Time Mode is "Synced"
+
+- **Digital Delay Stereo Width Control** (spec 036)
+  - New Width parameter (0-200%, default 100%)
+  - Mid/Side processing applied to wet signal only
+  - 0% = mono, 100% = original stereo, 200% = maximum stereo separation
+  - Smooth parameter changes via OnePoleSmoother (20ms)
+
+- **Dynamic Version Display**
+  - Plugin version now displayed in UI from version.json
+  - Version automatically stays in sync across builds
+
+### Fixed
+
+- **Editor Close/Reopen Crash**
+  - VisibilityController stored direct pointer to VST3Editor
+  - When editor was closed and reopened, pending IDependent callbacks accessed dangling pointer
+  - Fixed by using pointer-to-pointer pattern that safely handles editor lifecycle
+
+- **DC Offset in Feedback Network**
+  - Added DC blocking to FeedbackNetwork to prevent low-frequency buildup
+  - Particularly important for high feedback settings
+
+- **BitCrusher Issues**
+  - Fixed symmetric quantization for cleaner bit reduction
+  - Fixed RNG bias in dither generation
+
+- **UI Toggle Visibility**
+  - Replaced COnOffButton with CCheckBox for proper visible state display
+
+---
+
 ## [0.1.2] - 2025-12-29
 
 ### Added
