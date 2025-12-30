@@ -103,6 +103,16 @@ configure_file(
 )
 
 # ==============================================================================
+# Windows Resource Generation
+# ==============================================================================
+# Generate win32resource.rc from template - single source of truth for version
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/win32resource.rc.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/win32resource.rc"
+    @ONLY
+)
+
+# ==============================================================================
 # Plugin Target
 # ==============================================================================
 set(PLUGIN_NAME "${PROJECT_NAME}")
@@ -231,7 +241,6 @@ endif()
 smtg_target_add_plugin_resources(${PLUGIN_NAME}
     RESOURCES
         resources/editor.uidesc
-        resources/editor_minimal.uidesc
 )
 
 # ==============================================================================

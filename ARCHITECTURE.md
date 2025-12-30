@@ -5018,6 +5018,136 @@ delay.process(inputL, inputR, outputL, outputR, blockSize, ctx);
 
 ---
 
+## UI Architecture
+
+### Overview
+
+The plugin UI is built with VSTGUI's UIDescription XML format. The main UI definition is in `resources/editor.uidesc`. Each delay mode has its own panel template that displays when that mode is selected.
+
+### Panel Structure
+
+All mode panels use a consistent 860x400 pixel dimension with controls organized into labeled groups:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ MODE TITLE (10, 5)                                                              │
+├──────────────────┬──────────────────┬──────────────────┬──────────────────┬─────┤
+│ GROUP 1          │ GROUP 2          │ GROUP 3          │ GROUP 4          │     │
+│ TIME & MIX       │ [MODE-SPECIFIC]  │ [MODE-SPECIFIC]  │ OUTPUT           │     │
+│ (10, 30)         │ (300, 30)        │ (300, 155)       │ (580, 30)        │     │
+│ 280 x 175        │ 270 x 115        │ 270 x 115        │ 270 x 175        │     │
+└──────────────────┴──────────────────┴──────────────────┴──────────────────┴─────┘
+```
+
+### Group Container Pattern
+
+Groups are implemented using `CViewContainer` with a header `CTextLabel`:
+
+```xml
+<!-- Group Template -->
+<view class="CViewContainer" origin="x, y" size="w, h" background-color="section" transparent="false">
+    <view class="CTextLabel" origin="5, 5" size="w-10, 18"
+          title="GROUP NAME"
+          font="section-font"
+          font-color="accent"
+          transparent="true"/>
+    <!-- Controls positioned relative to group container -->
+    <view class="CTextLabel" origin="10, 28" ... /> <!-- Control label -->
+    <view class="CSlider" origin="10, 46" ... />    <!-- Control -->
+</view>
+```
+
+**Key attributes**:
+- `background-color="section"` - Uses #3a3a3a for subtle contrast against panel background
+- `transparent="false"` - Required to show background color
+- Group header uses `section-font` (Arial 14 bold) with `accent` color (#4a90d9)
+
+### UI Resources
+
+| Resource | Definition | Purpose |
+|----------|------------|---------|
+| `section` | #3a3a3a | Group container background |
+| `panel` | #353535 | Panel background |
+| `accent` | #4a90d9 | Group headers, mode titles |
+| `text-dim` | #a0a0a0 | Control labels |
+| `section-font` | Arial 14 bold | Group headers |
+| `label-font` | Arial 11 | Control labels |
+| `value-font` | Arial 10 | Value displays |
+
+### Group Organization by Mode
+
+| Mode | Group 1 | Group 2 | Group 3 | Group 4 | Group 5 |
+|------|---------|---------|---------|---------|---------|
+| Granular | TIME & MIX | GRAIN PARAMETERS | SPRAY & RANDOMIZATION | OUTPUT | — |
+| Spectral | TIME & MIX | SPECTRAL ANALYSIS | SPECTRAL CHARACTER | OUTPUT | — |
+| Shimmer | TIME & MIX | PITCH SHIFT | DIFFUSION & FILTER | OUTPUT | — |
+| Tape | TIME & MIX | CHARACTER | SPLICE | TAPE HEADS | OUTPUT |
+| BBD | TIME & MIX | CHARACTER | MODULATION | OUTPUT | — |
+| Digital | TIME & SYNC | CHARACTER | MODULATION | OUTPUT | — |
+| PingPong | TIME & SYNC | STEREO | MODULATION | OUTPUT | — |
+| Reverse | TIME & MIX | CHUNK | FILTER | OUTPUT | — |
+| MultiTap | TIME | PATTERN | MIX | FEEDBACK FILTERS | OUTPUT |
+| Freeze | FREEZE CONTROL | TIME & MIX | PITCH & SHIMMER | DIFFUSION & FILTER | OUTPUT |
+| Ducking | DUCKER DYNAMICS | DELAY | SIDECHAIN | OUTPUT | — |
+
+**Note**: Freeze, Ducking, and MultiTap modes place their primary function group first, with TIME & MIX in a secondary position. All other modes have TIME & MIX first.
+
+### Adding a New Mode Panel
+
+When adding a new delay mode, follow this pattern:
+
+1. Create a new template in `editor.uidesc`:
+```xml
+<template name="NewModePanel" class="CViewContainer" origin="0, 0" size="860, 400"
+          background-color="panel" transparent="false">
+    <!-- Mode title -->
+    <view class="CTextLabel" origin="10, 5" size="200, 22"
+          title="NEW MODE DELAY" font="section-font" font-color="accent" transparent="true"/>
+
+    <!-- Group 1: TIME & MIX (unless mode has dominant primary function) -->
+    <view class="CViewContainer" origin="10, 30" size="280, 175"
+          background-color="section" transparent="false">
+        <!-- ... controls ... -->
+    </view>
+
+    <!-- Additional groups -->
+
+    <!-- OUTPUT group (always last) -->
+    <view class="CViewContainer" origin="580, 30" size="270, 175"
+          background-color="section" transparent="false">
+        <view class="CTextLabel" origin="5, 5" size="260, 18"
+              title="OUTPUT" font="section-font" font-color="accent" transparent="true"/>
+        <!-- Output Gain control -->
+    </view>
+</template>
+```
+
+2. Register the template in `UIViewSwitchContainer`:
+```xml
+<view class="UIViewSwitchContainer" ...>
+    <!-- Add mapping for new mode index -->
+    <template name="NewModePanel" value="11"/>  <!-- Use next available index -->
+</view>
+```
+
+3. Ensure control-tags match parameter IDs in `plugin_ids.h`
+
+### Position Reference
+
+Standard group positions for consistent layout:
+
+| Position | Origin | Size | Use For |
+|----------|--------|------|---------|
+| Left column, full height | (10, 30) | 280 x 175 | TIME & MIX (primary controls) |
+| Center-left, upper | (300, 30) | 270 x 115 | Secondary group |
+| Center-left, lower | (300, 155) | 270 x 115 | Tertiary group |
+| Right column, upper | (580, 30) | 270 x 115 | Specialized group |
+| Right column, lower | (580, 155) | 270 x 60 | OUTPUT group |
+
+Spacing: 10px between groups, 10px padding inside groups.
+
+---
+
 ## Cross-Cutting Concerns
 
 ### Namespaces
