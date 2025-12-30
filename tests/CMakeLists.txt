@@ -131,6 +131,7 @@ add_executable(dsp_tests
     unit/features/ducking_delay_test.cpp
     unit/features/spectral_delay_test.cpp
     unit/features/granular_delay_test.cpp
+    unit/features/granular_delay_tempo_sync_test.cpp
     # Parameter Normalization Tests
     unit/parameters/bbd_params_test.cpp
     unit/parameters/digital_params_test.cpp
@@ -232,6 +233,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/features/ducking_delay_test.cpp
         unit/features/spectral_delay_test.cpp
         unit/features/granular_delay_test.cpp
+        unit/features/granular_delay_tempo_sync_test.cpp
         # Parameter Normalization Tests
         unit/parameters/bbd_params_test.cpp
         unit/parameters/digital_params_test.cpp
