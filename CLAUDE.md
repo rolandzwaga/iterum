@@ -854,36 +854,55 @@ TEST_CASE("Function does X", "[dsp][category]") {
 
 Before starting ANY implementation task, you MUST:
 
-1. **Check if `specs/TESTING-GUIDE.md` is in your current context window**
-2. **If NOT in context**: Read the file IMMEDIATELY before proceeding
-3. This check MUST appear as an explicit todo item: "Verify TESTING-GUIDE.md is in context (ingest if needed)"
+1. **Check if BOTH of these files are in your current context window:**
+   - `specs/TESTING-GUIDE.md` - Testing patterns and categories
+   - `specs/VST-GUIDE.md` - Framework pitfalls and solutions
+2. **If NOT in context**: Read the files IMMEDIATELY before proceeding
+3. This check MUST appear as an explicit todo item: "Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)"
 
-This is REQUIRED because context compaction may have removed the testing guide from your working memory.
+This is REQUIRED because context compaction may have removed these guides from your working memory.
 
-### Test-First Workflow
+### Test-First Workflow (Features & Changes)
 
-For every implementation task, the todo list MUST include these explicit items IN ORDER:
+For ANY source code change (new features, enhancements, refactoring, optimizations), the todo list MUST include these explicit items IN ORDER:
 
 ```
-1. [ ] Verify TESTING-GUIDE.md is in context (ingest if needed)
-2. [ ] Write failing tests for [feature name]
-3. [ ] Implement [feature name] to make tests pass
+1. [ ] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write failing test for [feature/change]
+3. [ ] Implement [feature/change] to make test pass
 4. [ ] Verify all tests pass
 5. [ ] Commit completed work
 ```
 
 **NEVER skip steps 1, 2, or 5.** These are checkpoints, not optional guidelines.
 
+### Bug-First Testing Workflow
+
+When a bug in the plugin is reported, you MUST follow this workflow:
+
+```
+1. [ ] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write a test that reproduces the faulty behavior
+3. [ ] Verify the test FAILS (confirming it captures the bug)
+4. [ ] Fix the bug
+5. [ ] Verify the test now PASSES
+6. [ ] Verify all other tests still pass
+7. [ ] Commit completed work
+```
+
+This ensures every bug fix becomes a permanent regression test, preventing the same bug from recurring.
+
 ### Why This Matters
 
-- **Step 1** ensures testing patterns are fresh in context
+- **Step 1** ensures testing patterns and framework knowledge are fresh in context
 - **Step 2** (tests first) catches design issues early and documents expected behavior
-- **Step 5** (commit) creates save points and ensures work isn't lost
+- **Bug reproduction tests** prevent regression and document what went wrong
+- **Step 5/7** (commit) creates save points and ensures work isn't lost
 
 ### Example Todo List for DSP Feature
 
 ```
-1. [x] Verify TESTING-GUIDE.md is in context (ingest if needed)
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
 2. [ ] Write failing tests for dbToGain function
 3. [ ] Implement dbToGain to make tests pass
 4. [ ] Write failing tests for gainToDb function
@@ -892,9 +911,21 @@ For every implementation task, the todo list MUST include these explicit items I
 7. [ ] Commit completed work
 ```
 
+### Example Todo List for Bug Fix
+
+```
+1. [x] Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)
+2. [ ] Write test reproducing the DC offset accumulation bug
+3. [ ] Verify test fails (confirms bug is captured)
+4. [ ] Fix the DC offset issue in FeedbackNetwork
+5. [ ] Verify bug reproduction test now passes
+6. [ ] Verify all other tests still pass
+7. [ ] Commit completed work
+```
+
 ### Enforcement
 
-If you find yourself writing implementation code without corresponding test files already created, STOP and write the tests first. This is a constitution-level requirement (Principle XII).
+If you find yourself writing implementation code without corresponding test files already created, STOP and write the tests first. This is a constitution-level requirement (Principle XIII).
 
 ## Completion Honesty Enforcement (MANDATORY)
 

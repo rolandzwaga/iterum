@@ -2,17 +2,17 @@
 ================================================================================
 SYNC IMPACT REPORT
 ================================================================================
-Version Change: 1.9.0 → 1.10.0
-Modified Principles: None
-Added Sections:
-  - Principle XVIII: Spec Numbering (Specs Directory is Source of Truth)
-    - REQUIRES using specs/ directory as sole source of truth for spec numbers
-    - FORBIDS checking branches (local or remote) for spec numbering
-    - MANDATES finding highest numbered spec in specs/ directory
-    - Provides command: ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1
-    - New spec number = highest + 1, regardless of feature name
+Version Change: 1.10.0 → 1.11.0
+Modified Principles:
+  - Principle XIII: Test-First Development (ENHANCED)
+    - REQUIRES both TESTING-GUIDE.md AND VST-GUIDE.md in context before implementation
+    - REQUIRES writing failing test BEFORE any source code change (not just new features)
+    - ADDS Bug-First Testing workflow: reproduce bug with test FIRST, then fix
+    - Updated explicit todo items to include both guide files
+    - Added "Bug reproduction tests for reported issues" to test categories
+Added Sections: None
 Removed Sections: None
-Templates Updated: None required (spec numbering is handled by /speckit.specify workflow)
+Templates Updated: None
 Follow-up TODOs: None
 ================================================================================
 -->
@@ -611,21 +611,43 @@ When a framework-based solution doesn't work, you MUST deeply investigate WHY be
 All implementation work MUST follow test-first methodology. Testing guidance MUST be actively referenced during development.
 
 **Non-Negotiable Rules:**
-- **Context Verification**: Before starting ANY implementation task, VERIFY that `specs/TESTING-GUIDE.md` is in the current context. If not, INGEST IT before proceeding.
-- **Test Before Implementation**: Write failing tests BEFORE writing implementation code
+
+- **Context Verification**: Before starting ANY implementation task, VERIFY that BOTH of these files are in the current context. If not, INGEST THEM before proceeding:
+  1. `specs/TESTING-GUIDE.md` - Testing patterns and categories
+  2. `specs/VST-GUIDE.md` - Framework pitfalls and solutions
+
+- **Test Before Implementation**: For ANY source code change, write a failing test FIRST, then implement the change to make the test pass. This applies to:
+  - New features
+  - Enhancements to existing features
+  - Refactoring
+  - Performance optimizations
+  - ANY modification to production code
+
+- **Bug-First Testing**: When a bug is reported:
+  1. FIRST create a test that reproduces the faulty behavior
+  2. Verify the test FAILS (confirming it captures the bug)
+  3. THEN fix the bug
+  4. Verify the test now PASSES
+  5. This test becomes a permanent regression test
+
 - **Task Completion**: Every implementation task MUST end with a commit of the work completed
+
 - **Explicit Todo Items**: The following steps MUST appear as explicit items in the task todo list (not implicit rules):
-  1. "Verify TESTING-GUIDE.md is in context (ingest if needed)"
-  2. "Write failing tests for [feature]"
-  3. "Implement [feature] to make tests pass"
-  4. "Commit completed work"
+  1. "Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)"
+  2. "Write failing test for [feature/bug]"
+  3. "Implement [feature/fix] to make test pass"
+  4. "Verify all tests pass"
+  5. "Commit completed work"
+
 - **Test Categories**: Follow the testing guide for appropriate test categories:
   - Unit tests for pure DSP functions
   - Integration tests for component interactions
   - Regression tests for audio output stability
+  - Bug reproduction tests for reported issues
+
 - **No Skipping Tests**: Implementation without corresponding tests is FORBIDDEN except for trivial refactors with existing test coverage
 
-**Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied.
+**Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied. Bug-first testing ensures every reported issue becomes a permanent regression test, preventing the same bug from recurring.
 
 ### XVII. Framework Knowledge Documentation (VST-GUIDE.md)
 
@@ -707,4 +729,4 @@ git ls-remote --heads origin | grep 'digital-stereo-width'  # MEANINGLESS - bran
 
 **Rationale:** Spec numbers must be unique and sequential. Branches are temporary and deleted after merge. Only the specs/ directory provides a permanent, reliable record of all specifications created.
 
-**Version**: 1.10.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-29
+**Version**: 1.11.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2025-12-30
