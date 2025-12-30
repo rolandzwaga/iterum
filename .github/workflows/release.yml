@@ -112,15 +112,18 @@ jobs:
 
       - name: Prepare Installer Files
         run: |
+          # Create staging directories for both VST3 and AU
           mkdir -p staging/Library/Audio/Plug-Ins/VST3
-          # Rename artifact folder to Iterum.vst3 (upload-artifact extracts contents, not folder)
-          mv artifact staging/Library/Audio/Plug-Ins/VST3/Iterum.vst3
+          mkdir -p staging/Library/Audio/Plug-Ins/Components
+          # Move VST3 and AU bundles to appropriate locations
+          mv artifact/Iterum.vst3 staging/Library/Audio/Plug-Ins/VST3/
+          mv artifact/Iterum.component staging/Library/Audio/Plug-Ins/Components/
 
       - name: Build Installer
         run: |
           pkgbuild \
             --root staging \
-            --identifier com.krateaudio.iterum.vst3 \
+            --identifier com.krateaudio.iterum \
             --version ${{ needs.version.outputs.version }} \
             --install-location / \
             Iterum-${{ needs.version.outputs.version }}-macOS.pkg

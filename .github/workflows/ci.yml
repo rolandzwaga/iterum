@@ -115,14 +115,16 @@ jobs:
       # Use Xcode generator with ccache via TheLartians/Ccache.cmake wrapper scripts
       # This works around Xcode ignoring CMAKE_<LANG>_COMPILER_LAUNCHER
       # Note: PCH stays enabled on macOS - ccache handles it better than sccache
+      # Note: SMTG_ENABLE_AUV2_BUILDS enables Audio Unit v2 build via VST3 SDK AU wrapper
+      # Note: SMTG_CODE_SIGN_IDENTITY_MAC="-" uses ad-hoc signing (no keychain required in CI)
       - name: Configure CMake
-        run: cmake -S . -B build -G Xcode -DUSE_CCACHE=ON
+        run: cmake -S . -B build -G Xcode -DUSE_CCACHE=ON -DSMTG_ENABLE_AUV2_BUILDS=ON -DSMTG_CODE_SIGN_IDENTITY_MAC="-"
 
       - name: Build Tests
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target dsp_tests approval_tests vst_tests --parallel
 
-      - name: Build Plugin and Validator
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target Iterum validator --parallel
+      - name: Build Plugin, AU, and Validator
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target Iterum Iterum_AU validator --parallel
 
       - name: Run Tests
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure --exclude-regex "vst3_validator_extensive"
@@ -130,16 +132,28 @@ jobs:
       - name: Run VST3 Validator (Extensive)
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure -R "vst3_validator_extensive"
 
+      # Install AU and run auval validation
+      - name: Run AU Validation
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          rm -rf ~/Library/Audio/Plug-Ins/Components/Iterum.component
+          cp -R build/VST3/${{ env.BUILD_TYPE }}/Iterum.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -v aufx Itrm KrAt
+
       # Show ccache statistics for debugging cache effectiveness
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats
 
-      - name: Upload Plugin Artifact
+      - name: Upload Plugin Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Iterum-macOS
-          path: build/VST3/${{ env.BUILD_TYPE }}/Iterum.vst3
+          path: |
+            build/VST3/${{ env.BUILD_TYPE }}/Iterum.vst3
+            build/VST3/${{ env.BUILD_TYPE }}/Iterum.component
           if-no-files-found: warn
 
   # Linux build (optional per constitution - Platform Support Matrix)

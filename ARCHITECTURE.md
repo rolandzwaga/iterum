@@ -5187,3 +5187,83 @@ Quick lookup by functionality:
 | Set spectral feedback tilt | `SpectralDelay::setFeedbackTilt()` | features/spectral_delay.h |
 | Enable spectral freeze | `SpectralDelay::setFreezeEnabled()` | features/spectral_delay.h |
 | Set spectral diffusion | `SpectralDelay::setDiffusion()` | features/spectral_delay.h |
+
+---
+
+## Build & Platform Configuration
+
+### Plugin Formats
+
+Iterum supports multiple plugin formats:
+
+| Format | Platform | Bundle Extension | Install Location |
+|--------|----------|------------------|------------------|
+| VST3 | Windows | `.vst3` | `C:\Program Files\Common Files\VST3\` |
+| VST3 | macOS | `.vst3` | `/Library/Audio/Plug-Ins/VST3/` |
+| VST3 | Linux | `.vst3` | `~/.vst3/` |
+| Audio Unit v2 | macOS | `.component` | `/Library/Audio/Plug-Ins/Components/` |
+
+### Audio Unit v2 (AUv2) Support
+
+The plugin includes Audio Unit v2 support for macOS, enabling use in AU-only hosts like Logic Pro and GarageBand.
+
+#### AU Component Codes
+
+| Code Type | Value | Description |
+|-----------|-------|-------------|
+| Type | `aufx` | Audio effect (not instrument or generator) |
+| Manufacturer | `KrAt` | Krate Audio identifier |
+| Subtype | `Itrm` | Iterum plugin identifier |
+
+#### Files
+
+| File | Purpose |
+|------|---------|
+| `resources/au-info.plist` | AU component manifest with codes and channel configuration |
+| `CMakeLists.txt` | Contains `smtg_target_add_auv2()` AU target configuration |
+
+#### Building AU
+
+AU builds require macOS with Xcode generator:
+
+```bash
+# Configure with AU support enabled
+cmake -S . -B build -G Xcode -DSMTG_ENABLE_AUV2_BUILDS=ON
+
+# Build AU target
+cmake --build build --config Release --target Iterum_AU
+```
+
+The AU component uses the VST3 SDK's AU wrapper (`extern/vst3sdk/public.sdk/source/vst/auwrapper/`) which wraps the VST3 plugin. This ensures:
+- Identical audio processing to VST3
+- Same parameter set as VST3
+- Compatible state serialization between formats
+
+#### AU Validation
+
+Apple's `auval` tool validates AU component compliance:
+
+```bash
+# Install AU to user location
+cp -R build/VST3/Release/Iterum.component ~/Library/Audio/Plug-Ins/Components/
+
+# Refresh AU cache
+killall -9 AudioComponentRegistrar 2>/dev/null || true
+
+# Validate
+auval -v aufx Itrm KrAt
+```
+
+CI automatically builds and validates the AU component on every macOS build.
+
+#### Universal Binary
+
+The AU component is built as a Universal Binary containing both architectures:
+- `arm64` - Native Apple Silicon (M1/M2/M3/M4)
+- `x86_64` - Intel Macs
+
+This is handled automatically by the VST3 SDK's `smtg_target_setup_universal_binary()` function.
+
+#### Minimum macOS Version
+
+Both VST3 and AU require macOS 10.13 (High Sierra) or later, controlled by `CMAKE_OSX_DEPLOYMENT_TARGET` in the VST3 SDK.
