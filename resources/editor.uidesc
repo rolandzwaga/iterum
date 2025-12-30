@@ -55,6 +55,8 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <control-tag name="GranularDryWet" tag="110"/>
         <control-tag name="GranularOutputGain" tag="111"/>
         <control-tag name="GranularEnvelopeType" tag="112"/>
+        <control-tag name="GranularTimeMode" tag="113"/>
+        <control-tag name="GranularNoteValue" tag="114"/>
 
         <!-- Spectral (200-209) -->
         <control-tag name="SpectralFFTSize" tag="200"/>
@@ -238,6 +240,11 @@ Uses CViewSwitchContainer to show only the selected mode's panel.
         <view class="COptionMenu" origin="10, 153" size="120, 22" control-tag="GranularEnvelopeType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         <view class="CTextLabel" origin="140, 135" size="90, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
         <view class="CCheckBox" origin="140, 153" size="50, 22" control-tag="GranularFreeze" title="" font="value-font" font-color="text"/>
+        <!-- Tempo Sync Controls (spec 038) -->
+        <view class="CTextLabel" origin="270, 135" size="90, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="270, 153" size="120, 22" control-tag="GranularTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+        <view class="CTextLabel" origin="400, 135" size="90, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
+        <view class="COptionMenu" origin="400, 153" size="120, 22" control-tag="GranularNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
     </template>
 
     <!-- Mode 1: SPECTRAL -->
