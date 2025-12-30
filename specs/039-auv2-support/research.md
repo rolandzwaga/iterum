@@ -89,7 +89,7 @@ include(FetchContent)
 FetchContent_Declare(
     AudioUnitSDK
     GIT_REPOSITORY https://github.com/apple/AudioUnitSDK.git
-    GIT_TAG v1.1.0  # Use specific tag for reproducibility
+    GIT_TAG AudioUnitSDK-1.1.0  # Use specific tag for reproducibility
 )
 FetchContent_MakeAvailable(AudioUnitSDK)
 FetchContent_GetProperties(

@@ -61,7 +61,7 @@ Standard test-first methodology does not apply to build configuration changes.
 
 - [x] T002 [US1] Add AudioUnitSDK FetchContent to `CMakeLists.txt`:
   - Add `option(SMTG_ENABLE_AUV2_BUILDS "Enable AudioUnit v2 builds" OFF)` for macOS
-  - FetchContent_Declare for `https://github.com/apple/AudioUnitSDK.git` tag v1.1.0
+  - FetchContent_Declare for `https://github.com/apple/AudioUnitSDK.git` tag AudioUnitSDK-1.1.0
   - FetchContent_MakeAvailable and FetchContent_GetProperties to set SMTG_AUDIOUNIT_SDK_PATH
   - Guard with `if(SMTG_MAC AND XCODE AND SMTG_ENABLE_AUV2_BUILDS)`
 

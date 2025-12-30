@@ -193,7 +193,7 @@ if(SMTG_MAC)
         FetchContent_Declare(
             AudioUnitSDK
             GIT_REPOSITORY https://github.com/apple/AudioUnitSDK.git
-            GIT_TAG v1.1.0
+            GIT_TAG AudioUnitSDK-1.1.0
         )
         FetchContent_MakeAvailable(AudioUnitSDK)
         FetchContent_GetProperties(
