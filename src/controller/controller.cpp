@@ -112,13 +112,15 @@ static VSTGUI::CControl* findControlByTag(VSTGUI::CViewContainer* container, int
 // ==============================================================================
 class VisibilityController : public Steinberg::FObject {
 public:
+    // editorPtr: Pointer to the controller's activeEditor_ member (NOT the editor itself!)
+    // This allows us to always get the CURRENT editor, or nullptr if closed.
     VisibilityController(
-        VSTGUI::VST3Editor* editor,
+        VSTGUI::VST3Editor** editorPtr,
         Steinberg::Vst::Parameter* watchedParam,
         std::initializer_list<Steinberg::int32> controlTags,
         float visibilityThreshold = 0.5f,
         bool showWhenBelow = true)
-    : editor_(editor)
+    : editorPtr_(editorPtr)
     , watchedParam_(watchedParam)
     , controlTags_(controlTags)
     , visibilityThreshold_(visibilityThreshold)
@@ -141,7 +143,9 @@ public:
 
     // IDependent::update - called on UI thread via deferred update mechanism
     void PLUGIN_API update(Steinberg::FUnknown* changedUnknown, Steinberg::int32 message) override {
-        if (message == IDependent::kChanged && watchedParam_ && editor_) {
+        // Get current editor from controller's member - may be nullptr if editor closed
+        VSTGUI::VST3Editor* editor = editorPtr_ ? *editorPtr_ : nullptr;
+        if (message == IDependent::kChanged && watchedParam_ && editor) {
             // Get current parameter value (normalized: 0.0 to 1.0)
             float normalizedValue = watchedParam_->getNormalized();
 
@@ -175,8 +179,10 @@ public:
 private:
     // Find control by tag in current view hierarchy
     VSTGUI::CControl* findControlByTag(Steinberg::int32 tag) {
-        if (!editor_) return nullptr;
-        auto* frame = editor_->getFrame();
+        // Get current editor - may be nullptr if closed
+        VSTGUI::VST3Editor* editor = editorPtr_ ? *editorPtr_ : nullptr;
+        if (!editor) return nullptr;
+        auto* frame = editor->getFrame();
         if (!frame) return nullptr;
 
 #if defined(_DEBUG) && defined(_WIN32)
@@ -207,7 +213,7 @@ private:
 #endif
     }
 
-    VSTGUI::VST3Editor* editor_;
+    VSTGUI::VST3Editor** editorPtr_;  // Pointer to controller's activeEditor_ member
     Steinberg::Vst::Parameter* watchedParam_;
     std::vector<Steinberg::int32> controlTags_;
     float visibilityThreshold_;
@@ -811,9 +817,12 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
 
             // Create visibility controllers for Digital mode
             // Hide delay time label + control when time mode is "Synced" (>= 0.5)
+            // NOTE: Pass &activeEditor_ (pointer to member) so VisibilityController
+            // always gets the CURRENT editor, avoiding dangling pointer crashes
+            // when the editor is closed and reopened.
             if (auto* digitalTimeMode = getParameterObject(kDigitalTimeModeId)) {
                 digitalDelayTimeVisibilityController_ = new VisibilityController(
-                    editor, digitalTimeMode, {9901, kDigitalDelayTimeId}, 0.5f, true);
+                    &activeEditor_, digitalTimeMode, {9901, kDigitalDelayTimeId}, 0.5f, true);
             }
 
             // Hide Age label + control when Era is "Pristine" (< 0.25)
@@ -821,14 +830,14 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
             // Show Age when Era >= 0.25 (80s or LoFi)
             if (auto* digitalEra = getParameterObject(kDigitalEraId)) {
                 digitalAgeVisibilityController_ = new VisibilityController(
-                    editor, digitalEra, {9902, kDigitalAgeId}, 0.25f, false);
+                    &activeEditor_, digitalEra, {9902, kDigitalAgeId}, 0.25f, false);
             }
 
             // Create visibility controllers for PingPong mode
             // Hide delay time label + control when time mode is "Synced" (>= 0.5)
             if (auto* pingPongTimeMode = getParameterObject(kPingPongTimeModeId)) {
                 pingPongDelayTimeVisibilityController_ = new VisibilityController(
-                    editor, pingPongTimeMode, {9903, kPingPongDelayTimeId}, 0.5f, true);
+                    &activeEditor_, pingPongTimeMode, {9903, kPingPongDelayTimeId}, 0.5f, true);
             }
 
             // =====================================================================
