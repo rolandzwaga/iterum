@@ -5,6 +5,32 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-30
+
+### Changed
+
+- **GUI Layout Redesign with Grouped Controls** (spec 040)
+  - All 11 mode panels reorganized with visually distinct, labeled control groups
+  - Controls grouped by functionality: TIME & MIX, CHARACTER, MODULATION, OUTPUT, etc.
+  - Groups use CViewContainer with section background color for visual separation
+  - Group headers use section-font with accent color for consistent styling
+  - Improved discoverability: related controls are now adjacent and clearly labeled
+  - Freeze, Ducking, and MultiTap modes place their primary function group first
+
+### Improved
+
+- **Build System**
+  - Windows resource file (win32resource.rc) now generated from version.json template
+  - Single source of truth for version numbers and plugin metadata
+  - Plugin properties in Windows Explorer now show correct version info
+
+### Removed
+
+- **Legacy Files**
+  - Removed unused editor_minimal.uidesc (legacy debug file)
+
+---
+
 ## [0.2.0] - 2025-12-30
 
 ### Added
