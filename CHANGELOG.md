@@ -5,6 +5,41 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-30
+
+### Added
+
+- **Click-Free Mode Switching** (spec 041)
+  - 50ms equal-power crossfade between all 11 delay modes eliminates clicks/pops
+  - Smooth transitions when switching modes mid-playback or via automation
+  - All 110 mode combinations (11×10) supported seamlessly
+  - Real-time safe implementation with pre-allocated buffers
+  - Dry signal remains unaffected during crossfade; only wet signal transitions
+
+- **CrossfadingDelayLine Equal-Power Upgrade**
+  - Upgraded from linear to equal-power crossfade (sine/cosine curves)
+  - Maintains constant perceived loudness during delay time changes
+  - Eliminates the -3dB dip at midpoint that occurred with linear crossfading
+  - Shared `crossfade_utils.h` provides `equalPowerGains()` for ODR-safe reuse
+
+### Changed
+
+- **Simplified Output Architecture**
+  - Removed redundant per-mode output parameters from all 11 delay modes
+  - Global output control (kGainId) is now the single source of output gain adjustment
+  - Cleaner UI with one OUTPUT control instead of per-mode duplicates
+  - Reduced parameter count by 11 (1376 lines of code removed)
+
+### Removed
+
+- Per-mode output parameters:
+  - `kGranularOutputGainId`, `kSpectralOutputGainId`, `kShimmerOutputGainId`
+  - `kTapeOutputLevelId`, `kBBDOutputLevelId`, `kDigitalOutputLevelId`
+  - `kPingPongOutputLevelId`, `kReverseOutputGainId`, `kMultiTapOutputLevelId`
+  - `kFreezeOutputGainId`, `kDuckingOutputGainId`
+
+---
+
 ## [0.2.1] - 2025-12-30
 
 ### Changed
