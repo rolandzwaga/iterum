@@ -12,7 +12,7 @@
 
 ## Overview
 
-Iterum is a professional-grade delay plugin offering 11 unique delay algorithms, from classic tape and analog emulations to modern granular and spectral processing. Built with the Steinberg VST3 SDK and VSTGUI, it delivers high-quality audio processing with a focus on real-time performance and creative flexibility.
+Iterum aims to be a professional-grade delay plugin offering 11 unique delay algorithms, from classic tape and analog emulations to modern granular and spectral processing. Built with the Steinberg VST3 SDK and VSTGUI, it delivers high-quality audio processing with a focus on real-time performance and creative flexibility.
 
 ## Features
 
