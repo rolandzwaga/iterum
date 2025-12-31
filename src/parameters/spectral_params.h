@@ -38,6 +38,10 @@ struct SpectralParams {
     std::atomic<float> dryWet{50.0f};         // 0-100%
     std::atomic<int> spreadCurve{0};          // 0-1 (Linear, Logarithmic)
     std::atomic<float> stereoWidth{0.0f};     // 0-1 (stereo decorrelation)
+
+    // Tempo Sync (spec 041)
+    std::atomic<int> timeMode{0};             // 0=Free, 1=Synced
+    std::atomic<int> noteValue{4};            // 0-9 dropdown index (default 4 = 1/8 note)
 };
 
 // ==============================================================================
@@ -128,6 +132,21 @@ inline void handleSpectralParamChange(
             // 0-1 (stereo decorrelation)
             params.stereoWidth.store(
                 static_cast<float>(normalizedValue),
+                std::memory_order_relaxed);
+            break;
+
+        // Tempo Sync (spec 041)
+        case kSpectralTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+
+        case kSpectralNoteValueId:
+            // 0-9 dropdown index
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -260,6 +279,21 @@ inline void registerSpectralParams(Steinberg::Vst::ParameterContainer& parameter
         0,
         STR16("Width")
     );
+
+    // Tempo Sync (spec 041)
+    // Time Mode: Free, Synced - MUST use StringListParameter
+    parameters.addParameter(createDropdownParameter(
+        STR16("Time Mode"), kSpectralTimeModeId,
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value: 1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Note Value"), kSpectralNoteValueId,
+        4,  // default: 1/8 note (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 }
 
 // ==============================================================================
@@ -354,6 +388,10 @@ inline void saveSpectralParams(
     streamer.writeFloat(params.dryWet.load(std::memory_order_relaxed));
     streamer.writeInt32(params.spreadCurve.load(std::memory_order_relaxed));
     streamer.writeFloat(params.stereoWidth.load(std::memory_order_relaxed));
+
+    // Tempo Sync (spec 041)
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
 }
 
 inline void loadSpectralParams(
@@ -395,6 +433,14 @@ inline void loadSpectralParams(
     }
     if (streamer.readFloat(floatVal)) {
         params.stereoWidth.store(floatVal, std::memory_order_relaxed);
+    }
+
+    // Tempo Sync (spec 041)
+    if (streamer.readInt32(intVal)) {
+        params.timeMode.store(intVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.noteValue.store(intVal, std::memory_order_relaxed);
     }
 }
 
@@ -482,6 +528,19 @@ inline void syncSpectralParamsToController(
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kSpectralStereoWidthId,
             static_cast<double>(floatVal));
+    }
+
+    // Tempo Sync (spec 041)
+    // Time Mode: 0=Free, 1=Synced -> normalized = val (already 0 or 1)
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kSpectralTimeModeId,
+            static_cast<double>(intVal));
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kSpectralNoteValueId,
+            static_cast<double>(intVal) / 9.0);
     }
 }
 

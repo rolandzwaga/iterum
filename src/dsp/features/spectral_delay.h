@@ -28,11 +28,13 @@
 #include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
 #include "dsp/core/math_constants.h"
+#include "dsp/core/note_value.h"
 #include "dsp/core/random.h"
 #include "dsp/primitives/delay_line.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/primitives/spectral_buffer.h"
 #include "dsp/primitives/stft.h"
+#include "dsp/systems/delay_engine.h"
 
 #include <algorithm>
 #include <array>
@@ -282,6 +284,25 @@ public:
             return;
         }
 
+        // Update base delay from tempo if in synced mode (spec 041, FR-003)
+        if (timeMode_ == TimeMode::Synced) {
+            // Get tempo with fallback to 120 BPM if unavailable (FR-007)
+            double tempo = ctx.tempoBPM;
+            if (tempo <= 0.0) {
+                tempo = 120.0;  // Fallback default
+            }
+
+            // Calculate base delay from note value and tempo
+            float syncedMs = dropdownToDelayMs(noteValueIndex_, tempo);
+
+            // Clamp to max delay buffer (FR-006)
+            syncedMs = std::clamp(syncedMs, kMinDelayMs, kMaxDelayMs);
+
+            // Update smoother target for smooth transitions
+            baseDelaySmoother_.setTarget(syncedMs);
+        }
+        // In Free mode (FR-004), base delay is set via setBaseDelayMs() - no change needed
+
         // Store dry signal for mixing
         std::copy(left, left + numSamples, dryBufferL_.begin());
         std::copy(right, right + numSamples, dryBufferR_.begin());
@@ -342,7 +363,6 @@ public:
 
         // Advance smoothers (they process per-sample but we only need one value per block)
         // The values above were already advanced by the process() calls
-        (void)ctx;  // ctx unused for now
     }
 
     // =========================================================================
@@ -459,6 +479,25 @@ public:
         stereoWidth_ = std::clamp(amount, kMinStereoWidth, kMaxStereoWidth);
     }
     [[nodiscard]] float getStereoWidth() const noexcept { return stereoWidth_; }
+
+    // =========================================================================
+    // Tempo Sync (spec 041)
+    // =========================================================================
+
+    /// @brief Set time mode: 0 = Free (ms), 1 = Synced (note value + tempo)
+    /// @param mode 0 for Free, 1 for Synced
+    void setTimeMode(int mode) noexcept {
+        timeMode_ = (mode == 1) ? TimeMode::Synced : TimeMode::Free;
+    }
+    [[nodiscard]] TimeMode getTimeMode() const noexcept { return timeMode_; }
+
+    /// @brief Set note value index for tempo sync (0-9)
+    /// Maps to: 1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1
+    /// @param index Dropdown index (0-9), default 4 = 1/8 note
+    void setNoteValue(int index) noexcept {
+        noteValueIndex_ = std::clamp(index, 0, 9);
+    }
+    [[nodiscard]] int getNoteValue() const noexcept { return noteValueIndex_; }
 
     // =========================================================================
     // Query
@@ -799,6 +838,10 @@ private:
     float dryWetMix_ = kDefaultDryWet;
     float stereoWidth_ = 0.0f;  // Phase 3.2: Stereo decorrelation amount
     bool freezeEnabled_ = false;
+
+    // Tempo Sync State (spec 041)
+    TimeMode timeMode_ = TimeMode::Free;  // Default to free (ms) mode
+    int noteValueIndex_ = 4;              // Default to 1/8 note (index 4)
 
     // Parameter Smoothers
     OnePoleSmoother baseDelaySmoother_;

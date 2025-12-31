@@ -128,6 +128,7 @@ private:
     Steinberg::IPtr<Steinberg::FObject> digitalAgeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> pingPongDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> granularDelayTimeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> spectralBaseDelayVisibilityController_;  // spec 041
 };
 
 } // namespace Iterum

@@ -847,6 +847,13 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
                     &activeEditor_, granularTimeMode, {9904, kGranularDelayTimeId}, 0.5f, true);
             }
 
+            // Create visibility controllers for Spectral mode (spec 041)
+            // Hide base delay label + control when time mode is "Synced" (>= 0.5)
+            if (auto* spectralTimeMode = getParameterObject(kSpectralTimeModeId)) {
+                spectralBaseDelayVisibilityController_ = new VisibilityController(
+                    &activeEditor_, spectralTimeMode, {9912, kSpectralBaseDelayId}, 0.5f, true);
+            }
+
             // =====================================================================
             // Dynamic Version Label
             // =====================================================================
@@ -941,6 +948,8 @@ void Controller::willClose(VSTGUI::VST3Editor* editor) {
     digitalDelayTimeVisibilityController_ = nullptr;
     digitalAgeVisibilityController_ = nullptr;
     pingPongDelayTimeVisibilityController_ = nullptr;
+    granularDelayTimeVisibilityController_ = nullptr;
+    spectralBaseDelayVisibilityController_ = nullptr;  // spec 041
 
     activeEditor_ = nullptr;
 }

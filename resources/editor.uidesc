@@ -76,6 +76,9 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="SpectralDryWet" tag="208"/>
         <control-tag name="SpectralSpreadCurve" tag="209"/>
         <control-tag name="SpectralStereoWidth" tag="210"/>
+        <control-tag name="SpectralTimeMode" tag="211"/>
+        <control-tag name="SpectralNoteValue" tag="212"/>
+        <control-tag name="SpectralBaseDelayLabel" tag="9912"/>
 
         <!-- Shimmer (300-310) -->
         <control-tag name="ShimmerDelayTime" tag="300"/>
@@ -270,15 +273,19 @@ by functionality. Group order: Primary controls first, specialized later.
     <template name="SpectralPanel" class="CViewContainer" origin="0, 0" size="860, 400" background-color="panel" transparent="false">
         <view class="CTextLabel" origin="10, 5" size="200, 22" title="SPECTRAL DELAY" font="section-font" font-color="accent" transparent="true"/>
 
-        <!-- Group 1: TIME & MIX -->
-        <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
+        <!-- Group 1: TIME & MIX (spec 041: tempo sync) -->
+        <view class="CViewContainer" origin="10, 30" size="280, 175" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Base Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="SpectralBaseDelayLabel" origin="10, 28" size="120, 16" title="Base Delay" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="SpectralBaseDelay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="130, 20" control-tag="SpectralFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="10, 91" size="260, 20" control-tag="SpectralDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="140, 46" size="130, 22" control-tag="SpectralTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="120, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="SpectralNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="140, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="140, 91" size="130, 20" control-tag="SpectralFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="10, 118" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 136" size="260, 20" control-tag="SpectralDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: SPECTRAL ANALYSIS -->

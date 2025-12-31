@@ -537,6 +537,9 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
             spectralDelay_.setSpreadCurve(static_cast<DSP::SpreadCurve>(
                 spectralParams_.spreadCurve.load(std::memory_order_relaxed)));
             spectralDelay_.setStereoWidth(spectralParams_.stereoWidth.load(std::memory_order_relaxed));
+            // Tempo Sync (spec 041)
+            spectralDelay_.setTimeMode(spectralParams_.timeMode.load(std::memory_order_relaxed));
+            spectralDelay_.setNoteValue(spectralParams_.noteValue.load(std::memory_order_relaxed));
             spectralDelay_.process(outputL, outputR, numSamples, ctx);
             break;
 
