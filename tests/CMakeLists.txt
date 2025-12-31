@@ -147,6 +147,11 @@ add_executable(dsp_tests
     unit/parameters/reverse_params_test.cpp
     unit/parameters/freeze_params_test.cpp
     unit/parameters/ducking_params_test.cpp
+    # Preset Browser (spec 042)
+    unit/preset/platform_paths_test.cpp
+    unit/preset/preset_info_test.cpp
+    # Preset source files (SDK-independent, can compile without VST3)
+    ${CMAKE_SOURCE_DIR}/src/platform/preset_paths.cpp
 )
 
 target_include_directories(dsp_tests

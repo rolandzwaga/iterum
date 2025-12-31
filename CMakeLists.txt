@@ -153,6 +153,27 @@ smtg_add_vst3plugin(${PLUGIN_NAME}
 
     # DSP Layer 4: Features
     src/dsp/features/granular_delay.h
+
+    # ==========================================================================
+    # Preset Browser (spec 042)
+    # ==========================================================================
+
+    # Platform Abstraction
+    src/platform/preset_paths.h
+    src/platform/preset_paths.cpp
+
+    # Preset Management
+    src/preset/preset_info.h
+    src/preset/preset_manager.h
+    src/preset/preset_manager.cpp
+
+    # Custom VSTGUI Views
+    src/ui/preset_browser_view.h
+    src/ui/preset_browser_view.cpp
+    src/ui/preset_data_source.h
+    src/ui/preset_data_source.cpp
+    src/ui/mode_tab_bar.h
+    src/ui/mode_tab_bar.cpp
 )
 
 # Link SDK and VSTGUI
