@@ -5,6 +5,7 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-12-31
 ## [0.6.0] - 2025-12-31
 
 ### Added
@@ -58,21 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Spectral Delay Enhancements**
-  - **Phase Processing** (Phase 2)
-    - Phase randomization in diffusion for true spectral smearing/decorrelation
-    - Phase drift during freeze to prevent static resonance over long freezes
-    - Higher frequency bins drift slightly faster for natural evolution
-  - **Perceptual Improvements** (Phase 3)
-    - Spread Curve control: Linear or Logarithmic frequency distribution
-    - Logarithmic curve provides perceptually even delay spread across frequency bins
-    - Stereo Width control (0-100%) for L/R phase decorrelation
-    - Wider stereo image with frequency-dependent phase offsets
-
-- **Spectral Delay UI Controls**
-  - Curve dropdown in SPECTRAL ANALYSIS group (Linear/Logarithmic)
-  - Stereo Width slider in SPECTRAL CHARACTER group
-
 - **Granular Delay New Parameters** (Phase 2)
   - **Jitter** (0-100%): Randomizes grain timing for less mechanical, more organic textures
   - **Pitch Quantization** dropdown: Off, Semitones, Octaves, Fifths, or Major Scale
@@ -93,6 +79,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Always-on soft limiting (tanh) on feedback path prevents runaway accumulation
   - Output soft limiter prevents extreme transients from reaching the mix stage
   - Plugin now stable at maximum density (100 grains/sec) with maximum grain size (500ms)
+
+---
+
+## [0.4.0] - 2025-12-31
+
+### Added
+
+- **Spectral Delay Enhancements**
+  - **Phase Processing** (Phase 2)
+    - Phase randomization in diffusion for true spectral smearing/decorrelation
+    - Phase drift during freeze to prevent static resonance over long freezes
+    - Higher frequency bins drift slightly faster for natural evolution
+  - **Perceptual Improvements** (Phase 3)
+    - Spread Curve control: Linear or Logarithmic frequency distribution
+    - Logarithmic curve provides perceptually even delay spread across frequency bins
+    - Stereo Width control (0-100%) for L/R phase decorrelation
+    - Wider stereo image with frequency-dependent phase offsets
+
+- **Spectral Delay UI Controls**
+  - Curve dropdown in SPECTRAL ANALYSIS group (Linear/Logarithmic)
+  - Stereo Width slider in SPECTRAL CHARACTER group
 
 ---
 
