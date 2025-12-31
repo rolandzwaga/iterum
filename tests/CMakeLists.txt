@@ -480,6 +480,10 @@ add_executable(vst_tests
     unit/vst/editor_lifecycle_test.cpp
     unit/vst/toggle_control_test.cpp
     unit/vst/granular_tempo_sync_ui_test.cpp
+    # Preset Browser (spec 042) - requires VST3 SDK
+    unit/preset/preset_manager_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/preset/preset_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/platform/preset_paths.cpp
 )
 
 target_include_directories(vst_tests

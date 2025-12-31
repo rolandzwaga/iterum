@@ -1,5 +1,6 @@
 #include "preset_manager.h"
 #include "../platform/preset_paths.h"
+#include "../plugin_ids.h"
 
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 namespace Iterum {
 
@@ -123,13 +125,42 @@ PresetManager::PresetList PresetManager::searchPresets(std::string_view query) c
 // =============================================================================
 
 bool PresetManager::loadPreset(const PresetInfo& preset) {
-    if (!preset.isValid() || !processor_ || !controller_) {
-        lastError_ = "Invalid preset or components not available";
+    if (!preset.isValid()) {
+        lastError_ = "Invalid preset info";
         return false;
     }
 
-    // TODO: Implement using PresetFile::loadPreset()
-    // This will be completed in Phase 3 (US1+2)
+    if (!processor_ || !controller_) {
+        lastError_ = "Components not available";
+        return false;
+    }
+
+    if (!std::filesystem::exists(preset.path)) {
+        lastError_ = "Preset file not found: " + preset.path.string();
+        return false;
+    }
+
+    // Open file stream for reading
+    auto stream = Steinberg::Vst::FileStream::open(preset.path.string().c_str(), "rb");
+    if (!stream) {
+        lastError_ = "Failed to open preset file: " + preset.path.string();
+        return false;
+    }
+
+    // Load preset using VST3 PresetFile
+    bool success = Steinberg::Vst::PresetFile::loadPreset(
+        stream,
+        Iterum::kProcessorUID,
+        processor_,
+        controller_
+    );
+
+    stream->release();
+
+    if (!success) {
+        lastError_ = "Failed to load preset data";
+        return false;
+    }
 
     lastError_.clear();
     return true;
@@ -151,8 +182,71 @@ bool PresetManager::savePreset(
         return false;
     }
 
-    // TODO: Implement using PresetFile::savePreset()
-    // This will be completed in Phase 3 (US1+2)
+    // Create preset directory structure
+    auto userDir = getUserPresetDirectory();
+    if (userDir.empty()) {
+        lastError_ = "Could not access user preset directory";
+        return false;
+    }
+
+    // Create mode-specific subdirectory
+    static const char* modeNames[] = {
+        "Granular", "Spectral", "Shimmer", "Tape", "BBD",
+        "Digital", "PingPong", "Reverse", "MultiTap", "Freeze", "Ducking"
+    };
+    int modeIndex = static_cast<int>(mode);
+    if (modeIndex < 0 || modeIndex >= static_cast<int>(DelayMode::NumModes)) {
+        modeIndex = static_cast<int>(DelayMode::Digital);
+    }
+
+    auto modeDir = userDir / modeNames[modeIndex];
+    Platform::ensureDirectoryExists(modeDir);
+
+    // Create full path
+    auto presetPath = modeDir / (name + ".vstpreset");
+
+    // Build metadata XML
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    xml << "<MetaInfo>\n";
+    xml << "  <Attr id=\"MediaType\" value=\"VstPreset\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"PlugInName\" value=\"Iterum\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"PlugInCategory\" value=\"Delay\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"Name\" value=\"" << name << "\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"MusicalCategory\" value=\"" << category << "\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"MusicalInstrument\" value=\"" << modeNames[modeIndex] << "\" type=\"string\"/>\n";
+    if (!description.empty()) {
+        xml << "  <Attr id=\"Comment\" value=\"" << description << "\" type=\"string\"/>\n";
+    }
+    xml << "</MetaInfo>\n";
+    std::string xmlStr = xml.str();
+
+    // Open file stream for writing
+    auto stream = Steinberg::Vst::FileStream::open(presetPath.string().c_str(), "wb");
+    if (!stream) {
+        lastError_ = "Failed to create preset file: " + presetPath.string();
+        return false;
+    }
+
+    // Save preset using VST3 PresetFile
+    bool success = Steinberg::Vst::PresetFile::savePreset(
+        stream,
+        kProcessorUID,
+        processor_,
+        controller_,
+        xmlStr.c_str(),
+        static_cast<Steinberg::int32>(xmlStr.size())
+    );
+
+    stream->release();
+
+    if (!success) {
+        lastError_ = "Failed to save preset data";
+        // Try to clean up failed file
+        std::error_code ec;
+        std::filesystem::remove(presetPath, ec);
+        return false;
+    }
 
     lastError_.clear();
     return true;

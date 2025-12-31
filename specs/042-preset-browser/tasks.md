@@ -75,7 +75,7 @@
 
 ### 2.4 Commit Foundational Work
 
-- [ ] T015 **Commit completed foundational infrastructure**
+- [x] T015 **Commit completed foundational infrastructure**
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -91,24 +91,24 @@
 
 ### 3.1 Pre-Implementation (MANDATORY)
 
-- [ ] T016 [US1+2] **Verify TESTING-GUIDE.md and VST-GUIDE.md are in context** (ingest if needed)
+- [x] T016 [US1+2] **Verify TESTING-GUIDE.md and VST-GUIDE.md are in context** (ingest if needed)
 
 ### 3.2 Tests for PresetManager Core (Write FIRST - Must FAIL)
 
-- [ ] T017 [P] [US1+2] Write failing tests for PresetManager::scanPresets() in `tests/unit/preset/preset_manager_test.cpp`
-- [ ] T018 [P] [US1+2] Write failing tests for PresetManager::loadPreset() in `tests/unit/preset/preset_manager_test.cpp`
-- [ ] T019 [P] [US1+2] Write failing tests for PresetManager::savePreset() in `tests/unit/preset/preset_manager_test.cpp`
-- [ ] T020 [P] [US1+2] Write failing tests for metadata XML read/write in `tests/unit/preset/preset_manager_test.cpp`
+- [x] T017 [P] [US1+2] Write failing tests for PresetManager::scanPresets() in `tests/unit/preset/preset_manager_test.cpp`
+- [x] T018 [P] [US1+2] Write failing tests for PresetManager::loadPreset() in `tests/unit/preset/preset_manager_test.cpp`
+- [x] T019 [P] [US1+2] Write failing tests for PresetManager::savePreset() in `tests/unit/preset/preset_manager_test.cpp`
+- [x] T020 [P] [US1+2] Write failing tests for metadata XML read/write in `tests/unit/preset/preset_manager_test.cpp`
 
 ### 3.3 Implementation for PresetManager
 
-- [ ] T021 [US1+2] Create `src/preset/preset_manager.h` with class declaration per contracts/preset_manager.h
-- [ ] T022 [US1+2] Implement PresetManager constructor in `src/preset/preset_manager.cpp`
-- [ ] T023 [US1+2] Implement PresetManager::scanPresets() - scan user and factory directories recursively
-- [ ] T024 [US1+2] Implement PresetManager::loadPreset() using PresetFile::loadPreset()
-- [ ] T025 [US1+2] Implement PresetManager::savePreset() using PresetFile::savePreset() with metadata XML
-- [ ] T026 [US1+2] Implement PresetManager::isValidPresetName() for filename validation
-- [ ] T027 [US1+2] Verify all PresetManager tests pass
+- [x] T021 [US1+2] Create `src/preset/preset_manager.h` with class declaration per contracts/preset_manager.h
+- [x] T022 [US1+2] Implement PresetManager constructor in `src/preset/preset_manager.cpp`
+- [x] T023 [US1+2] Implement PresetManager::scanPresets() - scan user and factory directories recursively
+- [x] T024 [US1+2] Implement PresetManager::loadPreset() using PresetFile::loadPreset()
+- [x] T025 [US1+2] Implement PresetManager::savePreset() using PresetFile::savePreset() with metadata XML
+- [x] T026 [US1+2] Implement PresetManager::isValidPresetName() for filename validation
+- [x] T027 [US1+2] Verify all PresetManager tests pass (42 assertions in 6 test cases)
 
 ### 3.4 Tests for UI Components (Write FIRST - Must FAIL)
 
@@ -116,9 +116,9 @@
 
 ### 3.5 Implementation for UI Components
 
-- [ ] T029 [US1+2] Create `src/ui/preset_data_source.h` extending DataBrowserDelegateAdapter
-- [ ] T030 [US1+2] Implement PresetDataSource in `src/ui/preset_data_source.cpp` (dbGetNumRows, dbGetNumColumns, dbGetRowHeight, dbGetCurrentColumnWidth, dbDrawCell, dbSelectionChanged, dbOnMouseDown for double-click)
-- [ ] T031 [US1+2] Create `src/ui/preset_browser_view.h` extending CViewContainer per contracts/preset_browser_view.h
+- [x] T029 [US1+2] Create `src/ui/preset_data_source.h` extending DataBrowserDelegateAdapter
+- [x] T030 [US1+2] Implement PresetDataSource in `src/ui/preset_data_source.cpp` (dbGetNumRows, dbGetNumColumns, dbGetRowHeight, dbGetCurrentColumnWidth, dbDrawCell, dbSelectionChanged, dbOnMouseDown for double-click)
+- [x] T031 [US1+2] Create `src/ui/preset_browser_view.h` extending CViewContainer per contracts/preset_browser_view.h
 - [ ] T032 [US1+2] Implement PresetBrowserView::createChildViews() in `src/ui/preset_browser_view.cpp` - create CDataBrowser, buttons
 - [ ] T033 [US1+2] Implement PresetBrowserView::open() and close() for popup behavior
 - [ ] T034 [US1+2] Implement PresetBrowserView::onPresetDoubleClicked() to load preset (must trigger mode switch with crossfade per FR-010 if preset targets different mode)
