@@ -128,10 +128,7 @@ private:
     Steinberg::IPtr<Steinberg::FObject> digitalAgeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> pingPongDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> granularDelayTimeVisibilityController_;
-<<<<<<< HEAD
     Steinberg::IPtr<Steinberg::FObject> spectralBaseDelayVisibilityController_;  // spec 041
-=======
->>>>>>> 6b4326a (fix(granular): hide Delay Time control when Time Mode is Synced)
 };
 
 } // namespace Iterum
