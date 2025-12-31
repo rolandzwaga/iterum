@@ -41,6 +41,10 @@ struct GranularParams {
     std::atomic<int> envelopeType{0};          // 0-3 (Hann, Trapezoid, Sine, Blackman)
     std::atomic<int> timeMode{0};              // 0=Free, 1=Synced (spec 038)
     std::atomic<int> noteValue{4};             // 0-9 dropdown index, default 4 = 1/8 note (spec 038)
+    std::atomic<float> jitter{0.5f};           // 0-1 timing randomness (Phase 2.1)
+    std::atomic<int> pitchQuantMode{0};        // 0-4 (Off, Semitones, Octaves, Fifths, Scale) (Phase 2.2)
+    std::atomic<float> texture{0.0f};          // 0-1 grain amplitude variation (Phase 2.3)
+    std::atomic<float> stereoWidth{1.0f};      // 0-1 stereo width (0=mono, 1=stereo) (Phase 2.4)
 };
 
 // ==============================================================================
@@ -149,6 +153,34 @@ inline void handleGranularParamChange(
             // 0-9 dropdown index (spec 038)
             params.noteValue.store(
                 static_cast<int>(normalizedValue * 9.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularJitterId:
+            // 0-1 timing randomness (Phase 2.1)
+            params.jitter.store(
+                static_cast<float>(normalizedValue),
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularPitchQuantId:
+            // 0-4 (Off, Semitones, Octaves, Fifths, Scale) (Phase 2.2)
+            params.pitchQuantMode.store(
+                static_cast<int>(normalizedValue * 4.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularTextureId:
+            // 0-1 grain amplitude variation (Phase 2.3)
+            params.texture.store(
+                static_cast<float>(normalizedValue),
+                std::memory_order_relaxed);
+            break;
+
+        case kGranularStereoWidthId:
+            // 0-1 stereo width (Phase 2.4)
+            params.stereoWidth.store(
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -318,6 +350,48 @@ inline void registerGranularParams(Steinberg::Vst::ParameterContainer& parameter
         {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
          STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
     ));
+
+    // Jitter: 0-1 (timing randomness - Phase 2.1)
+    parameters.addParameter(
+        STR16("Jitter"),
+        STR16("%"),
+        0,
+        0.5,  // 50% default
+        ParameterInfo::kCanAutomate,
+        kGranularJitterId,
+        0,
+        STR16("Jitter")
+    );
+
+    // Pitch Quantization: 0-4 (Off, Semitones, Octaves, Fifths, Scale) - Phase 2.2
+    parameters.addParameter(createDropdownParameter(
+        STR16("Pitch Quant"), kGranularPitchQuantId,
+        {STR16("Off"), STR16("Semitones"), STR16("Octaves"), STR16("Fifths"), STR16("Scale")}
+    ));
+
+    // Texture: 0-1 (grain amplitude variation - Phase 2.3)
+    parameters.addParameter(
+        STR16("Texture"),
+        STR16("%"),
+        0,
+        0.0,  // 0% default (uniform amplitudes)
+        ParameterInfo::kCanAutomate,
+        kGranularTextureId,
+        0,
+        STR16("Texture")
+    );
+
+    // Stereo Width: 0-1 (stereo decorrelation - Phase 2.4)
+    parameters.addParameter(
+        STR16("Stereo Width"),
+        STR16("%"),
+        0,
+        1.0,  // 100% default (full stereo)
+        ParameterInfo::kCanAutomate,
+        kGranularStereoWidthId,
+        0,
+        STR16("Width")
+    );
 }
 
 // ==============================================================================
@@ -374,7 +448,10 @@ inline Steinberg::tresult formatGranularParam(
         case kGranularPositionSprayId:
         case kGranularPanSprayId:
         case kGranularReverseProbId:
-        case kGranularDryWetId: {
+        case kGranularDryWetId:
+        case kGranularJitterId:
+        case kGranularTextureId:
+        case kGranularStereoWidthId: {
             // 0-100%
             double percent = valueNormalized * 100.0;
             char text[32];
@@ -431,6 +508,11 @@ inline void saveGranularParams(
     // Tempo sync parameters (spec 038) - appended for backward compatibility
     streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
     streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
+    // Phase 2 parameters - appended for backward compatibility
+    streamer.writeFloat(params.jitter.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.pitchQuantMode.load(std::memory_order_relaxed));
+    streamer.writeFloat(params.texture.load(std::memory_order_relaxed));
+    streamer.writeFloat(params.stereoWidth.load(std::memory_order_relaxed));
 }
 
 inline void loadGranularParams(
@@ -483,6 +565,19 @@ inline void loadGranularParams(
     }
     if (streamer.readInt32(intVal)) {
         params.noteValue.store(intVal, std::memory_order_relaxed);
+    }
+    // Phase 2 parameters - optional for backward compatibility
+    if (streamer.readFloat(floatVal)) {
+        params.jitter.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.pitchQuantMode.store(intVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        params.texture.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readFloat(floatVal)) {
+        params.stereoWidth.store(floatVal, std::memory_order_relaxed);
     }
 }
 
@@ -578,6 +673,27 @@ inline void syncGranularParamsToController(
     if (streamer.readInt32(intVal)) {
         controller.setParamNormalized(kGranularNoteValueId,
             static_cast<double>(intVal) / 9.0);
+    }
+
+    // Jitter: 0-1 (already normalized) - Phase 2.1
+    if (streamer.readFloat(floatVal)) {
+        controller.setParamNormalized(kGranularJitterId, static_cast<double>(floatVal));
+    }
+
+    // Pitch Quantization: 0-4 -> normalized = val / 4 - Phase 2.2
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kGranularPitchQuantId,
+            static_cast<double>(intVal) / 4.0);
+    }
+
+    // Texture: 0-1 (already normalized) - Phase 2.3
+    if (streamer.readFloat(floatVal)) {
+        controller.setParamNormalized(kGranularTextureId, static_cast<double>(floatVal));
+    }
+
+    // Stereo Width: 0-1 (already normalized) - Phase 2.4
+    if (streamer.readFloat(floatVal)) {
+        controller.setParamNormalized(kGranularStereoWidthId, static_cast<double>(floatVal));
     }
 }
 

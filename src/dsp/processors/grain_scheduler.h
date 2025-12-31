@@ -4,6 +4,7 @@
 
 #include "dsp/core/random.h"
 
+#include <algorithm>
 #include <cstdint>
 
 namespace Iterum::DSP {
@@ -48,6 +49,16 @@ public:
     /// Get current scheduling mode
     [[nodiscard]] SchedulingMode getMode() const noexcept { return mode_; }
 
+    /// Set jitter amount (0-1)
+    /// Controls timing randomness: 0 = regular intervals, 1 = maximum randomness (±50%)
+    /// @param amount Jitter amount (0.0 to 1.0)
+    void setJitter(float amount) noexcept {
+        jitter_ = std::clamp(amount, 0.0f, 1.0f);
+    }
+
+    /// Get current jitter amount
+    [[nodiscard]] float getJitter() const noexcept { return jitter_; }
+
     /// Process one sample
     /// @return true if a new grain should be triggered this sample
     [[nodiscard]] bool process() noexcept {
@@ -55,12 +66,15 @@ public:
 
         if (samplesUntilNextGrain_ <= 0.0f) {
             // Time for a new grain
-            if (mode_ == SchedulingMode::Asynchronous) {
-                // Add jitter for stochastic timing
-                const float jitter = rng_.nextUnipolar() * 0.5f;  // +/- 25% jitter
-                samplesUntilNextGrain_ = interonsetSamples_ * (0.75f + jitter);
+            if (mode_ == SchedulingMode::Asynchronous && jitter_ > 0.0f) {
+                // Add user-controllable jitter for stochastic timing
+                // jitter_ = 0: no variation (like sync mode)
+                // jitter_ = 1: ±50% variation (maximum randomness)
+                const float randomOffset = rng_.nextFloat();  // -1 to +1
+                const float jitterRange = jitter_ * 0.5f;     // Max ±50%
+                samplesUntilNextGrain_ = interonsetSamples_ * (1.0f + randomOffset * jitterRange);
             } else {
-                // Regular intervals
+                // Regular intervals (sync mode or jitter = 0)
                 samplesUntilNextGrain_ = interonsetSamples_;
             }
             return true;
@@ -82,6 +96,7 @@ private:
     float samplesUntilNextGrain_ = 0.0f;
     float interonsetSamples_ = 4410.0f;  // Default ~10 grains/sec at 44.1kHz
     float density_ = 10.0f;              // grains per second
+    float jitter_ = 0.5f;                // Default jitter amount (0-1), 0.5 = ±25%
     SchedulingMode mode_ = SchedulingMode::Asynchronous;
     Xorshift32 rng_{12345};
     double sampleRate_ = 44100.0;

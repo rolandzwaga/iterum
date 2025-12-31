@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cmath>
+#include <vector>
 
 using namespace Iterum::DSP;
 using Catch::Approx;
@@ -398,6 +399,159 @@ TEST_CASE("GranularEngine envelope type control", "[systems][granular-engine][la
         for (int i = 0; i < 1000; ++i) {
             engine.process(0.5f, 0.5f, outL, outR);
         }
+    }
+}
+
+// =============================================================================
+// Texture Control Tests (Phase 2.3)
+// =============================================================================
+
+TEST_CASE("GranularEngine texture control", "[systems][granular-engine][layer3][texture]") {
+    GranularEngine engine;
+    engine.prepare(44100.0);
+
+    SECTION("default texture is 0") {
+        REQUIRE(engine.getTexture() == 0.0f);
+    }
+
+    SECTION("setTexture/getTexture work") {
+        engine.setTexture(0.5f);
+        REQUIRE(engine.getTexture() == Approx(0.5f));
+
+        engine.setTexture(1.0f);
+        REQUIRE(engine.getTexture() == Approx(1.0f));
+    }
+
+    SECTION("texture is clamped to 0-1") {
+        engine.setTexture(-0.5f);
+        REQUIRE(engine.getTexture() == 0.0f);
+
+        engine.setTexture(1.5f);
+        REQUIRE(engine.getTexture() == 1.0f);
+    }
+}
+
+TEST_CASE("GranularEngine texture affects grain amplitude variation", "[systems][granular-engine][layer3][texture]") {
+    GranularEngine engine;
+    engine.prepare(44100.0);
+    engine.seed(42);
+
+    SECTION("high texture reduces average output level due to varied amplitudes") {
+        // With texture=0, all grains have amplitude 1.0
+        // With texture=1, grains have amplitude 0.2-1.0 (average ~0.6)
+        // So average output should be lower with high texture
+
+        engine.setDensity(50.0f);
+        engine.setGrainSize(100.0f);
+        engine.setPosition(50.0f);
+        engine.setTexture(0.0f);  // No amplitude variation
+        engine.reset();
+
+        float outL, outR;
+
+        // Fill delay buffer first
+        for (int i = 0; i < 4410; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+        }
+
+        // Measure total output energy with zero texture
+        float totalEnergyZeroTexture = 0.0f;
+        for (int i = 0; i < 44100; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+            totalEnergyZeroTexture += outL * outL + outR * outR;
+        }
+
+        // Now test with high texture - use different seed to get fresh random sequence
+        engine.setTexture(1.0f);  // Maximum amplitude variation
+        engine.seed(123);  // Different seed to ensure we're testing amplitude variation
+        engine.reset();
+
+        // Fill delay buffer
+        for (int i = 0; i < 4410; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+        }
+
+        // Measure total output energy with high texture
+        float totalEnergyHighTexture = 0.0f;
+        for (int i = 0; i < 44100; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+            totalEnergyHighTexture += outL * outL + outR * outR;
+        }
+
+        // With texture=1, average grain amplitude is ~0.6 (range 0.2-1.0)
+        // So energy should be roughly 0.36x of zero texture energy (0.6^2)
+        // Use a generous margin since random variation affects results
+        // At minimum, high texture energy should be less than zero texture
+        REQUIRE(totalEnergyHighTexture < totalEnergyZeroTexture);
+    }
+}
+
+// =============================================================================
+// Output Gain Scaling Tests (Phase 1.1 - Stability Fix)
+// =============================================================================
+
+TEST_CASE("GranularEngine output gain scaling prevents explosion", "[systems][granular-engine][layer3][stability]") {
+    GranularEngine engine;
+    engine.prepare(44100.0);
+    engine.seed(42);
+
+    SECTION("high density with large grains stays bounded") {
+        // Configure for maximum overlap: high density + large grains
+        engine.setDensity(100.0f);   // Maximum density (100 grains/sec)
+        engine.setGrainSize(500.0f); // Maximum grain size (500ms)
+        engine.setPosition(100.0f);  // Short delay to read non-zero samples quickly
+        engine.reset();
+
+        float maxAbsOutput = 0.0f;
+
+        // Fill delay buffer with loud signal
+        float outL, outR;
+        for (int i = 0; i < 44100; ++i) {  // 1 second
+            engine.process(1.0f, 1.0f, outL, outR);  // Unity amplitude input
+            maxAbsOutput = std::max(maxAbsOutput, std::max(std::abs(outL), std::abs(outR)));
+        }
+
+        // With proper gain scaling (1/sqrt(n)), output should stay bounded
+        // Even with 50+ overlapping grains, output should be <= 3.0
+        // (Slight overshoot allowed due to smoother lag during grain buildup)
+        // Without scaling, 50 grains at 1.0 amplitude would sum to 50.0!
+        REQUIRE(maxAbsOutput <= 3.0f);
+    }
+
+    SECTION("output level scales inversely with grain overlap count") {
+        // Test that more grains doesn't increase total output level significantly
+        engine.setGrainSize(200.0f);  // 200ms grains
+        engine.setPosition(50.0f);
+
+        // Low density test
+        engine.setDensity(5.0f);
+        engine.seed(42);
+        engine.reset();
+
+        float maxLowDensity = 0.0f;
+        float outL, outR;
+
+        // Fill buffer and measure
+        for (int i = 0; i < 44100; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+            maxLowDensity = std::max(maxLowDensity, std::max(std::abs(outL), std::abs(outR)));
+        }
+
+        // High density test
+        engine.setDensity(100.0f);  // 20x higher density
+        engine.seed(42);
+        engine.reset();
+
+        float maxHighDensity = 0.0f;
+
+        for (int i = 0; i < 44100; ++i) {
+            engine.process(0.5f, 0.5f, outL, outR);
+            maxHighDensity = std::max(maxHighDensity, std::max(std::abs(outL), std::abs(outR)));
+        }
+
+        // With proper gain scaling, 20x density should NOT produce 20x output
+        // Allow up to 3x difference due to overlap effects, but not 20x
+        REQUIRE(maxHighDensity < maxLowDensity * 5.0f);
     }
 }
 

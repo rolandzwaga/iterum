@@ -24,6 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Curve dropdown in SPECTRAL ANALYSIS group (Linear/Logarithmic)
   - Stereo Width slider in SPECTRAL CHARACTER group
 
+- **Granular Delay New Parameters** (Phase 2)
+  - **Jitter** (0-100%): Randomizes grain timing for less mechanical, more organic textures
+  - **Pitch Quantization** dropdown: Off, Semitones, Octaves, Fifths, or Major Scale
+    - Quantizes pitch spray to musical intervals for melodic granular effects
+  - **Texture** (0-100%): Controls grain amplitude variation for uniform to chaotic timbres
+  - **Stereo Width** (0-100%): Mid/side stereo control from mono to full stereo
+
+- **Granular Delay UI Updates**
+  - Jitter slider in GRAIN PARAMETERS group
+  - Pitch Quant dropdown below Jitter
+  - Texture and Width sliders in SPRAY & RANDOMIZATION group
+
+### Fixed
+
+- **Granular Delay Stability** (Phase 1)
+  - Fixed output explosion with high density + long grain overlap configurations
+  - Added 1/sqrt(n) gain scaling to normalize output regardless of active grain count
+  - Always-on soft limiting (tanh) on feedback path prevents runaway accumulation
+  - Output soft limiter prevents extreme transients from reaching the mix stage
+  - Plugin now stable at maximum density (100 grains/sec) with maximum grain size (500ms)
+
 ---
 
 ## [0.3.0] - 2025-12-30

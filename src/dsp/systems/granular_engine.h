@@ -43,6 +43,10 @@ public:
         pitchSmoother_.configure(kDefaultSmoothTimeMs, static_cast<float>(sampleRate));
         positionSmoother_.configure(kDefaultSmoothTimeMs, static_cast<float>(sampleRate));
 
+        // Configure gain scaling smoother (very fast response to track grain count changes)
+        // Use 2ms for fast response while still avoiding clicks
+        gainScaleSmoother_.configure(2.0f, static_cast<float>(sampleRate));
+
         // Configure freeze crossfade
         freezeCrossfade_.configure(kFreezeCrossfadeMs, static_cast<float>(sampleRate));
 
@@ -61,6 +65,9 @@ public:
         grainSizeSmoother_.snapTo(grainSizeMs_);
         pitchSmoother_.snapTo(pitchSemitones_);
         positionSmoother_.snapTo(positionMs_);
+
+        // Snap gain scaling to 1.0 (no grains active after reset)
+        gainScaleSmoother_.snapTo(1.0f);
 
         freezeCrossfade_.snapTo(frozen_ ? 1.0f : 0.0f);
         currentSample_ = 0;
@@ -112,10 +119,37 @@ public:
         panSpray_ = std::clamp(amount, 0.0f, 1.0f);
     }
 
+    /// Set timing jitter (0-1)
+    /// Controls randomness of grain timing: 0 = regular, 1 = maximum randomness (±50%)
+    void setJitter(float amount) noexcept {
+        scheduler_.setJitter(amount);
+    }
+
     /// Set envelope type for new grains
     void setEnvelopeType(GrainEnvelopeType type) noexcept {
         envelopeType_ = type;
         processor_.setEnvelopeType(type);
+    }
+
+    /// Set pitch quantization mode (Phase 2.2)
+    void setPitchQuantMode(PitchQuantMode mode) noexcept {
+        pitchQuantMode_ = mode;
+    }
+
+    /// Get current pitch quantization mode
+    [[nodiscard]] PitchQuantMode getPitchQuantMode() const noexcept {
+        return pitchQuantMode_;
+    }
+
+    /// Set texture/chaos amount (Phase 2.3)
+    /// Controls grain amplitude variation: 0 = uniform, 1 = maximum variation
+    void setTexture(float amount) noexcept {
+        texture_ = std::clamp(amount, 0.0f, 1.0f);
+    }
+
+    /// Get current texture amount
+    [[nodiscard]] float getTexture() const noexcept {
+        return texture_;
     }
 
     /// Enable/disable freeze mode
@@ -164,12 +198,14 @@ public:
         // Process all active grains
         float sumL = 0.0f;
         float sumR = 0.0f;
+        size_t activeCount = 0;
 
         for (Grain* grain : pool_.activeGrains()) {
             if (grain->active) {
                 auto [grainL, grainR] = processor_.processGrain(*grain, delayL_, delayR_);
                 sumL += grainL;
                 sumR += grainR;
+                ++activeCount;
 
                 // Check if grain completed
                 if (processor_.isGrainComplete(*grain)) {
@@ -178,8 +214,17 @@ public:
             }
         }
 
-        outputL = sumL;
-        outputR = sumR;
+        // Apply 1/sqrt(n) gain scaling to prevent output explosion from overlapping grains
+        // This keeps output level roughly constant regardless of how many grains overlap
+        // Smooth the gain factor to avoid clicks when grain count changes
+        const float targetGain = (activeCount > 0)
+            ? 1.0f / std::sqrt(static_cast<float>(activeCount))
+            : 1.0f;
+        gainScaleSmoother_.setTarget(targetGain);
+        const float smoothedGain = gainScaleSmoother_.process();
+
+        outputL = sumL * smoothedGain;
+        outputR = sumR * smoothedGain;
 
         ++currentSample_;
     }
@@ -210,6 +255,9 @@ private:
             effectivePitch += pitchSpray_ * 24.0f * rng_.nextFloat();
         }
 
+        // Apply pitch quantization (Phase 2.2)
+        effectivePitch = quantizePitch(effectivePitch, pitchQuantMode_);
+
         float effectivePositionMs = positionMs;
         if (positionSpray_ > 0.0f) {
             // Random offset: 0 to (positionSpray * positionMs)
@@ -238,6 +286,14 @@ private:
         };
 
         processor_.initializeGrain(*grain, params);
+
+        // Apply texture-based amplitude variation (Phase 2.3)
+        // At texture=0: amplitude is always 1.0 (uniform)
+        // At texture=1: amplitude ranges from 0.2 to 1.0 (maximum variation)
+        if (texture_ > 0.0f) {
+            const float minAmplitude = 1.0f - texture_ * 0.8f;  // Range: 1.0 to 0.2
+            grain->amplitude = minAmplitude + rng_.nextUnipolar() * (1.0f - minAmplitude);
+        }
     }
 
     // Components
@@ -253,6 +309,9 @@ private:
     OnePoleSmoother pitchSmoother_;
     OnePoleSmoother positionSmoother_;
 
+    // Output gain scaling smoother (1/sqrt(n) compensation for overlapping grains)
+    OnePoleSmoother gainScaleSmoother_;
+
     // Freeze crossfade
     LinearRamp freezeCrossfade_;
     bool frozen_ = false;
@@ -267,6 +326,8 @@ private:
     float reverseProbability_ = 0.0f;
     float panSpray_ = 0.0f;
     GrainEnvelopeType envelopeType_ = GrainEnvelopeType::Hann;
+    PitchQuantMode pitchQuantMode_ = PitchQuantMode::Off;  // Phase 2.2
+    float texture_ = 0.0f;  // Phase 2.3: grain amplitude variation
 
     size_t currentSample_ = 0;
     double sampleRate_ = 44100.0;

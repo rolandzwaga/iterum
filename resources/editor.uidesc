@@ -59,6 +59,10 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="GranularEnvelopeType" tag="112"/>
         <control-tag name="GranularTimeMode" tag="113"/>
         <control-tag name="GranularNoteValue" tag="114"/>
+        <control-tag name="GranularJitter" tag="115"/>
+        <control-tag name="GranularPitchQuant" tag="116"/>
+        <control-tag name="GranularTexture" tag="117"/>
+        <control-tag name="GranularStereoWidth" tag="118"/>
 
         <!-- Spectral (200-210) -->
         <control-tag name="SpectralFFTSize" tag="200"/>
@@ -225,7 +229,7 @@ by functionality. Group order: Primary controls first, specialized later.
         </view>
 
         <!-- Group 2: GRAIN PARAMETERS -->
-        <view class="CViewContainer" origin="300, 30" size="270, 120" background-color="section" transparent="false">
+        <view class="CViewContainer" origin="300, 30" size="270, 165" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="GRAIN PARAMETERS" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="75, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="GranularGrainSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
@@ -235,10 +239,14 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="GranularPitch" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Envelope" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="GranularEnvelopeType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="140, 73" size="120, 16" title="Jitter" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="140, 91" size="120, 20" control-tag="GranularJitter" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="10, 118" size="120, 16" title="Pitch Quant" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="10, 136" size="120, 22" control-tag="GranularPitchQuant" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         </view>
 
         <!-- Group 3: SPRAY & RANDOMIZATION -->
-        <view class="CViewContainer" origin="300, 160" size="270, 115" background-color="section" transparent="false">
+        <view class="CViewContainer" origin="300, 205" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SPRAY &amp; RANDOMIZATION" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="60, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="55, 20" control-tag="GranularPitchSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
@@ -248,8 +256,12 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CSlider" origin="140, 46" size="55, 20" control-tag="GranularPanSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="205, 28" size="55, 16" title="Rev %" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="205, 46" size="55, 20" control-tag="GranularReverseProb" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="80, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="50, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 89" size="50, 22" control-tag="GranularFreeze" title="" font="value-font" font-color="text"/>
+            <view class="CTextLabel" origin="70, 73" size="60, 16" title="Texture" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="70, 89" size="55, 20" control-tag="GranularTexture" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="135, 73" size="60, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="135, 89" size="55, 20" control-tag="GranularStereoWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
     </template>

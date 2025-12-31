@@ -82,6 +82,26 @@ public:
     /// Set pan spray/randomization (0-1)
     void setPanSpray(float amount) noexcept { engine_.setPanSpray(amount); }
 
+    /// Set timing jitter (0-1)
+    /// Controls randomness of grain timing: 0 = regular, 1 = maximum randomness
+    void setJitter(float amount) noexcept { engine_.setJitter(amount); }
+
+    /// Set pitch quantization mode (Phase 2.2)
+    void setPitchQuantMode(PitchQuantMode mode) noexcept { engine_.setPitchQuantMode(mode); }
+
+    /// Set texture/chaos amount (Phase 2.3)
+    /// Controls grain amplitude variation: 0 = uniform, 1 = maximum variation
+    void setTexture(float amount) noexcept { engine_.setTexture(amount); }
+
+    /// Set stereo width (Phase 2.4)
+    /// 0 = mono (L and R identical), 1 = full stereo (normal stereo image)
+    void setStereoWidth(float amount) noexcept {
+        stereoWidth_ = std::clamp(amount, 0.0f, 1.0f);
+    }
+
+    /// Get current stereo width
+    [[nodiscard]] float getStereoWidth() const noexcept { return stereoWidth_; }
+
     /// Set grain envelope type
     void setEnvelopeType(GrainEnvelopeType type) noexcept { engine_.setEnvelopeType(type); }
 
@@ -183,16 +203,13 @@ private:
             float inputL = leftIn[i];
             float inputR = rightIn[i];
 
-            // Add feedback (soft-limit if > 1.0)
+            // Add feedback with ALWAYS-ON soft limiting to prevent runaway
+            // This is critical for stability with overlapping grains
             if (feedback > 0.0f) {
-                float fbL = feedbackL_ * feedback;
-                float fbR = feedbackR_ * feedback;
-
-                // Soft-limit feedback to prevent runaway
-                if (feedback > 1.0f) {
-                    fbL = std::tanh(fbL);
-                    fbR = std::tanh(fbR);
-                }
+                // Always apply tanh to prevent accumulation, even at low feedback
+                // Scale by 2.0 before tanh to preserve more dynamic range at low levels
+                const float fbL = std::tanh(feedbackL_ * feedback * 0.5f) * 2.0f;
+                const float fbR = std::tanh(feedbackR_ * feedback * 0.5f) * 2.0f;
 
                 inputL += fbL;
                 inputR += fbR;
@@ -203,16 +220,34 @@ private:
             float wetR = 0.0f;
             engine_.process(inputL, inputR, wetL, wetR);
 
-            // Store for feedback
-            feedbackL_ = wetL;
-            feedbackR_ = wetR;
+            // Apply soft limiter to wet output before storing for feedback
+            // This prevents extreme values from entering the feedback loop
+            const float limitedWetL = std::tanh(wetL * 0.5f) * 2.0f;
+            const float limitedWetR = std::tanh(wetR * 0.5f) * 2.0f;
 
-            // Dry/wet mix
+            // Store limited values for feedback
+            feedbackL_ = limitedWetL;
+            feedbackR_ = limitedWetR;
+
+            // Dry/wet mix (use limited wet for output as well)
             const float dryL = leftIn[i] * (1.0f - dryWet);
             const float dryR = rightIn[i] * (1.0f - dryWet);
 
-            leftOut[i] = dryL + wetL * dryWet;
-            rightOut[i] = dryR + wetR * dryWet;
+            float mixedL = dryL + limitedWetL * dryWet;
+            float mixedR = dryR + limitedWetR * dryWet;
+
+            // Apply stereo width (Phase 2.4)
+            // At width=0: mono (L == R == mid)
+            // At width=1: full stereo (unchanged)
+            if (stereoWidth_ < 1.0f) {
+                const float mid = (mixedL + mixedR) * 0.5f;
+                const float side = (mixedL - mixedR) * 0.5f;
+                mixedL = mid + stereoWidth_ * side;
+                mixedR = mid - stereoWidth_ * side;
+            }
+
+            leftOut[i] = mixedL;
+            rightOut[i] = mixedR;
         }
     }
 
@@ -249,6 +284,9 @@ private:
     // Tempo sync state (spec 038)
     TimeMode timeMode_ = TimeMode::Free;  // Default: Free mode (milliseconds)
     int noteValueIndex_ = 4;              // Default: 1/8 note (index 4)
+
+    // Phase 2.4: Stereo width (0 = mono, 1 = full stereo)
+    float stereoWidth_ = 1.0f;
 };
 
 }  // namespace Iterum::DSP

@@ -223,6 +223,95 @@ TEST_CASE("GrainScheduler scheduling modes", "[processors][scheduler][layer2]") 
 }
 
 // =============================================================================
+// Jitter Control Tests (Phase 2.1)
+// =============================================================================
+
+TEST_CASE("GrainScheduler jitter control", "[processors][scheduler][layer2][jitter]") {
+    GrainScheduler scheduler;
+    scheduler.prepare(44100.0);
+    scheduler.setMode(SchedulingMode::Asynchronous);
+    scheduler.setDensity(20.0f);  // ~2200 samples per grain
+
+    SECTION("setJitter stores jitter amount") {
+        scheduler.setJitter(0.0f);
+        REQUIRE(scheduler.getJitter() == Approx(0.0f));
+
+        scheduler.setJitter(0.5f);
+        REQUIRE(scheduler.getJitter() == Approx(0.5f));
+
+        scheduler.setJitter(1.0f);
+        REQUIRE(scheduler.getJitter() == Approx(1.0f));
+    }
+
+    SECTION("jitter is clamped to 0-1 range") {
+        scheduler.setJitter(-0.5f);
+        REQUIRE(scheduler.getJitter() >= 0.0f);
+
+        scheduler.setJitter(1.5f);
+        REQUIRE(scheduler.getJitter() <= 1.0f);
+    }
+
+    SECTION("zero jitter produces regular intervals in async mode") {
+        scheduler.setJitter(0.0f);  // No jitter - should be like sync mode
+        scheduler.seed(42);
+        scheduler.reset();
+
+        // Collect trigger intervals
+        std::array<int, 10> intervals{};
+        int lastTrigger = 0;
+        int intervalIndex = 0;
+
+        for (int i = 0; i < 50000 && intervalIndex < 10; ++i) {
+            if (scheduler.process()) {
+                if (lastTrigger > 0) {
+                    intervals[intervalIndex++] = i - lastTrigger;
+                }
+                lastTrigger = i;
+            }
+        }
+
+        // With zero jitter, all intervals should be nearly identical
+        int expected = 44100 / 20;  // 2205 samples
+        for (int interval : intervals) {
+            REQUIRE(std::abs(interval - expected) < 10);  // Very small tolerance
+        }
+    }
+
+    SECTION("high jitter produces large variation") {
+        scheduler.setJitter(1.0f);  // Maximum jitter
+        scheduler.seed(42);
+        scheduler.reset();
+
+        // Collect trigger intervals
+        std::array<int, 20> intervals{};
+        int lastTrigger = 0;
+        int intervalIndex = 0;
+
+        for (int i = 0; i < 100000 && intervalIndex < 20; ++i) {
+            if (scheduler.process()) {
+                if (lastTrigger > 0) {
+                    intervals[intervalIndex++] = i - lastTrigger;
+                }
+                lastTrigger = i;
+            }
+        }
+
+        // Calculate variance
+        int minInterval = intervals[0];
+        int maxInterval = intervals[0];
+        for (int interval : intervals) {
+            minInterval = std::min(minInterval, interval);
+            maxInterval = std::max(maxInterval, interval);
+        }
+
+        // With high jitter, range should be significant
+        // Expected interval ~2205, with full jitter should vary by ±50%
+        int expectedRange = 44100 / 20;  // Base interval
+        REQUIRE((maxInterval - minInterval) > expectedRange * 0.5f);
+    }
+}
+
+// =============================================================================
 // Reproducibility Tests
 // =============================================================================
 

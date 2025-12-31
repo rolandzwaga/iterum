@@ -511,6 +511,12 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
             // Tempo sync parameters (spec 038)
             granularDelay_.setTimeMode(granularParams_.timeMode.load(std::memory_order_relaxed));
             granularDelay_.setNoteValue(granularParams_.noteValue.load(std::memory_order_relaxed));
+            // Phase 2 parameters
+            granularDelay_.setJitter(granularParams_.jitter.load(std::memory_order_relaxed));
+            granularDelay_.setPitchQuantMode(static_cast<DSP::PitchQuantMode>(
+                granularParams_.pitchQuantMode.load(std::memory_order_relaxed)));
+            granularDelay_.setTexture(granularParams_.texture.load(std::memory_order_relaxed));
+            granularDelay_.setStereoWidth(granularParams_.stereoWidth.load(std::memory_order_relaxed));
             // GranularDelay takes separate input/output buffers
             granularDelay_.process(inputL, inputR, outputL, outputR, numSamples, ctx);
             break;

@@ -378,6 +378,75 @@ TEST_CASE("GranularDelay freeze mode", "[features][granular-delay][layer4][freez
 }
 
 // =============================================================================
+// Stability Tests (Phase 1.2/1.3 - Feedback and Output Limiting)
+// =============================================================================
+
+TEST_CASE("GranularDelay feedback stability", "[features][granular-delay][layer4][stability]") {
+    GranularDelay delay;
+    delay.prepare(44100.0);
+    delay.seed(42);
+
+    SECTION("moderate feedback with high overlap stays bounded") {
+        // Configure for maximum stress: high density + large grains + feedback
+        delay.setDensity(100.0f);     // Maximum density
+        delay.setGrainSize(500.0f);   // Maximum grain size for overlap
+        delay.setDelayTime(100.0f);   // Short delay
+        delay.setFeedback(0.5f);      // 50% feedback
+        delay.setDryWet(1.0f);        // 100% wet
+        delay.reset();
+
+        std::array<float, 512> inL{}, inR{}, outL{}, outR{};
+        std::fill(inL.begin(), inL.end(), 1.0f);  // Unity amplitude input
+        std::fill(inR.begin(), inR.end(), 1.0f);
+
+        float maxAbsOutput = 0.0f;
+
+        // Process 2 seconds of audio to allow feedback to accumulate
+        for (int block = 0; block < 172; ++block) {  // ~2 seconds at 44100Hz
+            delay.process(inL.data(), inR.data(), outL.data(), outR.data(), 512);
+
+            for (size_t i = 0; i < 512; ++i) {
+                maxAbsOutput = std::max(maxAbsOutput, std::max(std::abs(outL[i]), std::abs(outR[i])));
+            }
+        }
+
+        // With proper feedback limiting, output should stay bounded
+        // Without limiting: 50% feedback with 3x output would accumulate to infinity
+        REQUIRE(maxAbsOutput <= 5.0f);
+        REQUIRE(std::isfinite(maxAbsOutput));
+    }
+
+    SECTION("high feedback does not produce NaN or infinity") {
+        delay.setDensity(100.0f);
+        delay.setGrainSize(500.0f);
+        delay.setDelayTime(100.0f);
+        delay.setFeedback(1.0f);      // 100% feedback
+        delay.setDryWet(1.0f);
+        delay.reset();
+
+        std::array<float, 512> inL{}, inR{}, outL{}, outR{};
+        std::fill(inL.begin(), inL.end(), 0.5f);
+        std::fill(inR.begin(), inR.end(), 0.5f);
+
+        bool hasNaN = false;
+        bool hasInf = false;
+
+        // Process 3 seconds to stress test
+        for (int block = 0; block < 258; ++block) {
+            delay.process(inL.data(), inR.data(), outL.data(), outR.data(), 512);
+
+            for (size_t i = 0; i < 512; ++i) {
+                if (std::isnan(outL[i]) || std::isnan(outR[i])) hasNaN = true;
+                if (std::isinf(outL[i]) || std::isinf(outR[i])) hasInf = true;
+            }
+        }
+
+        REQUIRE_FALSE(hasNaN);
+        REQUIRE_FALSE(hasInf);
+    }
+}
+
+// =============================================================================
 // Reproducibility Tests
 // =============================================================================
 
@@ -419,6 +488,101 @@ TEST_CASE("GranularDelay seed produces reproducible output", "[features][granula
         }
 
         REQUIRE(allMatch);
+    }
+}
+
+// =============================================================================
+// Stereo Width Tests (Phase 2.4)
+// =============================================================================
+
+TEST_CASE("GranularDelay stereo width control", "[features][granular-delay][layer4][stereo]") {
+    GranularDelay delay;
+    delay.prepare(44100.0);
+
+    SECTION("default stereo width is 1.0 (full stereo)") {
+        REQUIRE(delay.getStereoWidth() == Approx(1.0f));
+    }
+
+    SECTION("setStereoWidth/getStereoWidth work") {
+        delay.setStereoWidth(0.5f);
+        REQUIRE(delay.getStereoWidth() == Approx(0.5f));
+
+        delay.setStereoWidth(0.0f);
+        REQUIRE(delay.getStereoWidth() == Approx(0.0f));
+
+        delay.setStereoWidth(1.0f);
+        REQUIRE(delay.getStereoWidth() == Approx(1.0f));
+    }
+
+    SECTION("stereo width is clamped to 0-1") {
+        delay.setStereoWidth(-0.5f);
+        REQUIRE(delay.getStereoWidth() == 0.0f);
+
+        delay.setStereoWidth(1.5f);
+        REQUIRE(delay.getStereoWidth() == 1.0f);
+    }
+}
+
+TEST_CASE("GranularDelay stereo width affects output stereo image", "[features][granular-delay][layer4][stereo]") {
+    GranularDelay delay;
+    delay.prepare(44100.0);
+    delay.seed(42);
+
+    SECTION("stereo width 0 produces mono output (L == R)") {
+        delay.setDensity(50.0f);
+        delay.setDelayTime(50.0f);
+        delay.setPanSpray(1.0f);  // Full pan spray to create stereo difference
+        delay.setDryWet(1.0f);    // Full wet for clearer test
+        delay.setStereoWidth(0.0f);  // Mono output
+        delay.reset();
+
+        std::array<float, 512> inL{}, inR{}, outL{}, outR{};
+        std::fill(inL.begin(), inL.end(), 0.5f);
+        std::fill(inR.begin(), inR.end(), 0.5f);
+
+        // Fill delay buffer
+        for (int i = 0; i < 10; ++i) {
+            delay.process(inL.data(), inR.data(), outL.data(), outR.data(), 512);
+        }
+
+        // Check that L and R are identical (mono)
+        float maxDiff = 0.0f;
+        for (size_t i = 0; i < 512; ++i) {
+            maxDiff = std::max(maxDiff, std::abs(outL[i] - outR[i]));
+        }
+
+        // At width=0, L and R should be identical (or very close due to floating point)
+        REQUIRE(maxDiff < 0.001f);
+    }
+
+    SECTION("stereo width 1 produces stereo output (L != R with pan spray)") {
+        delay.setDensity(50.0f);
+        delay.setDelayTime(50.0f);
+        delay.setPanSpray(1.0f);  // Full pan spray
+        delay.setDryWet(1.0f);
+        delay.setStereoWidth(1.0f);  // Full stereo
+        delay.reset();
+
+        std::array<float, 512> inL{}, inR{}, outL{}, outR{};
+        std::fill(inL.begin(), inL.end(), 0.5f);
+        std::fill(inR.begin(), inR.end(), 0.5f);
+
+        // Fill delay buffer
+        for (int i = 0; i < 10; ++i) {
+            delay.process(inL.data(), inR.data(), outL.data(), outR.data(), 512);
+        }
+
+        // Check that L and R differ (stereo)
+        bool anyDifferent = false;
+        for (size_t i = 0; i < 512; ++i) {
+            if (std::abs(outL[i] - outR[i]) > 0.01f) {
+                anyDifferent = true;
+                break;
+            }
+        }
+
+        // With pan spray and full stereo width, L and R should differ
+        REQUIRE(anyDifferent);
     }
 }
 
