@@ -59,10 +59,16 @@ TEST_CASE("getFactoryPresetDirectory returns valid path", "[preset][platform]") 
         REQUIRE_FALSE(path.empty());
     }
 
-    SECTION("path contains Krate Audio and Iterum") {
+    SECTION("path contains vendor and product identifiers") {
         std::string pathStr = path.string();
+        // Linux uses lowercase krate-audio, others use "Krate Audio"
+#if defined(__linux__)
+        REQUIRE(pathStr.find("krate-audio") != std::string::npos);
+        REQUIRE(pathStr.find("iterum") != std::string::npos);
+#else
         REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
         REQUIRE(pathStr.find("Iterum") != std::string::npos);
+#endif
     }
 
     SECTION("path is absolute") {
