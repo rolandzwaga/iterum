@@ -23,8 +23,9 @@
 
 namespace Iterum {
 
-// Forward declaration
+// Forward declarations
 class PresetBrowserView;
+class SavePresetDialogView;
 
 // ==============================================================================
 // Controller Class
@@ -111,6 +112,9 @@ public:
     /// Close the preset browser modal
     void closePresetBrowser();
 
+    /// Open standalone save preset dialog (quick save from main UI)
+    void openSavePresetDialog();
+
     /// Get the preset manager instance
     PresetManager* getPresetManager() const { return presetManager_.get(); }
 
@@ -162,6 +166,7 @@ private:
 
     std::unique_ptr<PresetManager> presetManager_;
     PresetBrowserView* presetBrowserView_ = nullptr;  // Owned by frame
+    SavePresetDialogView* savePresetDialogView_ = nullptr;  // Owned by frame
 
     // ==========================================================================
     // Preset Loading Helpers

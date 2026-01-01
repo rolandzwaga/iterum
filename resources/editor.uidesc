@@ -743,6 +743,8 @@ by functionality. Group order: Primary controls first, specialized later.
                 <view class="CTextLabel" origin="15, 10" size="120, 30" title="ITERUM" font="title-font" font-color="accent" text-alignment="left" transparent="true"/>
                 <view class="CTextLabel" origin="150, 14" size="80, 22" title="Mode:" font="label-font" font-color="text-dim" text-alignment="right" transparent="true"/>
                 <view class="COptionMenu" origin="235, 12" size="160, 26" control-tag="Mode" default-value="0" font="~ NormalFont" font-color="text" back-color="panel" frame-color="border" frame-width="1" menu-popup-style="true" menu-check-style="true" mouse-enabled="true" transparent="false" wants-focus="true" text-alignment="left" text-inset="5, 0"/>
+                <!-- Save Preset Button (Spec 042) - quick save shortcut -->
+                <view custom-view-name="SavePresetButton" origin="712, 12" size="85, 26"/>
                 <!-- Preset Browser Button (Spec 042) - positioned right side of header -->
                 <view custom-view-name="PresetBrowserButton" origin="805, 12" size="80, 26"/>
             </view>

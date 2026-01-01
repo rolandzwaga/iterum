@@ -56,6 +56,7 @@ public:
 
     // Lifecycle
     void open(int currentMode);
+    void openWithSaveDialog(int currentMode);  // Opens browser with save dialog immediately visible
     void close();
     bool isOpen() const { return isOpen_; }
 

@@ -8,6 +8,7 @@
 
 #include "preset/preset_manager.h"
 #include "ui/preset_browser_view.h"
+#include "ui/save_preset_dialog_view.h"
 
 #include "public.sdk/source/vst/vstparameters.h"
 
@@ -784,6 +785,34 @@ private:
     Controller* controller_ = nullptr;
 };
 
+// =============================================================================
+// SavePresetButton: Button that opens standalone save dialog (Spec 042)
+// =============================================================================
+class SavePresetButton : public VSTGUI::CTextButton {
+public:
+    SavePresetButton(const VSTGUI::CRect& size, Controller* controller)
+        : CTextButton(size, nullptr, -1, "Save Preset")
+        , controller_(controller)
+    {
+        setFrameColor(VSTGUI::CColor(80, 80, 85));
+        setTextColor(VSTGUI::CColor(255, 255, 255));
+    }
+
+    VSTGUI::CMouseEventResult onMouseDown(
+        VSTGUI::CPoint& where,
+        const VSTGUI::CButtonState& buttons) override
+    {
+        if (buttons.isLeftButton() && controller_) {
+            controller_->openSavePresetDialog();
+            return VSTGUI::kMouseEventHandled;
+        }
+        return CTextButton::onMouseDown(where, buttons);
+    }
+
+private:
+    Controller* controller_ = nullptr;
+};
+
 VSTGUI::CView* Controller::createCustomView(
     VSTGUI::UTF8StringPtr name,
     const VSTGUI::UIAttributes& attributes,
@@ -807,6 +836,16 @@ VSTGUI::CView* Controller::createCustomView(
         attributes.getPointAttribute("size", size);
         VSTGUI::CRect rect(origin.x, origin.y, origin.x + size.x, origin.y + size.y);
         return new PresetBrowserButton(rect, this);
+    }
+
+    // Save Preset Button (Spec 042) - Quick save shortcut
+    if (VSTGUI::UTF8StringView(name) == "SavePresetButton") {
+        VSTGUI::CPoint origin(0, 0);
+        VSTGUI::CPoint size(60, 24);
+        attributes.getPointAttribute("origin", origin);
+        attributes.getPointAttribute("size", size);
+        VSTGUI::CRect rect(origin.x, origin.y, origin.x + size.x, origin.y + size.y);
+        return new SavePresetButton(rect, this);
     }
 
     return nullptr;
@@ -938,6 +977,10 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
                 auto frameSize = frame->getViewSize();
                 presetBrowserView_ = new PresetBrowserView(frameSize, presetManager_.get());
                 frame->addView(presetBrowserView_);
+
+                // Save Preset Dialog - standalone dialog for quick save from main UI
+                savePresetDialogView_ = new SavePresetDialogView(frameSize, presetManager_.get());
+                frame->addView(savePresetDialogView_);
             }
         }
     }
@@ -1025,6 +1068,18 @@ void Controller::openPresetBrowser() {
         }
 
         presetBrowserView_->open(currentMode);
+    }
+}
+
+void Controller::openSavePresetDialog() {
+    if (savePresetDialogView_ && !savePresetDialogView_->isOpen()) {
+        // Get current mode from parameter
+        int currentMode = -1;  // Default to "All"
+        if (auto* modeParam = getParameterObject(kModeId)) {
+            currentMode = static_cast<int>(modeParam->toPlain(modeParam->getNormalized()));
+        }
+
+        savePresetDialogView_->open(currentMode);
     }
 }
 

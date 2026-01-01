@@ -90,6 +90,13 @@ void PresetBrowserView::open(int currentMode) {
     updateButtonStates();
 }
 
+void PresetBrowserView::openWithSaveDialog(int currentMode) {
+    // Open the browser normally first
+    open(currentMode);
+    // Then immediately show the save dialog
+    showSaveDialog();
+}
+
 void PresetBrowserView::close() {
     // Unregister keyboard hook
     unregisterKeyboardHook();

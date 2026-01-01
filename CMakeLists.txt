@@ -175,6 +175,8 @@ smtg_add_vst3plugin(${PLUGIN_NAME}
     src/ui/preset_browser_view.cpp
     src/ui/preset_data_source.h
     src/ui/preset_data_source.cpp
+    src/ui/save_preset_dialog_view.h
+    src/ui/save_preset_dialog_view.cpp
     src/ui/mode_tab_bar.h
     src/ui/mode_tab_bar.cpp
 )
