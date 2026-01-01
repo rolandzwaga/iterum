@@ -5,6 +5,42 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-01
+
+### Added
+
+- **Preset Browser** (spec 042)
+  - Full preset management UI accessible via "PRESETS" button in header
+  - Mode-filtered browsing with dropdown to show presets for current or all modes
+  - Search functionality with real-time filtering
+  - Double-click to load presets instantly
+  - Factory presets marked with lock icon, user presets editable
+
+- **Preset Save/Delete Functionality**
+  - Save dialog with name input field and auto-focus
+  - Overwrite confirmation when saving with existing preset name
+  - Delete confirmation dialog for user presets (factory presets protected)
+  - Full keyboard support: Enter to confirm, Escape to cancel
+  - Standalone "Save Preset" button in main UI header for quick access
+
+- **110 Factory Presets**
+  - 10 musically curated presets per delay mode (11 modes)
+  - Categories include settings for bass, drums, vocals, and experimental use
+  - Creative names reflecting each preset's character
+  - Organized by mode subdirectories (Granular/, Spectral/, etc.)
+
+- **Preset Generator Tool**
+  - Standalone tool (`tools/preset_generator.cpp`) for generating factory presets
+  - Produces valid .vstpreset files matching VST3 SDK format
+  - Deterministic output for reproducible preset generation
+
+- **Installer Preset Integration**
+  - Windows: Factory presets installed to `%PROGRAMDATA%\Krate Audio\Iterum\`
+  - macOS: Factory presets installed to `/Library/Application Support/Krate Audio/Iterum/`
+  - Linux: Factory presets included in tar archive with installation instructions
+
+---
+
 ## [0.6.1] - 2025-12-31
 
 ### Fixed
