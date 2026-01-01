@@ -128,7 +128,7 @@ inline void handleGranularParamChange(
                 std::memory_order_relaxed);
             break;
 
-        case kGranularDryWetId:
+        case kGranularMixId:
             // 0-1 (already normalized)
             params.dryWet.store(
                 static_cast<float>(normalizedValue),
@@ -326,7 +326,7 @@ inline void registerGranularParams(Steinberg::Vst::ParameterContainer& parameter
         0,
         0.5,  // 50% default
         ParameterInfo::kCanAutomate,
-        kGranularDryWetId,
+        kGranularMixId,
         0,
         STR16("Mix")
     );
@@ -448,7 +448,7 @@ inline Steinberg::tresult formatGranularParam(
         case kGranularPositionSprayId:
         case kGranularPanSprayId:
         case kGranularReverseProbId:
-        case kGranularDryWetId:
+        case kGranularMixId:
         case kGranularJitterId:
         case kGranularTextureId:
         case kGranularStereoWidthId: {
@@ -654,7 +654,7 @@ inline void syncGranularParamsToController(
 
     // Dry/Wet: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kGranularDryWetId, static_cast<double>(floatVal));
+        controller.setParamNormalized(kGranularMixId, static_cast<double>(floatVal));
     }
 
     // Envelope Type: 0-3 -> normalized = val / 3

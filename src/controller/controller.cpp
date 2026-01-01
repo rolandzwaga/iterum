@@ -6,6 +6,9 @@
 #include "plugin_ids.h"
 #include "version.h"
 
+#include "preset/preset_manager.h"
+#include "ui/preset_browser_view.h"
+
 #include "public.sdk/source/vst/vstparameters.h"
 
 #include "vstgui/lib/cframe.h"
@@ -14,6 +17,7 @@
 #include "vstgui/lib/controls/coptionmenu.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 #include "vstgui/uidescription/uiviewswitchcontainer.h"
+#include "vstgui/uidescription/uiattributes.h"
 
 #include "base/source/fobject.h"
 
@@ -241,6 +245,13 @@ private:
 namespace Iterum {
 
 // ==============================================================================
+// Destructor
+// ==============================================================================
+// Defined here so unique_ptr<PresetManager> can use the complete type
+
+Controller::~Controller() = default;
+
+// ==============================================================================
 // IPluginBase
 // ==============================================================================
 
@@ -322,6 +333,24 @@ Steinberg::tresult PLUGIN_API Controller::initialize(FUnknown* context) {
     registerDigitalParams(parameters);   // Digital Delay (spec 026)
     registerPingPongParams(parameters);  // PingPong Delay (spec 027)
     registerMultiTapParams(parameters);  // MultiTap Delay (spec 028)
+
+    // ==========================================================================
+    // Preset Manager (Spec 042)
+    // ==========================================================================
+    // Create PresetManager for preset browsing/scanning.
+    // Note: We pass nullptr for processor since the controller doesn't have
+    // direct access to it. We provide a state provider callback for saving.
+    presetManager_ = std::make_unique<PresetManager>(nullptr, this);
+
+    // Set state provider callback for preset saving
+    presetManager_->setStateProvider([this]() -> Steinberg::IBStream* {
+        return this->createComponentStateStream();
+    });
+
+    // Set load provider callback for preset loading
+    presetManager_->setLoadProvider([this](Steinberg::IBStream* state) -> bool {
+        return this->loadComponentStateWithNotify(state);
+    });
 
     return Steinberg::kResultTrue;
 }
@@ -727,6 +756,34 @@ Steinberg::tresult PLUGIN_API Controller::setParamNormalized(
 // VST3EditorDelegate
 // ==============================================================================
 
+// =============================================================================
+// PresetBrowserButton: Button that opens the preset browser
+// =============================================================================
+class PresetBrowserButton : public VSTGUI::CTextButton {
+public:
+    PresetBrowserButton(const VSTGUI::CRect& size, Controller* controller)
+        : CTextButton(size, nullptr, -1, "Presets")
+        , controller_(controller)
+    {
+        setFrameColor(VSTGUI::CColor(80, 80, 85));
+        setTextColor(VSTGUI::CColor(255, 255, 255));
+    }
+
+    VSTGUI::CMouseEventResult onMouseDown(
+        VSTGUI::CPoint& where,
+        const VSTGUI::CButtonState& buttons) override
+    {
+        if (buttons.isLeftButton() && controller_) {
+            controller_->openPresetBrowser();
+            return VSTGUI::kMouseEventHandled;
+        }
+        return CTextButton::onMouseDown(where, buttons);
+    }
+
+private:
+    Controller* controller_ = nullptr;
+};
+
 VSTGUI::CView* Controller::createCustomView(
     VSTGUI::UTF8StringPtr name,
     const VSTGUI::UIAttributes& attributes,
@@ -738,15 +795,19 @@ VSTGUI::CView* Controller::createCustomView(
     // ==========================================================================
 
     // Silence unused parameter warnings
-    (void)name;
-    (void)attributes;
     (void)description;
     (void)editor;
 
-    // Example:
-    // if (VSTGUI::UTF8StringView(name) == "MyCustomKnob") {
-    //     return new MyCustomKnob(...);
-    // }
+    // Preset Browser Button (Spec 042)
+    if (VSTGUI::UTF8StringView(name) == "PresetBrowserButton") {
+        // Read origin and size from UIAttributes to get correct positioning
+        VSTGUI::CPoint origin(0, 0);
+        VSTGUI::CPoint size(80, 24);
+        attributes.getPointAttribute("origin", origin);
+        attributes.getPointAttribute("size", size);
+        VSTGUI::CRect rect(origin.x, origin.y, origin.x + size.x, origin.y + size.y);
+        return new PresetBrowserButton(rect, this);
+    }
 
     return nullptr;
 }
@@ -866,6 +927,18 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
             if (auto* versionLabel = findTextLabel(frame, 9999)) {
                 versionLabel->setText(UI_VERSION_STR);
             }
+
+            // =====================================================================
+            // Preset Browser View (Spec 042)
+            // =====================================================================
+            // Create the preset browser view as an overlay covering the full frame.
+            // The view is initially hidden and shown via openPresetBrowser().
+            // =====================================================================
+            if (presetManager_) {
+                auto frameSize = frame->getViewSize();
+                presetBrowserView_ = new PresetBrowserView(frameSize, presetManager_.get());
+                frame->addView(presetBrowserView_);
+            }
         }
     }
 
@@ -933,7 +1006,708 @@ void Controller::willClose(VSTGUI::VST3Editor* editor) {
     granularDelayTimeVisibilityController_ = nullptr;
     spectralBaseDelayVisibilityController_ = nullptr;  // spec 041
 
+    // Preset browser view is owned by the frame and will be cleaned up automatically
+    presetBrowserView_ = nullptr;
+
     activeEditor_ = nullptr;
+}
+
+// ==============================================================================
+// Preset Browser (Spec 042)
+// ==============================================================================
+
+void Controller::openPresetBrowser() {
+    if (presetBrowserView_ && !presetBrowserView_->isOpen()) {
+        // Get current mode from parameter
+        int currentMode = -1;  // Default to "All"
+        if (auto* modeParam = getParameterObject(kModeId)) {
+            currentMode = static_cast<int>(modeParam->toPlain(modeParam->getNormalized()));
+        }
+
+        presetBrowserView_->open(currentMode);
+    }
+}
+
+void Controller::closePresetBrowser() {
+    if (presetBrowserView_ && presetBrowserView_->isOpen()) {
+        presetBrowserView_->close();
+    }
+}
+
+// ==============================================================================
+// State Serialization for Preset Saving
+// ==============================================================================
+
+Steinberg::MemoryStream* Controller::createComponentStateStream() {
+    // Create a memory stream and serialize current parameter values
+    // in the same format as Processor::getState()
+    auto* stream = new Steinberg::MemoryStream();
+    Steinberg::IBStreamer streamer(stream, kLittleEndian);
+
+    // Helper to get denormalized float from controller parameter
+    auto getFloat = [this](Steinberg::Vst::ParamID id, float defaultVal, float scale = 1.0f) -> float {
+        if (auto* param = getParameterObject(id)) {
+            return static_cast<float>(param->toPlain(param->getNormalized())) * scale;
+        }
+        return defaultVal;
+    };
+
+    // Helper to get int32 from controller parameter
+    auto getInt32 = [this](Steinberg::Vst::ParamID id, Steinberg::int32 defaultVal) -> Steinberg::int32 {
+        if (auto* param = getParameterObject(id)) {
+            return static_cast<Steinberg::int32>(param->toPlain(param->getNormalized()));
+        }
+        return defaultVal;
+    };
+
+    // Write global parameters (must match Processor::getState order)
+    // Gain: normalized 0-1 maps to 0-2 linear
+    float gain = static_cast<float>(getParamNormalized(kGainId) * 2.0);
+    streamer.writeFloat(gain);
+
+    // Mode (0-10)
+    Steinberg::int32 mode = getInt32(kModeId, 0);
+    streamer.writeInt32(mode);
+
+    // Granular params - must match saveGranularParams order exactly
+    streamer.writeFloat(getFloat(kGranularGrainSizeId, 100.0f));
+    streamer.writeFloat(getFloat(kGranularDensityId, 10.0f));
+    streamer.writeFloat(getFloat(kGranularDelayTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kGranularPitchId, 0.0f));
+    streamer.writeFloat(getFloat(kGranularPitchSprayId, 0.0f));
+    streamer.writeFloat(getFloat(kGranularPositionSprayId, 0.0f));
+    streamer.writeFloat(getFloat(kGranularPanSprayId, 0.0f));
+    streamer.writeFloat(getFloat(kGranularReverseProbId, 0.0f));
+    streamer.writeInt32(getInt32(kGranularFreezeId, 0));
+    streamer.writeFloat(getFloat(kGranularFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kGranularMixId, 0.5f));
+    streamer.writeInt32(getInt32(kGranularEnvelopeTypeId, 0));
+    streamer.writeInt32(getInt32(kGranularTimeModeId, 0));
+    streamer.writeInt32(getInt32(kGranularNoteValueId, 4));
+    streamer.writeFloat(getFloat(kGranularJitterId, 0.0f));
+    streamer.writeInt32(getInt32(kGranularPitchQuantId, 0));
+    streamer.writeFloat(getFloat(kGranularTextureId, 0.0f));
+    streamer.writeFloat(getFloat(kGranularStereoWidthId, 0.0f));
+
+    // Spectral params - must match saveSpectralParams order exactly
+    streamer.writeInt32(getInt32(kSpectralFFTSizeId, 2048));
+    streamer.writeFloat(getFloat(kSpectralBaseDelayId, 250.0f));
+    streamer.writeFloat(getFloat(kSpectralSpreadId, 500.0f));
+    streamer.writeInt32(getInt32(kSpectralSpreadDirectionId, 0));
+    streamer.writeFloat(getFloat(kSpectralFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kSpectralFeedbackTiltId, 0.0f));
+    streamer.writeInt32(getInt32(kSpectralFreezeId, 0));
+    streamer.writeFloat(getFloat(kSpectralDiffusionId, 0.5f));
+    streamer.writeFloat(getFloat(kSpectralMixId, 50.0f));
+    streamer.writeInt32(getInt32(kSpectralSpreadCurveId, 0));
+    streamer.writeFloat(getFloat(kSpectralStereoWidthId, 0.5f));
+    streamer.writeInt32(getInt32(kSpectralTimeModeId, 0));
+    streamer.writeInt32(getInt32(kSpectralNoteValueId, 4));
+
+    // Ducking params - must match saveDuckingParams order exactly
+    streamer.writeInt32(getInt32(kDuckingEnabledId, 0));
+    streamer.writeFloat(getFloat(kDuckingThresholdId, -30.0f));
+    streamer.writeFloat(getFloat(kDuckingDuckAmountId, 50.0f));
+    streamer.writeFloat(getFloat(kDuckingAttackTimeId, 10.0f));
+    streamer.writeFloat(getFloat(kDuckingReleaseTimeId, 200.0f));
+    streamer.writeFloat(getFloat(kDuckingHoldTimeId, 50.0f));
+    streamer.writeInt32(getInt32(kDuckingDuckTargetId, 0));
+    streamer.writeInt32(getInt32(kDuckingSidechainFilterEnabledId, 0));
+    streamer.writeFloat(getFloat(kDuckingSidechainFilterCutoffId, 80.0f));
+    streamer.writeFloat(getFloat(kDuckingDelayTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kDuckingFeedbackId, 0.0f));
+    streamer.writeFloat(getFloat(kDuckingMixId, 50.0f));
+
+    // Freeze params - must match saveFreezeParams order exactly
+    streamer.writeInt32(getInt32(kFreezeEnabledId, 0));
+    streamer.writeFloat(getFloat(kFreezeDelayTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kFreezeFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kFreezePitchSemitonesId, 0.0f));
+    streamer.writeFloat(getFloat(kFreezePitchCentsId, 0.0f));
+    streamer.writeFloat(getFloat(kFreezeShimmerMixId, 0.0f));
+    streamer.writeFloat(getFloat(kFreezeDecayId, 0.5f));
+    streamer.writeFloat(getFloat(kFreezeDiffusionAmountId, 0.3f));
+    streamer.writeFloat(getFloat(kFreezeDiffusionSizeId, 0.5f));
+    streamer.writeInt32(getInt32(kFreezeFilterEnabledId, 0));
+    streamer.writeInt32(getInt32(kFreezeFilterTypeId, 0));
+    streamer.writeFloat(getFloat(kFreezeFilterCutoffId, 1000.0f));
+    streamer.writeFloat(getFloat(kFreezeMixId, 0.5f));
+
+    // Reverse params - must match saveReverseParams order exactly
+    streamer.writeFloat(getFloat(kReverseChunkSizeId, 500.0f));
+    streamer.writeFloat(getFloat(kReverseCrossfadeId, 50.0f));
+    streamer.writeInt32(getInt32(kReversePlaybackModeId, 0));
+    streamer.writeFloat(getFloat(kReverseFeedbackId, 0.0f));
+    streamer.writeInt32(getInt32(kReverseFilterEnabledId, 0));
+    streamer.writeFloat(getFloat(kReverseFilterCutoffId, 4000.0f));
+    streamer.writeInt32(getInt32(kReverseFilterTypeId, 0));
+    streamer.writeFloat(getFloat(kReverseMixId, 0.5f));
+
+    // Shimmer params - must match saveShimmerParams order exactly
+    streamer.writeFloat(getFloat(kShimmerDelayTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kShimmerPitchSemitonesId, 12.0f));
+    streamer.writeFloat(getFloat(kShimmerPitchCentsId, 0.0f));
+    streamer.writeFloat(getFloat(kShimmerPitchBlendId, 100.0f));
+    streamer.writeFloat(getFloat(kShimmerFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kShimmerDiffusionAmountId, 50.0f));
+    streamer.writeFloat(getFloat(kShimmerDiffusionSizeId, 50.0f));
+    streamer.writeInt32(getInt32(kShimmerFilterEnabledId, 0));
+    streamer.writeFloat(getFloat(kShimmerFilterCutoffId, 4000.0f));
+    streamer.writeFloat(getFloat(kShimmerMixId, 50.0f));
+
+    // Tape params - must match saveTapeParams order exactly
+    streamer.writeFloat(getFloat(kTapeMotorSpeedId, 500.0f));
+    streamer.writeFloat(getFloat(kTapeMotorInertiaId, 300.0f));
+    streamer.writeFloat(getFloat(kTapeWearId, 0.3f));
+    streamer.writeFloat(getFloat(kTapeSaturationId, 0.5f));
+    streamer.writeFloat(getFloat(kTapeAgeId, 0.3f));
+    streamer.writeInt32(getInt32(kTapeSpliceEnabledId, 0));
+    streamer.writeFloat(getFloat(kTapeSpliceIntensityId, 0.5f));
+    streamer.writeFloat(getFloat(kTapeFeedbackId, 0.4f));
+    streamer.writeFloat(getFloat(kTapeMixId, 0.5f));
+    streamer.writeInt32(getInt32(kTapeHead1EnabledId, 1));
+    streamer.writeInt32(getInt32(kTapeHead2EnabledId, 0));
+    streamer.writeInt32(getInt32(kTapeHead3EnabledId, 0));
+    streamer.writeFloat(getFloat(kTapeHead1LevelId, 1.0f));
+    streamer.writeFloat(getFloat(kTapeHead2LevelId, 1.0f));
+    streamer.writeFloat(getFloat(kTapeHead3LevelId, 1.0f));
+    streamer.writeFloat(getFloat(kTapeHead1PanId, 0.0f));
+    streamer.writeFloat(getFloat(kTapeHead2PanId, 0.0f));
+    streamer.writeFloat(getFloat(kTapeHead3PanId, 0.0f));
+
+    // BBD params - must match saveBBDParams order exactly
+    streamer.writeFloat(getFloat(kBBDDelayTimeId, 300.0f));
+    streamer.writeFloat(getFloat(kBBDFeedbackId, 0.4f));
+    streamer.writeFloat(getFloat(kBBDModDepthId, 0.0f));
+    streamer.writeFloat(getFloat(kBBDModRateId, 0.5f));
+    streamer.writeFloat(getFloat(kBBDAgeId, 0.2f));
+    streamer.writeInt32(getInt32(kBBDEraId, 0));
+    streamer.writeFloat(getFloat(kBBDMixId, 0.5f));
+
+    // Digital params - must match saveDigitalParams order exactly
+    streamer.writeFloat(getFloat(kDigitalDelayTimeId, 500.0f));
+    streamer.writeInt32(getInt32(kDigitalTimeModeId, 0));
+    streamer.writeInt32(getInt32(kDigitalNoteValueId, 4));
+    streamer.writeFloat(getFloat(kDigitalFeedbackId, 0.5f));
+    streamer.writeInt32(getInt32(kDigitalLimiterCharacterId, 0));
+    streamer.writeInt32(getInt32(kDigitalEraId, 0));
+    streamer.writeFloat(getFloat(kDigitalAgeId, 0.0f));
+    streamer.writeFloat(getFloat(kDigitalModDepthId, 0.0f));
+    streamer.writeFloat(getFloat(kDigitalModRateId, 0.5f));
+    streamer.writeInt32(getInt32(kDigitalModWaveformId, 0));
+    streamer.writeFloat(getFloat(kDigitalMixId, 0.5f));
+    streamer.writeFloat(getFloat(kDigitalWidthId, 100.0f));
+
+    // PingPong params - must match savePingPongParams order exactly
+    streamer.writeFloat(getFloat(kPingPongDelayTimeId, 500.0f));
+    streamer.writeInt32(getInt32(kPingPongTimeModeId, 1));
+    streamer.writeInt32(getInt32(kPingPongNoteValueId, 4));
+    streamer.writeInt32(getInt32(kPingPongLRRatioId, 0));
+    streamer.writeFloat(getFloat(kPingPongFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kPingPongCrossFeedbackId, 1.0f));
+    streamer.writeFloat(getFloat(kPingPongWidthId, 100.0f));
+    streamer.writeFloat(getFloat(kPingPongModDepthId, 0.0f));
+    streamer.writeFloat(getFloat(kPingPongModRateId, 1.0f));
+    streamer.writeFloat(getFloat(kPingPongMixId, 0.5f));
+
+    // MultiTap params - must match saveMultiTapParams order exactly
+    streamer.writeInt32(getInt32(kMultiTapTimingPatternId, 2));
+    streamer.writeInt32(getInt32(kMultiTapSpatialPatternId, 2));
+    streamer.writeInt32(getInt32(kMultiTapTapCountId, 4));
+    streamer.writeFloat(getFloat(kMultiTapBaseTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kMultiTapTempoId, 120.0f));
+    streamer.writeFloat(getFloat(kMultiTapFeedbackId, 0.5f));
+    streamer.writeFloat(getFloat(kMultiTapFeedbackLPCutoffId, 20000.0f));
+    streamer.writeFloat(getFloat(kMultiTapFeedbackHPCutoffId, 20.0f));
+    streamer.writeFloat(getFloat(kMultiTapMorphTimeId, 500.0f));
+    streamer.writeFloat(getFloat(kMultiTapMixId, 50.0f));
+
+    // Seek to beginning so the stream can be read
+    stream->seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+
+    return stream;
+}
+
+// ==============================================================================
+// Preset Loading Helpers
+// ==============================================================================
+
+void Controller::editParamWithNotify(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue value) {
+    using namespace Steinberg::Vst;
+
+    // Clamp value to valid range
+    value = std::max(0.0, std::min(1.0, value));
+
+    // Full edit cycle to notify host of parameter change
+    beginEdit(id);
+    setParamNormalized(id, value);
+    performEdit(id, value);
+    endEdit(id);
+}
+
+bool Controller::loadComponentStateWithNotify(Steinberg::IBStream* state) {
+    // ==========================================================================
+    // Load component state with host notification
+    // Same parsing as setComponentState(), but uses editParamWithNotify()
+    // to propagate changes to the processor via the host
+    // Order MUST match Processor::getState() and createComponentStateStream()
+    // ==========================================================================
+
+    if (!state) {
+        return false;
+    }
+
+    Steinberg::IBStreamer streamer(state, kLittleEndian);
+    Steinberg::int32 intVal = 0;
+    float floatVal = 0.0f;
+
+    // Global parameters
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGainId, static_cast<double>(floatVal / 2.0f));
+    }
+
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kModeId, static_cast<double>(intVal) / 10.0);
+    }
+
+    // ==========================================================================
+    // Granular params (must match saveGranularParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularGrainSizeId, (floatVal - 10.0f) / 490.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularDensityId, (floatVal - 1.0f) / 49.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularDelayTimeId, floatVal / 2000.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularPitchId, (floatVal + 24.0f) / 48.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularPitchSprayId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularPositionSprayId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularPanSprayId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularReverseProbId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kGranularFreezeId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularMixId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kGranularEnvelopeTypeId, static_cast<double>(intVal) / 3.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kGranularTimeModeId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kGranularNoteValueId, static_cast<double>(intVal) / 9.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularJitterId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kGranularPitchQuantId, static_cast<double>(intVal) / 4.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularTextureId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kGranularStereoWidthId, static_cast<double>(floatVal));
+    }
+
+    // ==========================================================================
+    // Spectral params (must match saveSpectralParams order)
+    // ==========================================================================
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralFFTSizeId, static_cast<double>(intVal) / 3.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralBaseDelayId, floatVal / 2000.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralSpreadId, floatVal / 2000.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralSpreadDirectionId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralFeedbackTiltId, (floatVal + 1.0f) / 2.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralFreezeId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralDiffusionId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralMixId, floatVal / 100.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralSpreadCurveId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kSpectralStereoWidthId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralTimeModeId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kSpectralNoteValueId, static_cast<double>(intVal) / 9.0);
+    }
+
+    // ==========================================================================
+    // Ducking params (must match saveDuckingParams order)
+    // ==========================================================================
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDuckingEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingThresholdId, (floatVal + 60.0f) / 60.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingDuckAmountId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingAttackTimeId, (floatVal - 0.1f) / 99.9f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingReleaseTimeId, (floatVal - 10.0f) / 1990.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingHoldTimeId, floatVal / 500.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDuckingDuckTargetId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDuckingSidechainFilterEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingSidechainFilterCutoffId, (floatVal - 20.0f) / 480.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingDelayTimeId, (floatVal - 10.0f) / 4990.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDuckingMixId, floatVal / 100.0f);
+    }
+
+    // ==========================================================================
+    // Freeze params (must match saveFreezeParams order)
+    // ==========================================================================
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kFreezeEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeDelayTimeId, (floatVal - 10.0f) / 4990.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezePitchSemitonesId, (floatVal + 24.0f) / 48.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezePitchCentsId, (floatVal + 100.0f) / 200.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeShimmerMixId, floatVal / 100.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeDecayId, floatVal / 100.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeDiffusionAmountId, floatVal / 100.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeDiffusionSizeId, floatVal / 100.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kFreezeFilterEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kFreezeFilterTypeId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeFilterCutoffId, (floatVal - 20.0f) / 19980.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kFreezeMixId, floatVal / 100.0f);
+    }
+
+    // ==========================================================================
+    // Reverse params (must match saveReverseParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kReverseChunkSizeId, (floatVal - 10.0f) / 1990.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kReverseCrossfadeId, floatVal / 100.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kReversePlaybackModeId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kReverseFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kReverseFilterEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kReverseFilterCutoffId, (floatVal - 20.0f) / 19980.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kReverseFilterTypeId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kReverseMixId, floatVal / 100.0f);
+    }
+
+    // ==========================================================================
+    // Shimmer params (must match saveShimmerParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerDelayTimeId, (floatVal - 10.0f) / 4990.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerPitchSemitonesId, (floatVal + 24.0f) / 48.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerPitchCentsId, (floatVal + 100.0f) / 200.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerPitchBlendId, floatVal / 100.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerDiffusionAmountId, floatVal / 100.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerDiffusionSizeId, floatVal / 100.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kShimmerFilterEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerFilterCutoffId, (floatVal - 20.0f) / 19980.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kShimmerMixId, floatVal / 100.0f);
+    }
+
+    // ==========================================================================
+    // Tape params (must match saveTapeParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeMotorSpeedId, (floatVal - 20.0f) / 1980.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeMotorInertiaId, (floatVal - 100.0f) / 900.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeWearId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeSaturationId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeAgeId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kTapeSpliceEnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeSpliceIntensityId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeMixId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kTapeHead1EnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kTapeHead2EnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kTapeHead3EnabledId, static_cast<double>(intVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead1LevelId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead2LevelId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead3LevelId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead1PanId, (floatVal + 1.0f) / 2.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead2PanId, (floatVal + 1.0f) / 2.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kTapeHead3PanId, (floatVal + 1.0f) / 2.0f);
+    }
+
+    // ==========================================================================
+    // BBD params (must match saveBBDParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDDelayTimeId, (floatVal - 20.0f) / 980.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDModDepthId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDModRateId, (floatVal - 0.1f) / 9.9f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDAgeId, static_cast<double>(floatVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kBBDEraId, static_cast<double>(intVal) / 3.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kBBDMixId, static_cast<double>(floatVal));
+    }
+
+    // ==========================================================================
+    // Digital params (must match saveDigitalParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalDelayTimeId, (floatVal - 1.0f) / 4999.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDigitalTimeModeId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDigitalNoteValueId, static_cast<double>(intVal) / 9.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDigitalLimiterCharacterId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDigitalEraId, static_cast<double>(intVal) / 3.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalAgeId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalModDepthId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalModRateId, (floatVal - 0.1f) / 9.9f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kDigitalModWaveformId, static_cast<double>(intVal) / 2.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalMixId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kDigitalWidthId, floatVal / 200.0f);
+    }
+
+    // ==========================================================================
+    // PingPong params (must match savePingPongParams order)
+    // ==========================================================================
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongDelayTimeId, (floatVal - 1.0f) / 4999.0f);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kPingPongTimeModeId, static_cast<double>(intVal));
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kPingPongNoteValueId, static_cast<double>(intVal) / 9.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kPingPongLRRatioId, static_cast<double>(intVal) / 4.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongFeedbackId, static_cast<double>(floatVal / 1.2f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongCrossFeedbackId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongWidthId, floatVal / 200.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongModDepthId, static_cast<double>(floatVal));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongModRateId, (floatVal - 0.1f) / 9.9f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kPingPongMixId, static_cast<double>(floatVal));
+    }
+
+    // ==========================================================================
+    // MultiTap params (must match saveMultiTapParams order)
+    // ==========================================================================
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kMultiTapTimingPatternId, static_cast<double>(intVal) / 19.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kMultiTapSpatialPatternId, static_cast<double>(intVal) / 6.0);
+    }
+    if (streamer.readInt32(intVal)) {
+        editParamWithNotify(kMultiTapTapCountId, static_cast<double>(intVal - 2) / 14.0);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapBaseTimeId, (floatVal - 1.0f) / 4999.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapTempoId, (floatVal - 20.0f) / 280.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapFeedbackId, static_cast<double>(floatVal / 1.1f));
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapFeedbackLPCutoffId, (floatVal - 20.0f) / 19980.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapFeedbackHPCutoffId, (floatVal - 20.0f) / 480.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapMorphTimeId, (floatVal - 50.0f) / 1950.0f);
+    }
+    if (streamer.readFloat(floatVal)) {
+        editParamWithNotify(kMultiTapMixId, floatVal / 100.0f);
+    }
+
+    return true;
 }
 
 } // namespace Iterum

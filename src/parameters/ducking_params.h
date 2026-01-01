@@ -130,7 +130,7 @@ inline void handleDuckingParamChange(
                 std::memory_order_relaxed);
             break;
 
-        case kDuckingDryWetId:
+        case kDuckingMixId:
             // 0-100%
             params.dryWet.store(
                 static_cast<float>(normalizedValue * 100.0),
@@ -285,7 +285,7 @@ inline void registerDuckingParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         0.5,  // 50% default
         ParameterInfo::kCanAutomate,
-        kDuckingDryWetId,
+        kDuckingMixId,
         0,
         STR16("Mix")
     );
@@ -322,7 +322,7 @@ inline Steinberg::tresult formatDuckingParam(
         }
 
         case kDuckingDuckAmountId:
-        case kDuckingDryWetId: {
+        case kDuckingMixId: {
             // 0-100%
             double percent = valueNormalized * 100.0;
             char text[32];
@@ -549,7 +549,7 @@ inline void syncDuckingParamsToController(
 
     // Dry/Wet: 0-100% -> normalized = val/100
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kDuckingDryWetId,
+        controller.setParamNormalized(kDuckingMixId,
             static_cast<double>(floatVal / 100.0f));
     }
 }

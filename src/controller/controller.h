@@ -15,9 +15,16 @@
 // ==============================================================================
 
 #include "public.sdk/source/vst/vsteditcontroller.h"
+#include "public.sdk/source/common/memorystream.h"
 #include "vstgui/plugin-bindings/vst3editor.h"
+#include "preset/preset_manager.h"
+
+#include <memory>
 
 namespace Iterum {
+
+// Forward declaration
+class PresetBrowserView;
 
 // ==============================================================================
 // Controller Class
@@ -27,7 +34,7 @@ class Controller : public Steinberg::Vst::EditControllerEx1,
                    public VSTGUI::VST3EditorDelegate {
 public:
     Controller() = default;
-    ~Controller() override = default;
+    ~Controller() override;  // Defined in cpp to allow unique_ptr with forward declaration
 
     // ===========================================================================
     // IPluginBase
@@ -95,6 +102,25 @@ public:
     void willClose(VSTGUI::VST3Editor* editor) override;
 
     // ===========================================================================
+    // Preset Browser (Spec 042)
+    // ===========================================================================
+
+    /// Open the preset browser modal
+    void openPresetBrowser();
+
+    /// Close the preset browser modal
+    void closePresetBrowser();
+
+    /// Get the preset manager instance
+    PresetManager* getPresetManager() const { return presetManager_.get(); }
+
+    /// Create a memory stream containing the current component state
+    /// Used for preset saving - serializes controller's parameter values
+    /// in the same format as Processor::getState()
+    /// @return New MemoryStream (caller must release), or nullptr on failure
+    Steinberg::MemoryStream* createComponentStateStream();
+
+    // ===========================================================================
     // Factory
     // ===========================================================================
 
@@ -129,6 +155,27 @@ private:
     Steinberg::IPtr<Steinberg::FObject> pingPongDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> granularDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> spectralBaseDelayVisibilityController_;  // spec 041
+
+    // ==========================================================================
+    // Preset Browser (Spec 042)
+    // ==========================================================================
+
+    std::unique_ptr<PresetManager> presetManager_;
+    PresetBrowserView* presetBrowserView_ = nullptr;  // Owned by frame
+
+    // ==========================================================================
+    // Preset Loading Helpers
+    // ==========================================================================
+
+    /// Edit a parameter with full notification (beginEdit + setParamNormalized + performEdit + endEdit)
+    /// Used when loading presets to notify the host of parameter changes
+    void editParamWithNotify(Steinberg::Vst::ParamID id, Steinberg::Vst::ParamValue value);
+
+    /// Load component state from stream with host notification
+    /// Same parsing as setComponentState(), but calls performEdit to propagate changes to processor
+    /// @param state Stream containing component state in Processor::getState() format
+    /// @return true on success
+    bool loadComponentStateWithNotify(Steinberg::IBStream* state);
 };
 
 } // namespace Iterum

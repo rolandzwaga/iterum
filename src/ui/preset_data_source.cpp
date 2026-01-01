@@ -1,5 +1,6 @@
 #include "preset_data_source.h"
 #include "vstgui/lib/cdatabrowser.h"
+#include "vstgui/lib/cfont.h"
 #include <algorithm>
 #include <cctype>
 
@@ -118,6 +119,9 @@ void PresetDataSource::dbDrawCell(
         context->drawRect(size, VSTGUI::kDrawFilled);
     }
 
+    // Set font before drawing text (required for VSTGUI)
+    auto font = VSTGUI::makeOwned<VSTGUI::CFontDesc>("Arial", 11);
+    context->setFont(font);
     context->setFontColor(textColor);
 
     // Get text for column
@@ -166,7 +170,11 @@ VSTGUI::CMouseEventResult PresetDataSource::dbOnMouseDown(
     int32_t /*column*/,
     VSTGUI::CDataBrowser* /*browser*/
 ) {
-    // Check for double-click
+    // Note: CDataBrowser only calls this delegate for valid row clicks.
+    // Empty space clicks are consumed by CDataBrowser without calling delegate.
+    // Empty space deselection is handled in PresetBrowserView::onMouseDown instead.
+
+    // Handle double-click on valid rows
     if (buttons.isDoubleClick() && doubleClickCallback_) {
         doubleClickCallback_(row);
         return VSTGUI::kMouseEventHandled;

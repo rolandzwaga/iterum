@@ -59,13 +59,13 @@ inline void handleBBDParamChange(
                 static_cast<float>(normalizedValue * 1.2),
                 std::memory_order_relaxed);
             break;
-        case kBBDModulationDepthId:
+        case kBBDModDepthId:
             // 0-1
             params.modulationDepth.store(
                 static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
-        case kBBDModulationRateId:
+        case kBBDModRateId:
             // 0.1-10Hz
             params.modulationRate.store(
                 static_cast<float>(0.1 + normalizedValue * 9.9),
@@ -125,7 +125,7 @@ inline void registerBBDParams(Steinberg::Vst::ParameterContainer& parameters) {
         0,
         0,  // default: 0%
         ParameterInfo::kCanAutomate,
-        kBBDModulationDepthId);
+        kBBDModDepthId);
 
     // Modulation Rate (0.1-10Hz)
     parameters.addParameter(
@@ -134,7 +134,7 @@ inline void registerBBDParams(Steinberg::Vst::ParameterContainer& parameters) {
         0,
         0.040,  // default: 0.5Hz normalized = (0.5-0.1)/9.9
         ParameterInfo::kCanAutomate,
-        kBBDModulationRateId);
+        kBBDModRateId);
 
     // Age (0-100%)
     parameters.addParameter(
@@ -199,7 +199,7 @@ inline Steinberg::tresult formatBBDParam(
             return kResultOk;
         }
 
-        case kBBDModulationDepthId: {
+        case kBBDModDepthId: {
             float percent = static_cast<float>(normalizedValue * 100.0);
             char8 text[32];
             snprintf(text, sizeof(text), "%.0f%%", percent);
@@ -207,7 +207,7 @@ inline Steinberg::tresult formatBBDParam(
             return kResultOk;
         }
 
-        case kBBDModulationRateId: {
+        case kBBDModRateId: {
             float hz = static_cast<float>(0.1 + normalizedValue * 9.9);
             char8 text[32];
             snprintf(text, sizeof(text), "%.2f Hz", hz);
@@ -309,13 +309,13 @@ inline void syncBBDParamsToController(
 
     // Modulation Depth: 0-1 -> normalized = val
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kBBDModulationDepthId,
+        controller.setParamNormalized(kBBDModDepthId,
             static_cast<double>(floatVal));
     }
 
     // Modulation Rate: 0.1-10Hz -> normalized = (val-0.1)/9.9
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kBBDModulationRateId,
+        controller.setParamNormalized(kBBDModRateId,
             static_cast<double>((floatVal - 0.1f) / 9.9f));
     }
 

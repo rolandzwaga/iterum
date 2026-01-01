@@ -87,7 +87,7 @@ inline void handleReverseParamChange(
                 static_cast<int>(normalizedValue * 2.0 + 0.5),
                 std::memory_order_relaxed);
             break;
-        case kReverseDryWetId:
+        case kReverseMixId:
             // 0-1
             params.dryWet.store(
                 static_cast<float>(normalizedValue),
@@ -168,7 +168,7 @@ inline void registerReverseParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         0.5,  // default: 50%
         ParameterInfo::kCanAutomate,
-        kReverseDryWetId);
+        kReverseMixId);
 }
 
 // ==============================================================================
@@ -228,7 +228,7 @@ inline Steinberg::tresult formatReverseParam(
 
         // kReverseFilterTypeId: handled by StringListParameter::toString() automatically
 
-        case kReverseDryWetId: {
+        case kReverseMixId: {
             float percent = static_cast<float>(normalizedValue * 100.0);
             char8 text[32];
             snprintf(text, sizeof(text), "%.0f%%", percent);
@@ -346,7 +346,7 @@ inline void syncReverseParamsToController(
 
     // Dry/Wet: 0-1 -> normalized = val
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kReverseDryWetId,
+        controller.setParamNormalized(kReverseMixId,
             static_cast<double>(floatVal));
     }
 }

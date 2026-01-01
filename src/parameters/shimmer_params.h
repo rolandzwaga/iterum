@@ -72,7 +72,7 @@ inline void handleShimmerParamChange(
                 std::memory_order_relaxed);
             break;
 
-        case kShimmerShimmerMixId:
+        case kShimmerPitchBlendId:
             // 0-100%
             params.shimmerMix.store(
                 static_cast<float>(normalizedValue * 100.0),
@@ -111,7 +111,7 @@ inline void handleShimmerParamChange(
                 std::memory_order_relaxed);
             break;
 
-        case kShimmerDryWetId:
+        case kShimmerMixId:
             // 0-100%
             params.dryWet.store(
                 static_cast<float>(normalizedValue * 100.0),
@@ -176,7 +176,7 @@ inline void registerShimmerParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         1.0,  // 100% default (full shimmer)
         ParameterInfo::kCanAutomate,
-        kShimmerShimmerMixId,
+        kShimmerPitchBlendId,
         0,
         STR16("Shim")
     );
@@ -248,7 +248,7 @@ inline void registerShimmerParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         0.5,  // 50% default
         ParameterInfo::kCanAutomate,
-        kShimmerDryWetId,
+        kShimmerMixId,
         0,
         STR16("Mix")
     );
@@ -295,10 +295,10 @@ inline Steinberg::tresult formatShimmerParam(
             return kResultTrue;
         }
 
-        case kShimmerShimmerMixId:
+        case kShimmerPitchBlendId:
         case kShimmerDiffusionAmountId:
         case kShimmerDiffusionSizeId:
-        case kShimmerDryWetId: {
+        case kShimmerMixId: {
             // 0-100%
             double percent = valueNormalized * 100.0;
             char text[32];
@@ -438,7 +438,7 @@ inline void syncShimmerParamsToController(
 
     // Shimmer Mix: 0-100% -> normalized = val/100
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kShimmerShimmerMixId,
+        controller.setParamNormalized(kShimmerPitchBlendId,
             static_cast<double>(floatVal / 100.0f));
     }
 
@@ -473,7 +473,7 @@ inline void syncShimmerParamsToController(
 
     // Dry/Wet: 0-100% -> normalized = val/100
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kShimmerDryWetId,
+        controller.setParamNormalized(kShimmerMixId,
             static_cast<double>(floatVal / 100.0f));
     }
 }

@@ -150,6 +150,8 @@ add_executable(dsp_tests
     # Preset Browser (spec 042)
     unit/preset/platform_paths_test.cpp
     unit/preset/preset_info_test.cpp
+    # UI Logic (pure functions, SDK-independent)
+    unit/ui/preset_browser_logic_test.cpp
     # Preset source files (SDK-independent, can compile without VST3)
     ${CMAKE_SOURCE_DIR}/src/platform/preset_paths.cpp
 )
@@ -482,8 +484,10 @@ add_executable(vst_tests
     unit/vst/granular_tempo_sync_ui_test.cpp
     # Preset Browser (spec 042) - requires VST3 SDK
     unit/preset/preset_manager_test.cpp
+    unit/preset/preset_data_source_test.cpp
     ${CMAKE_SOURCE_DIR}/src/preset/preset_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/preset_paths.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/preset_data_source.cpp
 )
 
 target_include_directories(vst_tests
@@ -491,12 +495,14 @@ target_include_directories(vst_tests
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/include
         ${vst3sdk_SOURCE_DIR}
+        ${vst3sdk_SOURCE_DIR}/vstgui4
 )
 
 target_link_libraries(vst_tests
     PRIVATE
         Catch2::Catch2
         sdk
+        vstgui
 )
 
 # On macOS, VST3 SDK requires CoreFoundation framework

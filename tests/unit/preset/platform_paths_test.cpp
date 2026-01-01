@@ -20,9 +20,10 @@ TEST_CASE("getUserPresetDirectory returns valid path", "[preset][platform]") {
         REQUIRE_FALSE(path.empty());
     }
 
-    SECTION("path ends with Iterum/Iterum") {
+    SECTION("path ends with Krate Audio/Iterum") {
         std::string pathStr = path.string();
-        // Check the path contains Iterum
+        // Check the path contains Krate Audio and Iterum
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
         REQUIRE(pathStr.find("Iterum") != std::string::npos);
     }
 
@@ -31,19 +32,22 @@ TEST_CASE("getUserPresetDirectory returns valid path", "[preset][platform]") {
     }
 
 #if defined(_WIN32)
-    SECTION("Windows path contains VST3 Presets") {
+    SECTION("Windows path is Documents/Krate Audio/Iterum") {
         std::string pathStr = path.string();
-        REQUIRE(pathStr.find("VST3 Presets") != std::string::npos);
+        REQUIRE(pathStr.find("Documents") != std::string::npos);
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
     }
 #elif defined(__APPLE__)
-    SECTION("macOS path contains Library/Audio/Presets") {
+    SECTION("macOS path is Documents/Krate Audio/Iterum") {
         std::string pathStr = path.string();
-        REQUIRE(pathStr.find("Library/Audio/Presets") != std::string::npos);
+        REQUIRE(pathStr.find("Documents") != std::string::npos);
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
     }
 #else
-    SECTION("Linux path contains .vst3/presets") {
+    SECTION("Linux path is Documents/Krate Audio/Iterum") {
         std::string pathStr = path.string();
-        REQUIRE(pathStr.find(".vst3/presets") != std::string::npos);
+        REQUIRE(pathStr.find("Documents") != std::string::npos);
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
     }
 #endif
 }
@@ -55,8 +59,9 @@ TEST_CASE("getFactoryPresetDirectory returns valid path", "[preset][platform]") 
         REQUIRE_FALSE(path.empty());
     }
 
-    SECTION("path contains Iterum") {
+    SECTION("path contains Krate Audio and Iterum") {
         std::string pathStr = path.string();
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
         REQUIRE(pathStr.find("Iterum") != std::string::npos);
     }
 
@@ -67,18 +72,20 @@ TEST_CASE("getFactoryPresetDirectory returns valid path", "[preset][platform]") 
 #if defined(_WIN32)
     SECTION("Windows factory path uses ProgramData") {
         std::string pathStr = path.string();
-        // ProgramData should be somewhere in the path
-        REQUIRE(pathStr.find("VST3 Presets") != std::string::npos);
+        REQUIRE(pathStr.find("ProgramData") != std::string::npos);
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
     }
 #elif defined(__APPLE__)
-    SECTION("macOS factory path is system-wide") {
+    SECTION("macOS factory path is system-wide Application Support") {
         std::string pathStr = path.string();
-        REQUIRE(pathStr.find("/Library/Audio/Presets") != std::string::npos);
+        REQUIRE(pathStr.find("/Library/Application Support") != std::string::npos);
+        REQUIRE(pathStr.find("Krate Audio") != std::string::npos);
     }
 #else
     SECTION("Linux factory path is in /usr/share") {
         std::string pathStr = path.string();
         REQUIRE(pathStr.find("/usr/share") != std::string::npos);
+        REQUIRE(pathStr.find("krate-audio") != std::string::npos);
     }
 #endif
 }

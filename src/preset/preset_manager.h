@@ -19,6 +19,11 @@
 #include <string_view>
 #include <vector>
 #include <filesystem>
+#include <functional>
+
+namespace Steinberg {
+    class IBStream;
+}
 
 namespace Steinberg::Vst {
     class IComponent;
@@ -30,6 +35,15 @@ namespace Iterum {
 class PresetManager {
 public:
     using PresetList = std::vector<PresetInfo>;
+
+    /// Callback type for providing component state stream
+    /// Returns an IBStream* (caller takes ownership), or nullptr on failure
+    using StateProvider = std::function<Steinberg::IBStream*()>;
+
+    /// Callback type for loading component state with host notification
+    /// Takes an IBStream containing component state, applies it via controller with performEdit
+    /// @return true on success
+    using LoadProvider = std::function<bool(Steinberg::IBStream*)>;
 
     /// Constructor
     /// @param processor VST3 processor component for state access
@@ -73,6 +87,11 @@ public:
         const std::string& description = ""
     );
 
+    /// Overwrite an existing user preset with current state
+    /// Factory presets cannot be overwritten
+    /// @return true on success
+    bool overwritePreset(const PresetInfo& preset);
+
     /// Delete a user preset
     /// Factory presets cannot be deleted
     /// @return true on success, false if factory or not found
@@ -103,9 +122,19 @@ public:
     /// Get last error message
     std::string getLastError() const { return lastError_; }
 
+    /// Set callback for obtaining component state stream
+    /// Required for preset saving when IComponent is not available
+    void setStateProvider(StateProvider provider) { stateProvider_ = std::move(provider); }
+
+    /// Set callback for loading component state with host notification
+    /// Required for preset loading when IComponent is not available
+    void setLoadProvider(LoadProvider provider) { loadProvider_ = std::move(provider); }
+
 private:
     Steinberg::Vst::IComponent* processor_ = nullptr;
     Steinberg::Vst::IEditController* controller_ = nullptr;
+    StateProvider stateProvider_;
+    LoadProvider loadProvider_;
     PresetList cachedPresets_;
     std::string lastError_;
 

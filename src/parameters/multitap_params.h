@@ -104,7 +104,7 @@ inline void handleMultiTapParamChange(
                 static_cast<float>(50.0 + normalizedValue * 1950.0),
                 std::memory_order_relaxed);
             break;
-        case kMultiTapDryWetId:
+        case kMultiTapMixId:
             // 0-100%
             params.dryWet.store(
                 static_cast<float>(normalizedValue * 100.0),
@@ -208,7 +208,7 @@ inline void registerMultiTapParams(Steinberg::Vst::ParameterContainer& parameter
         0,
         0.5,  // default: 50%
         ParameterInfo::kCanAutomate,
-        kMultiTapDryWetId);
+        kMultiTapMixId);
 }
 
 // ==============================================================================
@@ -283,7 +283,7 @@ inline Steinberg::tresult formatMultiTapParam(
             return kResultOk;
         }
 
-        case kMultiTapDryWetId: {
+        case kMultiTapMixId: {
             float percent = static_cast<float>(normalizedValue * 100.0);
             char8 text[32];
             snprintf(text, sizeof(text), "%.0f%%", percent);
@@ -417,7 +417,7 @@ inline void syncMultiTapParamsToController(
 
     // Dry/Wet: 0-100 -> normalized = val/100
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kMultiTapDryWetId,
+        controller.setParamNormalized(kMultiTapMixId,
             static_cast<double>(floatVal / 100.0f));
     }
 }

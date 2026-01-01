@@ -112,35 +112,35 @@
 
 ### 3.4 Tests for UI Components (Write FIRST - Must FAIL)
 
-- [ ] T028 [P] [US1+2] Write failing tests for PresetDataSource in `tests/unit/preset/preset_data_source_test.cpp`
+- [x] T028 [P] [US1+2] Write failing tests for PresetDataSource in `tests/unit/preset/preset_data_source_test.cpp` (50 assertions pass)
 
 ### 3.5 Implementation for UI Components
 
 - [x] T029 [US1+2] Create `src/ui/preset_data_source.h` extending DataBrowserDelegateAdapter
 - [x] T030 [US1+2] Implement PresetDataSource in `src/ui/preset_data_source.cpp` (dbGetNumRows, dbGetNumColumns, dbGetRowHeight, dbGetCurrentColumnWidth, dbDrawCell, dbSelectionChanged, dbOnMouseDown for double-click)
 - [x] T031 [US1+2] Create `src/ui/preset_browser_view.h` extending CViewContainer per contracts/preset_browser_view.h
-- [ ] T032 [US1+2] Implement PresetBrowserView::createChildViews() in `src/ui/preset_browser_view.cpp` - create CDataBrowser, buttons
-- [ ] T033 [US1+2] Implement PresetBrowserView::open() and close() for popup behavior
-- [ ] T034 [US1+2] Implement PresetBrowserView::onPresetDoubleClicked() to load preset (must trigger mode switch with crossfade per FR-010 if preset targets different mode)
-- [ ] T035 [US1+2] Implement PresetBrowserView::onSaveAsClicked() with CNewFileSelector
-- [ ] T035a [US1+2] Implement PresetBrowserView::onSaveClicked() - overwrite currently loaded user preset with confirmation prompt (disable for factory presets)
-- [ ] T036 [US1+2] Implement PresetBrowserView modal overlay behavior (background dim, click outside to close, Escape key per FR-018)
-- [ ] T037 [US1+2] Verify PresetDataSource tests pass
+- [x] T032 [US1+2] Implement PresetBrowserView::createChildViews() in `src/ui/preset_browser_view.cpp` - create CDataBrowser, buttons
+- [x] T033 [US1+2] Implement PresetBrowserView::open() and close() for popup behavior
+- [x] T034 [US1+2] Implement PresetBrowserView::onPresetDoubleClicked() to load preset (must trigger mode switch with crossfade per FR-010 if preset targets different mode)
+- [x] T035 [US1+2] Implement PresetBrowserView::onSaveAsClicked() with CNewFileSelector
+- [x] T035a [US1+2] Implement PresetBrowserView::onSaveClicked() - overwrite currently loaded user preset with confirmation prompt (disable for factory presets)
+- [x] T036 [US1+2] Implement PresetBrowserView modal overlay behavior (background dim, click outside to close, Escape key per FR-018)
+- [x] T037 [US1+2] Verify PresetDataSource tests pass (92 total assertions in 12 test cases)
 
 ### 3.6 Controller Integration
 
-- [ ] T038 [US1+2] Modify `src/controller/controller.h` to add PresetManager member and include preset browser headers
-- [ ] T039 [US1+2] Modify `src/controller/controller.cpp` createCustomView() to return PresetBrowserView for "PresetBrowser" name
-- [ ] T040 [US1+2] Add "Presets" button to `resources/editor.uidesc` that triggers preset browser popup
+- [x] T038 [US1+2] Modify `src/controller/controller.h` to add PresetManager member and include preset browser headers
+- [x] T039 [US1+2] Modify `src/controller/controller.cpp` createCustomView() to return PresetBrowserView for "PresetBrowser" name
+- [x] T040 [US1+2] Add "Presets" button to `resources/editor.uidesc` that triggers preset browser popup
 
 ### 3.7 Cross-Platform Verification (MANDATORY)
 
-- [ ] T041 [US1+2] **Verify IEEE 754 compliance**: Check test files for std::isnan/isfinite usage, add to `-fno-fast-math` list if needed
+- [x] T041 [US1+2] **Verify IEEE 754 compliance**: Check test files for std::isnan/isfinite usage, add to `-fno-fast-math` list if needed (no floating-point comparison in preset tests)
 
 ### 3.8 Build and Test
 
-- [ ] T042 [US1+2] Build plugin and verify no compilation errors
-- [ ] T043 [US1+2] Run pluginval level 5 to verify preset load/save doesn't break plugin
+- [x] T042 [US1+2] Build plugin and verify no compilation errors
+- [x] T043 [US1+2] Run pluginval level 5 to verify preset load/save doesn't break plugin
 - [ ] T044 [US1+2] Manual test: Open browser, save preset, reload preset, verify parameters match
 
 ### 3.9 Commit (MANDATORY)

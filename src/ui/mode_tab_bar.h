@@ -10,6 +10,7 @@
 #include "vstgui/lib/cview.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/ccolor.h"
+#include "vstgui/lib/cfont.h"
 #include <functional>
 #include <string>
 #include <vector>

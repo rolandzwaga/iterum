@@ -98,6 +98,46 @@ namespace Iterum::DSP {}           // Namespaces: PascalCase
 enum { kBypassId = 0, kGainId };   // Parameter IDs: kNameId
 ```
 
+### Parameter ID Naming Convention
+
+All parameter IDs in `plugin_ids.h` MUST follow this pattern:
+
+**Pattern:** `k{Mode}{Parameter}Id`
+
+- `Mode`: The delay mode prefix (Granular, Spectral, Shimmer, Tape, BBD, Digital, PingPong, Reverse, MultiTap, Freeze, Ducking)
+- `Parameter`: The parameter name in PascalCase
+
+**Standard Parameter Names (use these exact names):**
+
+| Parameter | ID Suffix | Description |
+|-----------|-----------|-------------|
+| Delay Time | `DelayTimeId` | Main delay time in ms |
+| Feedback | `FeedbackId` | Feedback amount (0-120%) |
+| Mix | `MixId` | Dry/Wet mix (NOT "DryWet") |
+| Time Mode | `TimeModeId` | Free/Synced selector |
+| Note Value | `NoteValueId` | Tempo sync note value |
+| Mod Depth | `ModDepthId` | Modulation depth (NOT "ModulationDepth") |
+| Mod Rate | `ModRateId` | Modulation rate (NOT "ModulationRate") |
+| Stereo Width | `StereoWidthId` | Stereo decorrelation amount |
+| Width | `WidthId` | Pan width (use when NOT stereo decorrelation) |
+| Age | `AgeId` | Component aging amount |
+| Era | `EraId` | Era/model selector |
+| Freeze | `FreezeId` | Freeze toggle |
+| Filter Enabled | `FilterEnabledId` | Filter on/off toggle |
+| Filter Cutoff | `FilterCutoffId` | Filter cutoff frequency |
+| Filter Type | `FilterTypeId` | Filter type selector |
+| Diffusion | `DiffusionId` | Diffusion amount |
+
+**Compound Parameters:** Use descriptive sub-component names:
+- `kTapeHead1EnabledId`, `kTapeHead1LevelId`, `kTapeHead1PanId`
+- `kShimmerPitchSemitonesId`, `kShimmerPitchCentsId`
+- `kSpectralFeedbackTiltId`
+
+**AVOID:**
+- Redundant prefixes: `kShimmerShimmerMixId` → `kShimmerMixId`
+- Inconsistent abbreviations: Use `Mod` not `Modulation`
+- Inconsistent terms: Use `Mix` not `DryWet`
+
 ### Modern C++ Requirements
 
 Use smart pointers, RAII, constexpr, move semantics. Avoid raw `new`/`delete`.

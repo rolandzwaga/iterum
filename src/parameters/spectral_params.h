@@ -114,7 +114,7 @@ inline void handleSpectralParamChange(
                 std::memory_order_relaxed);
             break;
 
-        case kSpectralDryWetId:
+        case kSpectralMixId:
             // 0-100%
             params.dryWet.store(
                 static_cast<float>(normalizedValue * 100.0),
@@ -257,7 +257,7 @@ inline void registerSpectralParams(Steinberg::Vst::ParameterContainer& parameter
         0,
         0.5,  // 50% default
         ParameterInfo::kCanAutomate,
-        kSpectralDryWetId,
+        kSpectralMixId,
         0,
         STR16("Mix")
     );
@@ -349,7 +349,7 @@ inline Steinberg::tresult formatSpectralParam(
         }
 
         case kSpectralDiffusionId:
-        case kSpectralDryWetId:
+        case kSpectralMixId:
         case kSpectralStereoWidthId: {
             // 0-100%
             double percent = valueNormalized * 100.0;
@@ -514,7 +514,7 @@ inline void syncSpectralParamsToController(
 
     // Dry/Wet: 0-100% -> normalized = val/100
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kSpectralDryWetId,
+        controller.setParamNormalized(kSpectralMixId,
             static_cast<double>(floatVal / 100.0f));
     }
 

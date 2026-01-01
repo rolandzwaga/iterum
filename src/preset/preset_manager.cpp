@@ -130,8 +130,10 @@ bool PresetManager::loadPreset(const PresetInfo& preset) {
         return false;
     }
 
-    if (!processor_ || !controller_) {
-        lastError_ = "Components not available";
+    // Check if we can load via load provider (controller-only path)
+    bool useLoadProvider = (!processor_ && loadProvider_);
+    if (!processor_ && !loadProvider_) {
+        lastError_ = "No component or load provider available";
         return false;
     }
 
@@ -147,23 +149,45 @@ bool PresetManager::loadPreset(const PresetInfo& preset) {
         return false;
     }
 
-    // Load preset using VST3 PresetFile
-    bool success = Steinberg::Vst::PresetFile::loadPreset(
-        stream,
-        Iterum::kProcessorUID,
-        processor_,
-        controller_
-    );
+    bool success = false;
+
+    if (useLoadProvider) {
+        // Use PresetFile to parse the preset and extract component state
+        Steinberg::Vst::PresetFile presetFile(stream);
+        if (presetFile.readChunkList() && presetFile.seekToComponentState()) {
+            // Get the entry for component state chunk
+            const auto* entry = presetFile.getEntry(Steinberg::Vst::kComponentState);
+            if (entry) {
+                // Create a read-only stream for just the component state chunk
+                auto componentStream = Steinberg::owned(
+                    new Steinberg::Vst::ReadOnlyBStream(stream, entry->offset, entry->size));
+                success = loadProvider_(componentStream);
+            } else {
+                lastError_ = "Preset file missing component state";
+            }
+        } else {
+            lastError_ = "Failed to parse preset file structure";
+        }
+    } else {
+        // Standard VST3 loading with processor access
+        success = Steinberg::Vst::PresetFile::loadPreset(
+            stream,
+            Iterum::kProcessorUID,
+            processor_,
+            controller_
+        );
+    }
 
     stream->release();
 
-    if (!success) {
+    if (!success && lastError_.empty()) {
         lastError_ = "Failed to load preset data";
-        return false;
     }
 
-    lastError_.clear();
-    return true;
+    if (success) {
+        lastError_.clear();
+    }
+    return success;
 }
 
 bool PresetManager::savePreset(
@@ -177,8 +201,10 @@ bool PresetManager::savePreset(
         return false;
     }
 
-    if (!processor_ || !controller_) {
-        lastError_ = "Components not available";
+    // Check if we have a way to get the component state
+    bool useStateProvider = (!processor_ && stateProvider_);
+    if (!processor_ && !stateProvider_) {
+        lastError_ = "No component or state provider available";
         return false;
     }
 
@@ -228,15 +254,39 @@ bool PresetManager::savePreset(
         return false;
     }
 
-    // Save preset using VST3 PresetFile
-    bool success = Steinberg::Vst::PresetFile::savePreset(
-        stream,
-        kProcessorUID,
-        processor_,
-        controller_,
-        xmlStr.c_str(),
-        static_cast<Steinberg::int32>(xmlStr.size())
-    );
+    bool success = false;
+
+    if (useStateProvider) {
+        // Use state provider callback to get component state stream
+        Steinberg::IBStream* componentStream = stateProvider_();
+        if (!componentStream) {
+            stream->release();
+            lastError_ = "Failed to obtain component state";
+            return false;
+        }
+
+        // Use stream-based savePreset overload
+        success = Steinberg::Vst::PresetFile::savePreset(
+            stream,
+            kProcessorUID,
+            componentStream,
+            nullptr,  // No controller stream needed
+            xmlStr.c_str(),
+            static_cast<Steinberg::int32>(xmlStr.size())
+        );
+
+        componentStream->release();
+    } else {
+        // Use IComponent-based savePreset (original approach)
+        success = Steinberg::Vst::PresetFile::savePreset(
+            stream,
+            kProcessorUID,
+            processor_,
+            controller_,
+            xmlStr.c_str(),
+            static_cast<Steinberg::int32>(xmlStr.size())
+        );
+    }
 
     stream->release();
 
@@ -245,6 +295,102 @@ bool PresetManager::savePreset(
         // Try to clean up failed file
         std::error_code ec;
         std::filesystem::remove(presetPath, ec);
+        return false;
+    }
+
+    lastError_.clear();
+    return true;
+}
+
+bool PresetManager::overwritePreset(const PresetInfo& preset) {
+    if (preset.isFactory) {
+        lastError_ = "Cannot overwrite factory presets";
+        return false;
+    }
+
+    if (preset.path.empty() || !std::filesystem::exists(preset.path)) {
+        lastError_ = "Preset file not found";
+        return false;
+    }
+
+    // Check if we have a way to get the component state
+    bool useStateProvider = (!processor_ && stateProvider_);
+    if (!processor_ && !stateProvider_) {
+        lastError_ = "No component or state provider available";
+        return false;
+    }
+
+    // Get mode name for metadata
+    static const char* modeNames[] = {
+        "Granular", "Spectral", "Shimmer", "Tape", "BBD",
+        "Digital", "PingPong", "Reverse", "MultiTap", "Freeze", "Ducking"
+    };
+    int modeIndex = static_cast<int>(preset.mode);
+    if (modeIndex < 0 || modeIndex >= static_cast<int>(DelayMode::NumModes)) {
+        modeIndex = static_cast<int>(DelayMode::Digital);
+    }
+
+    // Build metadata XML (preserve existing metadata)
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    xml << "<MetaInfo>\n";
+    xml << "  <Attr id=\"MediaType\" value=\"VstPreset\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"PlugInName\" value=\"Iterum\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"PlugInCategory\" value=\"Delay\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"Name\" value=\"" << preset.name << "\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"MusicalCategory\" value=\"" << preset.category << "\" type=\"string\"/>\n";
+    xml << "  <Attr id=\"MusicalInstrument\" value=\"" << modeNames[modeIndex] << "\" type=\"string\"/>\n";
+    if (!preset.description.empty()) {
+        xml << "  <Attr id=\"Comment\" value=\"" << preset.description << "\" type=\"string\"/>\n";
+    }
+    xml << "</MetaInfo>\n";
+    std::string xmlStr = xml.str();
+
+    // Open file stream for writing (overwrites existing)
+    auto stream = Steinberg::Vst::FileStream::open(preset.path.string().c_str(), "wb");
+    if (!stream) {
+        lastError_ = "Failed to open preset file for writing: " + preset.path.string();
+        return false;
+    }
+
+    bool success = false;
+
+    if (useStateProvider) {
+        // Use state provider callback to get component state stream
+        Steinberg::IBStream* componentStream = stateProvider_();
+        if (!componentStream) {
+            stream->release();
+            lastError_ = "Failed to obtain component state";
+            return false;
+        }
+
+        // Use stream-based savePreset overload
+        success = Steinberg::Vst::PresetFile::savePreset(
+            stream,
+            kProcessorUID,
+            componentStream,
+            nullptr,  // No controller stream needed
+            xmlStr.c_str(),
+            static_cast<Steinberg::int32>(xmlStr.size())
+        );
+
+        componentStream->release();
+    } else {
+        // Use IComponent-based savePreset (original approach)
+        success = Steinberg::Vst::PresetFile::savePreset(
+            stream,
+            kProcessorUID,
+            processor_,
+            controller_,
+            xmlStr.c_str(),
+            static_cast<Steinberg::int32>(xmlStr.size())
+        );
+    }
+
+    stream->release();
+
+    if (!success) {
+        lastError_ = "Failed to overwrite preset data";
         return false;
     }
 

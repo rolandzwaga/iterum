@@ -53,6 +53,10 @@ VSTGUI::CRect ModeTabBar::getTabRect(int index) const {
 void ModeTabBar::draw(VSTGUI::CDrawContext* context) {
     const auto& labels = getTabLabels();
 
+    // Set font for text rendering - CRITICAL: must set font before drawString
+    auto font = VSTGUI::makeOwned<VSTGUI::CFontDesc>("Arial", 11);
+    context->setFont(font);
+
     for (int i = 0; i < kNumTabs; ++i) {
         auto tabRect = getTabRect(i);
 

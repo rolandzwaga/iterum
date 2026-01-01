@@ -119,7 +119,7 @@ inline void handleFreezeParamChange(
                 static_cast<float>(20.0 * std::pow(1000.0, normalizedValue)),
                 std::memory_order_relaxed);
             break;
-        case kFreezeDryWetId:
+        case kFreezeMixId:
             // 0-1
             params.dryWet.store(
                 static_cast<float>(normalizedValue),
@@ -248,7 +248,7 @@ inline void registerFreezeParams(Steinberg::Vst::ParameterContainer& parameters)
         0,
         0.5,  // default: 50%
         ParameterInfo::kCanAutomate,
-        kFreezeDryWetId);
+        kFreezeMixId);
 }
 
 // ==============================================================================
@@ -304,7 +304,7 @@ inline Steinberg::tresult formatFreezeParam(
         case kFreezeDecayId:
         case kFreezeDiffusionAmountId:
         case kFreezeDiffusionSizeId:
-        case kFreezeDryWetId: {
+        case kFreezeMixId: {
             float percent = static_cast<float>(normalizedValue * 100.0);
             char8 text[32];
             snprintf(text, sizeof(text), "%.0f%%", percent);
@@ -472,7 +472,7 @@ inline void syncFreezeParamsToController(
         std::log(cutoff / 20.0f) / std::log(1000.0f));
 
     // Dry/wet: 0-1
-    controller->setParamNormalized(kFreezeDryWetId,
+    controller->setParamNormalized(kFreezeMixId,
         params.dryWet.load(std::memory_order_relaxed));
 }
 
@@ -562,7 +562,7 @@ inline void syncFreezeParamsToController(
 
     // Dry/Wet: 0-1 -> normalized = val
     if (streamer.readFloat(floatVal)) {
-        controller.setParamNormalized(kFreezeDryWetId,
+        controller.setParamNormalized(kFreezeMixId,
             static_cast<double>(floatVal));
     }
 }

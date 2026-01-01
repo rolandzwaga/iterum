@@ -69,7 +69,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kGranularReverseProbId = 107,    // 0-1
     kGranularFreezeId = 108,         // on/off
     kGranularFeedbackId = 109,       // 0-1.2
-    kGranularDryWetId = 110,         // 0-1
+    kGranularMixId = 110,            // 0-1 (renamed from kGranularDryWetId)
     kGranularEnvelopeTypeId = 112,   // 0-3 (Hann, Trapezoid, Sine, Blackman)
     kGranularTimeModeId = 113,       // 0-1 (Free, Synced) - spec 038
     kGranularNoteValueId = 114,      // 0-9 (note values) - spec 038
@@ -91,7 +91,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kSpectralFeedbackTiltId = 205,   // -1.0 to +1.0
     kSpectralFreezeId = 206,         // on/off
     kSpectralDiffusionId = 207,      // 0-1
-    kSpectralDryWetId = 208,         // 0-100%
+    kSpectralMixId = 208,            // 0-100% (renamed from kSpectralDryWetId)
     kSpectralSpreadCurveId = 209,    // 0-1 (Linear, Logarithmic)
     kSpectralStereoWidthId = 210,    // 0-1 (stereo decorrelation amount)
     kSpectralTimeModeId = 211,       // 0=Free, 1=Synced (spec 041)
@@ -105,13 +105,13 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kShimmerDelayTimeId = 300,        // 10-5000ms
     kShimmerPitchSemitonesId = 301,   // -24 to +24 semitones
     kShimmerPitchCentsId = 302,       // -100 to +100 cents
-    kShimmerShimmerMixId = 303,       // 0-100%
+    kShimmerPitchBlendId = 303,       // 0-100% (renamed from kShimmerShimmerMixId)
     kShimmerFeedbackId = 304,         // 0-120%
     kShimmerDiffusionAmountId = 305,  // 0-100%
     kShimmerDiffusionSizeId = 306,    // 0-100%
     kShimmerFilterEnabledId = 307,    // on/off
     kShimmerFilterCutoffId = 308,     // 20-20000Hz
-    kShimmerDryWetId = 309,           // 0-100%
+    kShimmerMixId = 309,              // 0-100% (renamed from kShimmerDryWetId)
     kShimmerEndId = 399,
 
     // ==========================================================================
@@ -144,8 +144,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kBBDBaseId = 500,
     kBBDDelayTimeId = 500,           // 20-1000ms
     kBBDFeedbackId = 501,            // 0-120%
-    kBBDModulationDepthId = 502,     // 0-100%
-    kBBDModulationRateId = 503,      // 0.1-10Hz
+    kBBDModDepthId = 502,            // 0-100% (renamed from kBBDModulationDepthId)
+    kBBDModRateId = 503,             // 0.1-10Hz (renamed from kBBDModulationRateId)
     kBBDAgeId = 504,                 // 0-100%
     kBBDEraId = 505,                 // 0-3 (MN3005, MN3007, MN3205, SAD1024)
     kBBDMixId = 506,                 // 0-100%
@@ -196,7 +196,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kReverseFilterEnabledId = 804,   // on/off
     kReverseFilterCutoffId = 805,    // 20-20000Hz
     kReverseFilterTypeId = 806,      // 0-2 (LowPass, HighPass, BandPass)
-    kReverseDryWetId = 807,          // 0-100%
+    kReverseMixId = 807,             // 0-100% (renamed from kReverseDryWetId)
     kReverseEndId = 899,
 
     // ==========================================================================
@@ -212,7 +212,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kMultiTapFeedbackLPCutoffId = 906, // 20-20000Hz
     kMultiTapFeedbackHPCutoffId = 907, // 20-20000Hz
     kMultiTapMorphTimeId = 908,      // 50-2000ms
-    kMultiTapDryWetId = 909,         // 0-100%
+    kMultiTapMixId = 909,            // 0-100% (renamed from kMultiTapDryWetId)
     kMultiTapEndId = 999,
 
     // ==========================================================================
@@ -231,7 +231,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kFreezeFilterEnabledId = 1009,    // on/off
     kFreezeFilterTypeId = 1010,       // 0-2 (LowPass, HighPass, BandPass)
     kFreezeFilterCutoffId = 1011,     // 20-20000Hz
-    kFreezeDryWetId = 1012,           // 0-100%
+    kFreezeMixId = 1012,              // 0-100% (renamed from kFreezeDryWetId)
     kFreezeEndId = 1099,
 
     // ==========================================================================
@@ -249,7 +249,7 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kDuckingSidechainFilterCutoffId = 1108,   // 20-500Hz
     kDuckingDelayTimeId = 1109,         // 10-5000ms
     kDuckingFeedbackId = 1110,          // 0-120%
-    kDuckingDryWetId = 1111,            // 0-100%
+    kDuckingMixId = 1111,               // 0-100% (renamed from kDuckingDryWetId)
     kDuckingEndId = 1199,
 
     // ==========================================================================
