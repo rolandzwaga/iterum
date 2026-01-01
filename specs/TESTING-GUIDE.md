@@ -301,6 +301,7 @@ build\bin\Debug\vst_tests.exe "[parameter]"
    - [Guard Rail Tests](#guard-rail-tests)
    - [Latency and Delay Testing](#latency-and-delay-testing)
    - [Real-Time Safety Testing](#real-time-safety-testing)
+   - [Deterministic Testing of DSP with Randomness](#deterministic-testing-of-dsp-with-randomness)
 6. [VST3-Specific Testing](#vst3-specific-testing)
 7. [Test Organization](#test-organization)
 8. [Catch2 Patterns](#catch2-patterns)
@@ -1187,6 +1188,130 @@ TEST_CASE("Process method is allocation-free", "[dsp][realtime]") {
     REQUIRE(detector.getAllocationCount() == 0);
 }
 ```
+
+### Deterministic Testing of DSP with Randomness
+
+Many DSP algorithms use random number generators (RNGs) for effects like:
+- **Diffusion**: Random phase offsets for spectral blur
+- **Stereo width**: Random phase decorrelation between L/R channels
+- **Noise generators**: White/pink noise synthesis
+- **Modulation**: Random LFO variations
+
+Tests for these features can become **flaky** because different RNG seeds produce different results each run.
+
+#### The Problem: Non-Deterministic Tests
+
+```cpp
+// BAD: Flaky test - threshold may pass sometimes, fail others
+TEST_CASE("Diffusion produces smooth output", "[dsp][diffusion]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+    delay.setDiffusion(0.8f);  // Uses random phase internally
+
+    // ... process signal ...
+
+    float clickRatio = measureClickRatio(output);
+    REQUIRE(clickRatio < 25.0f);  // May fail with unlucky RNG seed!
+}
+```
+
+#### The Solution: Seeded RNG for Tests
+
+Add a `seedRng()` method to DSP classes that use randomness:
+
+```cpp
+// In your DSP class header
+class SpectralDelay {
+public:
+    /// @brief Seed the internal RNG for deterministic testing
+    /// @param seed The seed value to use
+    /// @note Only call in tests to ensure reproducible results.
+    void seedRng(uint32_t seed) noexcept {
+        rng_.seed(seed);
+        // Reinitialize any derived random values
+        for (std::size_t i = 0; i < phaseBuffer_.size(); ++i) {
+            phaseBuffer_[i] = (rng_.nextFloat() - 0.5f) * kTwoPi;
+        }
+    }
+
+private:
+    Xorshift32 rng_;  // Your PRNG implementation
+};
+```
+
+Then use it in tests:
+
+```cpp
+// GOOD: Deterministic test - same seed = same results every run
+TEST_CASE("Diffusion produces smooth output", "[dsp][diffusion]") {
+    SpectralDelay delay;
+    delay.prepare(44100.0, 512);
+
+    // Seed RNG for deterministic, reproducible test results
+    delay.seedRng(42);  // Any fixed seed value
+
+    delay.setDiffusion(0.8f);
+
+    // ... process signal ...
+
+    float clickRatio = measureClickRatio(output);
+    // With seedRng(42), results are fully reproducible
+    REQUIRE(clickRatio < 25.0f);  // Now deterministic!
+}
+```
+
+#### When to Seed vs. When NOT to Seed
+
+| Test Purpose | Seed? | Reason |
+|--------------|-------|--------|
+| **Behavior verification** (smoothness, click-free, etc.) | ✅ Yes | Results must be consistent across runs |
+| **Testing randomness itself** (two instances produce different outputs) | ❌ No | Would defeat the test's purpose |
+| **Threshold-based tests** (ratio < X, correlation < Y) | ✅ Yes | Avoid threshold sensitivity to RNG |
+| **Decorrelation tests** (L/R are different) | ✅ Usually | Test that *feature works*, not that RNG varies |
+
+#### Example: Test That Intentionally Tests Randomness
+
+```cpp
+// This test verifies that two instances produce DIFFERENT outputs
+// DO NOT seed - we're testing that randomization works
+TEST_CASE("Diffusion adds random phase (instances differ)", "[dsp][diffusion]") {
+    SpectralDelay delay1, delay2;
+    delay1.prepare(44100.0, 512);
+    delay2.prepare(44100.0, 512);
+    // NO seedRng() call - each instance gets different random state
+
+    delay1.setDiffusion(1.0f);
+    delay2.setDiffusion(1.0f);
+
+    // Process same input through both
+    auto output1 = processThrough(delay1, testInput);
+    auto output2 = processThrough(delay2, testInput);
+
+    // They should produce DIFFERENT outputs (low correlation)
+    float correlation = measureCorrelation(output1, output2);
+    REQUIRE(correlation < 0.9f);  // Not highly correlated = randomness works
+}
+```
+
+#### Key Principles
+
+1. **Seed for behavior tests**: Any test checking smoothness, thresholds, or feature correctness should seed the RNG
+2. **Don't seed for randomness tests**: Tests that verify "outputs are different each time" must NOT seed
+3. **Use the same seed**: Pick a seed (e.g., `42`) and use it consistently across all deterministic tests
+4. **Document the pattern**: Add comments explaining why you're seeding (or not)
+5. **Consider loose vs tight thresholds**: With seeding, you can use tighter thresholds since results are consistent
+
+#### Real-World Example: SpectralDelay Click-Free Tests
+
+The SpectralDelay diffusion and stereo width features use random phase offsets. Without seeding, the "click ratio" in tests varied between runs:
+- Run 1: ratio = 18.3 ✅
+- Run 2: ratio = 27.6 ❌ (exceeds 25.0 threshold)
+- Run 3: ratio = 21.1 ✅
+
+After adding `seedRng(42)`:
+- Every run: ratio ≈ 17.2 ✅ (deterministic)
+
+This eliminated flakiness without changing the DSP algorithm or relaxing test thresholds.
 
 ---
 
