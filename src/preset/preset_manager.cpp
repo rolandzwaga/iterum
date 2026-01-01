@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <utility>
 
 namespace Iterum {
 
@@ -73,13 +74,41 @@ PresetInfo PresetManager::parsePresetFile(const std::filesystem::path& path, boo
     // Try to read metadata from preset file
     readMetadata(path, info);
 
-    // If no category from metadata, try to get from parent directory
+    // Get parent directory for category and mode
+    auto parent = path.parent_path();
+    std::string parentName;
+    if (parent.has_filename()) {
+        parentName = parent.filename().string();
+    }
+
+    // If no category from metadata, use parent directory name
     if (info.category.empty()) {
-        auto parent = path.parent_path();
-        if (parent.has_filename()) {
-            info.category = parent.filename().string();
+        info.category = parentName;
+    }
+
+    // Derive mode from parent directory name
+    // Directory names match mode names used in savePreset()
+    static const std::pair<std::string, DelayMode> modeMapping[] = {
+        {"Granular", DelayMode::Granular},
+        {"Spectral", DelayMode::Spectral},
+        {"Shimmer", DelayMode::Shimmer},
+        {"Tape", DelayMode::Tape},
+        {"BBD", DelayMode::BBD},
+        {"Digital", DelayMode::Digital},
+        {"PingPong", DelayMode::PingPong},
+        {"Reverse", DelayMode::Reverse},
+        {"MultiTap", DelayMode::MultiTap},
+        {"Freeze", DelayMode::Freeze},
+        {"Ducking", DelayMode::Ducking}
+    };
+
+    for (const auto& [name, mode] : modeMapping) {
+        if (parentName == name) {
+            info.mode = mode;
+            break;
         }
     }
+    // If no match found, info.mode remains at default (Digital)
 
     return info;
 }
