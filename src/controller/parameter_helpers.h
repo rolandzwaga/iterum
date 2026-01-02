@@ -95,4 +95,44 @@ inline Steinberg::Vst::StringListParameter* createDropdownParameterWithDefault(
     return param;
 }
 
+// ==============================================================================
+// createNoteValueDropdown - For tempo-synced note value dropdowns
+// ==============================================================================
+// Uses the centralized note value strings from note_value_ui.h.
+// All delay modes should use this for consistent dropdown behavior.
+//
+// Usage:
+//   #include "parameters/note_value_ui.h"
+//   parameters.addParameter(createNoteValueDropdown(
+//       STR16("Digital Note Value"), kDigitalNoteValueId
+//   ));
+// ==============================================================================
+
+inline Steinberg::Vst::StringListParameter* createNoteValueDropdown(
+    const Steinberg::Vst::TChar* title,
+    Steinberg::Vst::ParamID id,
+    const Steinberg::Vst::TChar* const* strings,
+    int count,
+    int defaultIndex) {
+
+    auto* param = new Steinberg::Vst::StringListParameter(
+        title,
+        id,
+        nullptr,
+        Steinberg::Vst::ParameterInfo::kCanAutomate |
+        Steinberg::Vst::ParameterInfo::kIsList
+    );
+
+    for (int i = 0; i < count; ++i) {
+        param->appendString(strings[i]);
+    }
+
+    // Set default after adding strings so stepCount is known
+    if (defaultIndex >= 0 && defaultIndex <= param->getInfo().stepCount) {
+        param->setNormalized(param->toNormalized(static_cast<Steinberg::Vst::ParamValue>(defaultIndex)));
+    }
+
+    return param;
+}
+
 } // namespace Iterum

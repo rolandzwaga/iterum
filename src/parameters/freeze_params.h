@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "pluginterfaces/base/ftypes.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -29,7 +30,7 @@ struct FreezeParams {
     std::atomic<bool> freezeEnabled{false};
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
     std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
-    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<float> feedback{0.5f};           // 0-1.2
     std::atomic<float> pitchSemitones{0.0f};     // -24 to +24
     std::atomic<float> pitchCents{0.0f};         // -100 to +100
@@ -71,9 +72,9 @@ inline void handleFreezeParamChange(
                 std::memory_order_relaxed);
             break;
         case kFreezeNoteValueId:
-            // 0-9 (note values)
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
         case kFreezeFeedbackId:
@@ -175,12 +176,12 @@ inline void registerFreezeParams(Steinberg::Vst::ParameterContainer& parameters)
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - spec 043
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings (spec 043)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Freeze Note Value"), kFreezeNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Feedback (0-120%)
@@ -545,10 +546,10 @@ inline void loadFreezeParamsToController(
         setParam(kFreezeTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
         setParam(kFreezeNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Feedback: 0-1.2 -> normalized = val/1.2

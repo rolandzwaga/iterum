@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -40,7 +41,7 @@ struct GranularParams {
     std::atomic<float> dryWet{0.5f};           // 0-1
     std::atomic<int> envelopeType{0};          // 0-3 (Hann, Trapezoid, Sine, Blackman)
     std::atomic<int> timeMode{0};              // 0=Free, 1=Synced (spec 038)
-    std::atomic<int> noteValue{4};             // 0-9 dropdown index, default 4 = 1/8 note (spec 038)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 dropdown index (spec 038)
     std::atomic<float> jitter{0.5f};           // 0-1 timing randomness (Phase 2.1)
     std::atomic<int> pitchQuantMode{0};        // 0-4 (Off, Semitones, Octaves, Fifths, Scale) (Phase 2.2)
     std::atomic<float> texture{0.0f};          // 0-1 grain amplitude variation (Phase 2.3)
@@ -150,9 +151,9 @@ inline void handleGranularParamChange(
             break;
 
         case kGranularNoteValueId:
-            // 0-9 dropdown index (spec 038)
+            // 0-19 dropdown index (spec 038)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -343,12 +344,12 @@ inline void registerGranularParams(Steinberg::Vst::ParameterContainer& parameter
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value: 0-9 (1/32 through 1/1, default 4 = 1/8 note) (spec 038)
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value: uses centralized dropdown strings (spec 038)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Note Value"), kGranularNoteValueId,
-        4,  // default: 1/8 note (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Jitter: 0-1 (timing randomness - Phase 2.1)
@@ -671,10 +672,10 @@ inline void loadGranularParamsToController(
             static_cast<double>(intVal));
     }
 
-    // Note Value: 0-9 -> normalized = val / 9 (spec 038)
+    // Note Value: 0-19 -> normalized = val / 19 (spec 038)
     if (streamer.readInt32(intVal)) {
         setParam(kGranularNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Jitter: 0-1 (already normalized) - Phase 2.1

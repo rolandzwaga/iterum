@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -29,7 +30,7 @@ namespace Iterum {
 struct ShimmerParams {
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
     std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
-    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<float> pitchSemitones{12.0f};    // -24 to +24 semitones
     std::atomic<float> pitchCents{0.0f};         // -100 to +100 cents
     std::atomic<float> shimmerMix{1.0f};         // 0-1 (shimmer blend)
@@ -69,9 +70,9 @@ inline void handleShimmerParamChange(
             break;
 
         case kShimmerNoteValueId:
-            // 0-9 (note values)
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -169,12 +170,12 @@ inline void registerShimmerParams(Steinberg::Vst::ParameterContainer& parameters
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - spec 043
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings (spec 043)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Shimmer Note Value"), kShimmerNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Pitch Semitones: -24 to +24
@@ -470,10 +471,10 @@ inline void loadShimmerParamsToController(
         setParam(kShimmerTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
         setParam(kShimmerNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Pitch Semitones: -24 to +24 -> normalized = (val+24)/48

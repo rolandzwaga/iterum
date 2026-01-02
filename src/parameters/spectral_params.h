@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -41,7 +42,7 @@ struct SpectralParams {
 
     // Tempo Sync (spec 041)
     std::atomic<int> timeMode{0};             // 0=Free, 1=Synced
-    std::atomic<int> noteValue{4};            // 0-9 dropdown index (default 4 = 1/8 note)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 dropdown index
 };
 
 // ==============================================================================
@@ -144,9 +145,9 @@ inline void handleSpectralParamChange(
             break;
 
         case kSpectralNoteValueId:
-            // 0-9 dropdown index
+            // 0-19 dropdown index
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -287,12 +288,12 @@ inline void registerSpectralParams(Steinberg::Vst::ParameterContainer& parameter
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value: 1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4T, 1/4, 1/2T, 1/2, 1/1
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value: uses centralized dropdown strings
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Note Value"), kSpectralNoteValueId,
-        4,  // default: 1/8 note (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 }
 
@@ -528,9 +529,9 @@ inline void loadSpectralParamsToController(
         setParam(kSpectralTimeModeId, static_cast<double>(intVal));
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
-        setParam(kSpectralNoteValueId, static_cast<double>(intVal) / 9.0);
+        setParam(kSpectralNoteValueId, static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 }
 

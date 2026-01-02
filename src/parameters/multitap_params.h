@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "pluginterfaces/base/ftypes.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -27,7 +28,7 @@ namespace Iterum {
 
 struct MultiTapParams {
     std::atomic<int> timeMode{0};               // 0=Free, 1=Synced (spec 043)
-    std::atomic<int> noteValue{4};              // 0-9 (note value dropdown) (spec 043)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<int> timingPattern{2};          // 0-19 (pattern presets)
     std::atomic<int> spatialPattern{2};         // 0-6 (spatial presets)
     std::atomic<int> tapCount{4};               // 2-16 taps
@@ -59,9 +60,9 @@ inline void handleMultiTapParamChange(
                 std::memory_order_relaxed);
             break;
         case kMultiTapNoteValueId:
-            // 0-9 (note values)
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
         case kMultiTapTimingPatternId:
@@ -142,12 +143,12 @@ inline void registerMultiTapParams(Steinberg::Vst::ParameterContainer& parameter
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - spec 043
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings (spec 043)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("MultiTap Note Value"), kMultiTapNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Timing Pattern (20 patterns) - MUST use StringListParameter
@@ -405,10 +406,10 @@ inline void loadMultiTapParamsToController(
         setParam(kMultiTapTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
         setParam(kMultiTapNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Timing Pattern: 0-19 -> normalized = val/19

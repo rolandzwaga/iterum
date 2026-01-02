@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "pluginterfaces/base/ftypes.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -27,7 +28,7 @@ namespace Iterum {
 struct DigitalParams {
     std::atomic<float> delayTime{500.0f};       // 1-10000ms
     std::atomic<int> timeMode{1};               // 0=Free, 1=Synced (default: Synced)
-    std::atomic<int> noteValue{4};              // 0-9 (note values)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<float> feedback{0.4f};          // 0-1.2
     std::atomic<int> limiterCharacter{0};       // 0=Soft, 1=Medium, 2=Hard
     std::atomic<int> era{0};                    // 0=Pristine, 1=80s, 2=LoFi
@@ -64,9 +65,9 @@ inline void handleDigitalParamChange(
                 std::memory_order_relaxed);
             break;
         case kDigitalNoteValueId:
-            // 0-9
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
         case kDigitalFeedbackId:
@@ -150,12 +151,12 @@ inline void registerDigitalParams(Steinberg::Vst::ParameterContainer& parameters
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - MUST use StringListParameter
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Digital Note Value"), kDigitalNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Feedback (0-120%)
@@ -403,9 +404,9 @@ inline void loadDigitalParamsToController(
         setParam(kDigitalTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
-        setParam(kDigitalNoteValueId, static_cast<double>(intVal) / 9.0);
+        setParam(kDigitalNoteValueId, static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Feedback: 0-1.2 -> normalized = val/1.2

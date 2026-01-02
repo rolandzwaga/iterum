@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "pluginterfaces/base/ftypes.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -27,7 +28,7 @@ namespace Iterum {
 struct PingPongParams {
     std::atomic<float> delayTime{500.0f};       // 1-10000ms
     std::atomic<int> timeMode{1};               // 0=Free, 1=Synced (default: Synced)
-    std::atomic<int> noteValue{4};              // 0-9 (note values)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<int> lrRatio{0};                // 0-6 (ratio presets)
     std::atomic<float> feedback{0.5f};          // 0-1.2
     std::atomic<float> crossFeedback{1.0f};     // 0-1 (0=dual mono, 1=full ping-pong)
@@ -62,9 +63,9 @@ inline void handlePingPongParamChange(
                 std::memory_order_relaxed);
             break;
         case kPingPongNoteValueId:
-            // 0-9
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
         case kPingPongLRRatioId:
@@ -136,12 +137,12 @@ inline void registerPingPongParams(Steinberg::Vst::ParameterContainer& parameter
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - MUST use StringListParameter
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings
+    parameters.addParameter(createNoteValueDropdown(
         STR16("PingPong Note Value"), kPingPongNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // L/R Ratio - MUST use StringListParameter
@@ -365,9 +366,9 @@ inline void loadPingPongParamsToController(
         setParam(kPingPongTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
-        setParam(kPingPongNoteValueId, static_cast<double>(intVal) / 9.0);
+        setParam(kPingPongNoteValueId, static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // L/R Ratio: 0-6 -> normalized = val/6

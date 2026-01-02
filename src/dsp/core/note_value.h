@@ -91,13 +91,24 @@ inline constexpr float kModifierMultiplier[] = {
 // =============================================================================
 // Dropdown Index Mapping
 // =============================================================================
-// Maps UI dropdown indices (0-9) to (NoteValue, NoteModifier) pairs.
+// Maps UI dropdown indices (0-20) to (NoteValue, NoteModifier) pairs.
 // Used by Digital, PingPong, and other tempo-synced delay modes.
 //
-// Dropdown order (shortest to longest):
-//   0: 1/32     1: 1/16T    2: 1/16    3: 1/8T    4: 1/8
-//   5: 1/4T    6: 1/4      7: 1/2T    8: 1/2     9: 1/1
+// Dropdown order (grouped by note value: Triplet, Normal, Dotted):
+//   0: 1/64T   1: 1/64    2: 1/64D
+//   3: 1/32T   4: 1/32    5: 1/32D
+//   6: 1/16T   7: 1/16    8: 1/16D
+//   9: 1/8T   10: 1/8    11: 1/8D   (10 = DEFAULT)
+//  12: 1/4T   13: 1/4    14: 1/4D
+//  15: 1/2T   16: 1/2    17: 1/2D
+//  18: 1/1T   19: 1/1    20: 1/1D
 // =============================================================================
+
+/// @brief Number of note value dropdown entries
+inline constexpr int kNoteValueDropdownCount = 21;
+
+/// @brief Default note value dropdown index (1/8 note)
+inline constexpr int kNoteValueDefaultIndex = 10;
 
 /// @brief Result of mapping a dropdown index to note value + modifier
 struct NoteValueMapping {
@@ -106,27 +117,45 @@ struct NoteValueMapping {
 };
 
 /// @brief Lookup table for dropdown index to note value mapping
-/// Index 0-9 maps to the standard tempo sync dropdown order
+/// Index 0-20 maps to the expanded tempo sync dropdown (grouped by note value)
 inline constexpr NoteValueMapping kNoteValueDropdownMapping[] = {
-    {NoteValue::ThirtySecond, NoteModifier::None},    // 0: 1/32
-    {NoteValue::Sixteenth, NoteModifier::Triplet},    // 1: 1/16T
-    {NoteValue::Sixteenth, NoteModifier::None},       // 2: 1/16
-    {NoteValue::Eighth, NoteModifier::Triplet},       // 3: 1/8T
-    {NoteValue::Eighth, NoteModifier::None},          // 4: 1/8
-    {NoteValue::Quarter, NoteModifier::Triplet},      // 5: 1/4T
-    {NoteValue::Quarter, NoteModifier::None},         // 6: 1/4
-    {NoteValue::Half, NoteModifier::Triplet},         // 7: 1/2T
-    {NoteValue::Half, NoteModifier::None},            // 8: 1/2
-    {NoteValue::Whole, NoteModifier::None},           // 9: 1/1
+    // 1/64 variants
+    {NoteValue::SixtyFourth, NoteModifier::Triplet},  // 0:  1/64T (0.0417 beats)
+    {NoteValue::SixtyFourth, NoteModifier::None},     // 1:  1/64  (0.0625 beats)
+    {NoteValue::SixtyFourth, NoteModifier::Dotted},   // 2:  1/64D (0.09375 beats)
+    // 1/32 variants
+    {NoteValue::ThirtySecond, NoteModifier::Triplet}, // 3:  1/32T (0.0833 beats)
+    {NoteValue::ThirtySecond, NoteModifier::None},    // 4:  1/32  (0.125 beats)
+    {NoteValue::ThirtySecond, NoteModifier::Dotted},  // 5:  1/32D (0.1875 beats)
+    // 1/16 variants
+    {NoteValue::Sixteenth, NoteModifier::Triplet},    // 6:  1/16T (0.167 beats)
+    {NoteValue::Sixteenth, NoteModifier::None},       // 7:  1/16  (0.25 beats)
+    {NoteValue::Sixteenth, NoteModifier::Dotted},     // 8:  1/16D (0.375 beats)
+    // 1/8 variants
+    {NoteValue::Eighth, NoteModifier::Triplet},       // 9:  1/8T  (0.333 beats)
+    {NoteValue::Eighth, NoteModifier::None},          // 10: 1/8   (0.5 beats) DEFAULT
+    {NoteValue::Eighth, NoteModifier::Dotted},        // 11: 1/8D  (0.75 beats)
+    // 1/4 variants
+    {NoteValue::Quarter, NoteModifier::Triplet},      // 12: 1/4T  (0.667 beats)
+    {NoteValue::Quarter, NoteModifier::None},         // 13: 1/4   (1.0 beats)
+    {NoteValue::Quarter, NoteModifier::Dotted},       // 14: 1/4D  (1.5 beats)
+    // 1/2 variants
+    {NoteValue::Half, NoteModifier::Triplet},         // 15: 1/2T  (1.333 beats)
+    {NoteValue::Half, NoteModifier::None},            // 16: 1/2   (2.0 beats)
+    {NoteValue::Half, NoteModifier::Dotted},          // 17: 1/2D  (3.0 beats)
+    // 1/1 variants
+    {NoteValue::Whole, NoteModifier::Triplet},        // 18: 1/1T  (2.667 beats)
+    {NoteValue::Whole, NoteModifier::None},           // 19: 1/1   (4.0 beats)
+    {NoteValue::Whole, NoteModifier::Dotted},         // 20: 1/1D  (6.0 beats)
 };
 
 /// @brief Convert dropdown index to (NoteValue, NoteModifier) pair
-/// @param dropdownIndex Index from UI dropdown (0-9)
+/// @param dropdownIndex Index from UI dropdown (0-19)
 /// @return NoteValueMapping with note value and modifier
 [[nodiscard]] inline constexpr NoteValueMapping getNoteValueFromDropdown(
     int dropdownIndex
 ) noexcept {
-    if (dropdownIndex < 0 || dropdownIndex > 9) {
+    if (dropdownIndex < 0 || dropdownIndex >= kNoteValueDropdownCount) {
         // Default to 1/8 note if out of range
         return {NoteValue::Eighth, NoteModifier::None};
     }
@@ -190,14 +219,14 @@ inline constexpr double kMaxTempoSyncBPM = 300.0;
 /// Convenience function that combines getNoteValueFromDropdown() and noteToDelayMs().
 /// Use this when you have a dropdown index and need the final delay time directly.
 ///
-/// @param dropdownIndex Index from UI dropdown (0-9)
+/// @param dropdownIndex Index from UI dropdown (0-19)
 /// @param tempoBPM Tempo in beats per minute
 /// @return Delay time in milliseconds
 ///
 /// @example
 /// @code
-/// // User selects "1/8T" (index 3) at 100 BPM
-/// float delayMs = dropdownToDelayMs(3, 100.0);
+/// // User selects "1/8T" (index 8) at 100 BPM
+/// float delayMs = dropdownToDelayMs(8, 100.0);
 /// // delayMs == 200.0f (eighth triplet = 0.333 beats = 200ms at 100 BPM)
 /// @endcode
 [[nodiscard]] inline constexpr float dropdownToDelayMs(

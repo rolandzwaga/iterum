@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "public.sdk/source/vst/vstparameters.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "base/source/fstreamer.h"
@@ -43,7 +44,7 @@ struct DuckingParams {
     // Delay/output
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
     std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
-    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<float> feedback{0.0f};           // 0-120%
     std::atomic<float> dryWet{0.5f};             // 0-1 (dry/wet mix)
 };
@@ -133,9 +134,9 @@ inline void handleDuckingParamChange(
             break;
 
         case kDuckingNoteValueId:
-            // 0-9 (note values)
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
 
@@ -289,12 +290,12 @@ inline void registerDuckingParams(Steinberg::Vst::ParameterContainer& parameters
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - spec 043
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings (spec 043)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Ducking Note Value"), kDuckingNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Feedback: 0-120%
@@ -587,10 +588,10 @@ inline void loadDuckingParamsToController(
         setParam(kDuckingTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
         setParam(kDuckingNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Feedback: 0-120% -> normalized = val/120

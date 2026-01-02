@@ -36,8 +36,8 @@ TEST_CASE("GranularDelay setTimeMode and setNoteValue methods exist", "[features
         SUCCEED();
     }
 
-    SECTION("setNoteValue accepts values 0-9") {
-        for (int i = 0; i <= 9; ++i) {
+    SECTION("setNoteValue accepts values 0-20") {
+        for (int i = 0; i <= 20; ++i) {
             delay.setNoteValue(i);
         }
         SUCCEED();
@@ -55,11 +55,11 @@ TEST_CASE("GranularDelay synced mode calculates position from tempo", "[features
     delay.seed(42);        // Reproducible
 
     // At 120 BPM:
-    // - 1/4 note (index 6) = 500ms
-    // - 1/8 note (index 4) = 250ms
+    // - 1/4 note (index 13) = 500ms
+    // - 1/8 note (index 10) = 250ms
 
     SECTION("T015: 1/4 note at 120 BPM = 500ms position") {
-        delay.setNoteValue(6);  // 1/4 note
+        delay.setNoteValue(13);  // 1/4 note
 
         BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0};
 
@@ -76,7 +76,7 @@ TEST_CASE("GranularDelay synced mode calculates position from tempo", "[features
     }
 
     SECTION("T016: 1/8 note at 120 BPM = 250ms position") {
-        delay.setNoteValue(4);  // 1/8 note
+        delay.setNoteValue(10);  // 1/8 note
 
         BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 120.0};
 
@@ -89,7 +89,7 @@ TEST_CASE("GranularDelay synced mode calculates position from tempo", "[features
     }
 
     SECTION("T017: 1/4 note at 60 BPM = 1000ms position") {
-        delay.setNoteValue(6);  // 1/4 note
+        delay.setNoteValue(13);  // 1/4 note
 
         BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 60.0};
 
@@ -157,7 +157,7 @@ TEST_CASE("GranularDelay mode switching is smooth", "[features][granular-delay][
 
         // Switch to synced mode
         delay.setTimeMode(1);
-        delay.setNoteValue(6);  // 1/4 note = 500ms at 120 BPM (same as current)
+        delay.setNoteValue(13);  // 1/4 note = 500ms at 120 BPM (same as current)
 
         // Process after mode switch
         std::array<float, 256> outL2{}, outR2{};
@@ -182,89 +182,97 @@ TEST_CASE("GranularDelay mode switching is smooth", "[features][granular-delay][
 TEST_CASE("GranularDelay note value calculations at 120 BPM", "[features][granular-delay][tempo-sync][layer4][note-values]") {
     // These tests verify SC-001: Position accurate within 0.1ms across 20-300 BPM range
     // At 120 BPM, one beat = 500ms
+    // New dropdown order (21 entries, grouped by note value: T, normal, D):
+    // 0: 1/64T, 1: 1/64, 2: 1/64D,
+    // 3: 1/32T, 4: 1/32, 5: 1/32D,
+    // 6: 1/16T, 7: 1/16, 8: 1/16D,
+    // 9: 1/8T, 10: 1/8 (DEFAULT), 11: 1/8D,
+    // 12: 1/4T, 13: 1/4, 14: 1/4D,
+    // 15: 1/2T, 16: 1/2, 17: 1/2D,
+    // 18: 1/1T, 19: 1/1, 20: 1/1D
 
     SECTION("T036: 1/32 note at 120 BPM = 62.5ms") {
         float expected = 62.5f;
-        float actual = dropdownToDelayMs(0, 120.0);  // index 0 = 1/32
+        float actual = dropdownToDelayMs(4, 120.0);  // index 4 = 1/32
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T037: 1/16T triplet at 120 BPM = 83.33ms") {
         float expected = 83.333333f;
-        float actual = dropdownToDelayMs(1, 120.0);  // index 1 = 1/16T
+        float actual = dropdownToDelayMs(6, 120.0);  // index 6 = 1/16T
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T038: 1/16 note at 120 BPM = 125ms") {
         float expected = 125.0f;
-        float actual = dropdownToDelayMs(2, 120.0);  // index 2 = 1/16
+        float actual = dropdownToDelayMs(7, 120.0);  // index 7 = 1/16
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T039: 1/8T triplet at 120 BPM = 166.67ms") {
         float expected = 166.666666f;
-        float actual = dropdownToDelayMs(3, 120.0);  // index 3 = 1/8T
+        float actual = dropdownToDelayMs(9, 120.0);  // index 9 = 1/8T
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("1/8 note at 120 BPM = 250ms") {
         float expected = 250.0f;
-        float actual = dropdownToDelayMs(4, 120.0);  // index 4 = 1/8
+        float actual = dropdownToDelayMs(10, 120.0);  // index 10 = 1/8 (default)
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T040: 1/4T triplet at 120 BPM = 333.33ms") {
         float expected = 333.333333f;
-        float actual = dropdownToDelayMs(5, 120.0);  // index 5 = 1/4T
+        float actual = dropdownToDelayMs(12, 120.0);  // index 12 = 1/4T
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("1/4 note at 120 BPM = 500ms") {
         float expected = 500.0f;
-        float actual = dropdownToDelayMs(6, 120.0);  // index 6 = 1/4
+        float actual = dropdownToDelayMs(13, 120.0);  // index 13 = 1/4
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T041: 1/2T triplet at 120 BPM = 666.67ms") {
         float expected = 666.666666f;
-        float actual = dropdownToDelayMs(7, 120.0);  // index 7 = 1/2T
+        float actual = dropdownToDelayMs(15, 120.0);  // index 15 = 1/2T
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T042: 1/2 note at 120 BPM = 1000ms") {
         float expected = 1000.0f;
-        float actual = dropdownToDelayMs(8, 120.0);  // index 8 = 1/2
+        float actual = dropdownToDelayMs(16, 120.0);  // index 16 = 1/2
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 
     SECTION("T043: 1/1 whole note at 120 BPM = 2000ms") {
         float expected = 2000.0f;
-        float actual = dropdownToDelayMs(9, 120.0);  // index 9 = 1/1
+        float actual = dropdownToDelayMs(19, 120.0);  // index 19 = 1/1
         REQUIRE(actual == Approx(expected).margin(0.1f));
     }
 }
 
 TEST_CASE("GranularDelay note value accuracy across tempo range (SC-001)", "[features][granular-delay][tempo-sync][layer4][note-values]") {
     SECTION("T044: Accuracy within 0.1ms across 20-300 BPM range") {
-        // Test 1/4 note (index 6) across various tempos
+        // Test 1/4 note (index 13) across various tempos
         // Formula: delay_ms = (60000 / BPM) * beats_per_note
         // For 1/4 note: delay_ms = 60000 / BPM
 
         double tempos[] = {20.0, 60.0, 100.0, 120.0, 180.0, 240.0, 300.0};
         for (double tempo : tempos) {
             float expected = static_cast<float>(60000.0 / tempo);  // 1/4 = 1 beat
-            float actual = dropdownToDelayMs(6, tempo);
+            float actual = dropdownToDelayMs(13, tempo);  // index 13 = 1/4
             REQUIRE(actual == Approx(expected).margin(0.1f));
         }
     }
 
     SECTION("Note values at extreme tempos") {
         // 20 BPM (slow): 1/8 note = 1500ms
-        float slow8th = dropdownToDelayMs(4, 20.0);
+        float slow8th = dropdownToDelayMs(10, 20.0);  // index 10 = 1/8
         REQUIRE(slow8th == Approx(1500.0f).margin(0.1f));
 
         // 300 BPM (fast): 1/4 note = 200ms
-        float fast4th = dropdownToDelayMs(6, 300.0);
+        float fast4th = dropdownToDelayMs(13, 300.0);  // index 13 = 1/4
         REQUIRE(fast4th == Approx(200.0f).margin(0.1f));
     }
 }
@@ -280,7 +288,7 @@ TEST_CASE("GranularDelay tempo sync edge cases", "[features][granular-delay][tem
     delay.seed(42);
 
     SECTION("T020: Position clamped to max 2000ms") {
-        delay.setNoteValue(9);  // 1/1 whole note
+        delay.setNoteValue(19);  // 1/1 whole note
 
         // At 30 BPM, whole note = 2000ms (at the max)
         // At 20 BPM, whole note = 3000ms (would exceed max, should clamp)
@@ -296,7 +304,7 @@ TEST_CASE("GranularDelay tempo sync edge cases", "[features][granular-delay][tem
     }
 
     SECTION("T021: Fallback to 120 BPM when tempo is 0 or negative") {
-        delay.setNoteValue(6);  // 1/4 note
+        delay.setNoteValue(13);  // 1/4 note
 
         // Tempo of 0 should fallback to 120 BPM (per FR-007)
         BlockContext ctx{.sampleRate = 44100.0, .tempoBPM = 0.0};

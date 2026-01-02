@@ -27,6 +27,7 @@
 #include "parameters/digital_params.h"
 #include "parameters/pingpong_params.h"
 #include "parameters/multitap_params.h"
+#include "parameters/note_value_ui.h"  // For kNoteValueDropdownCount
 
 using namespace Steinberg;
 using Catch::Approx;
@@ -292,8 +293,10 @@ TEST_CASE("Digital params roundtrip preserves values", "[preset][digital][roundt
     Iterum::syncDigitalParamsToController(reader, controller);
 
     // Verify key values
+    // Note value normalization: index / (kNoteValueDropdownCount - 1) = index / 20
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kDigitalTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kDigitalNoteValueId] == Approx(5.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kDigitalNoteValueId] == Approx(5.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kDigitalFeedbackId] == Approx(0.6 / 1.2).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kDigitalMixId] == Approx(0.7).margin(0.001));
 }
@@ -319,8 +322,9 @@ TEST_CASE("BBD params roundtrip preserves values", "[preset][bbd][roundtrip]") {
     MockController controller;
     Iterum::syncBBDParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kBBDTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kBBDNoteValueId] == Approx(4.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kBBDNoteValueId] == Approx(4.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kBBDMixId] == Approx(0.6).margin(0.001));
 }
 
@@ -348,8 +352,9 @@ TEST_CASE("Shimmer params roundtrip preserves values", "[preset][shimmer][roundt
     MockController controller;
     Iterum::syncShimmerParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kShimmerTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kShimmerNoteValueId] == Approx(6.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kShimmerNoteValueId] == Approx(6.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kShimmerMixId] == Approx(0.55).margin(0.001));
 }
 
@@ -377,8 +382,9 @@ TEST_CASE("MultiTap params roundtrip preserves values", "[preset][multitap][roun
     MockController controller;
     Iterum::syncMultiTapParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kMultiTapTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kMultiTapNoteValueId] == Approx(4.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kMultiTapNoteValueId] == Approx(4.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kMultiTapMixId] == Approx(0.6).margin(0.001));
 }
 
@@ -408,8 +414,9 @@ TEST_CASE("Ducking params roundtrip preserves values", "[preset][ducking][roundt
     MockController controller;
     Iterum::syncDuckingParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kDuckingTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kDuckingNoteValueId] == Approx(4.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kDuckingNoteValueId] == Approx(4.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kDuckingMixId] == Approx(0.75).margin(0.001));
 }
 
@@ -435,8 +442,9 @@ TEST_CASE("Reverse params roundtrip preserves values", "[preset][reverse][roundt
     MockController controller;
     Iterum::syncReverseParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kReverseTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kReverseNoteValueId] == Approx(3.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kReverseNoteValueId] == Approx(3.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kReverseMixId] == Approx(0.65).margin(0.001));
 }
 
@@ -467,7 +475,8 @@ TEST_CASE("Freeze params roundtrip preserves values", "[preset][freeze][roundtri
     MockController controller;
     Iterum::syncFreezeParamsToController(reader, controller);
 
+    constexpr double noteValDivisor = Iterum::Parameters::kNoteValueDropdownCount - 1;
     REQUIRE(controller.paramValues[Iterum::kFreezeTimeModeId] == Approx(1.0).margin(0.001));
-    REQUIRE(controller.paramValues[Iterum::kFreezeNoteValueId] == Approx(5.0 / 9.0).margin(0.001));
+    REQUIRE(controller.paramValues[Iterum::kFreezeNoteValueId] == Approx(5.0 / noteValDivisor).margin(0.001));
     REQUIRE(controller.paramValues[Iterum::kFreezeMixId] == Approx(0.8).margin(0.001));
 }

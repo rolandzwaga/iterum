@@ -9,6 +9,7 @@
 
 #include "plugin_ids.h"
 #include "controller/parameter_helpers.h"
+#include "parameters/note_value_ui.h"
 #include "pluginterfaces/base/ftypes.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
@@ -28,7 +29,7 @@ namespace Iterum {
 struct ReverseParams {
     std::atomic<float> chunkSize{500.0f};       // 10-2000ms
     std::atomic<int> timeMode{0};               // 0=Free, 1=Synced (spec 043)
-    std::atomic<int> noteValue{4};              // 0-9 (note value dropdown) (spec 043)
+    std::atomic<int> noteValue{Parameters::kNoteValueDefaultIndex};  // 0-19 (note values)
     std::atomic<float> crossfade{0.5f};         // 0-1 (crossfade amount)
     std::atomic<int> playbackMode{0};           // 0=FullReverse, 1=Alternating, 2=Random
     std::atomic<float> feedback{0.0f};          // 0-1.2
@@ -63,9 +64,9 @@ inline void handleReverseParamChange(
                 std::memory_order_relaxed);
             break;
         case kReverseNoteValueId:
-            // 0-9 (note values)
+            // 0-19 (note values)
             params.noteValue.store(
-                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                static_cast<int>(normalizedValue * (Parameters::kNoteValueDropdownCount - 1) + 0.5),
                 std::memory_order_relaxed);
             break;
         case kReverseCrossfadeId:
@@ -134,12 +135,12 @@ inline void registerReverseParams(Steinberg::Vst::ParameterContainer& parameters
         {STR16("Free"), STR16("Synced")}
     ));
 
-    // Note Value - spec 043
-    parameters.addParameter(createDropdownParameterWithDefault(
+    // Note Value - uses centralized dropdown strings (spec 043)
+    parameters.addParameter(createNoteValueDropdown(
         STR16("Reverse Note Value"), kReverseNoteValueId,
-        4,  // default: 1/8 (index 4)
-        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
-         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+        Parameters::kNoteValueDropdownStrings,
+        Parameters::kNoteValueDropdownCount,
+        Parameters::kNoteValueDefaultIndex
     ));
 
     // Crossfade (0-100%)
@@ -353,10 +354,10 @@ inline void loadReverseParamsToController(
         setParam(kReverseTimeModeId, intVal != 0 ? 1.0 : 0.0);
     }
 
-    // Note Value: 0-9 -> normalized = val/9
+    // Note Value: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
         setParam(kReverseNoteValueId,
-            static_cast<double>(intVal) / 9.0);
+            static_cast<double>(intVal) / (Parameters::kNoteValueDropdownCount - 1));
     }
 
     // Crossfade: 0-1 (already normalized)
