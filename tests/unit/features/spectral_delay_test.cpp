@@ -2464,3 +2464,125 @@ TEST_CASE("SpectralDelay spread change is click-free",
     // while catching severe discontinuities (ratio > 50)
     REQUIRE(clickRatio < 35.0f);
 }
+
+// =============================================================================
+// Regression Tests
+// =============================================================================
+
+TEST_CASE("SpectralDelay feedback transition doesn't cause distortion",
+          "[spectral][regression][feedback-transition]") {
+    // REGRESSION TEST: When feedback drops from high values (100%+) to lower
+    // values (50-60%), the signal should decay smoothly without distortion.
+    //
+    // BUG: Previously, tanh() was only applied when binFeedback > 1.0f.
+    // When feedback dropped below 1.0, limiting instantly stopped, but the
+    // spectral bins still contained high-magnitude values from self-oscillation.
+    // This caused distorted noise bursts during the transition.
+    //
+    // FIX: Always apply tanh() to feedback magnitudes. tanh() is transparent
+    // for small values but prevents distortion during feedback transitions.
+
+    constexpr std::size_t kBlockSize = 512;
+    constexpr double kSampleRate = 44100.0;
+
+    SpectralDelay delay;
+    delay.setFFTSize(1024);
+    delay.prepare(kSampleRate, kBlockSize);
+    delay.setBaseDelayMs(50.0f);   // Short delay for faster buildup
+    delay.setSpreadMs(0.0f);       // No spread for simpler test
+    delay.setDryWetMix(50.0f);     // 50% mix
+    delay.setDiffusion(0.0f);      // No diffusion
+    delay.setFreezeEnabled(false);
+    delay.snapParameters();
+
+    auto ctx = makeTestContext(kSampleRate, true);
+
+    SECTION("high feedback builds up and dropping feedback decays smoothly") {
+        // Phase 1: Feed continuous audio with 120% feedback to build up signal
+        delay.setFeedback(1.2f);  // 120% for self-oscillation
+
+        std::array<float, kBlockSize> left{};
+        std::array<float, kBlockSize> right{};
+
+        // Feed continuous sine wave to simulate playing notes
+        // Use a frequency that will be well-represented in FFT bins
+        float peakDuringInput = 0.0f;
+        for (int block = 0; block < 80; ++block) {  // More blocks for FFT latency
+            // Generate 440 Hz sine wave input
+            for (std::size_t i = 0; i < kBlockSize; ++i) {
+                float phase = static_cast<float>(block * kBlockSize + i) / static_cast<float>(kSampleRate);
+                float sample = 0.5f * std::sin(2.0f * 3.14159f * 440.0f * phase);
+                left[i] = sample;
+                right[i] = sample;
+            }
+            delay.process(left.data(), right.data(), kBlockSize, ctx);
+            for (std::size_t i = 0; i < kBlockSize; ++i) {
+                peakDuringInput = std::max(peakDuringInput, std::abs(left[i]));
+                peakDuringInput = std::max(peakDuringInput, std::abs(right[i]));
+            }
+        }
+
+        INFO("Peak during input with 120% feedback: " << peakDuringInput);
+
+        // With 120% feedback and continuous input, signal should have grown
+        // The soft limiter should prevent explosion
+        // Note: Spectral delay has FFT latency and processes in frequency domain,
+        // so peak levels are different from time-domain delays
+        REQUIRE(peakDuringInput > 0.2f);  // Signal built up (lower threshold for spectral)
+        REQUIRE(peakDuringInput < 5.0f);  // But limiter prevented explosion
+
+        // Phase 2: Stop input, let delay self-oscillate briefly
+        float peakBeforeDrop = 0.0f;
+        for (int block = 0; block < 20; ++block) {
+            std::fill(left.begin(), left.end(), 0.0f);
+            std::fill(right.begin(), right.end(), 0.0f);
+            delay.process(left.data(), right.data(), kBlockSize, ctx);
+            for (std::size_t i = 0; i < kBlockSize; ++i) {
+                peakBeforeDrop = std::max(peakBeforeDrop, std::abs(left[i]));
+                peakBeforeDrop = std::max(peakBeforeDrop, std::abs(right[i]));
+            }
+        }
+
+        INFO("Peak before feedback drop: " << peakBeforeDrop);
+        REQUIRE(peakBeforeDrop > 0.1f);  // Still self-oscillating
+
+        // Phase 3: Rapidly drop feedback to 50%
+        delay.setFeedback(0.5f);  // Drop to 50%
+
+        // Monitor output after feedback drop
+        float maxPeakAfterDrop = 0.0f;
+        for (int block = 0; block < 30; ++block) {
+            std::fill(left.begin(), left.end(), 0.0f);
+            std::fill(right.begin(), right.end(), 0.0f);
+            delay.process(left.data(), right.data(), kBlockSize, ctx);
+            for (std::size_t i = 0; i < kBlockSize; ++i) {
+                maxPeakAfterDrop = std::max(maxPeakAfterDrop, std::abs(left[i]));
+                maxPeakAfterDrop = std::max(maxPeakAfterDrop, std::abs(right[i]));
+            }
+        }
+
+        INFO("Max peak after feedback drop: " << maxPeakAfterDrop);
+
+        // KEY ASSERTION: The signal should NOT spike when feedback drops.
+        // Without the fix, tanh() would stop and the accumulated
+        // self-oscillating spectral magnitudes would cause distortion.
+        // With the fix, tanh() continues running during the transition.
+        REQUIRE(maxPeakAfterDrop < peakBeforeDrop * 2.0f);  // No major spike
+
+        // Phase 4: Verify eventual decay
+        for (int block = 0; block < 80; ++block) {
+            std::fill(left.begin(), left.end(), 0.0f);
+            std::fill(right.begin(), right.end(), 0.0f);
+            delay.process(left.data(), right.data(), kBlockSize, ctx);
+        }
+
+        float finalPeak = 0.0f;
+        for (std::size_t i = 0; i < kBlockSize; ++i) {
+            finalPeak = std::max(finalPeak, std::abs(left[i]));
+            finalPeak = std::max(finalPeak, std::abs(right[i]));
+        }
+
+        INFO("Final peak after decay: " << finalPeak);
+        REQUIRE(finalPeak < peakBeforeDrop * 0.5f);  // Decayed significantly
+    }
+}
