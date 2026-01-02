@@ -519,6 +519,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
         case DelayMode::Shimmer:
             // Update Shimmer parameters
             shimmerDelay_.setDelayTimeMs(shimmerParams_.delayTime.load(std::memory_order_relaxed));
+            shimmerDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+                shimmerParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = shimmerParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                shimmerDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             shimmerDelay_.setPitchSemitones(shimmerParams_.pitchSemitones.load(std::memory_order_relaxed));
             shimmerDelay_.setPitchCents(shimmerParams_.pitchCents.load(std::memory_order_relaxed));
             shimmerDelay_.setShimmerMix(shimmerParams_.shimmerMix.load(std::memory_order_relaxed));
@@ -569,6 +576,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
         case DelayMode::BBD:
             // Update BBD parameters
             bbdDelay_.setTime(bbdParams_.delayTime.load(std::memory_order_relaxed));
+            bbdDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+                bbdParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = bbdParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                bbdDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             bbdDelay_.setFeedback(bbdParams_.feedback.load(std::memory_order_relaxed));
             bbdDelay_.setModulation(bbdParams_.modulationDepth.load(std::memory_order_relaxed));
             bbdDelay_.setModulationRate(bbdParams_.modulationRate.load(std::memory_order_relaxed));
@@ -576,7 +590,7 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
             bbdDelay_.setEra(Parameters::getBBDEraFromDropdown(
                 bbdParams_.era.load(std::memory_order_relaxed)));
             bbdDelay_.setMix(bbdParams_.mix.load(std::memory_order_relaxed));
-            bbdDelay_.process(outputL, outputR, numSamples);
+            bbdDelay_.process(outputL, outputR, numSamples, ctx);
             break;
 
         case DelayMode::Digital:
@@ -628,6 +642,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
         case DelayMode::Reverse:
             // Update Reverse parameters
             reverseDelay_.setChunkSizeMs(reverseParams_.chunkSize.load(std::memory_order_relaxed));
+            reverseDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+                reverseParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = reverseParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                reverseDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             reverseDelay_.setCrossfadePercent(reverseParams_.crossfade.load(std::memory_order_relaxed));
             reverseDelay_.setPlaybackMode(static_cast<DSP::PlaybackMode>(
                 reverseParams_.playbackMode.load(std::memory_order_relaxed)));
@@ -642,6 +663,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
 
         case DelayMode::MultiTap:
             // Update MultiTap parameters
+            multiTapDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+                multiTapParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = multiTapParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                multiTapDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             multiTapDelay_.loadTimingPattern(Parameters::getTimingPatternFromDropdown(
                 multiTapParams_.timingPattern.load(std::memory_order_relaxed)),
                 static_cast<size_t>(multiTapParams_.tapCount.load(std::memory_order_relaxed)));
@@ -661,6 +689,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
             // Update Freeze parameters
             freezeMode_.setFreezeEnabled(freezeParams_.freezeEnabled.load(std::memory_order_relaxed));
             freezeMode_.setDelayTimeMs(freezeParams_.delayTime.load(std::memory_order_relaxed));
+            freezeMode_.setTimeMode(static_cast<DSP::TimeMode>(
+                freezeParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = freezeParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                freezeMode_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             freezeMode_.setFeedbackAmount(freezeParams_.feedback.load(std::memory_order_relaxed));
             freezeMode_.setPitchSemitones(freezeParams_.pitchSemitones.load(std::memory_order_relaxed));
             freezeMode_.setPitchCents(freezeParams_.pitchCents.load(std::memory_order_relaxed));
@@ -689,6 +724,13 @@ void Processor::processMode(int mode, const float* inputL, const float* inputR,
             duckingDelay_.setSidechainFilterEnabled(duckingParams_.sidechainFilterEnabled.load(std::memory_order_relaxed));
             duckingDelay_.setSidechainFilterCutoff(duckingParams_.sidechainFilterCutoff.load(std::memory_order_relaxed));
             duckingDelay_.setDelayTimeMs(duckingParams_.delayTime.load(std::memory_order_relaxed));
+            duckingDelay_.setTimeMode(static_cast<DSP::TimeMode>(
+                duckingParams_.timeMode.load(std::memory_order_relaxed)));
+            {
+                const int noteIdx = duckingParams_.noteValue.load(std::memory_order_relaxed);
+                const auto noteMapping = DSP::getNoteValueFromDropdown(noteIdx);
+                duckingDelay_.setNoteValue(noteMapping.note, noteMapping.modifier);
+            }
             duckingDelay_.setFeedbackAmount(duckingParams_.feedback.load(std::memory_order_relaxed));
             duckingDelay_.setDryWetMix(duckingParams_.dryWet.load(std::memory_order_relaxed));
             duckingDelay_.process(outputL, outputR, numSamples, ctx);

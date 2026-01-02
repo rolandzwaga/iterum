@@ -112,6 +112,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kShimmerFilterEnabledId = 307,    // on/off
     kShimmerFilterCutoffId = 308,     // 20-20000Hz
     kShimmerMixId = 309,              // 0-100% (renamed from kShimmerDryWetId)
+    kShimmerTimeModeId = 310,         // 0=Free, 1=Synced (spec 043)
+    kShimmerNoteValueId = 311,        // 0-9 (note value dropdown) (spec 043)
     kShimmerEndId = 399,
 
     // ==========================================================================
@@ -149,6 +151,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kBBDAgeId = 504,                 // 0-100%
     kBBDEraId = 505,                 // 0-3 (MN3005, MN3007, MN3205, SAD1024)
     kBBDMixId = 506,                 // 0-100%
+    kBBDTimeModeId = 507,            // 0=Free, 1=Synced (spec 043)
+    kBBDNoteValueId = 508,           // 0-9 (note value dropdown) (spec 043)
     kBBDEndId = 599,
 
     // ==========================================================================
@@ -197,6 +201,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kReverseFilterCutoffId = 805,    // 20-20000Hz
     kReverseFilterTypeId = 806,      // 0-2 (LowPass, HighPass, BandPass)
     kReverseMixId = 807,             // 0-100% (renamed from kReverseDryWetId)
+    kReverseTimeModeId = 808,        // 0=Free, 1=Synced (spec 043)
+    kReverseNoteValueId = 809,       // 0-9 (note value dropdown) (spec 043)
     kReverseEndId = 899,
 
     // ==========================================================================
@@ -213,6 +219,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kMultiTapFeedbackHPCutoffId = 907, // 20-20000Hz
     kMultiTapMorphTimeId = 908,      // 50-2000ms
     kMultiTapMixId = 909,            // 0-100% (renamed from kMultiTapDryWetId)
+    kMultiTapTimeModeId = 910,       // 0=Free, 1=Synced (spec 043)
+    kMultiTapNoteValueId = 911,      // 0-9 (note value dropdown) (spec 043)
     kMultiTapEndId = 999,
 
     // ==========================================================================
@@ -232,6 +240,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kFreezeFilterTypeId = 1010,       // 0-2 (LowPass, HighPass, BandPass)
     kFreezeFilterCutoffId = 1011,     // 20-20000Hz
     kFreezeMixId = 1012,              // 0-100% (renamed from kFreezeDryWetId)
+    kFreezeTimeModeId = 1013,         // 0=Free, 1=Synced (spec 043)
+    kFreezeNoteValueId = 1014,        // 0-9 (note value dropdown) (spec 043)
     kFreezeEndId = 1099,
 
     // ==========================================================================
@@ -250,6 +260,8 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kDuckingDelayTimeId = 1109,         // 10-5000ms
     kDuckingFeedbackId = 1110,          // 0-120%
     kDuckingMixId = 1111,               // 0-100% (renamed from kDuckingDryWetId)
+    kDuckingTimeModeId = 1112,          // 0=Free, 1=Synced (spec 043)
+    kDuckingNoteValueId = 1113,         // 0-9 (note value dropdown) (spec 043)
     kDuckingEndId = 1199,
 
     // ==========================================================================

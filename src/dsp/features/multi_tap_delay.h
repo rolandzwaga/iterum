@@ -29,6 +29,7 @@
 #include "dsp/core/note_value.h"
 #include "dsp/core/math_constants.h"
 #include "dsp/primitives/smoother.h"
+#include "dsp/systems/delay_engine.h"
 #include "dsp/systems/tap_manager.h"
 #include "dsp/systems/feedback_network.h"
 #include "dsp/systems/modulation_matrix.h"
@@ -399,6 +400,34 @@ public:
     }
 
     // =========================================================================
+    // Tempo Sync Control (spec 043)
+    // =========================================================================
+
+    /// @brief Set time mode (Free or Synced)
+    /// @param mode TimeMode::Free uses setBaseTimeMs(), TimeMode::Synced uses tempo from BlockContext
+    void setTimeMode(TimeMode mode) noexcept {
+        timeMode_ = mode;
+    }
+
+    /// @brief Get current time mode
+    [[nodiscard]] TimeMode getTimeMode() const noexcept {
+        return timeMode_;
+    }
+
+    /// @brief Set note value for tempo sync (determines base time in Synced mode)
+    /// @param note Note value (Quarter, Eighth, etc.)
+    /// @param modifier Optional modifier (None, Triplet, Dotted)
+    void setNoteValue(NoteValue note, NoteModifier modifier = NoteModifier::None) noexcept {
+        noteValue_ = note;
+        noteModifier_ = modifier;
+    }
+
+    /// @brief Get current note value
+    [[nodiscard]] NoteValue getNoteValue() const noexcept {
+        return noteValue_;
+    }
+
+    // =========================================================================
     // Master Feedback Control (FR-016-FR-020)
     // =========================================================================
 
@@ -528,7 +557,29 @@ public:
 
         // Update tempo from host if available
         if (ctx.isPlaying && ctx.tempoBPM > 0.0) {
-            setTempo(static_cast<float>(ctx.tempoBPM));
+            const float newTempo = static_cast<float>(ctx.tempoBPM);
+            const bool tempoChanged = std::abs(newTempo - bpm_) > 0.1f;
+
+            if (tempoChanged) {
+                setTempo(newTempo);
+
+                // Reapply rhythmic patterns when tempo changes (they use tempo for timing)
+                if (currentTimingPattern_ != TimingPattern::Custom &&
+                    currentTimingPattern_ != TimingPattern::LinearSpread) {
+                    applyTimingPattern(currentTimingPattern_, activeTapCount_);
+                }
+            }
+
+            // In Synced mode, update base time from note value and tempo
+            if (timeMode_ == TimeMode::Synced) {
+                float syncedBaseTime = noteToDelayMs(noteValue_, noteModifier_, ctx.tempoBPM);
+                // Clamp to valid range
+                syncedBaseTime = std::clamp(syncedBaseTime, kMinDelayMs, maxDelayMs_);
+                // Update base time if different (avoid unnecessary pattern recalc)
+                if (std::abs(syncedBaseTime - baseTimeMs_) > 0.1f) {
+                    setBaseTimeMs(syncedBaseTime);
+                }
+            }
         }
 
         // Update morph if active
@@ -888,6 +939,11 @@ private:
     size_t activeTapCount_ = 4;
     float baseTimeMs_ = kDefaultDelayMs;
     float bpm_ = 120.0f;
+
+    // Tempo sync state (spec 043)
+    TimeMode timeMode_ = TimeMode::Free;     ///< Free (ms) or Synced (tempo)
+    NoteValue noteValue_ = NoteValue::Eighth; ///< Base note value
+    NoteModifier noteModifier_ = NoteModifier::None; ///< Note modifier
 
     // Custom pattern storage
     std::array<float, kMaxTaps> customTimeRatios_ = {};

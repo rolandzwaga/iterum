@@ -35,7 +35,7 @@ struct SpectralParams {
     std::atomic<float> feedbackTilt{0.0f};    // -1.0 to +1.0
     std::atomic<bool> freeze{false};          // on/off
     std::atomic<float> diffusion{0.0f};       // 0-1
-    std::atomic<float> dryWet{50.0f};         // 0-100%
+    std::atomic<float> dryWet{0.5f};          // 0-1 (dry/wet mix)
     std::atomic<int> spreadCurve{0};          // 0-1 (Linear, Logarithmic)
     std::atomic<float> stereoWidth{0.0f};     // 0-1 (stereo decorrelation)
 
@@ -115,9 +115,9 @@ inline void handleSpectralParamChange(
             break;
 
         case kSpectralMixId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.dryWet.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -512,10 +512,10 @@ inline void syncSpectralParamsToController(
             static_cast<double>(floatVal));
     }
 
-    // Dry/Wet: 0-100% -> normalized = val/100
+    // Dry/Wet: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kSpectralMixId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 
     // Spread Curve: 0-1 -> normalized = val (already 0 or 1)

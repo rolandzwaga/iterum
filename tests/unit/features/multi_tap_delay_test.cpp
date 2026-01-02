@@ -14,6 +14,8 @@
 
 #include "dsp/features/multi_tap_delay.h"
 #include "dsp/core/block_context.h"
+#include "dsp/core/note_value.h"
+#include "dsp/systems/delay_engine.h"
 
 #include <array>
 #include <chrono>
@@ -970,4 +972,238 @@ TEST_CASE("SC-007: CPU usage benchmark", "[multi-tap][sc-007][benchmark][!benchm
     // Debug build threshold: 200ms (200000 microseconds)
     // This validates the algorithm doesn't have O(n^2) or worse complexity
     REQUIRE(duration.count() < 200000);
+}
+
+// =============================================================================
+// Tempo Sync Interface Tests (TDD - spec 043)
+// =============================================================================
+// These tests verify that MultiTapDelay supports the standard tempo sync
+// interface (setTimeMode/setNoteValue) matching DigitalDelay.
+// In Synced mode, the base time comes from BlockContext.tempoBPM + noteValue.
+
+TEST_CASE("MultiTapDelay tempo sync: setTimeMode stores mode", "[multi-tap][tempo]") {
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    SECTION("default mode is Free") {
+        REQUIRE(delay.getTimeMode() == TimeMode::Free);
+    }
+
+    SECTION("setTimeMode stores Free") {
+        delay.setTimeMode(TimeMode::Free);
+        REQUIRE(delay.getTimeMode() == TimeMode::Free);
+    }
+
+    SECTION("setTimeMode stores Synced") {
+        delay.setTimeMode(TimeMode::Synced);
+        REQUIRE(delay.getTimeMode() == TimeMode::Synced);
+    }
+}
+
+TEST_CASE("MultiTapDelay tempo sync: setNoteValue stores note and modifier", "[multi-tap][tempo]") {
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    SECTION("default note value is Eighth") {
+        REQUIRE(delay.getNoteValue() == NoteValue::Eighth);
+    }
+
+    SECTION("setNoteValue stores Quarter") {
+        delay.setNoteValue(NoteValue::Quarter);
+        REQUIRE(delay.getNoteValue() == NoteValue::Quarter);
+    }
+
+    SECTION("setNoteValue stores Sixteenth") {
+        delay.setNoteValue(NoteValue::Sixteenth, NoteModifier::None);
+        REQUIRE(delay.getNoteValue() == NoteValue::Sixteenth);
+    }
+
+    SECTION("setNoteValue stores with triplet modifier") {
+        delay.setNoteValue(NoteValue::Eighth, NoteModifier::Triplet);
+        REQUIRE(delay.getNoteValue() == NoteValue::Eighth);
+    }
+}
+
+TEST_CASE("MultiTapDelay tempo sync: pattern timing uses host tempo", "[multi-tap][tempo]") {
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    // MultiTapDelay's preset patterns (QuarterNote, EighthNote, etc.) always
+    // use tempo for timing. The process() method automatically updates
+    // tempo from BlockContext.
+
+    delay.setTimeMode(TimeMode::Free);
+    delay.setTempo(120.0f);
+    delay.loadTimingPattern(TimingPattern::QuarterNote, 4);
+    delay.snapParameters();
+
+    // At 120 BPM, quarter note = 500ms
+    REQUIRE(delay.getTapTimeMs(0) == Approx(500.0f).margin(1.0f));
+
+    // Process with a different tempo in BlockContext
+    auto ctx = makeTestContext(kSampleRate, 60.0);
+    std::array<float, 512> left{}, right{};
+    delay.process(left.data(), right.data(), 512, ctx);
+
+    // Tempo updates from host, so quarter note is now 1000ms
+    REQUIRE(delay.getTapTimeMs(0) == Approx(1000.0f).margin(5.0f));
+}
+
+TEST_CASE("MultiTapDelay tempo sync: Synced mode with custom pattern uses noteValue", "[multi-tap][tempo]") {
+    // For MultiTapDelay, preset patterns (QuarterNote, EighthNote, etc.) have their
+    // own built-in note value calculations based on tempo. The noteValue parameter
+    // affects the baseTimeMs_ which is used for Custom patterns.
+
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+
+    SECTION("QuarterNote pattern at 120 BPM = 500ms first tap") {
+        delay.loadTimingPattern(TimingPattern::QuarterNote, 4);
+        delay.snapParameters();
+
+        auto ctx = makeTestContext(kSampleRate, 120.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // QuarterNote pattern uses tempo directly: 120 BPM = 500ms per quarter
+        REQUIRE(delay.getTapTimeMs(0) == Approx(500.0f).margin(5.0f));
+    }
+
+    SECTION("QuarterNote pattern at 60 BPM = 1000ms first tap") {
+        delay.loadTimingPattern(TimingPattern::QuarterNote, 4);
+        delay.snapParameters();
+
+        auto ctx = makeTestContext(kSampleRate, 60.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // 60 BPM = 1000ms per quarter note
+        REQUIRE(delay.getTapTimeMs(0) == Approx(1000.0f).margin(5.0f));
+    }
+
+    SECTION("EighthNote pattern at 120 BPM = 250ms first tap") {
+        delay.loadTimingPattern(TimingPattern::EighthNote, 4);
+        delay.snapParameters();
+
+        auto ctx = makeTestContext(kSampleRate, 120.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // EighthNote pattern: 120 BPM = 250ms per eighth note
+        REQUIRE(delay.getTapTimeMs(0) == Approx(250.0f).margin(5.0f));
+    }
+}
+
+TEST_CASE("MultiTapDelay tempo sync: tempo changes update taps in Synced mode", "[multi-tap][tempo]") {
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+    delay.loadTimingPattern(TimingPattern::QuarterNote, 4);
+    delay.setDryWetMix(100.0f);
+    delay.snapParameters();
+
+    SECTION("tap times adapt when tempo changes from 120 to 60 BPM") {
+        // Process at 120 BPM
+        auto ctx120 = makeTestContext(kSampleRate, 120.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx120);
+
+        // First tap at 120 BPM should be ~500ms
+        float time120 = delay.getTapTimeMs(0);
+        REQUIRE(time120 == Approx(500.0f).margin(10.0f));
+
+        // Process at 60 BPM
+        auto ctx60 = makeTestContext(kSampleRate, 60.0);
+        delay.process(left.data(), right.data(), 512, ctx60);
+
+        // First tap at 60 BPM should be ~1000ms (clamped if exceeds max)
+        float time60 = delay.getTapTimeMs(0);
+        REQUIRE(time60 == Approx(1000.0f).margin(10.0f));
+
+        // Slower tempo = longer delay
+        REQUIRE(time60 > time120);
+    }
+}
+
+TEST_CASE("MultiTapDelay tempo sync: base time clamped to valid range", "[multi-tap][tempo]") {
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.loadTimingPattern(TimingPattern::QuarterNote, 4);
+    delay.snapParameters();
+
+    SECTION("very slow tempo clamps taps to max delay") {
+        delay.setNoteValue(NoteValue::Whole, NoteModifier::None);  // 4 beats
+        delay.loadTimingPattern(TimingPattern::QuarterNote, 4);  // 4 taps
+
+        // At 20 BPM, whole note = 12000ms (exceeds 5000ms max)
+        auto ctx = makeTestContext(kSampleRate, 20.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // Should be clamped to max delay
+        REQUIRE(delay.getTapTimeMs(0) <= kMaxDelayMs);
+        REQUIRE_FALSE(std::isnan(delay.getTapTimeMs(0)));
+    }
+
+    SECTION("very fast tempo with short note stays above minimum") {
+        delay.setNoteValue(NoteValue::ThirtySecond, NoteModifier::None);
+
+        // At 300 BPM, 1/32 note = 25ms (above 1ms minimum)
+        auto ctx = makeTestContext(kSampleRate, 300.0);
+        std::array<float, 512> left{}, right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // Should be at least minimum delay
+        REQUIRE(delay.getTapTimeMs(0) >= MultiTapDelay::kMinDelayMs);
+        REQUIRE_FALSE(std::isnan(delay.getTapTimeMs(0)));
+    }
+}
+
+TEST_CASE("MultiTapDelay tempo sync: TripletQuarter pattern at 120 BPM", "[multi-tap][tempo]") {
+    // MultiTapDelay has built-in triplet patterns that handle triplet timing
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.loadTimingPattern(TimingPattern::TripletQuarter, 4);
+    delay.snapParameters();
+
+    // At 120 BPM, triplet quarter = 500ms * (2/3) = ~333ms
+    auto ctx = makeTestContext(kSampleRate, 120.0);
+    std::array<float, 512> left{}, right{};
+    delay.process(left.data(), right.data(), 512, ctx);
+
+    // TripletQuarter pattern uses triplet timing
+    float expectedTime = noteToDelayMs(NoteValue::Quarter, NoteModifier::Triplet, 120.0);
+    REQUIRE(expectedTime == Approx(333.33f).margin(1.0f));
+
+    REQUIRE(delay.getTapTimeMs(0) == Approx(333.33f).margin(10.0f));
+}
+
+TEST_CASE("MultiTapDelay tempo sync: DottedEighth pattern at 120 BPM", "[multi-tap][tempo]") {
+    // MultiTapDelay has built-in dotted patterns that handle dotted timing
+    MultiTapDelay delay;
+    delay.prepare(kSampleRate, kBlockSize, kMaxDelayMs);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.loadTimingPattern(TimingPattern::DottedEighth, 4);
+    delay.snapParameters();
+
+    // At 120 BPM, dotted eighth = 250ms * 1.5 = 375ms
+    auto ctx = makeTestContext(kSampleRate, 120.0);
+    std::array<float, 512> left{}, right{};
+    delay.process(left.data(), right.data(), 512, ctx);
+
+    // DottedEighth pattern uses dotted timing
+    float expectedTime = noteToDelayMs(NoteValue::Eighth, NoteModifier::Dotted, 120.0);
+    REQUIRE(expectedTime == Approx(375.0f).margin(1.0f));
+
+    REQUIRE(delay.getTapTimeMs(0) == Approx(375.0f).margin(10.0f));
 }

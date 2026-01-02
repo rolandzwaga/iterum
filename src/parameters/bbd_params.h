@@ -27,6 +27,8 @@ namespace Iterum {
 
 struct BBDParams {
     std::atomic<float> delayTime{300.0f};      // 20-1000ms
+    std::atomic<int> timeMode{0};              // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};             // 0-9 (note value dropdown) (spec 043)
     std::atomic<float> feedback{0.4f};         // 0-1.2
     std::atomic<float> modulationDepth{0.0f};  // 0-1
     std::atomic<float> modulationRate{0.5f};   // 0.1-10Hz
@@ -51,6 +53,18 @@ inline void handleBBDParamChange(
             // 20-1000ms
             params.delayTime.store(
                 static_cast<float>(20.0 + normalizedValue * 980.0),
+                std::memory_order_relaxed);
+            break;
+        case kBBDTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+        case kBBDNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
                 std::memory_order_relaxed);
             break;
         case kBBDFeedbackId:
@@ -108,6 +122,21 @@ inline void registerBBDParams(Steinberg::Vst::ParameterContainer& parameters) {
         0.286,  // default: 300ms normalized = (300-20)/980
         ParameterInfo::kCanAutomate,
         kBBDDelayTimeId);
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("BBD Time Mode"), kBBDTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("BBD Note Value"), kBBDNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Feedback (0-120%)
     parameters.addParameter(
@@ -243,6 +272,8 @@ inline Steinberg::tresult formatBBDParam(
 
 inline void saveBBDParams(const BBDParams& params, Steinberg::IBStreamer& streamer) {
     streamer.writeFloat(params.delayTime.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeFloat(params.feedback.load(std::memory_order_relaxed));
     streamer.writeFloat(params.modulationDepth.load(std::memory_order_relaxed));
     streamer.writeFloat(params.modulationRate.load(std::memory_order_relaxed));
@@ -255,6 +286,14 @@ inline void loadBBDParams(BBDParams& params, Steinberg::IBStreamer& streamer) {
     float delayTime = 300.0f;
     streamer.readFloat(delayTime);
     params.delayTime.store(delayTime, std::memory_order_relaxed);
+
+    Steinberg::int32 timeMode = 0;
+    streamer.readInt32(timeMode);
+    params.timeMode.store(timeMode, std::memory_order_relaxed);
+
+    Steinberg::int32 noteValue = 4;
+    streamer.readInt32(noteValue);
+    params.noteValue.store(noteValue, std::memory_order_relaxed);
 
     float feedback = 0.4f;
     streamer.readFloat(feedback);
@@ -299,6 +338,17 @@ inline void syncBBDParamsToController(
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kBBDDelayTimeId,
             static_cast<double>((floatVal - 20.0f) / 980.0f));
+    }
+
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kBBDTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kBBDNoteValueId,
+            static_cast<double>(intVal) / 9.0);
     }
 
     // Feedback: 0-1.2 -> normalized = val/1.2

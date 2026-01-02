@@ -8,6 +8,11 @@
 #include "vstgui/lib/cfont.h"
 #include "vstgui/lib/controls/ctextedit.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 namespace Iterum {
 
 // =============================================================================
@@ -366,6 +371,13 @@ void PresetBrowserView::onPresetDoubleClicked(int rowIndex) {
     if (presetManager_->loadPreset(*preset)) {
         // Close browser on successful load
         close();
+    } else {
+        // Output error for debugging (visible in DebugView or VS Output window)
+        std::string error = "Preset load failed: " + presetManager_->getLastError();
+        error += " | Path: " + preset->path.string() + "\n";
+#ifdef _WIN32
+        OutputDebugStringA(error.c_str());
+#endif
     }
 }
 

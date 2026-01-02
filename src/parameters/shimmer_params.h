@@ -27,15 +27,17 @@ namespace Iterum {
 
 struct ShimmerParams {
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
+    std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
     std::atomic<float> pitchSemitones{12.0f};    // -24 to +24 semitones
     std::atomic<float> pitchCents{0.0f};         // -100 to +100 cents
-    std::atomic<float> shimmerMix{100.0f};       // 0-100%
+    std::atomic<float> shimmerMix{1.0f};         // 0-1 (shimmer blend)
     std::atomic<float> feedback{0.5f};           // 0-1.2 (0-120%)
-    std::atomic<float> diffusionAmount{50.0f};   // 0-100%
+    std::atomic<float> diffusionAmount{0.5f};    // 0-1 (diffusion amount)
     std::atomic<float> diffusionSize{50.0f};     // 0-100%
     std::atomic<bool> filterEnabled{false};      // on/off
     std::atomic<float> filterCutoff{4000.0f};    // 20-20000Hz
-    std::atomic<float> dryWet{50.0f};            // 0-100%
+    std::atomic<float> dryWet{0.5f};             // 0-1 (dry/wet mix)
 };
 
 // ==============================================================================
@@ -58,6 +60,20 @@ inline void handleShimmerParamChange(
                 std::memory_order_relaxed);
             break;
 
+        case kShimmerTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+
+        case kShimmerNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
+
         case kShimmerPitchSemitonesId:
             // -24 to +24 semitones
             params.pitchSemitones.store(
@@ -73,9 +89,9 @@ inline void handleShimmerParamChange(
             break;
 
         case kShimmerPitchBlendId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.shimmerMix.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -87,9 +103,9 @@ inline void handleShimmerParamChange(
             break;
 
         case kShimmerDiffusionAmountId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.diffusionAmount.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -112,9 +128,9 @@ inline void handleShimmerParamChange(
             break;
 
         case kShimmerMixId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.dryWet.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -144,6 +160,21 @@ inline void registerShimmerParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         STR16("Dly")
     );
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Shimmer Time Mode"), kShimmerTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Shimmer Note Value"), kShimmerNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Pitch Semitones: -24 to +24
     parameters.addParameter(
@@ -351,6 +382,8 @@ inline void saveShimmerParams(
     Steinberg::IBStreamer& streamer)
 {
     streamer.writeFloat(params.delayTime.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeFloat(params.pitchSemitones.load(std::memory_order_relaxed));
     streamer.writeFloat(params.pitchCents.load(std::memory_order_relaxed));
     streamer.writeFloat(params.shimmerMix.load(std::memory_order_relaxed));
@@ -372,6 +405,12 @@ inline void loadShimmerParams(
 
     if (streamer.readFloat(floatVal)) {
         params.delayTime.store(floatVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.timeMode.store(intVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.noteValue.store(intVal, std::memory_order_relaxed);
     }
     if (streamer.readFloat(floatVal)) {
         params.pitchSemitones.store(floatVal, std::memory_order_relaxed);
@@ -424,6 +463,17 @@ inline void syncShimmerParamsToController(
             static_cast<double>((floatVal - 10.0f) / 4990.0f));
     }
 
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kShimmerTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kShimmerNoteValueId,
+            static_cast<double>(intVal) / 9.0);
+    }
+
     // Pitch Semitones: -24 to +24 -> normalized = (val+24)/48
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kShimmerPitchSemitonesId,
@@ -436,10 +486,10 @@ inline void syncShimmerParamsToController(
             static_cast<double>((floatVal + 100.0f) / 200.0f));
     }
 
-    // Shimmer Mix: 0-100% -> normalized = val/100
+    // Shimmer Mix: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kShimmerPitchBlendId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 
     // Feedback: 0-1.2 -> normalized = val/1.2
@@ -448,10 +498,10 @@ inline void syncShimmerParamsToController(
             static_cast<double>(floatVal / 1.2f));
     }
 
-    // Diffusion Amount: 0-100% -> normalized = val/100
+    // Diffusion Amount: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kShimmerDiffusionAmountId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 
     // Diffusion Size: 0-100% -> normalized = val/100
@@ -471,10 +521,10 @@ inline void syncShimmerParamsToController(
             static_cast<double>((floatVal - 20.0f) / 19980.0f));
     }
 
-    // Dry/Wet: 0-100% -> normalized = val/100
+    // Dry/Wet: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kShimmerMixId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 }
 

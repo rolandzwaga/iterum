@@ -28,6 +28,8 @@ namespace Iterum {
 struct FreezeParams {
     std::atomic<bool> freezeEnabled{false};
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
+    std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
     std::atomic<float> feedback{0.5f};           // 0-1.2
     std::atomic<float> pitchSemitones{0.0f};     // -24 to +24
     std::atomic<float> pitchCents{0.0f};         // -100 to +100
@@ -60,6 +62,18 @@ inline void handleFreezeParamChange(
             // 10-5000ms
             params.delayTime.store(
                 static_cast<float>(10.0 + normalizedValue * 4990.0),
+                std::memory_order_relaxed);
+            break;
+        case kFreezeTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+        case kFreezeNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
                 std::memory_order_relaxed);
             break;
         case kFreezeFeedbackId:
@@ -153,6 +167,21 @@ inline void registerFreezeParams(Steinberg::Vst::ParameterContainer& parameters)
         0.098,  // default: ~500ms normalized
         ParameterInfo::kCanAutomate,
         kFreezeDelayTimeId);
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Freeze Time Mode"), kFreezeTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Freeze Note Value"), kFreezeNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Feedback (0-120%)
     parameters.addParameter(
@@ -342,6 +371,8 @@ inline Steinberg::tresult formatFreezeParam(
 inline void saveFreezeParams(const FreezeParams& params, Steinberg::IBStreamer& streamer) {
     streamer.writeInt32(params.freezeEnabled.load(std::memory_order_relaxed) ? 1 : 0);
     streamer.writeFloat(params.delayTime.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeFloat(params.feedback.load(std::memory_order_relaxed));
     streamer.writeFloat(params.pitchSemitones.load(std::memory_order_relaxed));
     streamer.writeFloat(params.pitchCents.load(std::memory_order_relaxed));
@@ -363,6 +394,14 @@ inline void loadFreezeParams(FreezeParams& params, Steinberg::IBStreamer& stream
     float delayTime = 500.0f;
     streamer.readFloat(delayTime);
     params.delayTime.store(delayTime, std::memory_order_relaxed);
+
+    Steinberg::int32 timeMode = 0;
+    streamer.readInt32(timeMode);
+    params.timeMode.store(timeMode, std::memory_order_relaxed);
+
+    Steinberg::int32 noteValue = 4;
+    streamer.readInt32(noteValue);
+    params.noteValue.store(noteValue, std::memory_order_relaxed);
 
     float feedback = 0.5f;
     streamer.readFloat(feedback);
@@ -499,6 +538,17 @@ inline void syncFreezeParamsToController(
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kFreezeDelayTimeId,
             static_cast<double>((floatVal - 10.0f) / 4990.0f));
+    }
+
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kFreezeTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kFreezeNoteValueId,
+            static_cast<double>(intVal) / 9.0);
     }
 
     // Feedback: 0-1.2 -> normalized = val/1.2

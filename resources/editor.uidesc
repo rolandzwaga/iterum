@@ -91,6 +91,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="ShimmerFilterEnabled" tag="307"/>
         <control-tag name="ShimmerFilterCutoff" tag="308"/>
         <control-tag name="ShimmerDryWet" tag="309"/>
+        <control-tag name="ShimmerTimeMode" tag="310"/>
+        <control-tag name="ShimmerNoteValue" tag="311"/>
 
         <!-- Tape (400-418) -->
         <control-tag name="TapeMotorSpeed" tag="400"/>
@@ -120,6 +122,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="BBDAge" tag="504"/>
         <control-tag name="BBDEra" tag="505"/>
         <control-tag name="BBDMix" tag="506"/>
+        <control-tag name="BBDTimeMode" tag="507"/>
+        <control-tag name="BBDNoteValue" tag="508"/>
 
         <!-- Digital (600-612) -->
         <control-tag name="DigitalDelayTime" tag="600"/>
@@ -156,6 +160,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="ReverseFilterCutoff" tag="805"/>
         <control-tag name="ReverseFilterType" tag="806"/>
         <control-tag name="ReverseDryWet" tag="807"/>
+        <control-tag name="ReverseTimeMode" tag="808"/>
+        <control-tag name="ReverseNoteValue" tag="809"/>
 
         <!-- MultiTap (900-910) -->
         <control-tag name="MultiTapTimingPattern" tag="900"/>
@@ -168,6 +174,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="MultiTapFeedbackHPCutoff" tag="907"/>
         <control-tag name="MultiTapMorphTime" tag="908"/>
         <control-tag name="MultiTapDryWet" tag="909"/>
+        <control-tag name="MultiTapTimeMode" tag="910"/>
+        <control-tag name="MultiTapNoteValue" tag="911"/>
 
         <!-- Freeze (1000-1013) -->
         <control-tag name="FreezeEnabled" tag="1000"/>
@@ -183,6 +191,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="FreezeFilterType" tag="1010"/>
         <control-tag name="FreezeFilterCutoff" tag="1011"/>
         <control-tag name="FreezeDryWet" tag="1012"/>
+        <control-tag name="FreezeTimeMode" tag="1013"/>
+        <control-tag name="FreezeNoteValue" tag="1014"/>
 
         <!-- Ducking (1100-1112) -->
         <control-tag name="DuckingEnabled" tag="1100"/>
@@ -197,12 +207,20 @@ by functionality. Group order: Primary controls first, specialized later.
         <control-tag name="DuckingDelayTime" tag="1109"/>
         <control-tag name="DuckingFeedback" tag="1110"/>
         <control-tag name="DuckingDryWet" tag="1111"/>
+        <control-tag name="DuckingTimeMode" tag="1112"/>
+        <control-tag name="DuckingNoteValue" tag="1113"/>
 
         <!-- UI Label Tags (9900+) - for conditional visibility -->
         <control-tag name="DigitalDelayTimeLabel" tag="9901"/>
         <control-tag name="DigitalAgeLabel" tag="9902"/>
         <control-tag name="PingPongDelayTimeLabel" tag="9903"/>
         <control-tag name="GranularDelayTimeLabel" tag="9904"/>
+        <control-tag name="ShimmerDelayTimeLabel" tag="9905"/>
+        <control-tag name="BBDDelayTimeLabel" tag="9906"/>
+        <control-tag name="ReverseChunkSizeLabel" tag="9907"/>
+        <control-tag name="MultiTapBaseTimeLabel" tag="9908"/>
+        <control-tag name="FreezeDelayTimeLabel" tag="9909"/>
+        <control-tag name="DuckingDelayTimeLabel" tag="9910"/>
     </control-tags>
 
     <!-- ======================================================================
@@ -323,12 +341,16 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="ShimmerDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="ShimmerDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="130, 20" control-tag="ShimmerFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="10, 91" size="260, 20" control-tag="ShimmerDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="ShimmerTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="ShimmerNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 91" size="130, 20" control-tag="ShimmerFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="150, 73" size="120, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="150, 91" size="120, 20" control-tag="ShimmerDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: PITCH SHIFT -->
@@ -422,12 +444,16 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="BBDDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="BBDDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="130, 20" control-tag="BBDFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="260, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="10, 91" size="260, 20" control-tag="BBDMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="BBDTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="BBDNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="125, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 91" size="125, 20" control-tag="BBDFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="145, 73" size="125, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="145, 91" size="125, 20" control-tag="BBDMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: CHARACTER -->
@@ -557,12 +583,16 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 2: CHUNK -->
         <view class="CViewContainer" origin="300, 30" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="CHUNK" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="ReverseChunkSizeLabel" origin="10, 28" size="75, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="ReverseChunkSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="95, 28" size="75, 16" title="Crossfade" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="ReverseCrossfade" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="80, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="40, 16" title="Play" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="180, 46" size="80, 22" control-tag="ReversePlaybackMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="60, 16" title="Sync" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="10, 89" size="60, 22" control-tag="ReverseTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="80, 73" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="80, 89" size="60, 22" control-tag="ReverseNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         </view>
 
         <!-- Group 3: FILTER -->
@@ -584,10 +614,14 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME -->
         <view class="CViewContainer" origin="10, 30" size="280, 100" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Base Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="MultiTapBaseTimeLabel" origin="10, 28" size="120, 16" title="Base Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="MultiTapBaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Tempo" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="130, 20" control-tag="MultiTapTempo" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="MultiTapTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="MultiTapNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="130, 16" title="Internal Tempo" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="140, 73" size="130, 20" control-tag="MultiTapTempo" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: PATTERN -->
@@ -644,12 +678,16 @@ by functionality. Group order: Primary controls first, specialized later.
         </view>
 
         <!-- Group 2: TIME & MIX -->
-        <view class="CViewContainer" origin="10, 140" size="280, 85" background-color="section" transparent="false">
+        <view class="CViewContainer" origin="10, 140" size="280, 130" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="FreezeDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="FreezeDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="130, 20" control-tag="FreezeDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="FreezeTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="FreezeNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 91" size="260, 20" control-tag="FreezeDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: PITCH & SHIMMER -->
@@ -706,12 +744,16 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 2: DELAY -->
         <view class="CViewContainer" origin="300, 30" size="270, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="DELAY" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="10, 46" size="120, 20" control-tag="DuckingDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="140, 46" size="120, 20" control-tag="DuckingFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="250, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="CSlider" origin="10, 91" size="250, 20" control-tag="DuckingDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" control-tag="DuckingDelayTimeLabel" origin="10, 28" size="100, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 46" size="100, 20" control-tag="DuckingDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="120, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="120, 46" size="60, 22" control-tag="DuckingTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="190, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="COptionMenu" origin="190, 46" size="70, 22" control-tag="DuckingNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CTextLabel" origin="10, 73" size="110, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="10, 91" size="110, 20" control-tag="DuckingFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
+            <view class="CTextLabel" origin="130, 73" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CSlider" origin="130, 91" size="130, 20" control-tag="DuckingDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: SIDECHAIN -->

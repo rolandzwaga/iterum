@@ -27,7 +27,9 @@ namespace Iterum {
 
 struct ReverseParams {
     std::atomic<float> chunkSize{500.0f};       // 10-2000ms
-    std::atomic<float> crossfade{50.0f};        // 0-100%
+    std::atomic<int> timeMode{0};               // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};              // 0-9 (note value dropdown) (spec 043)
+    std::atomic<float> crossfade{0.5f};         // 0-1 (crossfade amount)
     std::atomic<int> playbackMode{0};           // 0=FullReverse, 1=Alternating, 2=Random
     std::atomic<float> feedback{0.0f};          // 0-1.2
     std::atomic<bool> filterEnabled{false};
@@ -54,10 +56,22 @@ inline void handleReverseParamChange(
                 static_cast<float>(10.0 + normalizedValue * 1990.0),
                 std::memory_order_relaxed);
             break;
+        case kReverseTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+        case kReverseNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
         case kReverseCrossfadeId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.crossfade.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
         case kReversePlaybackModeId:
@@ -112,6 +126,21 @@ inline void registerReverseParams(Steinberg::Vst::ParameterContainer& parameters
         0.246,  // default: 500ms normalized
         ParameterInfo::kCanAutomate,
         kReverseChunkSizeId);
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Reverse Time Mode"), kReverseTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Reverse Note Value"), kReverseNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Crossfade (0-100%)
     parameters.addParameter(
@@ -246,6 +275,8 @@ inline Steinberg::tresult formatReverseParam(
 
 inline void saveReverseParams(const ReverseParams& params, Steinberg::IBStreamer& streamer) {
     streamer.writeFloat(params.chunkSize.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeFloat(params.crossfade.load(std::memory_order_relaxed));
     streamer.writeInt32(params.playbackMode.load(std::memory_order_relaxed));
     streamer.writeFloat(params.feedback.load(std::memory_order_relaxed));
@@ -259,6 +290,14 @@ inline void loadReverseParams(ReverseParams& params, Steinberg::IBStreamer& stre
     float chunkSize = 500.0f;
     streamer.readFloat(chunkSize);
     params.chunkSize.store(chunkSize, std::memory_order_relaxed);
+
+    Steinberg::int32 timeMode = 0;
+    streamer.readInt32(timeMode);
+    params.timeMode.store(timeMode, std::memory_order_relaxed);
+
+    Steinberg::int32 noteValue = 4;
+    streamer.readInt32(noteValue);
+    params.noteValue.store(noteValue, std::memory_order_relaxed);
 
     float crossfade = 50.0f;
     streamer.readFloat(crossfade);
@@ -309,10 +348,21 @@ inline void syncReverseParamsToController(
             static_cast<double>((floatVal - 10.0f) / 1990.0f));
     }
 
-    // Crossfade: 0-100 -> normalized = val/100
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kReverseTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kReverseNoteValueId,
+            static_cast<double>(intVal) / 9.0);
+    }
+
+    // Crossfade: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kReverseCrossfadeId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 
     // Playback Mode: 0-2 -> normalized = val/2

@@ -160,6 +160,14 @@ private:
     Steinberg::IPtr<Steinberg::FObject> granularDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> spectralBaseDelayVisibilityController_;  // spec 041
 
+    // Tempo sync visibility controllers (hide delay time when synced)
+    Steinberg::IPtr<Steinberg::FObject> shimmerDelayTimeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> bbdDelayTimeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> reverseChunkSizeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> multitapBaseTimeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> freezeDelayTimeVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> duckingDelayTimeVisibilityController_;
+
     // ==========================================================================
     // Preset Browser (Spec 042)
     // ==========================================================================

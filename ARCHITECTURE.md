@@ -4,7 +4,7 @@ This document is the **living inventory** of all functional domains, components,
 
 > **Constitution Principle XIII**: Every spec implementation MUST update this document as a final task.
 
-**Last Updated**: 2025-12-28 (VST3 parameter integration, CrossfadingDelayLine, tempo sync utilities)
+**Last Updated**: 2026-01-01 (Tempo sync for all 11 delay modes: Shimmer, BBD, Reverse, MultiTap, Freeze, Ducking now join Digital, PingPong, Granular, Spectral, Tape)
 
 ---
 

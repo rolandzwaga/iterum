@@ -485,6 +485,12 @@ add_executable(vst_tests
     # Preset Browser (spec 042) - requires VST3 SDK
     unit/preset/preset_manager_test.cpp
     unit/preset/preset_data_source_test.cpp
+    # Preset Serialization (all 11 modes) - requires VST3 SDK for IBStreamer
+    unit/preset/preset_serialization_test.cpp
+    # Preset Generator value range tests - catches scale mismatches
+    unit/preset/preset_generator_test.cpp
+    # Mix scale consistency test - verifies all modes use 0-1 internally
+    unit/parameters/mix_scale_consistency_test.cpp
     ${CMAKE_SOURCE_DIR}/src/preset/preset_manager.cpp
     ${CMAKE_SOURCE_DIR}/src/platform/preset_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/preset_data_source.cpp

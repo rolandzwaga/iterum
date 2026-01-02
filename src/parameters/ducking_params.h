@@ -30,7 +30,7 @@ struct DuckingParams {
     // Ducking controls
     std::atomic<bool> duckingEnabled{false};     // on/off
     std::atomic<float> threshold{-30.0f};        // -60 to 0 dB
-    std::atomic<float> duckAmount{50.0f};        // 0-100%
+    std::atomic<float> duckAmount{0.5f};         // 0-1 (duck amount)
     std::atomic<float> attackTime{10.0f};        // 0.1-100ms
     std::atomic<float> releaseTime{200.0f};      // 10-2000ms
     std::atomic<float> holdTime{50.0f};          // 0-500ms
@@ -42,8 +42,10 @@ struct DuckingParams {
 
     // Delay/output
     std::atomic<float> delayTime{500.0f};        // 10-5000ms
+    std::atomic<int> timeMode{0};                // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};               // 0-9 (note value dropdown) (spec 043)
     std::atomic<float> feedback{0.0f};           // 0-120%
-    std::atomic<float> dryWet{50.0f};            // 0-100%
+    std::atomic<float> dryWet{0.5f};             // 0-1 (dry/wet mix)
 };
 
 // ==============================================================================
@@ -71,9 +73,9 @@ inline void handleDuckingParamChange(
             break;
 
         case kDuckingDuckAmountId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.duckAmount.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -123,6 +125,20 @@ inline void handleDuckingParamChange(
                 std::memory_order_relaxed);
             break;
 
+        case kDuckingTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+
+        case kDuckingNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
+
         case kDuckingFeedbackId:
             // 0-120%
             params.feedback.store(
@@ -131,9 +147,9 @@ inline void handleDuckingParamChange(
             break;
 
         case kDuckingMixId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.dryWet.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
 
@@ -265,6 +281,21 @@ inline void registerDuckingParams(Steinberg::Vst::ParameterContainer& parameters
         0,
         STR16("Dly")
     );
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Ducking Time Mode"), kDuckingTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("Ducking Note Value"), kDuckingNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Feedback: 0-120%
     parameters.addParameter(
@@ -416,6 +447,8 @@ inline void saveDuckingParams(
     streamer.writeFloat(params.sidechainFilterCutoff.load(std::memory_order_relaxed));
 
     streamer.writeFloat(params.delayTime.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeFloat(params.feedback.load(std::memory_order_relaxed));
     streamer.writeFloat(params.dryWet.load(std::memory_order_relaxed));
 }
@@ -459,6 +492,12 @@ inline void loadDuckingParams(
     if (streamer.readFloat(floatVal)) {
         params.delayTime.store(floatVal, std::memory_order_relaxed);
     }
+    if (streamer.readInt32(intVal)) {
+        params.timeMode.store(intVal, std::memory_order_relaxed);
+    }
+    if (streamer.readInt32(intVal)) {
+        params.noteValue.store(intVal, std::memory_order_relaxed);
+    }
     if (streamer.readFloat(floatVal)) {
         params.feedback.store(floatVal, std::memory_order_relaxed);
     }
@@ -494,10 +533,10 @@ inline void syncDuckingParamsToController(
             static_cast<double>((floatVal + 60.0f) / 60.0f));
     }
 
-    // Duck Amount: 0-100% -> normalized = val/100
+    // Duck Amount: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kDuckingDuckAmountId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 
     // Attack Time: 0.1-100ms -> normalized = (val-0.1)/99.9
@@ -541,16 +580,27 @@ inline void syncDuckingParamsToController(
             static_cast<double>((floatVal - 10.0f) / 4990.0f));
     }
 
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kDuckingTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kDuckingNoteValueId,
+            static_cast<double>(intVal) / 9.0);
+    }
+
     // Feedback: 0-120% -> normalized = val/120
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kDuckingFeedbackId,
             static_cast<double>(floatVal / 120.0f));
     }
 
-    // Dry/Wet: 0-100% -> normalized = val/100
+    // Dry/Wet: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kDuckingMixId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 }
 

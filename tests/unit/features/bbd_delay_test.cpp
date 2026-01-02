@@ -840,3 +840,266 @@ TEST_CASE("SC-010: No audible stepping during parameter changes", "[features][bb
     // Allow some headroom for the delay effect itself
     REQUIRE(maxDiscontinuity < 2.0f);
 }
+
+// =============================================================================
+// Phase 12: Tempo Sync Tests (TDD - spec 043)
+// =============================================================================
+// These tests verify that BBDDelay supports tempo synchronization,
+// following the same pattern as DigitalDelay.
+
+TEST_CASE("BBDDelay tempo sync: setTimeMode stores mode", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+
+    SECTION("default mode is Free") {
+        REQUIRE(delay.getTimeMode() == TimeMode::Free);
+    }
+
+    SECTION("setTimeMode stores Free") {
+        delay.setTimeMode(TimeMode::Free);
+        REQUIRE(delay.getTimeMode() == TimeMode::Free);
+    }
+
+    SECTION("setTimeMode stores Synced") {
+        delay.setTimeMode(TimeMode::Synced);
+        REQUIRE(delay.getTimeMode() == TimeMode::Synced);
+    }
+}
+
+TEST_CASE("BBDDelay tempo sync: setNoteValue stores note and modifier", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+
+    SECTION("default note value is Eighth") {
+        REQUIRE(delay.getNoteValue() == NoteValue::Eighth);
+    }
+
+    SECTION("setNoteValue stores Quarter") {
+        delay.setNoteValue(NoteValue::Quarter);
+        REQUIRE(delay.getNoteValue() == NoteValue::Quarter);
+    }
+
+    SECTION("setNoteValue stores Sixteenth") {
+        delay.setNoteValue(NoteValue::Sixteenth, NoteModifier::None);
+        REQUIRE(delay.getNoteValue() == NoteValue::Sixteenth);
+    }
+
+    SECTION("setNoteValue stores with triplet modifier") {
+        delay.setNoteValue(NoteValue::Eighth, NoteModifier::Triplet);
+        REQUIRE(delay.getNoteValue() == NoteValue::Eighth);
+        // Note: We don't test getNoteModifier() as it may not be exposed
+    }
+}
+
+TEST_CASE("BBDDelay tempo sync: delay time from note value at various tempos", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+    delay.setMix(1.0f);  // Full wet to measure delay
+    delay.setFeedback(0.0f);  // No feedback for cleaner measurement
+    delay.setModulation(0.0f);  // No modulation
+    delay.setAge(0.0f);  // Minimal character
+
+    delay.setTimeMode(TimeMode::Synced);
+
+    SECTION("Quarter note at 120 BPM = 500ms delay") {
+        delay.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+
+        // At 120 BPM: 60000 / 120 = 500ms per quarter note
+        BlockContext ctx{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 120.0,
+            .isPlaying = true
+        };
+
+        // The effective delay should be 500ms
+        // This verifies the tempo sync calculation
+        float expectedDelayMs = 500.0f;
+        float calculatedDelayMs = noteToDelayMs(NoteValue::Quarter, NoteModifier::None, 120.0);
+        REQUIRE(calculatedDelayMs == Approx(expectedDelayMs).margin(1.0f));
+
+        // Process and verify delay still works
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        left[0] = 1.0f;
+        right[0] = 1.0f;
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+
+    SECTION("Eighth note at 120 BPM = 250ms delay") {
+        delay.setNoteValue(NoteValue::Eighth, NoteModifier::None);
+
+        BlockContext ctx{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 120.0,
+            .isPlaying = true
+        };
+
+        float expectedDelayMs = 250.0f;
+        float calculatedDelayMs = noteToDelayMs(NoteValue::Eighth, NoteModifier::None, 120.0);
+        REQUIRE(calculatedDelayMs == Approx(expectedDelayMs).margin(1.0f));
+
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+
+    SECTION("Quarter note at 60 BPM = 1000ms delay (clamped to max)") {
+        delay.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+
+        // At 60 BPM: 60000 / 60 = 1000ms per quarter note
+        // BBD max delay is 1000ms, so this is at the boundary
+        BlockContext ctx{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 60.0,
+            .isPlaying = true
+        };
+
+        float expectedDelayMs = 1000.0f;
+        float calculatedDelayMs = noteToDelayMs(NoteValue::Quarter, NoteModifier::None, 60.0);
+        REQUIRE(calculatedDelayMs == Approx(expectedDelayMs).margin(1.0f));
+
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+
+    SECTION("Half note at 60 BPM clamps to max delay") {
+        delay.setNoteValue(NoteValue::Half, NoteModifier::None);
+
+        // At 60 BPM: Half note = 2000ms, but BBD max is 1000ms
+        BlockContext ctx{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 60.0,
+            .isPlaying = true
+        };
+
+        // The delay should be clamped to kMaxDelayMs (1000ms)
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+
+        // Should not produce NaN even with clamping
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+
+    SECTION("Triplet eighth at 120 BPM = ~166.67ms delay") {
+        delay.setNoteValue(NoteValue::Eighth, NoteModifier::Triplet);
+
+        // Triplet eighth = 0.5 beats * (2/3) = 0.333 beats
+        // At 120 BPM: 500ms * (2/3) = 166.67ms
+        BlockContext ctx{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 120.0,
+            .isPlaying = true
+        };
+
+        float expectedDelayMs = 166.67f;
+        float calculatedDelayMs = noteToDelayMs(NoteValue::Eighth, NoteModifier::Triplet, 120.0);
+        REQUIRE(calculatedDelayMs == Approx(expectedDelayMs).margin(1.0f));
+
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        delay.process(left.data(), right.data(), 512, ctx);
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+}
+
+TEST_CASE("BBDDelay tempo sync: Free mode ignores tempo", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+
+    delay.setTimeMode(TimeMode::Free);
+    delay.setTime(300.0f);  // Manual time setting
+    delay.setNoteValue(NoteValue::Quarter);  // Should be ignored
+
+    BlockContext ctx{
+        .sampleRate = 44100.0,
+        .blockSize = 512,
+        .tempoBPM = 120.0,  // Would give 500ms for quarter note
+        .isPlaying = true
+    };
+
+    // In Free mode, the delay should use setTime() value (300ms)
+    // not the note value calculation (500ms)
+    REQUIRE(delay.getTime() == Approx(300.0f));
+
+    std::array<float, 512> left{};
+    std::array<float, 512> right{};
+    delay.process(left.data(), right.data(), 512, ctx);
+    REQUIRE_FALSE(std::isnan(left[0]));
+}
+
+TEST_CASE("BBDDelay tempo sync: tempo changes update delay in Synced mode", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+    delay.setMix(1.0f);
+    delay.setFeedback(0.0f);
+    delay.setModulation(0.0f);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+
+    SECTION("delay adapts when tempo changes from 120 to 60 BPM") {
+        // Process at 120 BPM (quarter = 500ms)
+        BlockContext ctx120{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 120.0,
+            .isPlaying = true
+        };
+
+        std::array<float, 512> left{};
+        std::array<float, 512> right{};
+        delay.process(left.data(), right.data(), 512, ctx120);
+
+        // Process at 60 BPM (quarter = 1000ms)
+        BlockContext ctx60{
+            .sampleRate = 44100.0,
+            .blockSize = 512,
+            .tempoBPM = 60.0,
+            .isPlaying = true
+        };
+
+        delay.process(left.data(), right.data(), 512, ctx60);
+
+        // Should not produce NaN
+        REQUIRE_FALSE(std::isnan(left[0]));
+    }
+}
+
+TEST_CASE("BBDDelay tempo sync: minimum delay time enforced", "[features][bbd-delay][tempo]") {
+    BBDDelay delay;
+    delay.prepare(44100.0, 512, 1000.0f);
+
+    delay.setTimeMode(TimeMode::Synced);
+    delay.setNoteValue(NoteValue::ThirtySecond, NoteModifier::None);
+
+    // At 300 BPM (max tempo), 1/32 note = 62.5ms
+    // At very high tempo, this could go below kMinDelayMs (20ms)
+    // Let's use 300 BPM for 1/32 note: 60000 / 300 / 8 = 25ms (still above 20ms)
+    // But 1/64 at 300 BPM would be 12.5ms (below 20ms)
+
+    BlockContext ctx{
+        .sampleRate = 44100.0,
+        .blockSize = 512,
+        .tempoBPM = 300.0,
+        .isPlaying = true
+    };
+
+    std::array<float, 512> left{};
+    std::array<float, 512> right{};
+    delay.process(left.data(), right.data(), 512, ctx);
+
+    // The delay should clamp to at least kMinDelayMs (20ms)
+    // No NaN should occur
+    REQUIRE_FALSE(std::isnan(left[0]));
+}

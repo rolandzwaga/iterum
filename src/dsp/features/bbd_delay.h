@@ -32,6 +32,7 @@
 
 #include "dsp/core/block_context.h"
 #include "dsp/core/db_utils.h"
+#include "dsp/core/note_value.h"
 #include "dsp/primitives/lfo.h"
 #include "dsp/primitives/smoother.h"
 #include "dsp/systems/character_processor.h"
@@ -337,22 +338,76 @@ public:
     }
 
     // =========================================================================
+    // Tempo Sync Control (spec 043)
+    // =========================================================================
+
+    /// @brief Set time mode (Free or Synced)
+    /// @param mode TimeMode::Free uses setTime(), TimeMode::Synced uses tempo
+    void setTimeMode(TimeMode mode) noexcept {
+        timeMode_ = mode;
+    }
+
+    /// @brief Get current time mode
+    [[nodiscard]] TimeMode getTimeMode() const noexcept {
+        return timeMode_;
+    }
+
+    /// @brief Set note value for tempo sync
+    /// @param note Note value (Quarter, Eighth, etc.)
+    /// @param modifier Optional modifier (None, Triplet, Dotted)
+    void setNoteValue(NoteValue note, NoteModifier modifier = NoteModifier::None) noexcept {
+        noteValue_ = note;
+        noteModifier_ = modifier;
+    }
+
+    /// @brief Get current note value
+    [[nodiscard]] NoteValue getNoteValue() const noexcept {
+        return noteValue_;
+    }
+
+    // =========================================================================
     // Processing
     // =========================================================================
 
-    /// @brief Process stereo audio in-place
+    /// @brief Process stereo audio in-place (without tempo sync)
     /// @param left Left channel buffer (modified in-place)
     /// @param right Right channel buffer (modified in-place)
     /// @param numSamples Number of samples per channel
     /// @pre prepare() has been called
     /// @note noexcept, allocation-free (FR-039, FR-040)
     void process(float* left, float* right, size_t numSamples) noexcept {
+        // Create default BlockContext and delegate
+        BlockContext ctx{
+            .sampleRate = sampleRate_,
+            .blockSize = numSamples,
+            .tempoBPM = 120.0,  // Default tempo when not provided
+            .isPlaying = true
+        };
+        process(left, right, numSamples, ctx);
+    }
+
+    /// @brief Process stereo audio in-place with tempo sync
+    /// @param left Left channel buffer (modified in-place)
+    /// @param right Right channel buffer (modified in-place)
+    /// @param numSamples Number of samples per channel
+    /// @param ctx Block context with tempo information
+    /// @pre prepare() has been called
+    /// @note noexcept, allocation-free (FR-039, FR-040)
+    void process(float* left, float* right, size_t numSamples, const BlockContext& ctx) noexcept {
         if (!prepared_ || numSamples == 0) return;
 
-        // Create default BlockContext for DelayEngine
-        BlockContext ctx;
-        ctx.sampleRate = sampleRate_;
-        ctx.blockSize = numSamples;
+        // Calculate effective delay time based on time mode
+        float effectiveDelayMs = delayTimeMs_;
+        if (timeMode_ == TimeMode::Synced && ctx.tempoBPM > 0.0) {
+            // Calculate delay from note value and tempo
+            effectiveDelayMs = noteToDelayMs(noteValue_, noteModifier_, ctx.tempoBPM);
+            // Clamp to valid range
+            effectiveDelayMs = std::clamp(effectiveDelayMs, kMinDelayMs, maxDelayMs_);
+            // Update the smoother target for smooth transition
+            timeSmoother_.setTarget(effectiveDelayMs);
+            // Update bandwidth for the new delay time
+            updateBandwidth();
+        }
 
         // Store dry signal for mixing later
         // We use a simple approach: store first/last sample for approximate mixing
@@ -613,6 +668,11 @@ private:
     float age_ = kDefaultAge;                ///< Age/degradation (FR-019)
     float mix_ = kDefaultMix;                ///< Dry/wet mix (FR-036)
     BBDChipModel era_ = BBDChipModel::MN3005; ///< Chip model (FR-029)
+
+    // Tempo sync state (spec 043)
+    TimeMode timeMode_ = TimeMode::Free;     ///< Free (ms) or Synced (tempo)
+    NoteValue noteValue_ = NoteValue::Eighth; ///< Base note value
+    NoteModifier noteModifier_ = NoteModifier::None; ///< Note modifier
 
     // Smoothers
     OnePoleSmoother timeSmoother_;

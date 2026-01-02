@@ -26,6 +26,8 @@ namespace Iterum {
 // ==============================================================================
 
 struct MultiTapParams {
+    std::atomic<int> timeMode{0};               // 0=Free, 1=Synced (spec 043)
+    std::atomic<int> noteValue{4};              // 0-9 (note value dropdown) (spec 043)
     std::atomic<int> timingPattern{2};          // 0-19 (pattern presets)
     std::atomic<int> spatialPattern{2};         // 0-6 (spatial presets)
     std::atomic<int> tapCount{4};               // 2-16 taps
@@ -35,7 +37,7 @@ struct MultiTapParams {
     std::atomic<float> feedbackLPCutoff{20000.0f};  // 20-20000Hz
     std::atomic<float> feedbackHPCutoff{20.0f};     // 20-20000Hz
     std::atomic<float> morphTime{500.0f};       // 50-2000ms
-    std::atomic<float> dryWet{50.0f};           // 0-100%
+    std::atomic<float> dryWet{0.5f};            // 0-1 (dry/wet mix)
 };
 
 // ==============================================================================
@@ -50,6 +52,18 @@ inline void handleMultiTapParamChange(
     using namespace Steinberg;
 
     switch (id) {
+        case kMultiTapTimeModeId:
+            // 0=Free, 1=Synced
+            params.timeMode.store(
+                normalizedValue >= 0.5 ? 1 : 0,
+                std::memory_order_relaxed);
+            break;
+        case kMultiTapNoteValueId:
+            // 0-9 (note values)
+            params.noteValue.store(
+                static_cast<int>(normalizedValue * 9.0 + 0.5),
+                std::memory_order_relaxed);
+            break;
         case kMultiTapTimingPatternId:
             // 0-19
             params.timingPattern.store(
@@ -105,9 +119,9 @@ inline void handleMultiTapParamChange(
                 std::memory_order_relaxed);
             break;
         case kMultiTapMixId:
-            // 0-100%
+            // 0-1 (passthrough)
             params.dryWet.store(
-                static_cast<float>(normalizedValue * 100.0),
+                static_cast<float>(normalizedValue),
                 std::memory_order_relaxed);
             break;
     }
@@ -120,6 +134,21 @@ inline void handleMultiTapParamChange(
 inline void registerMultiTapParams(Steinberg::Vst::ParameterContainer& parameters) {
     using namespace Steinberg;
     using namespace Steinberg::Vst;
+
+    // Time Mode (Free/Synced) - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("MultiTap Time Mode"), kMultiTapTimeModeId,
+        0,  // default: Free (index 0)
+        {STR16("Free"), STR16("Synced")}
+    ));
+
+    // Note Value - spec 043
+    parameters.addParameter(createDropdownParameterWithDefault(
+        STR16("MultiTap Note Value"), kMultiTapNoteValueId,
+        4,  // default: 1/8 (index 4)
+        {STR16("1/32"), STR16("1/16T"), STR16("1/16"), STR16("1/8T"), STR16("1/8"),
+         STR16("1/4T"), STR16("1/4"), STR16("1/2T"), STR16("1/2"), STR16("1/1")}
+    ));
 
     // Timing Pattern (20 patterns) - MUST use StringListParameter
     parameters.addParameter(createDropdownParameterWithDefault(
@@ -300,6 +329,8 @@ inline Steinberg::tresult formatMultiTapParam(
 // ==============================================================================
 
 inline void saveMultiTapParams(const MultiTapParams& params, Steinberg::IBStreamer& streamer) {
+    streamer.writeInt32(params.timeMode.load(std::memory_order_relaxed));
+    streamer.writeInt32(params.noteValue.load(std::memory_order_relaxed));
     streamer.writeInt32(params.timingPattern.load(std::memory_order_relaxed));
     streamer.writeInt32(params.spatialPattern.load(std::memory_order_relaxed));
     streamer.writeInt32(params.tapCount.load(std::memory_order_relaxed));
@@ -315,6 +346,12 @@ inline void saveMultiTapParams(const MultiTapParams& params, Steinberg::IBStream
 inline void loadMultiTapParams(MultiTapParams& params, Steinberg::IBStreamer& streamer) {
     float floatVal = 0.0f;
     Steinberg::int32 intVal = 0;
+
+    streamer.readInt32(intVal);
+    params.timeMode.store(intVal, std::memory_order_relaxed);
+
+    streamer.readInt32(intVal);
+    params.noteValue.store(intVal, std::memory_order_relaxed);
 
     streamer.readInt32(intVal);
     params.timingPattern.store(intVal, std::memory_order_relaxed);
@@ -360,6 +397,17 @@ inline void syncMultiTapParamsToController(
 
     int32 intVal = 0;
     float floatVal = 0.0f;
+
+    // Time Mode: 0-1 -> normalized = val
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kMultiTapTimeModeId, intVal != 0 ? 1.0 : 0.0);
+    }
+
+    // Note Value: 0-9 -> normalized = val/9
+    if (streamer.readInt32(intVal)) {
+        controller.setParamNormalized(kMultiTapNoteValueId,
+            static_cast<double>(intVal) / 9.0);
+    }
 
     // Timing Pattern: 0-19 -> normalized = val/19
     if (streamer.readInt32(intVal)) {
@@ -415,10 +463,10 @@ inline void syncMultiTapParamsToController(
             static_cast<double>((floatVal - 50.0f) / 1950.0f));
     }
 
-    // Dry/Wet: 0-100 -> normalized = val/100
+    // Dry/Wet: 0-1 (already normalized)
     if (streamer.readFloat(floatVal)) {
         controller.setParamNormalized(kMultiTapMixId,
-            static_cast<double>(floatVal / 100.0f));
+            static_cast<double>(floatVal));
     }
 }
 

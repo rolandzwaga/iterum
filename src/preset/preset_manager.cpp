@@ -183,7 +183,10 @@ bool PresetManager::loadPreset(const PresetInfo& preset) {
     if (useLoadProvider) {
         // Use PresetFile to parse the preset and extract component state
         Steinberg::Vst::PresetFile presetFile(stream);
-        if (presetFile.readChunkList() && presetFile.seekToComponentState()) {
+        bool chunkListOk = presetFile.readChunkList();
+        bool seekOk = chunkListOk && presetFile.seekToComponentState();
+
+        if (seekOk) {
             // Get the entry for component state chunk
             const auto* entry = presetFile.getEntry(Steinberg::Vst::kComponentState);
             if (entry) {
@@ -191,11 +194,16 @@ bool PresetManager::loadPreset(const PresetInfo& preset) {
                 auto componentStream = Steinberg::owned(
                     new Steinberg::Vst::ReadOnlyBStream(stream, entry->offset, entry->size));
                 success = loadProvider_(componentStream);
+                if (!success) {
+                    lastError_ = "Load provider failed to apply preset state";
+                }
             } else {
-                lastError_ = "Preset file missing component state";
+                lastError_ = "Preset file missing component state chunk";
             }
+        } else if (!chunkListOk) {
+            lastError_ = "Failed to read preset chunk list";
         } else {
-            lastError_ = "Failed to parse preset file structure";
+            lastError_ = "Failed to seek to component state";
         }
     } else {
         // Standard VST3 loading with processor access
