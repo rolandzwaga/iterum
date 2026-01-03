@@ -12,7 +12,7 @@
 
 ## Overview
 
-Iterum aims to be a professional-grade delay plugin offering 11 unique delay algorithms, from classic tape and analog emulations to modern granular and spectral processing. Built with the Steinberg VST3 SDK and VSTGUI, it delivers high-quality audio processing with a focus on real-time performance and creative flexibility.
+Iterum is a professional-grade delay plugin offering 11 unique delay algorithms, from classic tape and analog emulations to modern granular and spectral processing. Built with the Steinberg VST3 SDK and VSTGUI, it delivers high-quality audio processing with a focus on real-time performance and creative flexibility.
 
 ## Features
 
@@ -44,9 +44,11 @@ Iterum aims to be a professional-grade delay plugin offering 11 unique delay alg
 
 Download the latest release from the [Releases](https://github.com/rolandzwaga/iterum/releases) page.
 
-- **Windows**: Copy `Iterum.vst3` to `C:\Program Files\Common Files\VST3\`
-- **macOS**: Copy `Iterum.vst3` to `/Library/Audio/Plug-Ins/VST3/` and `Iterum.component` to `/Library/Audio/Plug-Ins/Components/`
-- **Linux**: Copy `Iterum.vst3` to `~/.vst3/` or `/usr/lib/vst3/`
+| Platform | Installer | Install Location |
+|----------|-----------|------------------|
+| **Windows** | `Iterum-x.x.x-Windows-x64.exe` | Installs to `C:\Program Files\Common Files\VST3\` |
+| **macOS** | `Iterum-x.x.x-macOS.pkg` | Installs VST3 to `/Library/Audio/Plug-Ins/VST3/` and AU to `/Library/Audio/Plug-Ins/Components/` |
+| **Linux** | `Iterum-x.x.x-Linux-x64.tar.gz` | Extract and copy `Iterum.vst3` to `~/.vst3/` or `/usr/lib/vst3/` |
 
 ### Building from Source
 
@@ -63,25 +65,40 @@ Download the latest release from the [Releases](https://github.com/rolandzwaga/i
 git clone --recursive https://github.com/rolandzwaga/iterum.git
 cd iterum
 
-# Configure
-cmake --preset windows-x64-release   # Windows
-cmake --preset macos-release         # macOS
-cmake --preset linux-release         # Linux
+# Configure and build (choose your platform)
+cmake --preset windows-x64-release && cmake --build --preset windows-x64-release
+cmake --preset macos-release && cmake --build --preset macos-release
+cmake --preset linux-release && cmake --build --preset linux-release
 
-# Build
-cmake --build --preset windows-x64-release
-cmake --build --preset macos-release
-cmake --build --preset linux-release
+# Run tests
+ctest --preset windows-x64-release
+ctest --preset macos-release
+ctest --preset linux-release
 ```
 
-The built plugin will be in `build/<preset>/VST3/Release/`.
+The built plugin will be in `build/VST3/Release/Iterum.vst3`.
+
+## Project Structure
+
+This repository is part of the Krate Audio monorepo:
+
+```
+dsp/                    # Shared KrateDSP library (reusable across plugins)
+├── include/krate/dsp/  # Public DSP headers
+└── tests/              # DSP unit tests
+
+plugins/iterum/         # Iterum plugin
+├── src/                # Plugin source code
+├── tests/              # Plugin tests
+└── resources/          # UI, presets, installers
+```
 
 ## Technical Highlights
 
 - **Real-Time Safe** - No allocations in audio thread, lock-free parameter updates
 - **Layered DSP Architecture** - 5-layer compositional design for maintainability
 - **Equal-Power Crossfades** - Smooth transitions without volume dips
-- **Comprehensive Testing** - 1500+ unit tests with approval testing
+- **Comprehensive Testing** - 1600+ unit tests with approval testing
 
 ## License
 
