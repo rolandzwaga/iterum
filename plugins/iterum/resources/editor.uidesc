@@ -240,7 +240,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="GranularDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="GranularDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="130, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="130, 22" control-tag="GranularTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="130, 22" control-tag="GranularTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="GranularNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="140, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -259,11 +259,11 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="180, 28" size="80, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="GranularPitch" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Envelope" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="GranularEnvelopeType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 91" size="120, 22" control-tag="GranularEnvelopeType" style="horizontal" segment-names="Hann,Trapezoid,Sine,Blackman" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="140, 73" size="120, 16" title="Jitter" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="140, 91" size="120, 20" control-tag="GranularJitter" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 118" size="120, 16" title="Pitch Quant" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 136" size="120, 22" control-tag="GranularPitchQuant" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 136" size="120, 22" control-tag="GranularPitchQuant" style="horizontal" segment-names="Off,Semi,Oct,5th,Scale" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
         </view>
 
         <!-- Group 3: SPRAY & RANDOMIZATION -->
@@ -297,7 +297,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="SpectralBaseDelayLabel" origin="10, 28" size="120, 16" title="Base Delay" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="SpectralBaseDelay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="130, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="130, 22" control-tag="SpectralTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="130, 22" control-tag="SpectralTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="SpectralNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="140, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -310,13 +310,13 @@ by functionality. Group order: Primary controls first, specialized later.
         <view class="CViewContainer" origin="300, 30" size="270, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SPECTRAL ANALYSIS" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="120, 16" title="FFT Size" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 46" size="120, 22" control-tag="SpectralFFTSize" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 46" size="120, 22" control-tag="SpectralFFTSize" style="horizontal" segment-names="512,1024,2048,4096" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="140, 28" size="120, 16" title="Direction" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="120, 22" control-tag="SpectralSpreadDirection" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="120, 22" control-tag="SpectralSpreadDirection" style="horizontal" segment-names="Lo→Hi,Hi→Lo,Center" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 73" size="115, 16" title="Spread" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 91" size="115, 20" control-tag="SpectralSpread" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="135, 73" size="120, 16" title="Curve" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="135, 91" size="120, 22" control-tag="SpectralSpreadCurve" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="135, 91" size="120, 22" control-tag="SpectralSpreadCurve" style="horizontal" segment-names="Linear,Log" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
         </view>
 
         <!-- Group 3: SPECTRAL CHARACTER -->
@@ -344,7 +344,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="ShimmerDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="ShimmerDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="ShimmerTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="ShimmerTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="ShimmerNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -447,7 +447,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="BBDDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="BBDDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="BBDTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="BBDTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="BBDNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="125, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -462,7 +462,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="10, 28" size="120, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="BBDAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="120, 16" title="Era" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="120, 22" control-tag="BBDEra" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="120, 22" control-tag="BBDEra" style="horizontal" segment-names="MN3005,MN3007,MN3205,SAD1024" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
         </view>
 
         <!-- Group 3: MODULATION -->
@@ -486,7 +486,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="DigitalDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="DigitalDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="DigitalTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="DigitalTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="DigitalNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -499,11 +499,11 @@ by functionality. Group order: Primary controls first, specialized later.
         <view class="CViewContainer" origin="300, 30" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="CHARACTER" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="75, 16" title="Era" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 46" size="75, 22" control-tag="DigitalEra" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 46" size="75, 22" control-tag="DigitalEra" style="horizontal" segment-names="Pristine,80s,Lo-Fi" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" control-tag="DigitalAgeLabel" origin="95, 28" size="75, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="DigitalAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="180, 28" size="80, 16" title="Limiter" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="180, 46" size="80, 22" control-tag="DigitalLimiterCharacter" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="180, 46" size="80, 22" control-tag="DigitalLimiterCharacter" style="horizontal" segment-names="Soft,Medium,Hard" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
         </view>
 
         <!-- Group 3: MODULATION -->
@@ -536,7 +536,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="PingPongDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="PingPongDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="PingPongTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="PingPongTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="PingPongNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
@@ -588,9 +588,9 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="95, 28" size="75, 16" title="Crossfade" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="ReverseCrossfade" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="180, 28" size="40, 16" title="Play" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="180, 46" size="80, 22" control-tag="ReversePlaybackMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="180, 46" size="80, 22" control-tag="ReversePlaybackMode" style="horizontal" segment-names="Full,Alt,Random" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 73" size="60, 16" title="Sync" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 89" size="60, 22" control-tag="ReverseTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 89" size="60, 22" control-tag="ReverseTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="80, 73" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="80, 89" size="60, 22" control-tag="ReverseNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
         </view>
@@ -601,7 +601,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="10, 28" size="50, 16" title="Enable" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="60, 28" size="40, 20" control-tag="ReverseFilterEnabled" title="" font="value-font" font-color="text"/>
             <view class="CTextLabel" origin="110, 28" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="170, 28" size="90, 22" control-tag="ReverseFilterType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="170, 28" size="90, 22" control-tag="ReverseFilterType" style="horizontal" segment-names="LP,HP,BP" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 55" size="80, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="90, 55" size="170, 20" control-tag="ReverseFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
@@ -617,7 +617,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="MultiTapBaseTimeLabel" origin="10, 28" size="120, 16" title="Base Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="MultiTapBaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="MultiTapTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="MultiTapTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="MultiTapNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="130, 16" title="Internal Tempo" font="label-font" font-color="text-dim" transparent="true"/>
@@ -683,7 +683,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="FreezeDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="FreezeDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="140, 46" size="60, 22" control-tag="FreezeTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="140, 46" size="60, 22" control-tag="FreezeTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="210, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="210, 46" size="60, 22" control-tag="FreezeNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
@@ -711,7 +711,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="10, 73" size="50, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="60, 73" size="40, 20" control-tag="FreezeFilterEnabled" title="" font="value-font" font-color="text"/>
             <view class="CTextLabel" origin="110, 73" size="60, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="170, 73" size="90, 22" control-tag="FreezeFilterType" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="170, 73" size="90, 22" control-tag="FreezeFilterType" style="horizontal" segment-names="LP,HP,BP" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="10, 98" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="70, 98" size="190, 18" control-tag="FreezeFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
@@ -738,7 +738,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="190, 73" size="80, 16" title="Hold" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="190, 91" size="80, 20" control-tag="DuckingHoldTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 118" size="80, 16" title="Target" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="10, 136" size="120, 22" control-tag="DuckingDuckTarget" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="10, 136" size="120, 22" control-tag="DuckingDuckTarget" style="horizontal" segment-names="Output,Feedback,Both" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
         </view>
 
         <!-- Group 2: DELAY -->
@@ -747,7 +747,7 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" control-tag="DuckingDelayTimeLabel" origin="10, 28" size="100, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSlider" origin="10, 46" size="100, 20" control-tag="DuckingDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="120, 28" size="60, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
-            <view class="COptionMenu" origin="120, 46" size="60, 22" control-tag="DuckingTimeMode" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
+            <view class="CSegmentButton" origin="120, 46" size="60, 22" control-tag="DuckingTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" font-color="text" frame-color="border"/>
             <view class="CTextLabel" origin="190, 28" size="60, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="190, 46" size="70, 22" control-tag="DuckingNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="10, 73" size="110, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
