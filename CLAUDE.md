@@ -46,8 +46,8 @@ For Edit/Glob/Grep/Read tools: Use Windows backslash paths (`C:\path\file.txt`).
 
 After ANY code changes:
 1. Build: `cmake --build build --config Release --target <target>`
-2. Check for compilation errors
-3. Fix errors BEFORE running tests
+2. Check for compilation errors and warnings
+3. Fix errors and warnings BEFORE running tests
 4. Only then run tests
 
 If tests don't appear/run, the FIRST action is to check build output for errors, not blame CMake cache.
