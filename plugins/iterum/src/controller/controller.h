@@ -168,6 +168,18 @@ private:
     Steinberg::IPtr<Steinberg::FObject> freezeDelayTimeVisibilityController_;
     Steinberg::IPtr<Steinberg::FObject> duckingDelayTimeVisibilityController_;
 
+    // NoteValue visibility controllers (show note value when synced)
+    Steinberg::IPtr<Steinberg::FObject> granularNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> spectralNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> shimmerNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> bbdNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> digitalNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> pingPongNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> reverseNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> multitapNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> freezeNoteValueVisibilityController_;
+    Steinberg::IPtr<Steinberg::FObject> duckingNoteValueVisibilityController_;
+
     // ==========================================================================
     // Preset Browser (Spec 042)
     // ==========================================================================

@@ -962,6 +962,50 @@ void Controller::didOpen(VSTGUI::VST3Editor* editor) {
                     &activeEditor_, duckingTimeMode, {9910, kDuckingDelayTimeId}, 0.5f, true);
             }
 
+            // Create NoteValue visibility controllers for all 10 delay modes
+            // Show note value label + control when time mode is "Synced" (>= 0.5)
+            // NOTE: showWhenBelow = false means visible when value >= threshold
+            if (auto* granularTimeMode = getParameterObject(kGranularTimeModeId)) {
+                granularNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, granularTimeMode, {9920, kGranularNoteValueId}, 0.5f, false);
+            }
+            if (auto* spectralTimeMode = getParameterObject(kSpectralTimeModeId)) {
+                spectralNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, spectralTimeMode, {9921, kSpectralNoteValueId}, 0.5f, false);
+            }
+            if (auto* shimmerTimeMode = getParameterObject(kShimmerTimeModeId)) {
+                shimmerNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, shimmerTimeMode, {9922, kShimmerNoteValueId}, 0.5f, false);
+            }
+            if (auto* bbdTimeMode = getParameterObject(kBBDTimeModeId)) {
+                bbdNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, bbdTimeMode, {9923, kBBDNoteValueId}, 0.5f, false);
+            }
+            if (auto* digitalTimeMode = getParameterObject(kDigitalTimeModeId)) {
+                digitalNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, digitalTimeMode, {9924, kDigitalNoteValueId}, 0.5f, false);
+            }
+            if (auto* pingPongTimeMode = getParameterObject(kPingPongTimeModeId)) {
+                pingPongNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, pingPongTimeMode, {9925, kPingPongNoteValueId}, 0.5f, false);
+            }
+            if (auto* reverseTimeMode = getParameterObject(kReverseTimeModeId)) {
+                reverseNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, reverseTimeMode, {9926, kReverseNoteValueId}, 0.5f, false);
+            }
+            if (auto* multitapTimeMode = getParameterObject(kMultiTapTimeModeId)) {
+                multitapNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, multitapTimeMode, {9927, kMultiTapNoteValueId}, 0.5f, false);
+            }
+            if (auto* freezeTimeMode = getParameterObject(kFreezeTimeModeId)) {
+                freezeNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, freezeTimeMode, {9928, kFreezeNoteValueId}, 0.5f, false);
+            }
+            if (auto* duckingTimeMode2 = getParameterObject(kDuckingTimeModeId)) {
+                duckingNoteValueVisibilityController_ = new VisibilityController(
+                    &activeEditor_, duckingTimeMode2, {9929, kDuckingNoteValueId}, 0.5f, false);
+            }
+
             // =====================================================================
             // Dynamic Version Label
             // =====================================================================
@@ -1089,6 +1133,18 @@ void Controller::willClose(VSTGUI::VST3Editor* editor) {
     multitapBaseTimeVisibilityController_ = nullptr;
     freezeDelayTimeVisibilityController_ = nullptr;
     duckingDelayTimeVisibilityController_ = nullptr;
+
+    // NoteValue visibility controllers
+    granularNoteValueVisibilityController_ = nullptr;
+    spectralNoteValueVisibilityController_ = nullptr;
+    shimmerNoteValueVisibilityController_ = nullptr;
+    bbdNoteValueVisibilityController_ = nullptr;
+    digitalNoteValueVisibilityController_ = nullptr;
+    pingPongNoteValueVisibilityController_ = nullptr;
+    reverseNoteValueVisibilityController_ = nullptr;
+    multitapNoteValueVisibilityController_ = nullptr;
+    freezeNoteValueVisibilityController_ = nullptr;
+    duckingNoteValueVisibilityController_ = nullptr;
 
     // Preset browser view is owned by the frame and will be cleaned up automatically
     presetBrowserView_ = nullptr;

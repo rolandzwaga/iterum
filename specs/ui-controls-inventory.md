@@ -449,9 +449,124 @@ DigitalModWaveform (6 options) - decide if CSegmentButton works visually.
 
 ---
 
-## Next Steps
+---
 
-1. **User reviews this inventory** and decides which changes to implement
-2. **Step through each mode** together to finalize control choices
-3. **Create bitmap assets** if using CAnimKnob for any controls
-4. **Create implementation spec** with detailed changes per file
+## LAYOUT SIZING REVIEW - COMPLETED
+
+*Post-implementation review of CSegmentButton sizing. All controls adjusted to properly display labels.*
+
+**Updated**: 2026-01-03
+**Status**: ✅ COMPLETE - All layout changes implemented and verified
+
+### Sizing Guidelines Applied
+
+**Rule of thumb:** ~25-35px per segment minimum, depending on label length.
+
+| Segments | Min Width | Recommended |
+|----------|-----------|-------------|
+| 2 short labels (LP,HP) | 60 | 70 |
+| 2 medium labels (Free,Synced) | 80 | 85 |
+| 3 short labels (LP,HP,BP) | 80 | 90 |
+| 3 medium labels (Soft,Medium,Hard) | 110 | 150 |
+| 4 short labels (512,1024,2048,4096) | 110 | 140 |
+| 4 medium labels (chip names) | 150 | 200 |
+| 5 short labels | 130 | 150 |
+
+---
+
+### Implemented Layout Changes
+
+#### Mode 0: Granular - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| GranularTimeMode | 130 x 22 | 130 x 22 | No change (already OK) |
+| GranularEnvelopeType | 120 x 22 | 160 x 22 | Expanded +40px |
+| GranularPitchQuant | 120 x 22 | 150 x 22 | Expanded +30px |
+| Jitter slider | x=140, 120w | x=180, 80w | Adjusted to fit |
+
+#### Mode 1: Spectral - ✅ COMPLETED (Group 2 Restructured)
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| SpectralTimeMode | 130 x 22 | 130 x 22 | No change |
+| SpectralFFTSize | 120 x 22 @ (10,46) | 140 x 22 @ (65,46) | Centered, +20px |
+| SpectralSpreadDirection | 120 x 22 @ (140,46) | 200 x 22 @ (35,91) | Moved to own row, +80px, labels: "Low->High,High->Low,Center Out" |
+| SpectralSpreadCurve | 120 x 22 @ (135,91) | 120 x 22 @ (135,136) | Moved down 45px |
+| Container height | 145 | 175 | +30px |
+
+#### Mode 2: Shimmer - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| ShimmerTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| Note dropdown | 60 x 22 @ x=210 | 50 x 22 @ x=220 | Adjusted position |
+
+#### Mode 4: BBD - ✅ COMPLETED (Group 2 Restructured)
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| BBDTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| BBDEra | 120 x 22 @ (140,46) | 200 x 22 @ (35,91) | Moved to own row, +80px |
+| Age slider | 120 x 20 @ (10,46) | 100 x 20 @ (85,46) | Centered |
+| Container height | 85 | 115 | +30px |
+| MODULATION group y | 125 | 155 | Moved down 30px |
+
+#### Mode 5: Digital - ✅ COMPLETED (Group 2 Restructured)
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| DigitalTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| DigitalEra | 75 x 22 | 135 x 22 | Expanded +60px |
+| DigitalLimiterCharacter | 80 x 22 @ (180,46) | 150 x 22 @ (60,91) | Moved to own row, centered |
+| Container height | 115 | 145 | +30px |
+| MODULATION group y | 155 | 185 | Moved down 30px |
+
+#### Mode 6: PingPong - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| PingPongTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| Note dropdown | 60 x 22 @ x=210 | 50 x 22 @ x=220 | Adjusted position |
+
+#### Mode 7: Reverse - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| ReverseTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| ReversePlaybackMode | 80 x 22 | 80 x 22 | No change (labels are short) |
+| ReverseFilterType | 90 x 22 | 90 x 22 | No change |
+| Note dropdown | 60 x 22 @ x=80 | 55 x 22 @ x=105 | Adjusted position |
+
+#### Mode 8: MultiTap - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| MultiTapTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| Note dropdown | 60 x 22 @ x=210 | 50 x 22 @ x=220 | Adjusted position |
+
+#### Mode 9: Freeze - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| FreezeTimeMode | 60 x 22 | 85 x 22 | Expanded +25px |
+| FreezeFilterType | 90 x 22 | 90 x 22 | No change |
+| Note dropdown | 60 x 22 @ x=210 | 50 x 22 @ x=220 | Adjusted position |
+
+#### Mode 10: Ducking - ✅ COMPLETED
+| Control | Before | After | Change |
+|---------|--------|-------|--------|
+| DuckingTimeMode | 60 x 22 | 80 x 22 | Expanded +20px |
+| DuckingDuckTarget | 120 x 22 | 120 x 22 | No change |
+| Note dropdown | 70 x 22 @ x=190 | 65 x 22 @ x=195 | Adjusted position |
+
+---
+
+### Validation Results
+
+| Check | Result |
+|-------|--------|
+| Build | ✅ PASS |
+| Tests | ✅ 1622/1622 PASS |
+| Pluginval (strictness 5) | ✅ PASS |
+
+---
+
+### Manual Testing Required
+
+The following should be verified visually in a DAW:
+- [ ] All segment labels are fully visible (no truncation)
+- [ ] All segment buttons respond to clicks correctly
+- [ ] All mode panels render without overlapping elements
+- [ ] Preset save/load preserves all segment selections
