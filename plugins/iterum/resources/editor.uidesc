@@ -263,28 +263,35 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 175" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="GranularDelayTimeLabel" origin="10, 28" size="120, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="GranularDelayTimeLabel" origin="10, 28" size="60, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularDelayTime" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="GranularDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="130, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="140, 46" size="130, 22" control-tag="GranularTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="GranularNoteValueLabel" origin="10, 73" size="120, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="GranularNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="140, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 73" size="65, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularFeedback" origin="205, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 91" size="130, 20" control-tag="GranularFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 118" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 118" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularDryWet" origin="140, 118" size="130, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 136" size="260, 20" control-tag="GranularDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: GRAIN PARAMETERS -->
         <view class="CViewContainer" origin="300, 30" size="270, 210" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="GRAIN PARAMETERS" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="35, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularGrainSize" origin="45, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="GranularGrainSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Density" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="40, 16" title="Density" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularDensity" origin="135, 28" size="35, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="GranularDensity" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="80, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="40, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularPitch" origin="220, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="GranularPitch" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="85, 73" size="100, 16" title="Jitter" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
+            <view class="CTextLabel" origin="85, 73" size="50, 16" title="Jitter" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularJitter" origin="135, 73" size="50, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="85, 91" size="100, 20" control-tag="GranularJitter" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="35, 118" size="200, 16" title="Envelope" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="35, 136" size="200, 22" control-tag="GranularEnvelopeType" style="horizontal" segment-names="Hann,Trapezoid,Sine,Blackman" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -295,19 +302,25 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 3: SPRAY & RANDOMIZATION -->
         <view class="CViewContainer" origin="580, 30" size="270, 210" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SPRAY &amp; RANDOMIZATION" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="30, 16" title="Pitch" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularPitchSpray" origin="35, 28" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="55, 20" control-tag="GranularPitchSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="75, 28" size="60, 16" title="Position" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="75, 28" size="30, 16" title="Pos" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularPositionSpray" origin="100, 28" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="75, 46" size="55, 20" control-tag="GranularPositionSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Pan" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="25, 16" title="Pan" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularPanSpray" origin="165, 28" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="55, 20" control-tag="GranularPanSpray" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="205, 28" size="55, 16" title="Rev %" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="205, 28" size="30, 16" title="Rev" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularReverseProb" origin="230, 28" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="205, 46" size="55, 20" control-tag="GranularReverseProb" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="50, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 89" size="50, 22" control-tag="GranularFreeze" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="70, 73" size="60, 16" title="Texture" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="70, 73" size="30, 16" title="Tex" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularTexture" origin="95, 73" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="70, 89" size="55, 20" control-tag="GranularTexture" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="135, 73" size="60, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="135, 73" size="30, 16" title="Wid" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="GranularStereoWidth" origin="160, 73" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="135, 89" size="55, 20" control-tag="GranularStereoWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -320,15 +333,18 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX (spec 041: tempo sync) -->
         <view class="CViewContainer" origin="10, 30" size="280, 175" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="SpectralBaseDelayLabel" origin="10, 28" size="120, 16" title="Base Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="SpectralBaseDelayLabel" origin="10, 28" size="60, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralBaseDelay" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="SpectralBaseDelay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="140, 28" size="130, 16" title="Time Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="140, 46" size="130, 22" control-tag="SpectralTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="SpectralNoteValueLabel" origin="10, 73" size="120, 16" title="Note Value" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 91" size="120, 22" control-tag="SpectralNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="140, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 73" size="65, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralFeedback" origin="205, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 91" size="130, 20" control-tag="SpectralFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 118" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 118" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralDryWet" origin="140, 118" size="130, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 136" size="260, 20" control-tag="SpectralDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -339,7 +355,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CSegmentButton" origin="65, 46" size="140, 22" control-tag="SpectralFFTSize" style="horizontal" segment-names="512,1024,2048,4096" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" origin="35, 73" size="200, 16" title="Direction" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="35, 91" size="200, 22" control-tag="SpectralSpreadDirection" style="horizontal" segment-names="Low->High,High->Low,Center Out" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
-            <view class="CTextLabel" origin="10, 118" size="115, 16" title="Spread" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 118" size="55, 16" title="Spread" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralSpread" origin="65, 118" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 136" size="115, 20" control-tag="SpectralSpread" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="135, 118" size="120, 16" title="Curve" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="135, 136" size="120, 22" control-tag="SpectralSpreadCurve" style="horizontal" segment-names="Linear,Log" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -348,13 +365,16 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 3: SPECTRAL CHARACTER -->
         <view class="CViewContainer" origin="580, 30" size="270, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SPECTRAL CHARACTER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="FB Tilt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="FB Tilt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralFeedbackTilt" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="SpectralFeedbackTilt" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="120, 16" title="Diffusion" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Diffusion" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralDiffusion" origin="200, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="120, 20" control-tag="SpectralDiffusion" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="80, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 91" size="50, 22" control-tag="SpectralFreeze" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="100, 73" size="155, 16" title="Stereo Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="100, 73" size="75, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="SpectralStereoWidth" origin="175, 73" size="80, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="100, 91" size="155, 20" control-tag="SpectralStereoWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -367,39 +387,48 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="ShimmerDelayTimeLabel" origin="10, 28" size="115, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="ShimmerDelayTimeLabel" origin="10, 28" size="55, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerDelayTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="ShimmerDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="ShimmerTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="ShimmerNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="ShimmerNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="130, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="65, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerFeedback" origin="75, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="130, 20" control-tag="ShimmerFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="150, 73" size="120, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="150, 73" size="60, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerDryWet" origin="210, 73" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="150, 91" size="120, 20" control-tag="ShimmerDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: PITCH SHIFT -->
         <view class="CViewContainer" origin="300, 30" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="PITCH SHIFT" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Semitones" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="40, 16" title="Semi" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerPitchSemitones" origin="50, 28" size="35, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="ShimmerPitchSemitones" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Cents" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Cent" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerPitchCents" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="ShimmerPitchCents" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="80, 16" title="Shimmer" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="40, 16" title="Shim" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerShimmerMix" origin="220, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="ShimmerShimmerMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: DIFFUSION & FILTER -->
         <view class="CViewContainer" origin="300, 155" size="270, 120" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="DIFFUSION &amp; FILTER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Diff Amt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="35, 16" title="Amt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerDiffusionAmount" origin="45, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="ShimmerDiffusionAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerDiffusionSize" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="ShimmerDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="50, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="60, 73" size="40, 20" control-tag="ShimmerFilterEnabled" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="110, 73" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="110, 73" size="35, 16" title="Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ShimmerFilterCutoff" origin="145, 73" size="25, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="170, 73" size="90, 20" control-tag="ShimmerFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -412,24 +441,31 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 100" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeFeedback" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="TapeFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="65, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeMix" origin="205, 28" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="130, 20" control-tag="TapeMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: CHARACTER -->
         <view class="CViewContainer" origin="10, 140" size="280, 135" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="CHARACTER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="80, 16" title="Motor Spd" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="40, 16" title="Spd" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeMotorSpeed" origin="50, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="80, 20" control-tag="TapeMotorSpeed" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="100, 28" size="80, 16" title="Inertia" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="100, 28" size="40, 16" title="Iner" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeMotorInertia" origin="140, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="100, 46" size="80, 20" control-tag="TapeMotorInertia" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="190, 28" size="80, 16" title="Wear" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="190, 28" size="40, 16" title="Wear" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeWear" origin="230, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="190, 46" size="80, 20" control-tag="TapeWear" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="80, 16" title="Saturation" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="40, 16" title="Sat" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeSaturation" origin="50, 73" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="80, 20" control-tag="TapeSaturation" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="100, 73" size="80, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="100, 73" size="40, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeAge" origin="140, 73" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="100, 91" size="80, 20" control-tag="TapeAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -438,7 +474,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SPLICE" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="60, 16" title="Enable" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 46" size="50, 22" control-tag="TapeSpliceEnabled" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="80, 28" size="90, 16" title="Intensity" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="80, 28" size="50, 16" title="Intens" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="TapeSpliceIntensity" origin="130, 28" size="130, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="80, 46" size="180, 20" control-tag="TapeSpliceIntensity" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -470,22 +507,26 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="BBDDelayTimeLabel" origin="10, 28" size="115, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="BBDDelayTimeLabel" origin="10, 28" size="55, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDDelayTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="BBDDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="BBDTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="BBDNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="BBDNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="125, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDFeedback" origin="70, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="125, 20" control-tag="BBDFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="145, 73" size="125, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="145, 73" size="60, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDMix" origin="205, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="145, 91" size="125, 20" control-tag="BBDMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: CHARACTER -->
         <view class="CViewContainer" origin="300, 30" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="CHARACTER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="85, 28" size="100, 16" title="Age" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
+            <view class="CTextLabel" origin="85, 28" size="50, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDAge" origin="135, 28" size="50, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="85, 46" size="100, 20" control-tag="BBDAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="35, 73" size="200, 16" title="Era" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="35, 91" size="200, 22" control-tag="BBDEra" style="horizontal" segment-names="MN3005,MN3007,MN3205,SAD1024" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -494,9 +535,11 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 3: MODULATION -->
         <view class="CViewContainer" origin="300, 155" size="270, 85" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="MODULATION" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Depth" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDModulationDepth" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="BBDModulationDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="120, 16" title="Mod Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="BBDModulationRate" origin="200, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="120, 20" control-tag="BBDModulationRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -509,15 +552,18 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & SYNC -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; SYNC" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="DigitalDelayTimeLabel" origin="10, 28" size="115, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="DigitalDelayTimeLabel" origin="10, 28" size="55, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalDelayTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="DigitalDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="DigitalTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="DigitalNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="DigitalNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalFeedback" origin="70, 73" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="120, 20" control-tag="DigitalFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 73" size="130, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 73" size="65, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalMix" origin="205, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 91" size="130, 20" control-tag="DigitalMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -526,7 +572,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="CHARACTER" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="35, 28" size="200, 16" title="Era" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="35, 46" size="200, 22" control-tag="DigitalEra" style="horizontal" segment-names="Pristine,80s,Lo-Fi" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
-            <view class="CTextLabel" control-tag="DigitalAgeLabel" origin="85, 73" size="100, 16" title="Age" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
+            <view class="CTextLabel" control-tag="DigitalAgeLabel" origin="85, 73" size="50, 16" title="Age" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalAge" origin="135, 73" size="50, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="85, 91" size="100, 20" control-tag="DigitalAge" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="60, 118" size="150, 16" title="Limiter" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="60, 136" size="150, 22" control-tag="DigitalLimiterCharacter" style="horizontal" segment-names="Soft,Medium,Hard" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -535,9 +582,11 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 3: MODULATION -->
         <view class="CViewContainer" origin="300, 215" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="MODULATION" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Depth" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="35, 16" title="Dep" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalModDepth" origin="45, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="DigitalModDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalModRate" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="DigitalModRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="180, 28" size="80, 16" title="Wave" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="180, 46" size="80, 22" control-tag="DigitalModWaveform" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
@@ -546,7 +595,8 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 4: STEREO -->
         <view class="CViewContainer" origin="580, 30" size="270, 60" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="STEREO" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="80, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="40, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DigitalWidth" origin="50, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="90, 28" size="170, 20" control-tag="DigitalWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -559,15 +609,18 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & SYNC -->
         <view class="CViewContainer" origin="10, 30" size="280, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; SYNC" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="PingPongDelayTimeLabel" origin="10, 28" size="115, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="PingPongDelayTimeLabel" origin="10, 28" size="55, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongDelayTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="PingPongDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="PingPongTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="PingPongNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="PingPongNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongFeedback" origin="70, 73" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="120, 20" control-tag="PingPongFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 73" size="130, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 73" size="65, 16" title="Mix" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongMix" origin="205, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 91" size="130, 20" control-tag="PingPongMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -576,18 +629,22 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="STEREO" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="75, 16" title="L/R Ratio" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="10, 46" size="75, 22" control-tag="PingPongLRRatio" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Width" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Wid" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongWidth" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="PingPongWidth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="80, 16" title="Cross FB" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="40, 16" title="XFB" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongCrossFeedback" origin="220, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="PingPongCrossFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: MODULATION -->
         <view class="CViewContainer" origin="300, 155" size="270, 85" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="MODULATION" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Mod Depth" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Depth" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongModDepth" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="PingPongModDepth" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="120, 16" title="Mod Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="Rate" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="PingPongModRate" origin="200, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="120, 20" control-tag="PingPongModRate" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -600,16 +657,19 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME & MIX -->
         <view class="CViewContainer" origin="10, 30" size="280, 100" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ReverseFeedback" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="ReverseFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="65, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ReverseDryWet" origin="205, 28" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="130, 20" control-tag="ReverseDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: CHUNK -->
         <view class="CViewContainer" origin="300, 30" size="270, 170" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="CHUNK" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="ReverseChunkSizeLabel" origin="10, 28" size="90, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="ReverseChunkSizeLabel" origin="10, 28" size="45, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ReverseChunkSize" origin="55, 28" size="45, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="90, 20" control-tag="ReverseChunkSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="105, 28" size="85, 16" title="Sync" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="105, 46" size="85, 22" control-tag="ReverseTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -617,7 +677,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="COptionMenu" origin="195, 46" size="65, 22" control-tag="ReverseNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="35, 73" size="200, 16" title="Play" font="label-font" font-color="text-dim" transparent="true" text-alignment="center"/>
             <view class="CSegmentButton" origin="35, 91" size="200, 22" control-tag="ReversePlaybackMode" style="horizontal" segment-names="Full,Alternate,Random" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
-            <view class="CTextLabel" origin="10, 118" size="250, 16" title="Crossfade" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 118" size="125, 16" title="Crossfade" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ReverseCrossfade" origin="135, 118" size="125, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 136" size="250, 20" control-tag="ReverseCrossfade" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -628,7 +689,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CCheckBox" origin="60, 28" size="40, 20" control-tag="ReverseFilterEnabled" title="" font="value-font" font-color="text"/>
             <view class="CTextLabel" origin="75, 28" size="30, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="100, 28" size="160, 22" control-tag="ReverseFilterType" style="horizontal" segment-names="LP,HP,BP" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
-            <view class="CTextLabel" origin="10, 55" size="80, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 55" size="40, 16" title="Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="ReverseFilterCutoff" origin="50, 55" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="90, 55" size="170, 20" control-tag="ReverseFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
     </template>
@@ -640,13 +702,15 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 1: TIME -->
         <view class="CViewContainer" origin="10, 30" size="280, 100" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="MultiTapBaseTimeLabel" origin="10, 28" size="115, 16" title="Base Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="MultiTapBaseTimeLabel" origin="10, 28" size="55, 16" title="Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapBaseTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="MultiTapBaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="MultiTapTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="MultiTapNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="MultiTapNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="130, 16" title="Internal Tempo" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="65, 16" title="Int Tempo" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapTempo" origin="75, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 73" size="130, 20" control-tag="MultiTapTempo" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -657,32 +721,38 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="COptionMenu" origin="10, 46" size="80, 22" control-tag="MultiTapTimingPattern" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
             <view class="CTextLabel" origin="100, 28" size="80, 16" title="Spatial" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="100, 46" size="80, 22" control-tag="MultiTapSpatialPattern" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="190, 28" size="70, 16" title="Taps" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="190, 28" size="35, 16" title="Taps" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapTapCount" origin="225, 28" size="35, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="190, 46" size="70, 20" control-tag="MultiTapTapCount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: MIX -->
         <view class="CViewContainer" origin="10, 140" size="280, 85" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapFeedback" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="MultiTapFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="65, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapDryWet" origin="205, 28" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="130, 20" control-tag="MultiTapDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 4: FEEDBACK FILTERS -->
         <view class="CViewContainer" origin="300, 155" size="270, 85" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="FEEDBACK FILTERS" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="120, 16" title="LP Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="60, 16" title="LP Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapFeedbackLPCutoff" origin="70, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="120, 20" control-tag="MultiTapFeedbackLPCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="140, 28" size="120, 16" title="HP Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="140, 28" size="60, 16" title="HP Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapFeedbackHPCutoff" origin="200, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="140, 46" size="120, 20" control-tag="MultiTapFeedbackHPCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 5: MORPHING -->
         <view class="CViewContainer" origin="580, 30" size="270, 60" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="MORPHING" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="80, 16" title="Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="40, 16" title="Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="MultiTapMorphTime" origin="50, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="90, 28" size="170, 20" control-tag="MultiTapMorphTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -697,48 +767,58 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="FREEZE CONTROL" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="60, 16" title="Freeze" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 46" size="50, 22" control-tag="FreezeEnabled" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="80, 28" size="90, 16" title="Decay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="80, 28" size="45, 16" title="Decay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeDecay" origin="125, 28" size="45, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="80, 46" size="90, 20" control-tag="FreezeDecay" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="90, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="45, 16" title="Feedbk" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeFeedback" origin="225, 28" size="45, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="90, 20" control-tag="FreezeFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 2: TIME & MIX -->
         <view class="CViewContainer" origin="10, 140" size="280, 130" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="TIME &amp; MIX" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="FreezeDelayTimeLabel" origin="10, 28" size="115, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="FreezeDelayTimeLabel" origin="10, 28" size="55, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeDelayTime" origin="65, 28" size="60, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="115, 20" control-tag="FreezeDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="130, 28" size="85, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="130, 46" size="85, 22" control-tag="FreezeTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="FreezeNoteValueLabel" origin="220, 28" size="50, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="220, 46" size="50, 22" control-tag="FreezeNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="260, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeDryWet" origin="140, 73" size="130, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="260, 20" control-tag="FreezeDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 3: PITCH & SHIMMER -->
         <view class="CViewContainer" origin="300, 30" size="270, 115" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="PITCH &amp; SHIMMER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Semitones" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="40, 16" title="Semi" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezePitchSemitones" origin="50, 28" size="35, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="FreezePitchSemitones" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Cents" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Cent" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezePitchCents" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="FreezePitchCents" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="80, 16" title="Shimmer" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="40, 16" title="Shim" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeShimmerMix" origin="220, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="80, 20" control-tag="FreezeShimmerMix" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
         <!-- Group 4: DIFFUSION & FILTER -->
         <view class="CViewContainer" origin="300, 155" size="270, 120" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="DIFFUSION &amp; FILTER" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" origin="10, 28" size="75, 16" title="Diff Amt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 28" size="35, 16" title="Amt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeDiffusionAmount" origin="45, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="75, 20" control-tag="FreezeDiffusionAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="95, 28" size="75, 16" title="Diff Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="95, 28" size="35, 16" title="Size" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeDiffusionSize" origin="130, 28" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="95, 46" size="75, 20" control-tag="FreezeDiffusionSize" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 73" size="50, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="60, 73" size="40, 20" control-tag="FreezeFilterEnabled" title="" font="value-font" font-color="text"/>
             <view class="CTextLabel" origin="75, 73" size="30, 16" title="Type" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="100, 73" size="160, 22" control-tag="FreezeFilterType" style="horizontal" segment-names="LP,HP,BP" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
-            <view class="CTextLabel" origin="10, 98" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 98" size="30, 16" title="Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="FreezeFilterCutoff" origin="40, 98" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="70, 98" size="190, 18" control-tag="FreezeFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -753,15 +833,20 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="270, 18" title="DUCKER DYNAMICS" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="60, 16" title="Enable" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="10, 46" size="50, 22" control-tag="DuckingEnabled" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="80, 28" size="90, 16" title="Threshold" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="80, 28" size="45, 16" title="Thresh" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingThreshold" origin="125, 28" size="45, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="80, 46" size="90, 20" control-tag="DuckingThreshold" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="180, 28" size="90, 16" title="Amount" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="180, 28" size="45, 16" title="Amt" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingDuckAmount" origin="225, 28" size="45, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 46" size="90, 20" control-tag="DuckingDuckAmount" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="10, 73" size="80, 16" title="Attack" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="40, 16" title="Att" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingAttackTime" origin="50, 73" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="80, 20" control-tag="DuckingAttackTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="100, 73" size="80, 16" title="Release" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="100, 73" size="40, 16" title="Rel" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingReleaseTime" origin="140, 73" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="100, 91" size="80, 20" control-tag="DuckingReleaseTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="190, 73" size="80, 16" title="Hold" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="190, 73" size="40, 16" title="Hold" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingHoldTime" origin="230, 73" size="40, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="190, 91" size="80, 20" control-tag="DuckingHoldTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="10, 118" size="180, 16" title="Target" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="10, 136" size="180, 22" control-tag="DuckingDuckTarget" style="horizontal" segment-names="Output,Feedback,Both" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
@@ -770,15 +855,18 @@ by functionality. Group order: Primary controls first, specialized later.
         <!-- Group 2: DELAY -->
         <view class="CViewContainer" origin="300, 30" size="270, 145" background-color="section" transparent="false">
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="DELAY" font="section-font" font-color="accent" transparent="true"/>
-            <view class="CTextLabel" control-tag="DuckingDelayTimeLabel" origin="10, 28" size="95, 16" title="Delay Time" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" control-tag="DuckingDelayTimeLabel" origin="10, 28" size="45, 16" title="Delay" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingDelayTime" origin="55, 28" size="50, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 46" size="95, 20" control-tag="DuckingDelayTime" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
             <view class="CTextLabel" origin="110, 28" size="80, 16" title="Mode" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CSegmentButton" origin="110, 46" size="80, 22" control-tag="DuckingTimeMode" style="horizontal" segment-names="Free,Synced" selection-mode="kSingle" font="value-font" text-color="text" text-color-highlighted="text-light" frame-color="border" gradient="segment-bg" gradient-highlighted="segment-bg-selected"/>
             <view class="CTextLabel" control-tag="DuckingNoteValueLabel" origin="195, 28" size="65, 16" title="Note" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="COptionMenu" origin="195, 46" size="65, 22" control-tag="DuckingNoteValue" font="value-font" font-color="text" back-color="sidebar" frame-color="border" frame-width="1" style-round-rect="true" round-rect-radius="2" mouse-enabled="true" wants-focus="true" menu-popup-style="true"/>
-            <view class="CTextLabel" origin="10, 73" size="110, 16" title="Feedback" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="10, 73" size="55, 16" title="Feedbk" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingFeedback" origin="65, 73" size="55, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="10, 91" size="110, 20" control-tag="DuckingFeedback" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
-            <view class="CTextLabel" origin="130, 73" size="130, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="130, 73" size="65, 16" title="Dry/Wet" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingDryWet" origin="195, 73" size="65, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="130, 91" size="130, 20" control-tag="DuckingDryWet" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
@@ -787,7 +875,8 @@ by functionality. Group order: Primary controls first, specialized later.
             <view class="CTextLabel" origin="5, 5" size="260, 18" title="SIDECHAIN" font="section-font" font-color="accent" transparent="true"/>
             <view class="CTextLabel" origin="10, 28" size="60, 16" title="Filter" font="label-font" font-color="text-dim" transparent="true"/>
             <view class="CCheckBox" origin="70, 28" size="40, 20" control-tag="DuckingSidechainFilterEnabled" title="" font="value-font" font-color="text"/>
-            <view class="CTextLabel" origin="120, 28" size="60, 16" title="Cutoff" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CTextLabel" origin="120, 28" size="30, 16" title="Cut" font="label-font" font-color="text-dim" transparent="true"/>
+            <view class="CParamDisplay" control-tag="DuckingSidechainFilterCutoff" origin="150, 28" size="30, 16" font="value-font" font-color="text" back-color="~ TransparentCColor" frame-color="~ TransparentCColor" text-alignment="right" value-precision="0"/>
             <view class="CSlider" origin="180, 28" size="80, 20" control-tag="DuckingSidechainFilterCutoff" orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true" frame-color="border" back-color="slider-track" value-color="accent"/>
         </view>
 
