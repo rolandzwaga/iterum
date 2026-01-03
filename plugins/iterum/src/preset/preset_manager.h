@@ -48,9 +48,13 @@ public:
     /// Constructor
     /// @param processor VST3 processor component for state access
     /// @param controller VST3 edit controller for state sync
+    /// @param userDirOverride Optional override for user preset directory (for testing)
+    /// @param factoryDirOverride Optional override for factory preset directory (for testing)
     explicit PresetManager(
         Steinberg::Vst::IComponent* processor,
-        Steinberg::Vst::IEditController* controller
+        Steinberg::Vst::IEditController* controller,
+        std::filesystem::path userDirOverride = {},
+        std::filesystem::path factoryDirOverride = {}
     );
 
     ~PresetManager();
@@ -137,6 +141,8 @@ private:
     LoadProvider loadProvider_;
     PresetList cachedPresets_;
     std::string lastError_;
+    std::filesystem::path userDirOverride_;
+    std::filesystem::path factoryDirOverride_;
 
     // Scanning helpers
     void scanDirectory(const std::filesystem::path& dir, bool isFactory);

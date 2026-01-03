@@ -13,18 +13,32 @@
 #include "platform/preset_paths.h"
 #include <filesystem>
 #include <fstream>
+#include <random>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
 // Test fixture for preset manager tests
+// Uses unique directory per fixture instance for parallel test isolation
 class PresetManagerTestFixture {
 public:
     PresetManagerTestFixture() {
-        // Create temp test directory
-        testDir_ = fs::temp_directory_path() / "iterum_test_presets";
+        // Generate unique directory name using random number to ensure
+        // parallel test runs don't interfere with each other
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dist(100000, 999999);
+
+        std::ostringstream dirName;
+        dirName << "iterum_test_" << dist(gen);
+
+        testDir_ = fs::temp_directory_path() / dirName.str();
+        userDir_ = testDir_ / "user";
+        factoryDir_ = testDir_ / "factory";
+
         std::error_code ec;
-        fs::remove_all(testDir_, ec);
-        fs::create_directories(testDir_);
+        fs::create_directories(userDir_, ec);
+        fs::create_directories(factoryDir_, ec);
     }
 
     ~PresetManagerTestFixture() {
@@ -34,6 +48,8 @@ public:
     }
 
     fs::path testDir() const { return testDir_; }
+    fs::path userDir() const { return userDir_; }
+    fs::path factoryDir() const { return factoryDir_; }
 
     // Create a dummy preset file for testing
     void createDummyPreset(const fs::path& path) {
@@ -45,8 +61,15 @@ public:
         file.close();
     }
 
+    // Create an isolated PresetManager for testing
+    Iterum::PresetManager createManager() {
+        return Iterum::PresetManager(nullptr, nullptr, userDir_, factoryDir_);
+    }
+
 private:
     fs::path testDir_;
+    fs::path userDir_;
+    fs::path factoryDir_;
 };
 
 // =============================================================================
@@ -95,36 +118,53 @@ TEST_CASE("isValidPresetName validates preset names", "[preset][manager]") {
 TEST_CASE("PresetManager scanning functionality", "[preset][manager][scan]") {
     PresetManagerTestFixture fixture;
 
-    // Create PresetManager with null components (scanning doesn't need them)
-    Iterum::PresetManager manager(nullptr, nullptr);
+    // Create PresetManager with isolated test directories
+    auto manager = fixture.createManager();
 
     SECTION("scanPresets returns empty list when no presets exist") {
-        // Note: This tests the default directories which may have presets
-        // For isolation, we'd need to mock the directory functions
         auto presets = manager.scanPresets();
-        // Just verify it doesn't crash and returns a valid list
-        REQUIRE(presets.size() >= 0);
+        // Isolated directories are empty, so should return exactly 0
+        REQUIRE(presets.size() == 0);
+    }
+
+    SECTION("scanPresets finds presets in user directory") {
+        // Create a test preset
+        fixture.createDummyPreset(fixture.userDir() / "test_preset.vstpreset");
+
+        auto presets = manager.scanPresets();
+        REQUIRE(presets.size() == 1);
+    }
+
+    SECTION("scanPresets finds presets in factory directory") {
+        // Create a factory preset
+        fixture.createDummyPreset(fixture.factoryDir() / "factory_preset.vstpreset");
+
+        auto presets = manager.scanPresets();
+        REQUIRE(presets.size() == 1);
+        REQUIRE(presets[0].isFactory == true);
     }
 
     SECTION("getPresetsForMode filters by mode") {
-        // Without actual presets, this should return empty
         auto digitalPresets = manager.getPresetsForMode(Iterum::DelayMode::Digital);
-        REQUIRE(digitalPresets.size() >= 0);
+        REQUIRE(digitalPresets.size() == 0);
     }
 
     SECTION("searchPresets with empty query returns all presets") {
+        fixture.createDummyPreset(fixture.userDir() / "ambient_pad.vstpreset");
         manager.scanPresets();
         auto all = manager.searchPresets("");
-        // Should return same as cached presets
-        REQUIRE(all.size() >= 0);
+        REQUIRE(all.size() == 1);
     }
 
     SECTION("searchPresets filters by name case-insensitively") {
+        fixture.createDummyPreset(fixture.userDir() / "Ambient_Pad.vstpreset");
         manager.scanPresets();
-        // Search for common terms
+
         auto results = manager.searchPresets("ambient");
-        // Just verify it returns valid results without crash
-        REQUIRE(results.size() >= 0);
+        REQUIRE(results.size() == 1);
+
+        auto noMatch = manager.searchPresets("digital");
+        REQUIRE(noMatch.size() == 0);
     }
 }
 
@@ -134,12 +174,12 @@ TEST_CASE("PresetManager scanning functionality", "[preset][manager][scan]") {
 
 TEST_CASE("PresetManager delete functionality", "[preset][manager][delete]") {
     PresetManagerTestFixture fixture;
-    Iterum::PresetManager manager(nullptr, nullptr);
+    auto manager = fixture.createManager();
 
     SECTION("deletePreset returns false for factory presets") {
         Iterum::PresetInfo factoryPreset;
         factoryPreset.name = "Factory Preset";
-        factoryPreset.path = fixture.testDir() / "factory.vstpreset";
+        factoryPreset.path = fixture.factoryDir() / "factory.vstpreset";
         factoryPreset.isFactory = true;
 
         REQUIRE_FALSE(manager.deletePreset(factoryPreset));
@@ -149,7 +189,7 @@ TEST_CASE("PresetManager delete functionality", "[preset][manager][delete]") {
     SECTION("deletePreset returns false for non-existent files") {
         Iterum::PresetInfo nonExistent;
         nonExistent.name = "Non Existent";
-        nonExistent.path = fixture.testDir() / "nonexistent.vstpreset";
+        nonExistent.path = fixture.userDir() / "nonexistent.vstpreset";
         nonExistent.isFactory = false;
 
         REQUIRE_FALSE(manager.deletePreset(nonExistent));
@@ -157,7 +197,7 @@ TEST_CASE("PresetManager delete functionality", "[preset][manager][delete]") {
 
     SECTION("deletePreset successfully deletes user preset") {
         // Create a test preset file
-        auto presetPath = fixture.testDir() / "user_preset.vstpreset";
+        auto presetPath = fixture.userDir() / "user_preset.vstpreset";
         fixture.createDummyPreset(presetPath);
         REQUIRE(fs::exists(presetPath));
 
@@ -177,7 +217,7 @@ TEST_CASE("PresetManager delete functionality", "[preset][manager][delete]") {
 
 TEST_CASE("PresetManager import functionality", "[preset][manager][import]") {
     PresetManagerTestFixture fixture;
-    Iterum::PresetManager manager(nullptr, nullptr);
+    auto manager = fixture.createManager();
 
     SECTION("importPreset returns false for non-existent source") {
         auto nonExistent = fixture.testDir() / "nonexistent.vstpreset";
@@ -197,8 +237,8 @@ TEST_CASE("PresetManager import functionality", "[preset][manager][import]") {
     }
 
     SECTION("importPreset copies valid preset file") {
-        // Create a source preset
-        auto sourceDir = fixture.testDir() / "source";
+        // Create a source preset in an external location
+        auto sourceDir = fixture.testDir() / "external";
         auto sourcePath = sourceDir / "test_preset.vstpreset";
         fixture.createDummyPreset(sourcePath);
         REQUIRE(fs::exists(sourcePath));
@@ -206,14 +246,10 @@ TEST_CASE("PresetManager import functionality", "[preset][manager][import]") {
         // Import should succeed
         REQUIRE(manager.importPreset(sourcePath));
 
-        // The file should now exist in user preset directory
-        auto userDir = manager.getUserPresetDirectory();
-        auto destPath = userDir / "test_preset.vstpreset";
+        // The file should now exist in isolated user preset directory
+        auto destPath = fixture.userDir() / "test_preset.vstpreset";
         REQUIRE(fs::exists(destPath));
-
-        // Cleanup
-        std::error_code ec;
-        fs::remove(destPath, ec);
+        // No manual cleanup needed - fixture destructor cleans up
     }
 }
 
@@ -222,18 +258,21 @@ TEST_CASE("PresetManager import functionality", "[preset][manager][import]") {
 // =============================================================================
 
 TEST_CASE("PresetManager directory access", "[preset][manager][directory]") {
-    Iterum::PresetManager manager(nullptr, nullptr);
+    PresetManagerTestFixture fixture;
+    auto manager = fixture.createManager();
 
-    SECTION("getUserPresetDirectory returns valid path") {
+    SECTION("getUserPresetDirectory returns override path when provided") {
         auto path = manager.getUserPresetDirectory();
         REQUIRE_FALSE(path.empty());
         REQUIRE(path.is_absolute());
+        REQUIRE(path == fixture.userDir());
     }
 
-    SECTION("getFactoryPresetDirectory returns valid path") {
+    SECTION("getFactoryPresetDirectory returns override path when provided") {
         auto path = manager.getFactoryPresetDirectory();
         REQUIRE_FALSE(path.empty());
         REQUIRE(path.is_absolute());
+        REQUIRE(path == fixture.factoryDir());
     }
 
     SECTION("user and factory directories are different") {
@@ -243,12 +282,30 @@ TEST_CASE("PresetManager directory access", "[preset][manager][directory]") {
     }
 }
 
+TEST_CASE("PresetManager uses platform directories when no override", "[preset][manager][directory]") {
+    // Create manager without overrides - should use platform defaults
+    Iterum::PresetManager manager(nullptr, nullptr);
+
+    SECTION("getUserPresetDirectory returns valid platform path") {
+        auto path = manager.getUserPresetDirectory();
+        REQUIRE_FALSE(path.empty());
+        REQUIRE(path.is_absolute());
+    }
+
+    SECTION("getFactoryPresetDirectory returns valid platform path") {
+        auto path = manager.getFactoryPresetDirectory();
+        REQUIRE_FALSE(path.empty());
+        REQUIRE(path.is_absolute());
+    }
+}
+
 // =============================================================================
 // Error Handling Tests
 // =============================================================================
 
 TEST_CASE("PresetManager error handling", "[preset][manager][error]") {
-    Iterum::PresetManager manager(nullptr, nullptr);
+    PresetManagerTestFixture fixture;
+    auto manager = fixture.createManager();
 
     SECTION("getLastError returns empty after successful operation") {
         // Perform a successful validation
@@ -259,7 +316,7 @@ TEST_CASE("PresetManager error handling", "[preset][manager][error]") {
     SECTION("loadPreset with null components returns false") {
         Iterum::PresetInfo preset;
         preset.name = "Test";
-        preset.path = "/test/path.vstpreset";
+        preset.path = fixture.userDir() / "test.vstpreset";
 
         REQUIRE_FALSE(manager.loadPreset(preset));
     }

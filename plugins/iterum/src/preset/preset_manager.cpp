@@ -15,10 +15,14 @@ namespace Iterum {
 
 PresetManager::PresetManager(
     Steinberg::Vst::IComponent* processor,
-    Steinberg::Vst::IEditController* controller
+    Steinberg::Vst::IEditController* controller,
+    std::filesystem::path userDirOverride,
+    std::filesystem::path factoryDirOverride
 )
     : processor_(processor)
     , controller_(controller)
+    , userDirOverride_(std::move(userDirOverride))
+    , factoryDirOverride_(std::move(factoryDirOverride))
 {
 }
 
@@ -492,12 +496,19 @@ bool PresetManager::importPreset(const std::filesystem::path& sourcePath) {
 // =============================================================================
 
 std::filesystem::path PresetManager::getUserPresetDirectory() const {
+    if (!userDirOverride_.empty()) {
+        Platform::ensureDirectoryExists(userDirOverride_);
+        return userDirOverride_;
+    }
     auto path = Platform::getUserPresetDirectory();
     Platform::ensureDirectoryExists(path);
     return path;
 }
 
 std::filesystem::path PresetManager::getFactoryPresetDirectory() const {
+    if (!factoryDirOverride_.empty()) {
+        return factoryDirOverride_;
+    }
     return Platform::getFactoryPresetDirectory();
 }
 
