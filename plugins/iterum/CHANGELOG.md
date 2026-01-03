@@ -5,6 +5,17 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-01-03
+
+### Fixed
+
+- **TimeMode Visibility Toggle**
+  - Fixed slider value displays remaining visible when TimeMode switched to Synced
+  - VisibilityController now correctly hides ALL controls with matching tag
+  - Delay Time label, slider, and value display now toggle together as expected
+
+---
+
 ## [0.9.0] - 2026-01-03
 
 ### Added
