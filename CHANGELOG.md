@@ -5,6 +5,55 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-01-03
+
+### Added
+
+- **Tempo Sync for 6 Additional Delay Modes** (spec 043)
+  - BBD, Tape, Shimmer, Reverse, MultiTap, and Freeze delays now support tempo sync
+  - Time Mode dropdown: Free (manual ms) or Synced (tempo-based)
+  - Note Value dropdown with 21 musical divisions
+  - All delay modes now have consistent tempo sync interface
+
+- **Expanded Note Value Dropdown**
+  - 21 entries including new 1/1 Triplet option
+  - Full range from 1/32 to 2/1 with dotted and triplet variants
+
+- **Preset Browser Search**
+  - Live search filtering with 200ms debounce for responsive UI
+  - Case-insensitive substring matching
+  - Clears instantly when search box is emptied
+
+### Fixed
+
+- **Editor Crash on Close/Reopen**
+  - Fixed crash when closing and reopening plugin UI window
+  - Reordered destruction sequence in controller to prevent dangling pointer access
+
+- **Feedback Transition Distortion**
+  - Digital, PingPong, and Spectral delays now always apply soft limiting
+  - Prevents distortion when rapidly changing feedback from high to low values
+  - BBD delay uses saturation in feedback path for smooth transitions
+
+- **Preset Loading**
+  - Mode now correctly derived from preset directory when scanning
+  - TimeMode and NoteValue parameters properly restored from presets
+  - Fixed "Frozen Moment" preset (Freeze now disabled as intended)
+  - Updated note value indices for expanded 21-entry dropdown
+
+- **Stereo Noise Balance (BBD Mode)**
+  - Fixed noise only audible in right channel by using separate noise generators per channel
+
+### Changed
+
+- **Code Quality Improvements**
+  - Removed unused DelayEngine dependency from BBD and Digital delays
+  - Moved TimeMode enum to Layer 0 (note_value.h) for wider availability
+  - Normalized Mix parameter naming across all delay modes
+  - 47 code review fixes including unused includes, compliance headers, and test consolidation
+
+---
+
 ## [0.7.0] - 2026-01-01
 
 ### Added
