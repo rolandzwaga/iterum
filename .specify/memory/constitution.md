@@ -1,153 +1,74 @@
-<!--
-================================================================================
-SYNC IMPACT REPORT
-================================================================================
-Version Change: 1.11.0 → 1.12.0
-Modified Principles:
-  - Principle VII: Project Structure & Build System (UPDATED)
-    - Directory structure updated for monorepo layout (dsp/, plugins/<plugin>/)
-    - Added KrateDSP library structure with layer directories
-    - Added plugin directory layout (src/, tests/, resources/)
-    - Updated include patterns: angle brackets for DSP (<krate/dsp/...>), relative for plugins
-  - Principle VIII: Testing Discipline (UPDATED)
-    - DSP path updated from src/dsp/ to dsp/include/krate/dsp/
-  - Principle XV: Pre-Implementation Research (UPDATED)
-    - ODR search command updated to search dsp/ and plugins/ instead of src/
-Added Sections: None
-Removed Sections: None
-Templates Updated: None
-Follow-up TODOs: None
-================================================================================
--->
+<!-- SYNC: v1.11.0→1.12.0 | VII: Monorepo layout | VIII: DSP path | XV: ODR search path -->
 
 # VST Plugin Development Constitution
+
+**Version**: 1.12.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2026-01-03
+
+---
 
 ## Core Principles
 
 ### I. VST3 Architecture Separation
 
-The VST3 SDK mandates strict separation between audio processing and user interface components. This separation MUST be maintained at all times.
-
 **Non-Negotiable Rules:**
-- Processor (IAudioProcessor + IComponent) and Controller (IEditController) MUST be implemented as separate classes
-- Set `kDistributable` flag in PClassInfo2::classFlags when processor and controller can run in different processes
-- Use `IMessage`, `IConnectionPoint`, and `IAttributeList` for all processor-controller communication
+- Processor and Controller MUST be separate classes; set `kDistributable` flag when they can run in different processes
+- Use `IMessage`, `IConnectionPoint`, `IAttributeList` for all processor-controller communication
 - Processor MUST function correctly without controller instantiation
-- State synchronization MUST use `setComponentState()` - controller synchronizes to processor state, never the reverse
-- NEVER send raw pointers via IMessage between components
-
-**Rationale:** This architecture enables hosts to run processors on separate machines/threads, provides clean testability, and follows Steinberg's design philosophy for maximum flexibility.
+- State synchronization via `setComponentState()` - controller syncs to processor, never reverse
+- NEVER send raw pointers via IMessage
 
 ### II. Real-Time Audio Thread Safety
 
-The audio processing thread operates under hard real-time constraints. Any operation that could cause unbounded delays is FORBIDDEN.
-
 **Non-Negotiable Rules:**
-- NEVER allocate memory in audio callbacks (no `malloc`, `free`, `new`, `delete`, or STL containers that allocate)
-- NEVER use locks, mutexes, or any blocking synchronization primitives in the audio thread
-- NEVER perform file I/O, network operations, or system calls in the audio thread
-- NEVER throw or catch exceptions in the audio thread
-- Pre-allocate ALL buffers during `initialize()` or `setupProcessing()` before `setActive(true)`
-- Audio callbacks MUST complete within the buffer duration (typically 1-10ms at common sample rates)
-- Use lock-free queues (SPSC ring buffers) for all inter-thread communication
-
-**Rationale:** Priority inversion, memory allocator locks, and system calls cause audio dropouts and glitches. Real-time audio requires deterministic execution times.
+- NEVER allocate memory in audio callbacks (`malloc`, `new`, or allocating STL operations)
+- NEVER use locks, mutexes, or blocking primitives in audio thread
+- NEVER perform file I/O, network ops, or system calls in audio thread
+- NEVER throw/catch exceptions in audio thread
+- Pre-allocate ALL buffers in `initialize()` or `setupProcessing()` before `setActive(true)`
+- Audio callbacks MUST complete within buffer duration (1-10ms typical)
+- Use lock-free SPSC queues for inter-thread communication
 
 ### III. Modern C++ Standards
 
-All code MUST follow modern C++ best practices as defined by the C++ Core Guidelines.
-
 **Non-Negotiable Rules:**
-- Target C++17 minimum; prefer C++20 features where available and SDK-compatible
-- Use RAII for ALL resource management - no manual resource cleanup in destructors
-- Prefer `std::unique_ptr` as the default smart pointer for ownership
-- Use `std::shared_ptr` ONLY when shared ownership is genuinely required (rare in plugin code)
-- NEVER use raw `new`/`delete` - wrap allocations in smart pointers immediately
-- Use move semantics to transfer ownership of large buffers without copying
-- Prefer value semantics and stack allocation where object lifetime is scope-bound
-- Use `constexpr` and `const` aggressively to enable compile-time computation
-- Prefer `std::array` over C-style arrays; `std::span` for non-owning views (C++20)
-
-**Rationale:** RAII eliminates resource leaks, smart pointers enforce ownership semantics, and modern C++ features improve safety and performance.
+- Target C++17 minimum; prefer C++20 where SDK-compatible
+- Use RAII for ALL resource management
+- Prefer `std::unique_ptr`; use `std::shared_ptr` only when genuinely needed
+- NEVER use raw `new`/`delete` - wrap in smart pointers immediately
+- Use `constexpr` and `const` aggressively
+- Prefer `std::array` over C-style arrays; `std::span` for views (C++20)
 
 ### IV. SIMD & DSP Optimization
 
-Digital signal processing code MUST be optimized for modern CPU architectures.
-
 **Non-Negotiable Rules:**
-- Align audio buffer data to 16-byte boundaries (SSE) or 32-byte boundaries (AVX)
-- Use `alignas(16)` or platform-specific alignment attributes for SIMD data structures
-- Process audio in contiguous, sequential memory access patterns
-- Avoid strided or scattered memory access in inner loops
-- Minimize branching in inner processing loops; prefer branchless algorithms
-- Avoid virtual function calls in tight audio processing loops
-- Use SIMD intrinsics (SSE2/AVX/NEON) for parallel sample processing where beneficial
-- Profile before optimizing - measure actual bottlenecks, don't assume
-
-**Rationale:** SIMD operations can process 4-8 samples simultaneously. Proper memory alignment and access patterns maximize cache efficiency and enable vectorization.
+- Align audio buffers to 16-byte (SSE) or 32-byte (AVX) boundaries
+- Process audio in contiguous, sequential memory patterns
+- Minimize branching in inner loops; prefer branchless algorithms
+- Avoid virtual function calls in tight processing loops
+- Profile before optimizing - measure actual bottlenecks
 
 ### V. VSTGUI Development
 
-User interface development MUST use VSTGUI properly and maintain complete separation from audio processing.
-
 **Non-Negotiable Rules:**
-- Use `UIDescription` XML and the WYSIWYG editor for UI layout
-- Implement `VST3EditorDelegate` interface for custom view creation
-- Register custom views with `UIViewFactory` for editor visibility
-- Use `getParameterObject()` for UI-only state (tabs, scroll positions) not affecting audio
-- UI thread MUST NEVER directly access audio processing data structures
-- Use `IParameterChanges` for parameter updates from UI to processor
-- All parameter values MUST be normalized (0.0 to 1.0) at the VST interface boundary
-- Repaint operations MUST NOT block or stall the audio thread
-
-**Rationale:** VSTGUI is the official Steinberg toolkit designed for VST3. Proper usage ensures compatibility, maintainability, and correct thread separation.
+- Use `UIDescription` XML and WYSIWYG editor for layout
+- Implement `VST3EditorDelegate` for custom view creation
+- UI thread MUST NEVER directly access audio processing data
+- Use `IParameterChanges` for UI→Processor updates
+- All parameter values normalized (0.0-1.0) at VST boundary
 
 ### VI. Cross-Platform Compatibility (CRITICAL)
 
-This plugin MUST be fully cross-platform (Windows, macOS, Linux). Platform-specific solutions are FORBIDDEN unless absolutely necessary and explicitly approved.
-
 **Non-Negotiable Rules:**
-- NEVER use Windows-native APIs (Win32, COM, WM_* messages) for UI or core functionality
-- NEVER use macOS-native APIs (Cocoa, AppKit) for UI or core functionality
-- NEVER use platform-specific popup menus, dialogs, or controls
-- ALWAYS use VSTGUI's cross-platform abstractions (COptionMenu, CFileSelector, etc.)
-- When VSTGUI offers both native and generic implementations, PREFER the generic (cross-platform) version
-- Platform-specific code is ONLY acceptable for:
-  - Debug logging (guarded by `#if defined(_DEBUG) && defined(_WIN32)` etc.)
-  - Platform-specific optimizations that have cross-platform fallbacks
-  - Workarounds for platform-specific bugs with documented justification
-- ANY platform-specific solution MUST be explicitly approved by the user before implementation
-- CI/CD MUST build and test on all three platforms before merge
-
-**Common Violations to AVOID:**
-- Switching from VSTGUI generic menus to native Windows popups "because it might fix the issue"
-- Using `GetTickCount()` without a cross-platform alternative
-- Using Windows message handling instead of VSTGUI's event system
-- Assuming Windows-specific behavior will work on macOS/Linux
-
-**Rationale:** VSTGUI exists specifically to provide cross-platform UI. Using native APIs defeats the purpose and creates maintenance burden across platforms.
-
-### VII. Memory Architecture
-
-Memory management MUST be designed for real-time safety and predictable performance.
-
-**Non-Negotiable Rules:**
-- Pre-allocate all audio buffers, delay lines, and processing state during initialization
-- Use memory pools for any runtime allocation needs outside the audio thread
-- Use SPSC (single-producer, single-consumer) lock-free ring buffers for thread communication
-- Size ring buffers to handle worst-case latency scenarios without blocking
-- NEVER resize containers or reallocate buffers while audio processing is active
-- Use `std::atomic` with appropriate memory ordering for simple shared state
-- Prefer thread-local storage over shared state where possible
-
-**Rationale:** Dynamic allocation during audio processing causes unpredictable latency. Pre-allocation and lock-free structures ensure deterministic behavior.
+- NEVER use Windows-native APIs (Win32, COM) or macOS-native APIs (Cocoa, AppKit) for UI
+- ALWAYS use VSTGUI cross-platform abstractions (COptionMenu, CFileSelector, etc.)
+- Platform-specific code ONLY for: debug logging (guarded), optimizations with fallbacks, documented bug workarounds
+- ANY platform-specific solution requires explicit user approval
+- CI/CD MUST build and test on all three platforms
 
 ### VII. Project Structure & Build System
 
-Project organization MUST follow modern CMake practices and maintain clear separation of concerns.
-
 **Non-Negotiable Rules:**
-- Use Modern CMake (3.20+) with target-based configuration; NEVER modify global variables like `CMAKE_CXX_FLAGS`
+- Use Modern CMake (3.20+) with target-based configuration
 - Directory structure MUST follow monorepo layout:
   ```
   dsp/                          # Shared KrateDSP library (Krate::DSP namespace)
@@ -161,586 +82,240 @@ Project organization MUST follow modern CMake practices and maintain clear separ
 
   plugins/<plugin>/             # Individual plugins (e.g., plugins/iterum/)
   ├── src/                      # Plugin source
-  │   ├── processor/            # Audio processor implementation
-  │   └── controller/           # Edit controller and UI
-  ├── tests/                    # Plugin tests (unit, integration, approval)
-  └── resources/                # UI resources, uidesc files, installers
-
-  tests/                        # Shared test infrastructure
-  extern/                       # External dependencies (git submodules)
-  cmake/                        # CMake helper modules
+  ├── tests/                    # Plugin tests
+  └── resources/                # UI resources, installers
   ```
-- DSP headers MUST use angle bracket includes: `#include <krate/dsp/primitives/delay_line.h>`
-- Plugin headers use relative includes: `#include "processor/processor.h"`
-- External dependencies MUST use git submodules in `extern/` with pinned versions
-- VST3 SDK and VSTGUI MUST be included as submodules, not system installations
-- Build configurations MUST support Debug, Release, and RelWithDebInfo
-- Plugin MUST build and validate on Windows (MSVC), macOS (Clang), and Linux (GCC)
-
-**Rationale:** Consistent structure enables maintainability, reproducible builds, and clear dependency management.
+- DSP: angle bracket includes `#include <krate/dsp/...>`
+- Plugin: relative includes `#include "processor/processor.h"`
+- External deps via git submodules in `extern/` with pinned versions
+- Must build on Windows (MSVC), macOS (Clang), Linux (GCC)
 
 ### VIII. Testing Discipline
-
-All code MUST be testable, and critical paths MUST have automated tests.
 
 **Non-Negotiable Rules:**
 - DSP algorithms in `dsp/include/krate/dsp/` MUST be pure functions testable without VST infrastructure
 - Unit tests MUST cover all DSP algorithms with known input/output pairs
-- Integration tests MUST verify plugin loads correctly in a test host
-- Regression tests MUST compare audio output between versions for critical processing
-- Tests MUST run in CI/CD pipeline on every commit
-- Use a testing framework compatible with CMake (Catch2, GoogleTest, or doctest)
-- Performance benchmarks MUST exist for critical audio processing paths
+- Integration tests MUST verify plugin loads correctly in test host
+- Tests MUST run in CI/CD on every commit
 - NEVER commit code that breaks existing tests
 
-**Rationale:** Testing catches bugs before release, enables refactoring with confidence, and documents expected behavior.
+---
 
 ## Technical Constraints
 
-This section defines hard technical requirements that MUST be satisfied by all implementations.
+### SDK & Platform Requirements
 
-### SDK & Toolkit Requirements
+| Component | Version |
+|-----------|---------|
+| VST3 SDK | 3.7.x+ (git submodule) |
+| VSTGUI | 4.12+ |
+| C++ | C++17 min, C++20 preferred |
+| CMake | 3.20+ |
 
-| Component | Version | Source |
-|-----------|---------|--------|
-| VST3 SDK | 3.7.x or later | git submodule from steinbergmedia/vst3sdk |
-| VSTGUI | 4.12 or later | Included with VST3 SDK or separate submodule |
-| C++ Standard | C++17 minimum, C++20 preferred | Compiler flag |
-| CMake | 3.20 or later | Build requirement |
-
-### Platform Support Matrix
-
-| Platform | Compiler | Architecture | Status |
-|----------|----------|--------------|--------|
-| Windows 10/11 | MSVC 2019+ | x64, ARM64 | Required |
-| macOS 11+ | Clang/Xcode 13+ | x64, ARM64 (Apple Silicon) | Required |
-| Linux | GCC 10+ / Clang 12+ | x64 | Optional |
+| Platform | Compiler | Status |
+|----------|----------|--------|
+| Windows 10/11 | MSVC 2019+ | Required |
+| macOS 11+ | Clang/Xcode 13+ | Required |
+| Linux | GCC 10+ / Clang 12+ | Optional |
 
 ### Performance Targets
 
-| Metric | Target | Measurement Method |
-|--------|--------|-------------------|
-| Audio callback duration | < 50% of buffer time | Profiling in release build |
-| Parameter update latency | < 1 buffer | Measure UI→Processor delay |
-| Memory allocation in audio thread | 0 | Static analysis + runtime checks |
-| Plugin scan time | < 500ms | Host plugin scanning |
+| Metric | Target |
+|--------|--------|
+| Audio callback | < 50% buffer time |
+| Memory alloc in audio | 0 |
+| Plugin scan time | < 500ms |
 
 ### Forbidden Patterns
 
-The following patterns are BANNED from the codebase:
-
-- `new`/`delete` without immediate smart pointer wrapping
-- `malloc`/`free`/`realloc` anywhere in audio code
-- `std::mutex`, `std::lock_guard`, `std::unique_lock` in audio thread
-- `std::vector::push_back` or any allocating operation in audio callbacks
-- `dynamic_cast` in audio processing paths
-- `throw`/`catch` in audio thread code paths
-- Global mutable state accessed from multiple threads without synchronization
-- Raw C-style arrays for audio buffers (use `std::array` or aligned custom types)
-- Busy-wait spinlocks as mutex replacements
+`new`/`delete` without smart pointer • `malloc`/`free` in audio • `std::mutex` in audio thread • `vector::push_back` in audio • `dynamic_cast` in audio path • `throw`/`catch` in audio • Global mutable state without sync • Busy-wait spinlocks
 
 ### Cross-Platform Compatibility
 
-Code MUST work correctly across MSVC (Windows), Clang (macOS), and GCC (Linux). This section documents known platform-specific behaviors that MUST be accounted for in all implementations.
+#### Floating-Point
 
-#### Floating-Point Behavior
+| Issue | Solution |
+|-------|----------|
+| `-ffast-math` breaks `std::isnan()` | Use bit manipulation + compile with `-fno-fast-math -fno-finite-math-only` |
+| MSVC/Clang precision differs at 7th decimal | Use ≤6 decimal places in tests; use `Approx().margin()` |
+| Denormals cause 100x CPU slowdown | Enable FTZ/DAZ in audio thread |
+| `std::pow/log10/exp` not constexpr in MSVC | Use custom Taylor series |
 
-**NaN Detection:**
-- The VST3 SDK enables `-ffast-math` globally via `SMTG_PlatformToolset.cmake`
-- This causes `std::isnan()`, `__builtin_isnan()`, and `x != x` to be optimized away (compiler assumes NaN doesn't exist)
-- Even bit manipulation with `std::bit_cast` can be optimized if the compiler recognizes the NaN check pattern
-- **Required approach**:
-  1. Use `std::bit_cast<uint32_t>` to check IEEE 754 bit patterns
-  2. **AND** compile source files with `-fno-fast-math -fno-finite-math-only`
-  3. Use CMake `set_source_files_properties()` (follows VSTGUI's pattern for `uijsonpersistence.cpp`)
-- Example: `((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0)`
+#### SIMD & Alignment
 
-**Floating-Point Precision:**
-- MSVC and Clang produce slightly different results at the 7th-8th decimal place
-- This is expected behavior due to different floating-point implementations
-- **Required approach**: Approval tests and golden master comparisons MUST use ≤6 decimal places
-- Unit tests should use `Approx().margin()` for floating-point comparisons
+| Issue | Solution |
+|-------|----------|
+| SSE/AVX alignment | Use `alignas(32)` for buffers; `_mm_malloc`/`_mm_free` for dynamic |
+| x86 vs ARM | Use SIMD abstraction or separate code paths |
+| Apple Silicon | Build universal binaries (x86_64 + arm64) |
 
-**Denormalized Numbers (Subnormals):**
-- Very small floating-point numbers cause massive CPU slowdowns (up to 100x) on some platforms
-- IIR filters (lowpass, etc.) decay into denormals when fed silence
-- ARM NEON forces flush-to-zero; x86 SSE/AVX requires explicit FTZ/DAZ flags
-- **Required approach**: Enable FTZ (flush-to-zero) and DAZ (denormals-are-zero) in audio thread
-- Alternative: Add tiny DC offset (~1e-15) to prevent signals from decaying to denormal range
-- MSVC enables FTZ/DAZ automatically with SSE2; GCC/Clang require `-msse2 -mfpmath=sse`
+#### Threading
 
-**Constexpr Math:**
-- `std::pow`, `std::log10`, `std::exp` are NOT constexpr in MSVC (even in C++20)
-- **Required approach**: Implement custom Taylor series for constexpr math functions
-- Use `std::bit_cast` (C++20) for constexpr bit manipulation
+| Issue | Solution |
+|-------|----------|
+| `std::atomic<T>::is_lock_free()` varies | Only `std::atomic_flag` guaranteed lock-free; verify others |
+| ARM weak memory model | Use `acquire`/`release` not `seq_cst` |
+| Thread priority | Let host manage; don't set manually |
 
-**Signed Integer Overflow:**
-- Signed integer overflow is undefined behavior in C++
-- GCC aggressively optimizes assuming no overflow; MSVC/Clang may wrap
-- **Required approach**: Use unsigned integers where wraparound is needed, or use `-fwrapv` with GCC/Clang
+#### Build System
 
-#### SIMD and Memory Alignment
+| Issue | Solution |
+|-------|----------|
+| macOS requires Xcode generator | Use `-G Xcode` for Objective-C++ support |
+| VST3 ABI is compiler-dependent | Use recommended compiler per platform |
+| Windows UTF-16 paths | Use UTF-8 internally; convert for Windows APIs |
 
-**Alignment Requirements:**
-- SSE requires 16-byte alignment; AVX requires 32-byte alignment; AVX-512 requires 64-byte alignment
-- Unaligned access may cause crashes (SSE) or performance degradation (AVX)
-- **Required approach**: Use `alignas(32)` for audio buffers; use `_mm_malloc`/`_mm_free` for dynamic allocation
-- C++17 aligned new works for stack/static; dynamic allocation needs platform-specific functions
-
-**Cross-Platform SIMD:**
-- x86 uses SSE/AVX; ARM uses NEON with different instruction sets
-- **Required approach**: Use SIMD abstraction (sse2neon, SIMDe) or write separate code paths
-- Apple Silicon (M1/M2/M3/M4) uses NEON; code compiled for x86 runs via Rosetta 2 (with overhead)
-- For new code targeting x86 (2022+), target AVX2 with FMA as baseline
-
-**Apple Silicon Considerations:**
-- x86 plugins require Rosetta 2 translation (CPU overhead, potential latency)
-- Native ARM64 builds required for optimal performance on M1/M2/M3/M4
-- Rosetta 2 will eventually be deprecated (Rosetta 1 lasted ~2.5 OS versions)
-- **Required approach**: Build universal binaries (x86_64 + arm64) for macOS
-
-#### Threading and Synchronization
-
-**Real-Time Thread Priority:**
-- Windows: MMCSS (Multimedia Class Scheduler Service) and time-critical threads
-- macOS: THREAD_TIME_CONSTRAINT_POLICY; Audio Workgroups on Apple Silicon
-- Linux: SCHED_FIFO with rtprio; RT kernel optional but beneficial
-- **Required approach**: Let the host/driver manage audio thread priority; don't set manually in plugin
-
-**Atomic Operations:**
-- `std::atomic<T>::is_lock_free()` returns different results per platform
-- MSVC may use mutex for `std::atomic<double>` on some configurations
-- Double-width CAS (128-bit) behavior varies: GCC/Clang may be lock-free where MSVC is not
-- **Required approach**: Only `std::atomic_flag` is guaranteed lock-free; verify with `is_lock_free()` for other types
-- Use `std::memory_order_acquire`/`release` instead of `seq_cst` for better ARM performance
-
-**Memory Ordering:**
-- x86 has strong memory model (most loads are acquire, stores are release)
-- ARM has weak memory model (requires explicit barriers, more expensive seq_cst)
-- **Required approach**: Use minimal memory ordering (`relaxed` for counters, `acquire`/`release` for synchronization)
-
-**Spinlocks:**
-- NEVER use pure spinlocks; they can starve threads holding locks
-- **Required approach**: Use try_lock() on audio thread with fallback; never block waiting for lock
-
-#### Build System and Toolchain
-
-**CMake and Generators:**
-- macOS requires Xcode generator (`-G Xcode`) for Objective-C++ support (VSTGUI)
-- FetchContent with git clone can fail in CI due to rate limiting
-- **Required approach**: Use URL-based FetchContent with SHA256 hashes for dependencies
-
-**ABI Compatibility:**
-- VST3 SDK uses COM-like C++ interfaces; ABI is compiler-dependent
-- GCC/Clang use Itanium ABI; MSVC uses different vtable layout and exception handling
-- **Required approach**: Use the recommended compiler per platform (MSVC on Windows, Clang on macOS, GCC on Linux)
-- Clang can target MSVC ABI on Windows, but compatibility is not 100%
-
-**Runtime Libraries:**
-- Windows plugins should link CRT statically or ensure matching runtime on target systems
-- **Required approach**: Use `/MT` (static) or ensure VCRUNTIME redistributable is available
-
-#### File System and Encoding
-
-**File Path Encoding:**
-- Windows uses UTF-16 (`wchar_t` is 2 bytes); macOS/Linux use UTF-8 (`wchar_t` is 4 bytes)
-- Windows `fopen()` doesn't support UTF-8 paths; requires `_wfopen()` with wide strings
-- **Required approach**: Use UTF-8 internally; convert to UTF-16 for Windows file APIs
-- Prefer cross-platform file APIs from the SDK or use `std::filesystem` (C++17)
-
-**State Persistence (Endianness):**
-- x86 and ARM are little-endian; some legacy systems are big-endian
-- Plugin state saved on one platform must load on another
-- **Required approach**: Use explicit byte order in serialization; prefer little-endian or use network byte order functions
-
-#### Plugin Validation
-
-**Platform-Specific Validation:**
-- Use pluginval (Tracktion) for automated validation on all platforms
-- Run validation at strictness level 5+ for each format (VST3, AU) and platform
-- Test in multiple DAWs (different DAWs have different plugin scanning behaviors)
-- **Required approach**: CI must run pluginval on Windows, macOS, and Linux before release
+---
 
 ## Development Workflow
 
 ### Code Review Requirements
 
-All code changes MUST satisfy:
-
-1. **Constitution Compliance**: Reviewer MUST verify no principle violations
-2. **Thread Safety Audit**: Changes touching audio code MUST have explicit thread safety review
-3. **Memory Safety Check**: No new allocations in audio paths
-4. **Test Coverage**: New DSP code MUST include unit tests
-5. **Build Verification**: CI MUST pass on all required platforms
+1. Constitution compliance verified
+2. Thread safety audited for audio code
+3. No new allocations in audio paths
+4. New DSP code includes unit tests
+5. CI passes on all required platforms
 
 ### Profiling Protocol
 
-Before optimization work:
+1. Profile in Release with representative audio
+2. Identify bottlenecks with CPU profiler
+3. Document baseline before changes
+4. Verify improvement with same methodology
 
-1. Profile in Release build with representative audio (not synthetic test signals)
-2. Identify actual bottlenecks with CPU profiler (VTune, Instruments, perf)
-3. Document baseline measurements before changes
-4. Verify improvement with same measurement methodology
-5. Ensure no regression in other areas
+---
 
-### Documentation Standards
+## Advanced Principles
 
-- Public APIs MUST have Doxygen-compatible documentation
-- Complex DSP algorithms MUST reference academic papers or explain derivation
-- Thread safety requirements MUST be documented in header comments
-- Parameter ranges and semantics MUST be documented
+### IX. Layered DSP Architecture
+
+**Non-Negotiable Rules:**
+- Layer 0 (Core): Memory pools, fast math, SIMD - NO deps on higher layers
+- Layer 1 (Primitives): Delay lines, LFOs, biquads - depend ONLY on Layer 0
+- Layer 2 (Processors): Filters, saturators, pitch shifters - compose from 0-1
+- Layer 3 (Systems): Delay engine, feedback network - compose from 0-2
+- Layer 4 (Features): Complete modes (Tape, BBD) - compose from 0-3
+- NEVER circular dependencies; NEVER skip layers
+- Each layer independently testable
+
+### X. DSP Processing Constraints
+
+**Non-Negotiable Rules:**
+- All timing-critical ops at sample granularity
+- Oversampling (min 2x) for saturation/distortion/waveshaping
+- DC blocking (~5-20Hz highpass) after asymmetric saturation
+- Interpolation: Allpass for fixed feedback delays; Linear for modulated; Cubic for pitch
+- TDF2 for floating-point biquads; validate stability at extremes
+- Feedback >100% MUST include soft limiting
+- FFT: power-of-2 sizes, proper windowing, maintain COLA
+
+### XI. Performance Budgets
+
+| Component | CPU Target |
+|-----------|------------|
+| Total plugin | < 5% single core @ 44.1kHz stereo |
+| Layer 1 primitive | < 0.1% per instance |
+| Layer 2 processor | < 0.5% per instance |
+| Layer 3 system | < 1% per instance |
+| Max delay buffer | 10s @ 192kHz (1.92M samples) |
+
+### XII. Debugging Discipline (Anti-Pivot)
+
+**Non-Negotiable Rules:**
+- **Debug Before Pivot**: When code doesn't work:
+  1. Read ALL debug logs
+  2. Add logging to trace values
+  3. Read framework source code
+  4. Identify EXACT divergence point
+  5. ONLY then consider alternatives
+
+- **Framework Commitment**: The framework works in thousands of plugins. If it's not working, YOU are doing something wrong. Your job is to find WHAT, not abandon the framework.
+
+- **Forbidden Patterns**: "Let me try something else" without investigating WHY • "Maybe framework bug" • Trying 3+ approaches without reading debug output
+
+### XIII. Test-First Development
+
+**Non-Negotiable Rules:**
+- **Context Verification**: Before ANY implementation, verify `specs/TESTING-GUIDE.md` and `specs/VST-GUIDE.md` are in context
+- **Test Before Implementation**: Write failing test FIRST, then implement
+- **Bug-First Testing**: Reproduce bug in test → verify fails → fix → verify passes
+- **Explicit Todo Items**:
+  1. Verify guides in context
+  2. Write failing test
+  3. Implement to make test pass
+  4. Verify all tests pass
+  5. Commit
 
 ### XIV. Living Architecture Documentation
 
-The project MUST maintain an `ARCHITECTURE.md` file that serves as a living inventory of all functional domains, components, and APIs.
-
 **Non-Negotiable Rules:**
-- `ARCHITECTURE.md` MUST exist at the repository root
-- Every spec implementation MUST update `ARCHITECTURE.md` as a final task before completion
-- Updates MUST include: new components added, APIs introduced, layer assignments, and usage examples
-- The document is organized by DSP layer (0-4), not chronologically
-- Each component entry MUST include: purpose, public API, location, and "when to use this"
-- This document serves as the canonical reference when writing new specs to avoid duplication and ensure proper reuse
-
-**Rationale:** A living architecture document prevents reinventing existing functionality, enables proper composition of components, and provides a single source of truth for what exists in the codebase.
+- `ARCHITECTURE.md` MUST exist at repository root
+- Every spec implementation MUST update it as final task
+- Organized by DSP layer (0-4), not chronologically
+- Each component: purpose, API, location, "when to use"
 
 ### XV. Pre-Implementation Research (ODR Prevention)
 
-Before implementing ANY new class, struct, or significant component, the codebase MUST be searched for existing implementations to prevent One Definition Rule (ODR) violations and duplicate functionality.
+**Non-Negotiable Rules:**
+- **Search Before Creating**: `grep -r "class ClassName" dsp/ plugins/`
+- **Check ARCHITECTURE.md** for existing components
+- Same namespace + same name = undefined behavior (ODR violation)
+- Symptoms: garbage values, uninitialized-looking data, mysterious test failures
+
+**First action for strange failures**: Search for duplicate class definitions before debugging logic.
+
+### XVI. Honest Completion (Anti-Cheating)
 
 **Non-Negotiable Rules:**
-- **Search Before Creating**: Before writing a new class/struct, ALWAYS search the codebase: `grep -r "class ClassName" dsp/ plugins/`
-- **Check ARCHITECTURE.md**: Read the architecture document to identify existing components that may already provide the needed functionality
-- **Check dsp_utils.h and Common Files**: Legacy utility files often contain simple implementations that may conflict with new ones
-- **Same Namespace = ODR Violation**: Two classes with the same name in the same namespace cause undefined behavior, even if in different files
-- **Symptoms of ODR Violations**: Garbage memory values, uninitialized-looking data, tests that mysteriously fail - these often indicate duplicate definitions rather than logic errors
-- **When in Doubt, Search First**: If implementing something that sounds generic (Smoother, Filter, Buffer, etc.), assume it may already exist
+- **Definition of "Done"**: ALL acceptance criteria met, tests at spec thresholds, no placeholders/TODOs, performance targets measured
+- **Forbidden Patterns**:
+  - Relaxing test thresholds to pass
+  - Placeholder values marked "needs proper design"
+  - Removing scope without declaration
+  - Saying "tests pass" when tests were weakened
 
-**Diagnostic Checklist for Strange Test Failures:**
-1. Are you seeing garbage values (e.g., `0xCCCCCCCC` = -107374176.0f) that suggest uninitialized memory?
-2. Does one member work correctly while an adjacent member has garbage?
-3. Did a "simple" class suddenly break after adding a new file?
-→ **First action**: Search for duplicate class definitions before debugging logic
+- **Mandatory Verification**: Before claiming complete, review EVERY FR-xxx and SC-xxx. If ANY not met, spec is NOT complete.
 
-**Rationale:** ODR violations cause silent, hard-to-diagnose bugs. A simple grep search before creating new types prevents hours of debugging. The 005-parameter-smoother incident demonstrated that debugging NaN handling for hours was wasted when the real issue was a duplicate `OnePoleSmoother` class discoverable with a 5-second search.
-
-### XVI. Honest Completion (Anti-Cheating Enforcement)
-
-Spec implementations MUST be honestly assessed for completion. Claiming "done" when requirements are not met is a violation of trust and undermines project integrity.
-
-**Non-Negotiable Rules:**
-
-- **Definition of "Done"**: A requirement is ONLY complete when:
-  1. Implementation meets ALL specified acceptance criteria
-  2. Tests verify the requirement at the thresholds specified in the spec
-  3. No placeholder values, stub implementations, or "TODO" markers remain
-  4. Performance targets (if specified) are measured and met
-
-- **Forbidden Cheating Patterns**:
-  1. **Relaxing Test Thresholds**: If a spec requires "-3dB passband flatness" and your implementation achieves "-10dB", you CANNOT change the test to accept "-10dB" and claim completion
-  2. **Placeholder Values**: Coefficients marked as "placeholder" or "needs proper design" are NOT complete implementations
-  3. **Scope Reduction Without Declaration**: Removing features from the spec to make "completion" easier without explicit user approval
-  4. **Vague Success Claims**: Saying "tests pass" when tests have been weakened to pass
-  5. **Selective Reporting**: Highlighting working features while burying non-compliance in footnotes
-
-- **Mandatory Compliance Verification**: Before claiming any spec is complete, you MUST:
-  1. Review EVERY Functional Requirement (FR-xxx) and verify implementation meets it
-  2. Review EVERY Success Criterion (SC-xxx) and verify measurable targets are achieved
-  3. Document any gaps honestly in the completion report
-  4. If ANY FR or SC is not met, the spec is NOT complete—period
-
-- **Honest Completion Report Format**: Every spec completion MUST include:
-  ```
-  ## Implementation Compliance
-
+- **Compliance Table Format**:
   | Requirement | Status | Evidence |
   |-------------|--------|----------|
-  | FR-001      | ✅ MET | Test X verifies Y |
-  | FR-002      | ❌ NOT MET | [Reason: placeholder coefficients] |
-  | SC-001      | ⚠️ PARTIAL | Achieves 80% of target |
-  ```
+  | FR-001 | ✅ MET | Test X |
+  | FR-002 | ❌ NOT MET | Reason |
 
-  **Status Definitions**:
-  - ✅ MET: Requirement fully satisfied with evidence
-  - ❌ NOT MET: Requirement not satisfied (honest failure)
-  - ⚠️ PARTIAL: Partially met with documented gap
-  - 🔄 DEFERRED: Explicitly moved to future work with user approval
+### XVII. Framework Knowledge Documentation
 
-- **Consequences of Dishonest Completion Claims**:
-  - Future work will be blocked by undetected bugs
-  - User trust is destroyed
-  - Technical debt compounds silently
-  - CI may pass while actual requirements fail
+**Non-Negotiable Rules:**
+- **Read Before Working**: Check `specs/VST-GUIDE.md` before VSTGUI/VST3 work
+- **Document Discoveries**: Log non-obvious framework behavior immediately after fix
+- **Incident Log**: Date, symptom, root cause, solution, time wasted, lesson
 
-**Diagnostic Checklist for Completion Reviews**:
-1. Did I change ANY test threshold from what the spec originally required?
-2. Are there ANY "placeholder", "stub", or "TODO" comments in the implementation?
-3. Did I remove ANY features from scope without documenting this?
-4. Would the original spec author consider this "done"?
-5. If I were the user, would I feel cheated by this completion claim?
+### XVIII. Spec Numbering
 
-**Rationale:** The 006-oversampler incident demonstrated that claiming completion while admitting "FIR coefficients are placeholders" and "tests were relaxed from -3dB to -10dB" is fundamentally dishonest. This principle exists to prevent such violations by making honest compliance verification a mandatory part of the workflow.
+**Non-Negotiable Rules:**
+- **NEVER check branches** for spec numbering (branches deleted after merge)
+- **ALWAYS check specs/ directory**: `ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1`
+- New spec = highest + 1
+
+---
 
 ## Governance
 
 ### Constitution Authority
 
-This constitution is the supreme authority for development decisions. In case of conflict between this constitution and other documentation, the constitution prevails.
+This constitution is supreme for development decisions. In conflicts with other docs, constitution prevails.
 
 ### Amendment Process
 
-1. Propose amendment with rationale in writing
-2. Review impact on existing codebase
-3. Update version number per semantic versioning:
-   - MAJOR: Principle removal or incompatible redefinition
-   - MINOR: New principle or significant expansion
-   - PATCH: Clarification or typo fix
+1. Propose with rationale
+2. Review codebase impact
+3. Update version (MAJOR: removal/incompatible change, MINOR: new principle, PATCH: clarification)
 4. Update dependent templates if affected
-5. Document migration path for existing code if needed
-
-### Compliance Verification
-
-- All pull requests MUST include constitution compliance statement
-- Automated static analysis SHOULD enforce checkable rules
-- Periodic codebase audits MUST verify ongoing compliance
-- Violations MUST be fixed or explicitly justified with technical rationale
 
 ### Exception Process
 
-If a principle cannot be followed due to technical necessity:
-
-1. Document the specific constraint preventing compliance
-2. Propose minimal deviation with scope limitation
-3. Include timeline for removing the exception if temporary
-4. Record in Complexity Tracking section of relevant plan.md
-
-### IX. Layered DSP Architecture
-
-DSP code MUST follow a strict layered architecture where higher layers compose from lower layers, never the reverse.
-
-**Non-Negotiable Rules:**
-- Layer 0 (Core Utilities): Memory pools, lock-free queues, fast math, SIMD abstractions - NO dependencies on higher layers
-- Layer 1 (DSP Primitives): Delay lines, LFOs, biquads, smoothers, oversamplers - depend ONLY on Layer 0
-- Layer 2 (DSP Processors): Filters, saturators, pitch shifters, envelope followers - compose from Layer 0-1
-- Layer 3 (System Components): Delay engine, feedback network, modulation matrix - compose from Layer 0-2
-- Layer 4 (User Features): Complete modes (Tape, BBD, Shimmer) - compose from Layer 0-3
-- NEVER allow circular dependencies between layers
-- NEVER skip layers (e.g., Layer 4 directly using Layer 0 internals instead of Layer 1-3 abstractions)
-- Each layer MUST be independently testable without instantiating higher layers
-- When adding new DSP code, explicitly identify which layer it belongs to in the file header
-
-**Rationale:** Layered architecture maximizes code reuse, ensures improvements propagate to all dependent features, and creates clear boundaries for testing and maintenance.
-
-### X. DSP Processing Constraints
-
-Digital signal processing operations have specific requirements for quality and real-time safety.
-
-**Non-Negotiable Rules:**
-- **Sample Accuracy**: All timing-critical operations (modulation, sync, tap tempo) MUST work at sample granularity
-- **Oversampling for Nonlinearities**: Saturation, distortion, and waveshaping MUST be oversampled (minimum 2x) to prevent aliasing
-- **DC Blocking**: Always apply a DC blocker (high-pass at ~5-20Hz) after asymmetric saturation or any processing that can introduce DC offset
-- **Interpolation Selection**:
-  - Allpass interpolation: ONLY for fixed delays in feedback loops (not for modulated delays)
-  - Linear interpolation: Acceptable for LFO-modulated delays when oversampled
-  - Cubic/Lagrange: Required for pitch shifting and high-quality time-varying delays
-- **Fast Math Approximations**: May use optimized `fastSin`, `fastTanh`, `fastExp` only when:
-  - Error bounds are documented and acceptable for the use case
-  - Full precision math is available as fallback for validation testing
-- **Filter Stability**: Use Transposed Direct Form II for floating-point biquads; validate stability at extreme parameter values
-- **Feedback Limiting**: Feedback paths exceeding 100% MUST include soft limiting or compression to prevent runaway oscillation
-- **FFT Processing**: Use power-of-2 sizes, apply appropriate windowing (Hann for general use), and maintain COLA (Constant Overlap-Add) constraint
-
-**Rationale:** These constraints prevent common DSP artifacts (aliasing, DC drift, clicks, instability) while maintaining real-time performance.
-
-### XI. Performance Budgets
-
-All components MUST meet defined performance targets to ensure the complete plugin remains usable.
-
-**Non-Negotiable Rules:**
-- Total plugin CPU: < 5% single core for full feature set at 44.1kHz, stereo
-- Individual Layer 1 primitive: < 0.1% CPU per instance
-- Individual Layer 2 processor: < 0.5% CPU per instance
-- Layer 3 system component: < 1% CPU per instance
-- Maximum delay time support: 10 seconds at 192kHz (1,920,000 samples buffer)
-- Parameter update latency: < 1 audio buffer
-- Plugin scan/load time: < 500ms
-- All performance claims MUST be validated with profiling in Release builds
-- Performance regression tests MUST exist for critical DSP paths
-
-**Rationale:** Performance budgets prevent feature creep from making the plugin unusable and ensure compositions of components remain efficient.
-
-### XII. Debugging Discipline (Anti-Pivot Enforcement)
-
-When a framework-based solution doesn't work, you MUST deeply investigate WHY before considering alternatives. Superficial troubleshooting and premature pivoting are FORBIDDEN.
-
-**Non-Negotiable Rules:**
-
-- **Debug Before Pivot**: When code doesn't work as expected:
-  1. Read ALL available debug logs and error messages
-  2. Add targeted logging to trace actual values at each step
-  3. Read the framework source code to understand what should happen
-  4. Identify the EXACT point where behavior diverges from expectation
-  5. ONLY after steps 1-4 fail repeatedly may you consider a different approach
-
-- **Framework Commitment**: When using a framework feature (VSTGUI, VST3 SDK, etc.):
-  1. The framework is designed to solve this problem - it works in thousands of plugins
-  2. If it's not working, YOU are doing something wrong
-  3. Your job is to find WHAT you're doing wrong, not to abandon the framework
-  4. Custom workarounds are the LAST resort, not the first
-
-- **Forbidden Pivot Patterns**:
-  | Pattern | Why It's Wrong |
-  |---------|----------------|
-  | "It didn't work, let me try something else" | You didn't investigate WHY |
-  | "Maybe the framework has a bug" | Framework is battle-tested; you have a usage error |
-  | "Let me try a manual workaround" | Workarounds create technical debt and often introduce new bugs |
-  | "I'll switch to native platform code" | Violates cross-platform requirements |
-  | Trying 3+ approaches without reading debug output | Guessing instead of debugging |
-
-- **Required Investigation Before Pivoting**:
-  1. [ ] Read all log files and console output
-  2. [ ] Add logging to trace actual values through the problematic code path
-  3. [ ] Read framework source code for the feature in question
-  4. [ ] Identify specific line where behavior diverges from documentation
-  5. [ ] Document what you learned and why the approach cannot work
-  6. [ ] ONLY THEN propose an alternative (with user approval)
-
-- **Framework Source Code Reading**:
-  - VSTGUI source is in `extern/vst3sdk/vstgui4/vstgui/`
-  - VST3 SDK source is in `extern/vst3sdk/`
-  - Reading source code is NOT optional when debugging framework issues
-  - Treat frameworks as readable code, NOT black boxes
-
-**Diagnostic Questions Before Pivoting**:
-1. Have I read the debug log output from the last test?
-2. Can I trace the exact value flow from input to incorrect output?
-3. Have I read the framework source for this feature?
-4. Do I understand what the framework SHOULD do vs what it's doing?
-5. Have I spent at least 30 minutes investigating before considering alternatives?
-
-**Rationale:** Hours are wasted when problems are "solved" by trying random alternatives instead of understanding root causes. The mode switching incident demonstrated that pivoting between template-switch-control, manual SDK calls, and native menus accomplished nothing because the actual bug was never investigated. Deep debugging of ONE approach is always more productive than shallow attempts at many approaches.
-
-### XIII. Test-First Development
-
-All implementation work MUST follow test-first methodology. Testing guidance MUST be actively referenced during development.
-
-**Non-Negotiable Rules:**
-
-- **Context Verification**: Before starting ANY implementation task, VERIFY that BOTH of these files are in the current context. If not, INGEST THEM before proceeding:
-  1. `specs/TESTING-GUIDE.md` - Testing patterns and categories
-  2. `specs/VST-GUIDE.md` - Framework pitfalls and solutions
-
-- **Test Before Implementation**: For ANY source code change, write a failing test FIRST, then implement the change to make the test pass. This applies to:
-  - New features
-  - Enhancements to existing features
-  - Refactoring
-  - Performance optimizations
-  - ANY modification to production code
-
-- **Bug-First Testing**: When a bug is reported:
-  1. FIRST create a test that reproduces the faulty behavior
-  2. Verify the test FAILS (confirming it captures the bug)
-  3. THEN fix the bug
-  4. Verify the test now PASSES
-  5. This test becomes a permanent regression test
-
-- **Task Completion**: Every implementation task MUST end with a commit of the work completed
-
-- **Explicit Todo Items**: The following steps MUST appear as explicit items in the task todo list (not implicit rules):
-  1. "Verify TESTING-GUIDE.md and VST-GUIDE.md are in context (ingest if needed)"
-  2. "Write failing test for [feature/bug]"
-  3. "Implement [feature/fix] to make test pass"
-  4. "Verify all tests pass"
-  5. "Commit completed work"
-
-- **Test Categories**: Follow the testing guide for appropriate test categories:
-  - Unit tests for pure DSP functions
-  - Integration tests for component interactions
-  - Regression tests for audio output stability
-  - Bug reproduction tests for reported issues
-
-- **No Skipping Tests**: Implementation without corresponding tests is FORBIDDEN except for trivial refactors with existing test coverage
-
-**Rationale:** Test-first development catches bugs early, documents expected behavior, enables safe refactoring, and ensures the TESTING-GUIDE.md patterns are consistently applied. Bug-first testing ensures every reported issue becomes a permanent regression test, preventing the same bug from recurring.
-
-### XVII. Framework Knowledge Documentation (VST-GUIDE.md)
-
-Hard-won insights about VST3 SDK and VSTGUI MUST be documented in `specs/VST-GUIDE.md` to prevent repeating expensive debugging sessions.
-
-**Non-Negotiable Rules:**
-
-- **Read Before Working**: Before any VSTGUI or VST3 SDK implementation work, READ `specs/VST-GUIDE.md` to check for relevant documented pitfalls and solutions
-- **Context Verification**: VST-GUIDE.md MUST be ingested into context before any UI or parameter-related work
-- **Document Discoveries**: When a debugging session reveals non-obvious framework behavior, document it in VST-GUIDE.md IMMEDIATELY after the fix is confirmed
-- **Incident Logging**: Every significant debugging session MUST be logged in the Incident Log section with:
-  - Date
-  - Symptom
-  - Root cause
-  - Solution
-  - Time wasted (if applicable)
-  - Lesson learned
-
-**Required Documentation Categories:**
-
-| Category | What to Document |
-|----------|-----------------|
-| Parameter Types | Differences between Parameter, RangeParameter, StringListParameter |
-| Control Bindings | How template-switch-control, control-tag, and menu population work |
-| Value Conversions | When toPlain()/toNormalized() behave unexpectedly |
-| Feedback Loops | How VSTGUI prevents feedback and when custom guards are needed |
-| Common Pitfalls | Mistakes that waste debugging time |
-
-**Update Protocol:**
-
-1. Confirm the fix works in the actual plugin
-2. Document the finding in the appropriate section of VST-GUIDE.md
-3. Add to the Incident Log with full details
-4. Update the version and date at the top of VST-GUIDE.md
-
-**Rationale:** The mode switching incident wasted hours because the same Parameter type pitfall could have been documented from earlier work. Framework-specific knowledge is expensive to acquire and must be preserved for future reference.
-
-### XVIII. Spec Numbering (Specs Directory is Source of Truth)
-
-When creating new specifications, the specs directory is the ONLY source of truth for determining the next spec number. Branch existence is MEANINGLESS because branches are deleted after merging.
-
-**Non-Negotiable Rules:**
-
-- **NEVER check branches for spec numbering**: Branches (local or remote) are deleted after merge - they cannot be trusted as a source of truth
-- **ALWAYS check specs/ directory**: Find the highest numbered directory in `specs/` regardless of feature name
-- **Command to find highest spec number**: `ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1`
-- **New spec number = highest + 1**: If highest is 035, new spec is 036
-- **This applies to ALL features**: Even if no spec with the same short-name exists, you still increment from the global highest number
-
-**Correct Workflow:**
-
-```bash
-# 1. Find highest spec number in specs/ directory (source of truth)
-HIGHEST=$(ls specs/ | grep -E '^[0-9]+' | sed 's/-.*//' | sort -n | tail -1)
-
-# 2. Calculate next number
-NEXT=$((HIGHEST + 1))
-
-# 3. Create spec with correct number
-.specify/scripts/powershell/create-new-feature.ps1 -Number $NEXT -ShortName "feature-name" "description"
-```
-
-**Wrong Workflow (DO NOT DO THIS):**
-
-```bash
-# ❌ WRONG: Checking for branches with specific name
-git ls-remote --heads origin | grep 'digital-stereo-width'  # MEANINGLESS - branches are deleted!
-
-# ❌ WRONG: Starting from 001 because no branch exists
-# This ignores 035 existing specs and creates chaos
-```
-
-**Why This Matters:**
-
-- Branches are ephemeral - they're deleted after merge to keep the repo clean
-- The specs/ directory persists forever and contains the complete feature history
-- Using branch existence leads to duplicate numbers and spec collisions
-- The constitution author has explicitly stated: "I fucking delete spec branches after they're merged, goddamnit."
-
-**Rationale:** Spec numbers must be unique and sequential. Branches are temporary and deleted after merge. Only the specs/ directory provides a permanent, reliable record of all specifications created.
-
-**Version**: 1.12.0 | **Ratified**: 2025-12-21 | **Last Amended**: 2026-01-03
+If principle cannot be followed:
+1. Document constraint
+2. Propose minimal deviation
+3. Include timeline if temporary
+4. Record in Complexity Tracking
