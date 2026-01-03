@@ -5,6 +5,21 @@ All notable changes to Iterum will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-01-03
+
+### Fixed
+
+- **Tape Delay Parameters Not Working**
+  - Fixed tape hiss being inaudible even at maximum Wear setting
+  - Hiss now plays at constant level regardless of signal (real tape hiss is present during silence)
+  - Root cause: signal-dependent modulation with -60dB floor was attenuating noise by additional 60dB
+
+- **Splice Artifacts Too Quiet**
+  - Increased splice click level from -30dB to -16dB for audible effect
+  - Splice intensity control (0-100%) now produces noticeable difference
+
+---
+
 ## [0.9.1] - 2026-01-03
 
 ### Fixed
