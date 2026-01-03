@@ -192,7 +192,7 @@ public:
 
     // FR-023: Splice artifact constants
     static constexpr float kSpliceClickDurationMs = 2.0f;  ///< Duration of splice click
-    static constexpr float kSpliceMaxLevel = 0.03f;  ///< Maximum splice artifact level
+    static constexpr float kSpliceMaxLevel = 0.15f;  ///< Maximum splice artifact level (-16dB)
 
     // =========================================================================
     // Construction / Destruction

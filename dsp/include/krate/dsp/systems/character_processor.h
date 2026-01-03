@@ -131,6 +131,9 @@ public:
         tapeHiss_.prepare(static_cast<float>(sampleRate), maxBlockSize);
         tapeHiss_.setNoiseEnabled(NoiseType::TapeHiss, true);
         tapeHiss_.setNoiseLevel(NoiseType::TapeHiss, kDefaultTapeHissLevel);
+        // Set floor to 0dB so tape hiss is constant (not signal-dependent)
+        // Real tape hiss is present even during silence
+        tapeHiss_.setTapeHissParams(0.0f, 0.0f);
 
         tapeRolloff_.prepare(sampleRate, maxBlockSize);
         tapeRolloff_.setType(FilterType::Lowpass);

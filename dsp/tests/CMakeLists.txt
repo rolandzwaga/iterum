@@ -76,6 +76,7 @@ add_executable(dsp_tests
 
     # Layer 4: Effects
     unit/effects/tape_delay_test.cpp
+    unit/effects/tape_delay_params_diagnostic_test.cpp
     unit/effects/bbd_delay_test.cpp
     unit/effects/digital_delay_test.cpp
     unit/effects/digital_width_processing_test.cpp
@@ -156,6 +157,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/systems/feedback_network_dc_blocking_test.cpp
         unit/systems/character_processor_digital_ramping_test.cpp
         unit/effects/tape_delay_test.cpp
+        unit/effects/tape_delay_params_diagnostic_test.cpp
         unit/effects/bbd_delay_test.cpp
         unit/effects/digital_delay_test.cpp
         unit/effects/digital_width_processing_test.cpp
