@@ -457,3 +457,66 @@ For each task, before marking done, record concrete evidence:
 - [ ] Every CROSS-PLUGIN task ran `dsp_processors_tests` + `ruinae_tests` and both reported "All tests passed".
 - [ ] `pluginval --strictness-level 5` on `Gradus.vst3` passed after each commit; `clang-tidy -Target gradus` produced zero new warnings.
 - [ ] Byte-golden identity between Gradus and Ruinae shared-save preserved; `live_mode_byte_identical` + Ruinae SC-004 unchanged (or regenerated with explicit human sign-off if a fix legitimately altered non-default-param output).
+
+---
+
+# Execution Record (filled from actual runs, 2026-07-24)
+
+Branch `fix/gradus-midi-flow-audit`, 7 commits. Every fix was preceded by a
+regression test observed FAILING on the unfixed code, with the measured failure
+recorded below.
+
+| ID | Verdict on execution | Fail-first evidence | Fix landed |
+|----|----------------------|---------------------|------------|
+| GMF-001 | CONFIRMED | `offCount[60]=0 >= onCount[60]=1` after deactivate→setupProcessing→activate | `ArpeggiatorCore::prepareRetainingPanicNoteOff()`, called from `setupProcessing` while a flush is pending |
+| GMF-002 | CONFIRMED | pitch 60 on=24 off=22 across a Sequencer stop→play inside the echo tail | transport play edge uses `flushWithNoteOffs()` instead of `reset()` |
+| GMF-003 | CONFIRMED | 17 pitches with unmatched NoteOns after >16 sounded evictions in one block | back-pressure in `addPendingEcho`: refuse the incoming echo rather than drop a NoteOff |
+| GMF-004 | CONFIRMED | pitch 60 emitted 4 further note-ons after a velocity-0 release; on=8 off=7 | velocity-0 NoteOn routed to `arpCore_.noteOff` |
+| GMF-005 | CONFIRMED | pitch 48 sounded 11025 samples on step 0 but 8820 on every later step | `cancelPendingNoteOffsForCurrentNotes()` before both replace loops |
+| GMF-006 | CONFIRMED | 2708 note-offs for notes that never sounded; per-pitch balance −40 | tracking/scheduling moved inside the span-cap guard; truncated replace keeps un-released notes |
+| GMF-007 | CONFIRMED | 6 events at offsets up to 2448 in a 64-sample block | `clampOffsetToBlock()` at all four strum-augmented emission sites |
+| GMF-008 | CONFIRMED | 48 ordering violations (release sorted past the strike) at humanize 75%, gate 150% | replace-NoteOff emitted at `humanizedSampleOffset` |
+| GMF-009 | CONFIRMED | 39 ordering violations at 1/32, gate 1%, humanize 100% | gate scheduling adds the humanize delta (int64, 1-sample floor) |
+| GMF-010 | CONFIRMED | bar-line note played pitch 55 (previous bar's continuation) instead of 48 | bar boundary promoted unconditionally when coincident |
+| GMF-011 | CONFIRMED | ratchet sub-step NoteOn with velocity 0 at ratchetDecay 100% | `applyDecay` lower clamp 0.0 → 1.0 |
+| GMF-012 | CONFIRMED | ThreadSanitizer data race: write at `arpeggiator_core.h:704` vs the audio-thread read | triple buffer with atomic slot rotation; TSan clean afterwards |
+| GMF-013 | **CONFIRMED — the audit was right, its verifier was wrong** | 8 of 127 MIDI velocities lost a step through the round trip (72→71, 104→103, …) | `std::lround` + clamp to [1,127] + `isfinite` guard |
+| GMF-014 | PLAUSIBLE → comment corrected, dead writes removed | no runtime misbehaviour (guard test passes both ways, as predicted) | comment states the real invariant; `laneLastSteps_` and `hostSupportsTransport_` deleted after grep confirmed no readers |
+| GMF-015 | **REFUTED — behaviour is intended** | test passes on unmodified code | none; behaviour pinned with a comment explaining the design decision |
+| GMF-016 | **REFUTED — contract is intended** | test passes on unmodified code | none; granularity pinned, per-step tagging flagged as a human design decision |
+| GMF-017 | coverage gap | n/a | none; channel 0 / noteId −1 / in-range offset now asserted |
+
+## Golden regeneration (both approved explicitly)
+
+- **GMF-005** — 7 Ruinae factory presets. Diff is removed/relocated `noteOff`
+  events only; zero note-ons added, removed or moved.
+- **GMF-009** — 1 Gradus fixture + 5 Ruinae presets. Note-off timings only:
+  event counts identical, event multiset identical, zero note-ons moved, max
+  drift 351 samples (8 ms, inside the ±20 ms humanize window).
+- **GMF-013** — 3 Gradus fixtures. Uniformly +1 velocity: zero timing changes,
+  zero pitch/kind changes, identical event counts (722 / 988 / 1262).
+
+The frozen `gradus_v2_preset_*.bin` state fixtures were deliberately **not**
+regenerated — they must stay in the v2 format to keep testing v2→v3 migration.
+The generator rewrites them as a side effect, so they were restored each time.
+
+## Gate results
+
+| Gate | Result |
+|------|--------|
+| `gradus_tests` | All tests passed (7599 assertions in 190 test cases) |
+| `dsp_core_tests` | All tests passed (1584873 assertions in 570 test cases) |
+| `dsp_primitives_tests` | All tests passed (4549254 assertions in 1504 test cases) |
+| `dsp_processors_tests` | All tests passed (10618932 assertions in 3212 test cases) |
+| `dsp_systems_tests` | All tests passed (5673060 assertions in 1067 test cases) |
+| `dsp_effects_tests` | All tests passed (93062 assertions in 455 test cases) |
+| `shared_tests` | All tests passed (6409 assertions in 460 test cases) |
+| `ruinae_tests` (CROSS-PLUGIN) | All tests passed (29734 assertions in 739 test cases) |
+| `pluginval --strictness-level 5` | exit 0, 0 failures |
+| `clang-tidy -Target gradus` | 7 files, 0 errors, 0 warnings |
+| `clang-tidy -Target dsp` | 273 files, 0 errors, 0 warnings |
+| `check-portability.js` | all clear — 12 changed TUs compiled with g++ |
+| ThreadSanitizer (WSL, GMF-012) | race pre-fix, clean post-fix |
+
+No thresholds were relaxed, no task was skipped, and no fix was marked done
+without observing its test fail first and then pass.
