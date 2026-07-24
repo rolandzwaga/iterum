@@ -56,6 +56,12 @@ add_executable(gradus_tests
     # Velocity-0 NoteOn must release, not hold (MIDI-flow audit GMF-004)
     unit/processor/velocity_zero_noteon_test.cpp
 
+    # 128-event span cap: no phantom / stranded NoteOffs (MIDI-flow audit GMF-006)
+    unit/processor/event_cap_overflow_test.cpp
+
+    # Strummed offsets must stay inside the block (MIDI-flow audit GMF-007)
+    unit/processor/strum_offset_range_test.cpp
+
     # Piano-roll view tests (spec 142, Phase 6, US3)
     unit/ui/piano_roll_view_test.cpp
     unit/ui/piano_roll_playhead_test.cpp

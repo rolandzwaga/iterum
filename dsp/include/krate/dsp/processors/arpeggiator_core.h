@@ -1419,6 +1419,41 @@ private:
         panicRequested_ = false;
     }
 
+    /// @brief Clamp an emission offset into the host's [0, blockSize) window.
+    ///
+    /// `humanizedSampleOffset` is already clamped, but the strum offset (up to
+    /// strumTimeMs = 100 ms, i.e. 4800 samples at 48 kHz) is added afterwards
+    /// and can push a strummed chord note thousands of samples past the end of a
+    /// 64-sample host block. Neither the processor nor MidiNoteDelay re-clamps,
+    /// so such an event reaches the host out of range and is dropped -- while
+    /// its gate NoteOff, scheduled in range, still fires.
+    [[nodiscard]] static inline int32_t clampOffsetToBlock(
+        int32_t offset, size_t blockSize) noexcept {
+        const int32_t last =
+            (blockSize > 0) ? static_cast<int32_t>(blockSize) - 1 : 0;
+        return std::clamp(offset, int32_t{0}, last);
+    }
+
+    /// @brief Drop the first `releasedCount` tracked notes, keeping the rest.
+    ///
+    /// The chord/ratchet replace loops stop at the output-span cap, so they can
+    /// release only a prefix of `currentArpNotes_`. Zeroing the count regardless
+    /// would erase the un-released remainder from tracking: after a Tie/Slide
+    /// step (which schedules no pending NoteOff) those notes would have no
+    /// output NoteOff, no pending NoteOff and no tracking entry, leaving them
+    /// unreleasable even by a panic flush.
+    inline void retainUnreleasedArpNotes(size_t releasedCount) noexcept {
+        if (releasedCount >= currentArpNoteCount_) {
+            currentArpNoteCount_ = 0;
+            return;
+        }
+        const size_t remaining = currentArpNoteCount_ - releasedCount;
+        for (size_t i = 0; i < remaining; ++i) {
+            currentArpNotes_[i] = currentArpNotes_[releasedCount + i];
+        }
+        currentArpNoteCount_ = remaining;
+    }
+
     /// @brief Remove a note from the currentArpNotes_ tracking array.
     inline void removeFromCurrentArpNotes(uint8_t note) noexcept {
         for (size_t i = 0; i < currentArpNoteCount_; ++i) {

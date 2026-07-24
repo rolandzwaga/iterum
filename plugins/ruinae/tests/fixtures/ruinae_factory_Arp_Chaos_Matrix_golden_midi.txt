@@ -48,7 +48,6 @@
 [93716] noteOff 75
 [93763] noteOn  58 105
 [96334] noteOff 58
-[96472] noteOff 75
 [97817] noteOn  58 102
 [99167] noteOn  77 103
 [99422] noteOff 58
@@ -65,7 +64,6 @@
 [117553] noteOff 65
 [118486] noteOn  65 102
 [119588] noteOff 65
-[120007] noteOff 72
 [121340] noteOn  60 105
 [125412] noteOff 60
 [126788] noteOn  75 103
@@ -88,7 +86,6 @@
 [161586] noteOff 65
 [162572] noteOn  65 102
 [163642] noteOff 65
-[164139] noteOff 72
 [165375] noteOn  60 102
 [165478] noteOn  75 100
 [168282] noteOff 75

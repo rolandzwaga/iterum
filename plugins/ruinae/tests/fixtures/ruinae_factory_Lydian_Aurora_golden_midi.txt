@@ -117,16 +117,11 @@
 [264600] noteOn  77 51
 [264600] noteOn  88 51
 [264600] noteOn  79 51
-[264601] noteOff 67
-[264601] noteOff 83
-[264601] noteOff 74
-[264601] noteOff 89
-[264601] noteOff 76
-[286650] noteOff 79
 [286650] noteOff 71
-[286650] noteOff 86
-[286650] noteOff 77
+[286650] noteOff 79
 [286650] noteOff 88
+[286650] noteOff 77
+[286650] noteOff 86
 [286650] noteOn  64 66
 [286650] noteOn  79 66
 [286650] noteOn  71 66

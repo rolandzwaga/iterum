@@ -3545,15 +3545,26 @@ TEST_CASE("ArpeggiatorCore: chord mode emits all held notes simultaneously",
 
 TEST_CASE("ArpeggiatorCore: chord mode + gate overlap (gate > 100%)",
           "[processors][arpeggiator_core]") {
-    // FR-022, FR-026: Chord mode with gate > 100% -- chord notes from step N
-    // remain sounding when chord step N+1 fires.
+    // FR-022, FR-026: Chord mode is a hard replace -- step N+1 releases every
+    // note step N left sounding before striking the new chord, so the gate
+    // saturates at one step and notes never overlap across a step boundary.
+    //
+    // This case used to assert the opposite ("chord notes from step N remain
+    // sounding when step N+1 fires") and passed only because of the GMF-005
+    // defect: the replace loop did not cancel the previous step's pending gate
+    // NoteOffs, so a leftover fired mid-step and released the note the CURRENT
+    // step had just re-struck. That looked like the first chord's late NoteOff
+    // but was really the second chord's note being cut short -- pitch 48 sounded
+    // 11025 samples on the first step and only 8820 on every later one, with a
+    // silent gap before the next strike. Nothing ever actually overlapped,
+    // because the replace loop had already released those notes at the boundary.
 
     ArpeggiatorCore arp;
     arp.prepare(44100.0, 512);
     arp.setEnabled(true);
     arp.setMode(ArpMode::Chord);
     arp.setNoteValue(NoteValue::Eighth, NoteModifier::None);
-    arp.setGateLength(150.0f);  // 150% gate => legato overlap
+    arp.setGateLength(150.0f);  // 150% gate => clamped by the replace boundary
 
     // Hold C3=48, E3=52, G3=55
     arp.noteOn(48, 100);
@@ -3576,30 +3587,33 @@ TEST_CASE("ArpeggiatorCore: chord mode + gate overlap (gate > 100%)",
     auto noteOns = filterNoteOns(events);
     auto noteOffs = filterNoteOffs(events);
 
-    SECTION("Chord notes from step N remain sounding when step N+1 fires") {
+    SECTION("Step N's chord is released exactly when step N+1 strikes") {
         REQUIRE(noteOns.size() >= 6);  // At least 2 chords
         REQUIRE(noteOffs.size() >= 3);  // At least first chord's NoteOffs
 
-        int32_t firstChordOnOffset = noteOns[0].sampleOffset;
-        int32_t secondChordOnOffset = noteOns[3].sampleOffset;
+        const int32_t firstChordOnOffset = noteOns[0].sampleOffset;
+        const int32_t secondChordOnOffset = noteOns[3].sampleOffset;
 
-        // First chord's NoteOffs should occur AFTER second chord's NoteOns
-        // NoteOff for first chord: firstChordOnOffset + 16537
-        int32_t expectedFirstNoteOff = firstChordOnOffset +
-            static_cast<int32_t>(static_cast<size_t>(11025.0 * 1.5));
-
-        // Find the first chord's NoteOffs
+        // The replace NoteOffs land ON the second chord's onset, not at
+        // firstChordOnOffset + 150% of a step.
         std::vector<ArpEvent> firstChordOffs;
         for (const auto& off : noteOffs) {
             if ((off.note == 48 || off.note == 52 || off.note == 55) &&
-                std::abs(off.sampleOffset - expectedFirstNoteOff) <= 1) {
+                std::abs(off.sampleOffset - secondChordOnOffset) <= 1) {
                 firstChordOffs.push_back(off);
             }
         }
-        // All 3 notes from first chord should have NoteOff after second chord NoteOn
         REQUIRE(firstChordOffs.size() >= 3);
-        for (const auto& off : firstChordOffs) {
-            CHECK(off.sampleOffset > secondChordOnOffset);
+
+        // No NoteOff may survive past the replace boundary: the gate is capped
+        // at one step, so nothing is released at firstChordOn + 1.5 steps.
+        const int32_t unclampedGateEnd = firstChordOnOffset +
+            static_cast<int32_t>(static_cast<size_t>(11025.0 * 1.5));
+        for (const auto& off : noteOffs) {
+            INFO("NoteOff " << static_cast<int>(off.note) << " at "
+                 << off.sampleOffset << "; replace boundary "
+                 << secondChordOnOffset);
+            CHECK(std::abs(off.sampleOffset - unclampedGateEnd) > 1);
         }
     }
 
@@ -3674,5 +3688,150 @@ TEST_CASE("ArpeggiatorCore: chord mode pending NoteOff capacity stress test",
     for (const auto& on : noteOns) {
         CHECK(on.note >= 48);
         CHECK(on.note < 64);
+    }
+}
+
+// =============================================================================
+// Chord / ratchet replace must cancel pending NoteOffs first (GMF-005)
+// =============================================================================
+// The chord replace loop and the ratchet non-slide replace loop each emit an
+// immediate NoteOff for every currentArpNotes_ entry and then zero the count,
+// without first calling cancelPendingNoteOffsForCurrentNotes(). Every other path
+// that manually releases currentArpNotes_ (euclidean rest, condition fail,
+// modifier rest, tie, slide) cancels first. With gate > 100% a step's pending
+// NoteOff outlives the next step boundary, so the stale pending off survived the
+// replace: addPendingNoteOff does not dedup, so a pitch repeated across two
+// steps ended up with an immediate replace-NoteOff *and* a later stale one --
+// a double NoteOff that also cuts the freshly struck note short.
+
+TEST_CASE("GMF-005: chord replace with gate>100% emits one NoteOff per NoteOn and no premature cut",
+          "[ArpeggiatorCore][chord][pendingoff]")
+{
+    ArpeggiatorCore arp;
+    BlockContext ctx{};
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+
+    arp.prepare(ctx.sampleRate, ctx.blockSize);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Chord);
+    arp.setNoteValue(NoteValue::Eighth, NoteModifier::None);
+    arp.setGateLength(180.0f);  // > 100%: pending off outlives the next step
+    arp.setSwing(0.0f);
+
+    // A fixed triad: every step re-strikes the same three pitches, so each one
+    // is a "repeated pitch" across the replace boundary.
+    arp.noteOn(48, 100);
+    arp.noteOn(52, 100);
+    arp.noteOn(55, 100);
+
+    // ~8 steps at 1/8 / 120 BPM (11025 samples per step).
+    const auto events = collectEvents(arp, ctx, 180);
+
+    std::array<int, 128> ons{};
+    std::array<int, 128> offs{};
+    for (const auto& e : events) {
+        if (e.type == ArpEvent::Type::NoteOn) ons[e.note]++;
+        else if (e.type == ArpEvent::Type::NoteOff) offs[e.note]++;
+    }
+
+    // Never MORE offs than ons (the run ends mid-gate, so the last note of each
+    // pitch may still be open).
+    for (uint8_t p : {uint8_t{48}, uint8_t{52}, uint8_t{55}}) {
+        INFO("pitch " << static_cast<int>(p) << ": on=" << ons[p] << " off=" << offs[p]);
+        CHECK(ons[p] > 2);
+        CHECK(offs[p] <= ons[p]);
+    }
+
+    // The counts balance even with the bug, because the stale pending off calls
+    // removeFromCurrentArpNotes() and so suppresses the *next* replace-NoteOff.
+    // What it corrupts is the gate: the note struck at step N is released by
+    // step N-1's leftover schedule, cutting it to (gate - stepDuration) instead
+    // of the full gate. Step 0 has no predecessor, so its duration is the
+    // correct reference every later note must match.
+    std::vector<int32_t> durations;
+    int32_t openAt = -1;
+    for (const auto& e : events) {
+        if (e.note != 48) continue;
+        if (e.type == ArpEvent::Type::NoteOn) {
+            openAt = e.sampleOffset;
+        } else if (e.type == ArpEvent::Type::NoteOff && openAt >= 0) {
+            durations.push_back(e.sampleOffset - openAt);
+            openAt = -1;
+        }
+    }
+    REQUIRE(durations.size() >= 3);
+    const int32_t reference = durations.front();
+    INFO("pitch 48 reference gate: " << reference << " samples");
+    for (size_t i = 1; i < durations.size(); ++i) {
+        INFO("pitch 48 note " << i << " sounded for " << durations[i]
+             << " samples, expected " << reference);
+        CHECK(durations[i] == reference);
+    }
+}
+
+TEST_CASE("GMF-005: ratchet replace with gate>100% emits one NoteOff per NoteOn",
+          "[ArpeggiatorCore][ratchet][pendingoff]")
+{
+    ArpeggiatorCore arp;
+    BlockContext ctx{};
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+
+    arp.prepare(ctx.sampleRate, ctx.blockSize);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Chord);
+    arp.setNoteValue(NoteValue::Eighth, NoteModifier::None);
+    arp.setGateLength(180.0f);
+    arp.setSwing(0.0f);
+    // Ratchet count > 1 on every step drives the non-slide ratchet replace loop.
+    arp.ratchetLane().setLength(8);
+    for (size_t s = 0; s < 8; ++s)
+        arp.ratchetLane().setStep(s, static_cast<uint8_t>(2));
+
+    arp.noteOn(48, 100);
+    arp.noteOn(52, 100);
+    arp.noteOn(55, 100);
+
+    const auto events = collectEvents(arp, ctx, 180);
+
+    std::array<int, 128> ons{};
+    std::array<int, 128> offs{};
+    for (const auto& e : events) {
+        if (e.type == ArpEvent::Type::NoteOn) ons[e.note]++;
+        else if (e.type == ArpEvent::Type::NoteOff) offs[e.note]++;
+    }
+    for (uint8_t p : {uint8_t{48}, uint8_t{52}, uint8_t{55}}) {
+        INFO("pitch " << static_cast<int>(p) << ": on=" << ons[p] << " off=" << offs[p]);
+        CHECK(ons[p] > 2);
+        CHECK(offs[p] <= ons[p]);
+    }
+
+    // Same gate-corruption check as the chord case. Ratchet sub-step durations
+    // are the step split by the ratchet count, so integer division leaves a
+    // 1-sample wobble between sub-steps; a leftover pending off would move the
+    // release by thousands of samples, not by one.
+    std::vector<int32_t> durations;
+    int32_t openAt = -1;
+    for (const auto& e : events) {
+        if (e.note != 48) continue;
+        if (e.type == ArpEvent::Type::NoteOn) {
+            openAt = e.sampleOffset;
+        } else if (e.type == ArpEvent::Type::NoteOff && openAt >= 0) {
+            durations.push_back(e.sampleOffset - openAt);
+            openAt = -1;
+        }
+    }
+    REQUIRE(durations.size() >= 3);
+    const int32_t reference = durations.front();
+    INFO("pitch 48 reference gate: " << reference << " samples");
+    for (size_t i = 1; i < durations.size(); ++i) {
+        INFO("pitch 48 note " << i << " sounded for " << durations[i]
+             << " samples, expected ~" << reference);
+        CHECK(std::abs(durations[i] - reference) <= 2);
     }
 }

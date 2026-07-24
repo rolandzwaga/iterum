@@ -333,7 +333,8 @@ void ArpeggiatorCore::fireSubStep([[maybe_unused]] const BlockContext& ctx,
                     .type = ArpEvent::Type::NoteOn,
                     .note = ratchetNotes_[i],
                     .velocity = applyDecay(ratchetVelocities_[i]),
-                    .sampleOffset = sampleOffset + strumOffsetFor(i),
+                    .sampleOffset = clampOffsetToBlock(
+                        sampleOffset + strumOffsetFor(i), ctx.blockSize),
                     .legato = false};  // Sub-steps after first are never legato
             }
             // Update currentArpNotes_ tracking
@@ -1012,30 +1013,42 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
 
                 // Emit noteOffs for currently sounding notes (replace previous)
                 if (!isSlide) {
-                    for (size_t i = 0; i < currentArpNoteCount_ && eventCount < maxEvents; ++i) {
+                    // Drop their scheduled gate NoteOffs first. With gate > 100%
+                    // a pending off outlives the step that scheduled it, and
+                    // addPendingNoteOff does not dedup, so a leftover would fire
+                    // mid-step and cut the note this step re-strikes. Matches the
+                    // rest/tie/slide paths, which all cancel before releasing.
+                    cancelPendingNoteOffsForCurrentNotes();
+                    size_t releasedCount = 0;
+                    for (; releasedCount < currentArpNoteCount_ && eventCount < maxEvents;
+                         ++releasedCount) {
                         outputEvents[eventCount++] = ArpEvent{
-                            .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[i], .velocity = 0, .sampleOffset = sampleOffset};
+                            .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = sampleOffset};
                     }
-                    currentArpNoteCount_ = 0;
+                    // Keep whatever the span cap stopped us from releasing.
+                    retainUnreleasedArpNotes(releasedCount);
                 }
 
                 // 077-spice-dice-humanize: Emit first sub-step noteOns at humanized offset (FR-019)
                 // v1.5: Precompute strum offsets once per chord for consistent direction
                 prepareStrumOffsets(result.count);
-                for (size_t i = 0; i < result.count && eventCount < maxEvents; ++i) {
+                size_t emittedNoteOns = 0;
+                for (; emittedNoteOns < result.count && eventCount < maxEvents;
+                     ++emittedNoteOns) {
                     outputEvents[eventCount++] = ArpEvent{
                         .type = ArpEvent::Type::NoteOn,
-                        .note = result.notes[i],
-                        .velocity = result.velocities[i],
-                        .sampleOffset = humanizedSampleOffset + strumOffsetFor(i),
+                        .note = result.notes[emittedNoteOns],
+                        .velocity = result.velocities[emittedNoteOns],
+                        .sampleOffset = clampOffsetToBlock(humanizedSampleOffset + strumOffsetFor(emittedNoteOns), blockSize),
                         .legato = isSlide};  // legato on first sub-step if Slide
                 }
 
-                // Track currently sounding notes
-                for (size_t i = 0; i < result.count && i < 32; ++i) {
-                    currentArpNotes_[i] = result.notes[i];
+                // Track only the notes that actually sounded -- see the chord
+                // path: tracking a dropped NoteOn produces a phantom release.
+                // Appends, since the release loop above may have left notes.
+                for (size_t i = 0; i < emittedNoteOns && currentArpNoteCount_ < 32; ++i) {
+                    currentArpNotes_[currentArpNoteCount_++] = result.notes[i];
                 }
-                currentArpNoteCount_ = result.count < 32 ? result.count : 32;
 
                 // Store ratchet state for remaining sub-steps (FR-011)
                 ratchetSubStepCounter_ = 0;
@@ -1060,7 +1073,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 // Schedule gate noteOff for first sub-step (sub-step index 0)
                 // First sub-step always schedules gate (look-ahead only on last sub-step)
                 // v1.5: Use precomputed strum offsets so each note gets the same gate length
-                for (size_t i = 0; i < result.count; ++i) {
+                for (size_t i = 0; i < emittedNoteOns; ++i) {
                     const size_t strumOff = static_cast<size_t>(strumOffsetFor(i));
                     addPendingNoteOff(result.notes[i],
                                        ratchetGateDurations_[0] + strumOff,
@@ -1085,7 +1098,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                             .type = ArpEvent::Type::NoteOn,
                             .note = result.notes[i],
                             .velocity = result.velocities[i],
-                            .sampleOffset = humanizedSampleOffset + strumOffsetFor(i),
+                            .sampleOffset = clampOffsetToBlock(humanizedSampleOffset + strumOffsetFor(i), blockSize),
                             .legato = true};  // legato=true
                     }
                     // Track all new chord notes as currently sounding
@@ -1121,64 +1134,82 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 }
             } else if (result.count > 1) {
                 // FR-022: Chord mode -- emit NoteOff for all previously
-                // sounding notes first (to replace the previous chord)
-                for (size_t i = 0; i < currentArpNoteCount_ && eventCount < maxEvents; ++i) {
+                // sounding notes first (to replace the previous chord). Drop
+                // their scheduled gate NoteOffs first: with gate > 100% a
+                // pending off outlives the step that scheduled it, and
+                // addPendingNoteOff does not dedup, so a leftover would fire
+                // mid-step and cut the note this step re-strikes. Matches the
+                // rest/tie/slide paths, which all cancel before releasing.
+                cancelPendingNoteOffsForCurrentNotes();
+                size_t releasedCount = 0;
+                for (; releasedCount < currentArpNoteCount_ && eventCount < maxEvents;
+                     ++releasedCount) {
                     outputEvents[eventCount++] = ArpEvent{
-                        .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[i], .velocity = 0, .sampleOffset = sampleOffset};
+                        .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = sampleOffset};
                 }
-                currentArpNoteCount_ = 0;
+                // Keep whatever the span cap stopped us from releasing.
+                retainUnreleasedArpNotes(releasedCount);
 
                 // Emit NoteOn for ALL chord notes at the same humanized offset
                 // v1.5: Precompute strum offsets once per chord
                 prepareStrumOffsets(result.count);
-                for (size_t i = 0; i < result.count && eventCount < maxEvents; ++i) {
+                size_t emittedNoteOns = 0;
+                for (; emittedNoteOns < result.count && eventCount < maxEvents;
+                     ++emittedNoteOns) {
                     outputEvents[eventCount++] = ArpEvent{
                         .type = ArpEvent::Type::NoteOn,
-                        .note = result.notes[i],
-                        .velocity = result.velocities[i],
-                        .sampleOffset = humanizedSampleOffset + strumOffsetFor(i)};
+                        .note = result.notes[emittedNoteOns],
+                        .velocity = result.velocities[emittedNoteOns],
+                        .sampleOffset = clampOffsetToBlock(humanizedSampleOffset + strumOffsetFor(emittedNoteOns), blockSize)};
                 }
 
-                // Track all chord notes as currently sounding (FR-025)
-                for (size_t i = 0; i < result.count && i < 32; ++i) {
-                    currentArpNotes_[i] = result.notes[i];
+                // Track the chord notes that actually sounded (FR-025). Notes
+                // whose NoteOn the span cap dropped must NOT be tracked or
+                // scheduled: a pending NoteOff for a note that never sounded is
+                // emitted later as a phantom release to the host and the mono
+                // audition voice. Appends, because the release loop above may
+                // have left un-released notes in the array.
+                for (size_t i = 0; i < emittedNoteOns && currentArpNoteCount_ < 32; ++i) {
+                    currentArpNotes_[currentArpNoteCount_++] = result.notes[i];
                 }
-                currentArpNoteCount_ = result.count < 32 ? result.count : 32;
 
                 // Schedule PendingNoteOff for each chord note (FR-026)
                 // Skip if next step is Tie or Slide (FR-012, FR-015)
                 // v1.5: Use precomputed strum offsets so strummed notes get equal gate
                 if (!suppressGateNoteOff) {
-                    for (size_t i = 0; i < result.count; ++i) {
+                    for (size_t i = 0; i < emittedNoteOns; ++i) {
                         const size_t strumOff = static_cast<size_t>(strumOffsetFor(i));
                         addPendingNoteOff(result.notes[i], gateDuration + strumOff,
                                            outputEvents, eventCount, maxEvents);
                     }
                 }
             } else {
-                // Single note path (result.count == 1)
+                // Single note path (result.count == 1). Tracking and gate
+                // scheduling sit INSIDE the span-cap guard: a note whose NoteOn
+                // the cap dropped never sounded, so scheduling its release would
+                // emit a phantom NoteOff to the host and the audition voice.
                 if (eventCount < maxEvents) {
                     outputEvents[eventCount++] = ArpEvent{
                         .type = ArpEvent::Type::NoteOn,
                         .note = result.notes[0],
                         .velocity = result.velocities[0],
                         .sampleOffset = humanizedSampleOffset};
-                }
 
-                // Track currently sounding note (FR-025). The store must sit
-                // INSIDE the bound check -- the chord path above can leave the
-                // count at 32, and a long gate keeps those notes sounding into
-                // this step, so writing first put one element past the end of
-                // currentArpNotes_ (std::array<uint8_t, 32>).
-                if (currentArpNoteCount_ < 32) {
-                    currentArpNotes_[currentArpNoteCount_++] = result.notes[0];
-                }
+                    // Track currently sounding note (FR-025). The store must sit
+                    // INSIDE the bound check -- the chord path above can leave the
+                    // count at 32, and a long gate keeps those notes sounding into
+                    // this step, so writing first put one element past the end of
+                    // currentArpNotes_ (std::array<uint8_t, 32>).
+                    if (currentArpNoteCount_ < 32) {
+                        currentArpNotes_[currentArpNoteCount_++] = result.notes[0];
+                    }
 
-                // Schedule NoteOff for this note.
-                // Skip if next step is Tie or Slide (FR-012, FR-015)
-                if (!suppressGateNoteOff) {
-                    addPendingNoteOff(result.notes[0], gateDuration, outputEvents,
-                                       eventCount, maxEvents);
+                    // Schedule NoteOff for this note.
+                    // Skip if next step is Tie or Slide (FR-012, FR-015)
+                    if (!suppressGateNoteOff) {
+                        addPendingNoteOff(result.notes[0], gateDuration, outputEvents,
+                                           eventCount, maxEvents);
+                    }
                 }
             }
             } // end ratchetCount == 1 else branch
