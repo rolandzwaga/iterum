@@ -248,6 +248,33 @@ public:
         reset();
     }
 
+    /// @brief Like `prepare()`, but carries an outstanding panic note-off
+    /// obligation across the reset.
+    ///
+    /// Hosts reconfigure with setActive(false) -> setupProcessing() ->
+    /// setActive(true). A plain `prepare()` in the middle of that sequence
+    /// clears `panicRequested_` *and* the `currentArpNotes_` list the panic
+    /// would have released, so notes already emitted to a MIDI *output* bus are
+    /// stranded downstream. Call this instead whenever a deactivation flush is
+    /// still outstanding: all timing state is reset for the new sample rate, but
+    /// the note-off obligation survives to discharge on the next `processBlock`.
+    inline void prepareRetainingPanicNoteOff(double sampleRate,
+                                             size_t maxBlockSize) noexcept {
+        const bool panic = panicRequested_;
+        const bool disableNoteOff = needsDisableNoteOff_;
+        const auto savedNotes = currentArpNotes_;
+        const size_t savedCount = currentArpNoteCount_;
+
+        prepare(sampleRate, maxBlockSize);
+
+        if (panic) {
+            currentArpNotes_ = savedNotes;
+            currentArpNoteCount_ = savedCount;
+            panicRequested_ = true;
+            needsDisableNoteOff_ = disableNoteOff;
+        }
+    }
+
     /// @brief Reset all state to initial values. Configuration preserved.
     inline void reset() noexcept {
         sampleCounter_ = 0;

@@ -131,6 +131,19 @@ struct Harness {
 
     void runBlocks(int n) { for (int i = 0; i < n; ++i) runBlock(); }
 
+    /// Re-run setupProcessing with a different sample rate / block size, the way
+    /// a host does when the audio device changes. Only legal while inactive.
+    void reconfigure(double sampleRate, int32 maxBlockSize)
+    {
+        ProcessSetup setup{};
+        setup.processMode = kRealtime;
+        setup.symbolicSampleSize = kSample32;
+        setup.sampleRate = sampleRate;
+        setup.maxSamplesPerBlock = maxBlockSize;
+        proc->setupProcessing(setup);
+        ctx.sampleRate = sampleRate;
+    }
+
     [[nodiscard]] int outstanding() const
     {
         int total = 0;
@@ -169,6 +182,48 @@ TEST_CASE("setActive(false) does not strand sounding arp notes",
 
     INFO("outstanding after reactivation + one block: " << h.outstanding());
     REQUIRE(h.outstanding() == 0);
+
+    h.proc->setActive(false);
+    h.proc->terminate();
+}
+
+TEST_CASE("GMF-001: setupProcessing between deactivate and reactivate does not strand arp notes",
+          "[processor][gradus][lifecycle][flush]")
+{
+    // deactivate -> setupProcessing -> activate is the standard VST3 sample-rate
+    // / block-size change sequence (setupProcessing is only legal while
+    // inactive). setupProcessing calls arpCore_.prepare() -> reset(), which used
+    // to wipe the panic obligation recorded by setActive(false) *and* the note
+    // list it would have released, while pendingDeactivateFlush_ stayed true so
+    // setActive(true) still skipped its own reset. midiDelay_ is untouched by
+    // setupProcessing, so echo NoteOffs still fired -- the two flush paths were
+    // asymmetric and the arp NoteOns were stranded downstream.
+    Harness h;
+    h.proc->setActive(true);
+
+    Krate::Test::ParameterChanges setupParams;
+    setupParams.add(kArpTempoSyncId, 1.0);
+    setupParams.add(kArpNoteValueId, 16.0 / 20.0);  // 1/2 note
+
+    h.noteOn(60);
+    h.noteOn(64);
+    h.noteOn(67);
+    h.runBlock(&setupParams);
+    h.runBlocks(4);
+
+    const int soundingBeforeDeactivate = h.outstanding();
+    INFO("outstanding note-ons at deactivate: " << soundingBeforeDeactivate);
+    REQUIRE(soundingBeforeDeactivate > 0);
+
+    h.proc->setActive(false);
+    h.reconfigure(48000.0, 1024);
+    h.proc->setActive(true);
+    h.runBlock();
+
+    for (int p = 0; p < 128; ++p) {
+        INFO("pitch " << p << ": on=" << h.onCount[p] << " off=" << h.offCount[p]);
+        REQUIRE(h.offCount[p] >= h.onCount[p]);
+    }
 
     h.proc->setActive(false);
     h.proc->terminate();

@@ -84,7 +84,15 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup)
     sampleRate_ = setup.sampleRate;
     maxBlockSize_ = setup.maxSamplesPerBlock;
 
-    arpCore_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_));
+    // A host reconfigures with setActive(false) -> setupProcessing() ->
+    // setActive(true). The plain prepare() resets the arp, which would wipe both
+    // the panic obligation recorded on deactivation and the sounding-note list
+    // it has to release -- while midiDelay_ (untouched here) still flushes its
+    // own echoes, leaving the two paths asymmetric and the arp notes stranded.
+    if (pendingDeactivateFlush_)
+        arpCore_.prepareRetainingPanicNoteOff(sampleRate_, static_cast<size_t>(maxBlockSize_));
+    else
+        arpCore_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_));
     auditionVoice_.prepare(sampleRate_);
 
     return AudioEffect::setupProcessing(setup);
