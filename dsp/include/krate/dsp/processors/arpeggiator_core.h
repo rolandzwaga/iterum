@@ -222,6 +222,15 @@ public:
         // so existing presets/behavior are unchanged.
         scaleHarmonizer_.setScale(ScaleType::Chromatic);
 
+        // Speed-curve triple buffer: the three slot indices must start DISTINCT
+        // (ready=0, writer=1, reader=2) or the writer and the audio thread would
+        // begin life aliasing the same staging buffer. Value-initialization
+        // would give all three 0.
+        laneSpeedCurveWriteSlot_.fill(uint8_t{1});
+        laneSpeedCurveReadSlot_.fill(uint8_t{2});
+        for (auto& ready : laneSpeedCurveReady_)
+            ready.store(uint8_t{0}, std::memory_order_relaxed);
+
         // Spec 142: Sequencer Note lane defaults. Pitch step[0]=60 (C4), all
         // rest flags=1 (rest) so a fresh pattern is silent until user populates.
         // Expand to full capacity first: ArpLane::setStep clamps its index to
@@ -693,17 +702,24 @@ public:
     }
 
     /// @brief Stage a baked speed curve lookup table for a lane.
-    /// Safe to call from any thread — the table is copied to a staging buffer
-    /// and an atomic dirty flag is set. The audio thread consumes it via
-    /// consumePendingCurveTables().
+    /// Safe to call from the message thread while the audio thread runs: the
+    /// table is written into the staging slot the audio thread is NOT reading,
+    /// and only then published via an atomic release.
     /// @param laneIndex Lane 0-7
     /// @param table 256-entry table with values in [0, 1] (0.5 = center)
     void setLaneSpeedCurveTable(size_t laneIndex,
                                 const std::array<float, 256>& table) noexcept {
-        if (laneIndex < kNumLanes) {
-            laneSpeedCurveTablesStaging_[laneIndex] = table;
-            laneSpeedCurveTableDirty_[laneIndex].store(true, std::memory_order_release);
-        }
+        if (laneIndex >= kNumLanes) return;
+        // Triple-buffer publish. Fill the slot this thread owns, then swap it
+        // into `ready` and take whatever was there as the next write target.
+        // The reader owns its own slot for as long as it is copying, so writer
+        // and reader can never touch the same buffer.
+        uint8_t& writeSlot = laneSpeedCurveWriteSlot_[laneIndex];
+        laneSpeedCurveTablesStaging_[laneIndex][writeSlot] = table;
+        const uint8_t prev = laneSpeedCurveReady_[laneIndex].exchange(
+            static_cast<uint8_t>(writeSlot | kCurveDirtyBit),
+            std::memory_order_acq_rel);
+        writeSlot = static_cast<uint8_t>(prev & kCurveSlotMask);
     }
 
     /// @brief Consume pending curve table updates. Call from audio thread only
@@ -714,10 +730,18 @@ public:
     /// even when staged from the controller.
     void consumePendingCurveTables() noexcept {
         for (size_t i = 0; i < kNumLanes; ++i) {
-            if (laneSpeedCurveTableDirty_[i].load(std::memory_order_acquire)) {
-                laneSpeedCurveTables_[i] = laneSpeedCurveTablesStaging_[i];
-                laneSpeedCurveTableDirty_[i].store(false, std::memory_order_relaxed);
-            }
+            if ((laneSpeedCurveReady_[i].load(std::memory_order_acquire)
+                 & kCurveDirtyBit) == 0)
+                continue;
+            // Hand our old slot back and take ownership of the published one.
+            // The exchange clears the dirty bit (our slot index carries none),
+            // and the writer's next target becomes the slot we just released --
+            // so the buffer we are about to copy stays ours for the whole copy.
+            uint8_t& readSlot = laneSpeedCurveReadSlot_[i];
+            const uint8_t prev = laneSpeedCurveReady_[i].exchange(
+                readSlot, std::memory_order_acq_rel);
+            readSlot = static_cast<uint8_t>(prev & kCurveSlotMask);
+            laneSpeedCurveTables_[i] = laneSpeedCurveTablesStaging_[i][readSlot];
         }
     }
 
@@ -1615,12 +1639,29 @@ private:
     // cycle. curveDepths_ controls the offset range; curveEnabled_ gates the
     // effect. Tables are sent from the controller via IMessage.
     //
-    // Thread safety: tables are written from the message thread (via notify())
-    // into staging buffers, then copied to the active tables on the audio thread
-    // in consumePendingCurveTables(). The atomic dirty flags gate the copy.
+    // Thread safety: tables are handed from the message thread (via notify())
+    // to the audio thread through a per-lane TRIPLE buffer, then copied into the
+    // active table in consumePendingCurveTables().
+    //
+    // Three slots, not one and not two. One was a plain data race: a 1 KB copy
+    // is nowhere near atomic, so a second publish landing mid-copy rewrote the
+    // bytes the audio thread was reading (ThreadSanitizer flags it directly).
+    // Two is still not enough -- while the reader holds the published slot, two
+    // further publishes wrap the writer straight back onto it. With three, the
+    // writer and reader each own a slot outright and `ready` holds the third, so
+    // the two never alias. Ownership rotates through the exchange below; the
+    // low bits carry the slot index and the top bit marks unread data.
+    static constexpr uint8_t kCurveSlotMask = 0x03;
+    static constexpr uint8_t kCurveDirtyBit = 0x80;
     std::array<std::array<float, 256>, kNumLanes> laneSpeedCurveTables_{};
-    std::array<std::array<float, 256>, kNumLanes> laneSpeedCurveTablesStaging_{};
-    std::array<std::atomic<bool>, kNumLanes> laneSpeedCurveTableDirty_{};
+    std::array<std::array<std::array<float, 256>, 3>, kNumLanes>
+        laneSpeedCurveTablesStaging_{};
+    /// Published slot + dirty bit. Starts at slot 0, clean.
+    std::array<std::atomic<uint8_t>, kNumLanes> laneSpeedCurveReady_{};
+    /// Writer-owned slot (message thread only). Starts at 1.
+    std::array<uint8_t, kNumLanes> laneSpeedCurveWriteSlot_{};
+    /// Reader-owned slot (audio thread only). Starts at 2.
+    std::array<uint8_t, kNumLanes> laneSpeedCurveReadSlot_{};
     // Written from the host message thread (Gradus routes depth through
     // Processor::notify), read on the audio thread every block -- atomic for
     // the same reason as laneSpeedCurveEnabled_ below.

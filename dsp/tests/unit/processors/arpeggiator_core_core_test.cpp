@@ -3835,3 +3835,72 @@ TEST_CASE("GMF-005: ratchet replace with gate>100% emits one NoteOff per NoteOn"
         CHECK(std::abs(durations[i] - reference) <= 2);
     }
 }
+
+// =============================================================================
+// Bar boundary must outrank a coincident NoteOff (GMF-010)
+// =============================================================================
+// The priority cascade documents BarBoundary > NoteOff > Step > SubStep, but the
+// bar override only promoted `next` when it was Step or SubStep. A ~100% gate
+// makes the previous step's NoteOff fall exactly on the next step boundary, and
+// the overrides above force next == NoteOff in that case, so the bar promotion
+// was skipped. Control entered the NoteOff handler, saw
+// sampleCounter_ >= currentStepDuration_ and fired the step WITHOUT
+// selector_.reset()/resetLanes() -- and barBoundaryOffset is only invalidated
+// inside the BarBoundary branch, so the reset was deferred a full iteration.
+// With Retrigger=Beat the first step of every bar therefore played the previous
+// bar's continuation instead of step 0. The existing "resets at bar boundary"
+// case uses a 50% gate and never lands a NoteOff on the boundary, so it misses
+// this entirely.
+
+TEST_CASE("GMF-010: bar boundary coincident with a due NoteOff still fires pattern step 0",
+          "[processors][arpeggiator_core][retrigger][barboundary]") {
+    // 4/4 at 120 BPM: bar = 88200 samples. 1/8 steps = 11025, so step 8 lands
+    // exactly on the bar line. At gate 100% the note struck at step 7 (77175)
+    // is released at 88200 too -- the coincidence this pins.
+    ArpeggiatorCore arp;
+    arp.prepare(44100.0, 512);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Up);
+    arp.setNoteValue(NoteValue::Eighth, NoteModifier::None);
+    arp.setRetrigger(ArpRetriggerMode::Beat);
+    arp.setGateLength(100.0f);
+    arp.setSwing(0.0f);
+    arp.noteOn(48, 100);  // C3
+    arp.noteOn(52, 100);  // E3
+    arp.noteOn(55, 100);  // G3
+
+    BlockContext ctx;
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+    ctx.timeSignatureNumerator = 4;
+    ctx.timeSignatureDenominator = 4;
+    ctx.transportPositionSamples = 0;
+
+    const auto events = collectEvents(arp, ctx, 200);
+    const auto noteOns = filterNoteOns(events);
+    REQUIRE(noteOns.size() >= 9);
+
+    // A NoteOff must indeed be due at the bar line, otherwise this test is not
+    // exercising the coincident case at all.
+    const auto noteOffs = filterNoteOffs(events);
+    const bool noteOffOnBarLine = std::any_of(
+        noteOffs.begin(), noteOffs.end(), [](const ArpEvent& e) {
+            return std::abs(e.sampleOffset - 88200) <= 1;
+        });
+    INFO("a NoteOff is due exactly at the bar boundary: " << noteOffOnBarLine);
+    REQUIRE(noteOffOnBarLine);
+
+    bool foundBarStep = false;
+    for (const auto& on : noteOns) {
+        if (std::abs(on.sampleOffset - 88200) <= 1) {
+            INFO("pitch at the bar boundary: " << static_cast<int>(on.note)
+                 << " (expected 48 = pattern step 0)");
+            CHECK(on.note == 48);
+            foundBarStep = true;
+            break;
+        }
+    }
+    CHECK(foundBarStep);
+}

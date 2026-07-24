@@ -2086,3 +2086,46 @@ TEST_CASE("Step swing modifies total duration, ratchet swing subdivides within",
         CHECK(std::abs(gap2 - 3693) <= 1);
     }
 }
+
+// =============================================================================
+// Ratchet sub-step NoteOns must carry velocity >= 1 (GMF-011)
+// =============================================================================
+// fireSubStep's applyDecay clamped to [0,127] while the main step path clamps to
+// [1,127]. decayFactor = (1 - ratchetDecay)^subStepIndex, so a high decay drives
+// later sub-steps to 0. Many hosts read a velocity-0 NoteOn as a note-off, so the
+// note goes silent early at data.outputEvents -- while Gradus's audition voice
+// takes noteOn(note, 0) as active with velocity 0, i.e. audible-state true but
+// silent. Host and local monitor then disagree about what is sounding.
+
+TEST_CASE("GMF-011: ratchet sub-step NoteOns always carry velocity >= 1",
+          "[ArpeggiatorCore][ratchet][velocity]") {
+    for (const float decay : {80.0f, 100.0f}) {
+        ArpeggiatorCore arp;
+        BlockContext ctx{};
+        ctx.sampleRate = 44100.0;
+        ctx.blockSize = 512;
+        ctx.tempoBPM = 120.0;
+        ctx.isPlaying = true;
+
+        arp.prepare(ctx.sampleRate, ctx.blockSize);
+        arp.setEnabled(true);
+        arp.setMode(ArpMode::Up);
+        arp.setNoteValue(NoteValue::Quarter, NoteModifier::None);
+        arp.setRatchetDecay(decay);
+        arp.ratchetLane().setLength(1);
+        arp.ratchetLane().setStep(0, static_cast<uint8_t>(4));
+        arp.noteOn(60, 100);
+
+        const auto events = collectEvents(arp, ctx, 300);
+        const auto noteOns = filterNoteOns(events);
+        INFO("ratchetDecay = " << decay << "%, note-ons captured: " << noteOns.size());
+        REQUIRE(noteOns.size() > 4);
+
+        for (const auto& on : noteOns) {
+            INFO("NoteOn pitch " << static_cast<int>(on.note)
+                 << " at " << on.sampleOffset
+                 << " velocity " << static_cast<int>(on.velocity));
+            CHECK(on.velocity >= 1);
+        }
+    }
+}

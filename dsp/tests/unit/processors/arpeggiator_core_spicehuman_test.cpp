@@ -3,6 +3,7 @@
 // Split from the former 17k-line arpeggiator_core_test.cpp (D1). Shared helpers in
 // arpeggiator_core_test_helpers.h.
 #include "arpeggiator_core_test_helpers.h"
+#include <algorithm>
 
 
 
@@ -2289,4 +2290,119 @@ TEST_CASE("SpiceAndHumanize_EvaluationOrder_SpiceBeforeHumanize",
         INFO("stddev=" << stddev);
         CHECK(stddev > 1.0);
     }
+}
+
+// =============================================================================
+// A NoteOff must never sort after the NoteOn that re-strikes the same pitch
+// =============================================================================
+// GMF-008: the chord/ratchet replace loops emitted their release at the raw
+// step offset while the new NoteOns went out at humanizedSampleOffset. Negative
+// humanize makes humanizedSampleOffset SMALLER than sampleOffset, and the
+// processor's MidiNoteDelay sorts strictly by offset, so the release sorted
+// AFTER the NoteOn -- for a pitch held across steps (ordinary Chord mode) the
+// host saw NoteOn(p) then NoteOff(p) and killed the note that had just been
+// struck. Releasing at the humanized offset keeps the pair ordered; the equal
+// case is resolved by the stable sort, which keeps code order.
+//
+// GMF-009: the gate NoteOff is measured from samplesProcessed (the un-humanized
+// step position), so a large POSITIVE humanize offset with a short gate made the
+// scheduled release land before its own NoteOn -- an orphan NoteOff followed by
+// a note with no scheduled release at all.
+
+namespace {
+
+/// Mirror the processor: sort by sampleOffset, stable, like MidiNoteDelay does.
+inline std::vector<ArpEvent> sortedByOffset(std::vector<ArpEvent> events) {
+    std::stable_sort(events.begin(), events.end(),
+                     [](const ArpEvent& a, const ArpEvent& b) {
+                         return a.sampleOffset < b.sampleOffset;
+                     });
+    return events;
+}
+
+/// Count ordering violations in the stream the host would see. Per pitch the
+/// events must strictly alternate On, Off, On, Off ... Two NoteOns in a row mean
+/// the release meant to separate them sorted PAST the second strike (GMF-008);
+/// a NoteOff with nothing open is an orphan release (GMF-009).
+inline int countInvertedPairs(const std::vector<ArpEvent>& sorted) {
+    std::array<bool, 128> open{};
+    int violations = 0;
+    for (const auto& e : sorted) {
+        if (e.type == ArpEvent::Type::NoteOn) {
+            if (open[e.note]) ++violations;
+            open[e.note] = true;
+        } else if (e.type == ArpEvent::Type::NoteOff) {
+            if (!open[e.note]) ++violations;
+            open[e.note] = false;
+        }
+    }
+    return violations;
+}
+
+}  // namespace
+
+TEST_CASE("GMF-008: with humanize>0 no chord NoteOn precedes the NoteOff releasing the same pitch",
+          "[ArpeggiatorCore][chord][humanize][ordering]")
+{
+    ArpeggiatorCore arp;
+    BlockContext ctx{};
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+
+    arp.prepare(ctx.sampleRate, ctx.blockSize);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Chord);
+    arp.setNoteValue(NoteValue::Sixteenth, NoteModifier::None);
+    // Gate > 100% keeps the previous chord sounding into the next step, so the
+    // replace loop actually has notes to release. At the default 80% the gate
+    // NoteOff has already fired before the step boundary and the replace loop is
+    // a no-op, which never exercises the ordering.
+    arp.setGateLength(150.0f);
+    arp.setHumanize(0.75f);
+
+    arp.noteOn(60, 100);
+    arp.noteOn(64, 100);
+    arp.noteOn(67, 100);
+
+    // Enough steps that the humanize PRNG yields negative timing offsets.
+    const auto events = collectEvents(arp, ctx, 400);
+    REQUIRE(events.size() > 20);
+
+    // Per-block ordering is what the host sees, so evaluate block by block:
+    // collectEvents has already shifted offsets to absolute positions.
+    const int inverted = countInvertedPairs(sortedByOffset(events));
+    INFO("NoteOffs sorting after the NoteOn that re-struck the same pitch: " << inverted);
+    CHECK(inverted == 0);
+}
+
+TEST_CASE("GMF-009: gate NoteOff never precedes its own humanized NoteOn (short gate + high humanize)",
+          "[ArpeggiatorCore][humanize][gate][ordering]")
+{
+    ArpeggiatorCore arp;
+    BlockContext ctx{};
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+
+    arp.prepare(ctx.sampleRate, ctx.blockSize);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Up);
+    // 1/32 at 120 BPM is 5512 samples; a 1% gate is ~55 samples, far shorter
+    // than the +/-20 ms (882 sample) humanize window.
+    arp.setNoteValue(NoteValue::ThirtySecond, NoteModifier::None);
+    arp.setGateLength(1.0f);
+    arp.setHumanize(1.0f);
+
+    arp.noteOn(60, 100);
+    arp.noteOn(64, 100);
+
+    const auto events = collectEvents(arp, ctx, 400);
+    REQUIRE(events.size() > 20);
+
+    const int inverted = countInvertedPairs(sortedByOffset(events));
+    INFO("gate NoteOffs sorting before their own NoteOn: " << inverted);
+    CHECK(inverted == 0);
 }

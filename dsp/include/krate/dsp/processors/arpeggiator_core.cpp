@@ -201,9 +201,22 @@ size_t ArpeggiatorCore::processBlock(const BlockContext& ctx,
             if (samplesUntilBar < jump) {
                 jump = samplesUntilBar;
                 next = NextEvent::BarBoundary;
-            } else if (samplesUntilBar == jump &&
-                       (next == NextEvent::Step || next == NextEvent::SubStep)) {
-                // Bar boundary and step/substep at same sample: bar reset first
+            } else if (samplesUntilBar == jump) {
+                // Bar boundary coincident with anything else: the bar wins, per
+                // the documented BarBoundary > NoteOff > Step > SubStep order.
+                //
+                // This used to exclude next == NoteOff, which the overrides
+                // above force whenever a due NoteOff lands on the step boundary
+                // -- exactly what a ~100% gate produces. Control then entered
+                // the NoteOff handler, found sampleCounter_ >= currentStepDuration_
+                // and fired the step WITHOUT selector_.reset()/resetLanes(),
+                // while barBoundaryOffset is only invalidated inside the
+                // BarBoundary branch. The reset was deferred to the next
+                // iteration, so with Retrigger=Beat the first step of every bar
+                // played the previous bar's continuation instead of step 0.
+                //
+                // Taking the BarBoundary branch is safe for FR-021 ordering: it
+                // emits due NoteOffs (below) before calling fireStep.
                 next = NextEvent::BarBoundary;
             }
 
@@ -319,9 +332,14 @@ void ArpeggiatorCore::fireSubStep([[maybe_unused]] const BlockContext& ctx,
             ? std::pow(1.0f - ratchetDecay_, static_cast<float>(ratchetSubStepIndex_))
             : 1.0f;
 
+        // Floor at 1, matching the main step path (which clamps to [1,127]).
+        // A NoteOn with velocity 0 is a note-off to many hosts, so a fully
+        // decayed sub-step would silence the note early at data.outputEvents
+        // while the audition voice read it as active-but-silent -- host and
+        // local monitor disagreeing about what is sounding.
         auto applyDecay = [decayFactor](uint8_t v) -> uint8_t {
             float scaled = static_cast<float>(v) * decayFactor;
-            return static_cast<uint8_t>(std::clamp(scaled, 0.0f, 127.0f));
+            return static_cast<uint8_t>(std::clamp(scaled, 1.0f, 127.0f));
         };
 
         // (2) Emit noteOn for ratcheted note(s)
@@ -982,6 +1000,24 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 gateDuration = static_cast<size_t>(std::max(int32_t{1}, humanizedGateDuration));
             }
 
+            // GMF-009: gate length is measured from the note's ACTUAL onset.
+            // addPendingNoteOff counts down from samplesProcessed -- the
+            // un-humanized step position -- so without this delta every
+            // positively-humanized note was cut short by exactly the humanize
+            // offset, and once that offset exceeded the gate the release
+            // scheduled BEFORE its own NoteOn: an orphan NoteOff, followed by a
+            // note left with no scheduled release at all. Combined in int64 so a
+            // negative delta cannot underflow the size_t, with a 1-sample floor.
+            const auto scheduleGate = [&](uint8_t note, size_t base, size_t strumOff) {
+                const int64_t total = static_cast<int64_t>(base)
+                                    + static_cast<int64_t>(strumOff)
+                                    + static_cast<int64_t>(humanizedSampleOffset)
+                                    - static_cast<int64_t>(sampleOffset);
+                addPendingNoteOff(note,
+                                  total < 1 ? size_t{1} : static_cast<size_t>(total),
+                                  outputEvents, eventCount, maxEvents);
+            };
+
             // Peek at next modifier step: if the next step is a Tie or Slide step,
             // skip scheduling gate-based noteOffs so the notes sustain into
             // the next step (FR-012: Tie overrides gate; FR-015: Slide suppresses
@@ -1023,7 +1059,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                     for (; releasedCount < currentArpNoteCount_ && eventCount < maxEvents;
                          ++releasedCount) {
                         outputEvents[eventCount++] = ArpEvent{
-                            .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = sampleOffset};
+                            .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = humanizedSampleOffset};
                     }
                     // Keep whatever the span cap stopped us from releasing.
                     retainUnreleasedArpNotes(releasedCount);
@@ -1075,9 +1111,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 // v1.5: Use precomputed strum offsets so each note gets the same gate length
                 for (size_t i = 0; i < emittedNoteOns; ++i) {
                     const size_t strumOff = static_cast<size_t>(strumOffsetFor(i));
-                    addPendingNoteOff(result.notes[i],
-                                       ratchetGateDurations_[0] + strumOff,
-                                       outputEvents, eventCount, maxEvents);
+                    scheduleGate(result.notes[i], ratchetGateDurations_[0], strumOff);
                 }
             } else {
                 // ratchetCount == 1: normal (Phase 5) note emission path
@@ -1128,8 +1162,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                     for (size_t i = 0; i < result.count; ++i) {
                         const size_t strumOff = (result.count > 1)
                             ? static_cast<size_t>(strumOffsetFor(i)) : 0;
-                        addPendingNoteOff(result.notes[i], gateDuration + strumOff,
-                                           outputEvents, eventCount, maxEvents);
+                        scheduleGate(result.notes[i], gateDuration, strumOff);
                     }
                 }
             } else if (result.count > 1) {
@@ -1141,11 +1174,21 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 // mid-step and cut the note this step re-strikes. Matches the
                 // rest/tie/slide paths, which all cancel before releasing.
                 cancelPendingNoteOffsForCurrentNotes();
+                // Release at the HUMANIZED offset, not the raw step offset.
+                // Negative humanize puts humanizedSampleOffset before
+                // sampleOffset, and MidiNoteDelay sorts strictly by offset, so a
+                // raw-offset release would sort AFTER the new NoteOn -- for a
+                // pitch held across steps (ordinary Chord mode) the host would
+                // see NoteOn(p) then NoteOff(p) and kill the note it just
+                // struck. Strum only pushes NoteOns forward and the release
+                // carries no strum, so this offset is <= every NoteOn here, and
+                // the equal case is resolved by the stable sort (the release is
+                // emitted first in code order).
                 size_t releasedCount = 0;
                 for (; releasedCount < currentArpNoteCount_ && eventCount < maxEvents;
                      ++releasedCount) {
                     outputEvents[eventCount++] = ArpEvent{
-                        .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = sampleOffset};
+                        .type = ArpEvent::Type::NoteOff, .note = currentArpNotes_[releasedCount], .velocity = 0, .sampleOffset = humanizedSampleOffset};
                 }
                 // Keep whatever the span cap stopped us from releasing.
                 retainUnreleasedArpNotes(releasedCount);
@@ -1179,8 +1222,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                 if (!suppressGateNoteOff) {
                     for (size_t i = 0; i < emittedNoteOns; ++i) {
                         const size_t strumOff = static_cast<size_t>(strumOffsetFor(i));
-                        addPendingNoteOff(result.notes[i], gateDuration + strumOff,
-                                           outputEvents, eventCount, maxEvents);
+                        scheduleGate(result.notes[i], gateDuration, strumOff);
                     }
                 }
             } else {
@@ -1207,8 +1249,7 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                     // Schedule NoteOff for this note.
                     // Skip if next step is Tie or Slide (FR-012, FR-015)
                     if (!suppressGateNoteOff) {
-                        addPendingNoteOff(result.notes[0], gateDuration, outputEvents,
-                                           eventCount, maxEvents);
+                        scheduleGate(result.notes[0], gateDuration, 0);
                     }
                 }
             }

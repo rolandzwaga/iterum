@@ -242,6 +242,7 @@ add_executable(dsp_processors_tests
     unit/processors/arpeggiator_core_spicehuman_test.cpp
     unit/processors/arpeggiator_core_dawloop_test.cpp
     unit/processors/arpeggiator_core_scalechord_test.cpp
+    unit/processors/arpeggiator_core_curve_race_test.cpp
     unit/processors/midi_note_delay_test.cpp
     unit/processors/ring_modulator_test.cpp
     unit/processors/harmonic_types_tests.cpp
@@ -607,6 +608,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/processors/arpeggiator_core_spicehuman_test.cpp
         unit/processors/arpeggiator_core_dawloop_test.cpp
         unit/processors/arpeggiator_core_scalechord_test.cpp
+        unit/processors/arpeggiator_core_curve_race_test.cpp
         unit/processors/ring_modulator_test.cpp
         unit/processors/harmonic_types_tests.cpp
         unit/processors/dual_stft_tests.cpp
