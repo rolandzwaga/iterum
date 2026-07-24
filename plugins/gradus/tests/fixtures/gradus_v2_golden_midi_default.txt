@@ -1,722 +1,722 @@
-[0] noteOn  60 101
+[0] noteOn  60 102
 [4409] noteOff 60
-[5513] noteOn  60 101
+[5513] noteOn  60 102
 [9922] noteOff 60
-[11025] noteOn  60 101
+[11025] noteOn  60 102
 [15434] noteOff 60
-[16538] noteOn  60 101
+[16538] noteOn  60 102
 [20947] noteOff 60
-[22050] noteOn  60 101
+[22050] noteOn  60 102
 [26459] noteOff 60
-[27563] noteOn  60 101
+[27563] noteOn  60 102
 [31972] noteOff 60
-[33075] noteOn  60 101
+[33075] noteOn  60 102
 [37484] noteOff 60
-[38588] noteOn  60 101
+[38588] noteOn  60 102
 [42997] noteOff 60
-[44100] noteOn  60 101
+[44100] noteOn  60 102
 [48509] noteOff 60
-[49613] noteOn  60 101
+[49613] noteOn  60 102
 [54022] noteOff 60
-[55125] noteOn  60 101
+[55125] noteOn  60 102
 [59534] noteOff 60
-[60638] noteOn  60 101
+[60638] noteOn  60 102
 [65047] noteOff 60
-[66150] noteOn  60 101
+[66150] noteOn  60 102
 [70559] noteOff 60
-[71663] noteOn  60 101
+[71663] noteOn  60 102
 [76072] noteOff 60
-[77175] noteOn  60 101
+[77175] noteOn  60 102
 [81584] noteOff 60
-[82688] noteOn  60 101
+[82688] noteOn  60 102
 [87097] noteOff 60
-[88200] noteOn  60 101
+[88200] noteOn  60 102
 [92609] noteOff 60
-[93713] noteOn  60 101
+[93713] noteOn  60 102
 [98122] noteOff 60
-[99225] noteOn  60 101
+[99225] noteOn  60 102
 [103634] noteOff 60
-[104738] noteOn  60 101
+[104738] noteOn  60 102
 [109147] noteOff 60
-[110250] noteOn  60 101
+[110250] noteOn  60 102
 [114659] noteOff 60
-[115763] noteOn  60 101
+[115763] noteOn  60 102
 [120172] noteOff 60
-[121275] noteOn  60 101
+[121275] noteOn  60 102
 [125684] noteOff 60
-[126788] noteOn  60 101
+[126788] noteOn  60 102
 [131197] noteOff 60
-[132300] noteOn  60 101
+[132300] noteOn  60 102
 [136709] noteOff 60
-[137813] noteOn  60 101
+[137813] noteOn  60 102
 [142222] noteOff 60
-[143325] noteOn  60 101
+[143325] noteOn  60 102
 [147734] noteOff 60
-[148838] noteOn  60 101
+[148838] noteOn  60 102
 [153247] noteOff 60
-[154350] noteOn  60 101
+[154350] noteOn  60 102
 [158759] noteOff 60
-[159863] noteOn  60 101
+[159863] noteOn  60 102
 [164272] noteOff 60
-[165375] noteOn  60 101
-[165376] noteOn  60 101
+[165375] noteOn  60 102
+[165376] noteOn  60 102
 [169784] noteOff 60
 [169785] noteOff 60
-[170888] noteOn  60 101
+[170888] noteOn  60 102
 [175297] noteOff 60
-[176400] noteOn  60 101
+[176400] noteOn  60 102
 [180809] noteOff 60
-[181913] noteOn  60 101
+[181913] noteOn  60 102
 [186322] noteOff 60
-[187425] noteOn  60 101
+[187425] noteOn  60 102
 [191834] noteOff 60
-[192938] noteOn  60 101
+[192938] noteOn  60 102
 [197347] noteOff 60
-[198450] noteOn  60 101
+[198450] noteOn  60 102
 [202859] noteOff 60
-[203963] noteOn  60 101
+[203963] noteOn  60 102
 [208372] noteOff 60
-[209475] noteOn  60 101
+[209475] noteOn  60 102
 [213884] noteOff 60
-[214988] noteOn  60 101
+[214988] noteOn  60 102
 [219397] noteOff 60
-[220500] noteOn  64 101
+[220500] noteOn  64 102
 [224909] noteOff 64
-[226013] noteOn  64 101
+[226013] noteOn  64 102
 [230422] noteOff 64
-[231525] noteOn  64 101
+[231525] noteOn  64 102
 [235934] noteOff 64
-[237038] noteOn  64 101
+[237038] noteOn  64 102
 [241447] noteOff 64
-[242550] noteOn  64 101
+[242550] noteOn  64 102
 [246959] noteOff 64
-[248063] noteOn  64 101
+[248063] noteOn  64 102
 [252472] noteOff 64
-[253575] noteOn  64 101
+[253575] noteOn  64 102
 [257984] noteOff 64
-[259088] noteOn  64 101
+[259088] noteOn  64 102
 [263497] noteOff 64
-[264600] noteOn  64 101
+[264600] noteOn  64 102
 [269009] noteOff 64
-[270113] noteOn  64 101
+[270113] noteOn  64 102
 [274522] noteOff 64
-[275625] noteOn  64 101
+[275625] noteOn  64 102
 [280034] noteOff 64
-[281138] noteOn  64 101
+[281138] noteOn  64 102
 [285547] noteOff 64
-[286650] noteOn  64 101
+[286650] noteOn  64 102
 [291059] noteOff 64
-[292163] noteOn  64 101
+[292163] noteOn  64 102
 [296572] noteOff 64
-[297675] noteOn  64 101
+[297675] noteOn  64 102
 [302084] noteOff 64
-[303188] noteOn  64 101
+[303188] noteOn  64 102
 [307597] noteOff 64
-[308700] noteOn  64 101
+[308700] noteOn  64 102
 [313109] noteOff 64
-[314213] noteOn  64 101
+[314213] noteOn  64 102
 [318622] noteOff 64
-[319725] noteOn  64 101
+[319725] noteOn  64 102
 [324134] noteOff 64
-[325238] noteOn  64 101
+[325238] noteOn  64 102
 [329647] noteOff 64
-[330750] noteOn  64 101
+[330750] noteOn  64 102
 [335159] noteOff 64
-[336263] noteOn  64 101
+[336263] noteOn  64 102
 [340672] noteOff 64
-[341775] noteOn  64 101
+[341775] noteOn  64 102
 [346184] noteOff 64
-[347288] noteOn  64 101
+[347288] noteOn  64 102
 [351697] noteOff 64
-[352800] noteOn  64 101
+[352800] noteOn  64 102
 [357209] noteOff 64
-[358313] noteOn  64 101
+[358313] noteOn  64 102
 [362722] noteOff 64
-[363825] noteOn  64 101
+[363825] noteOn  64 102
 [368234] noteOff 64
-[369338] noteOn  64 101
+[369338] noteOn  64 102
 [373747] noteOff 64
-[374850] noteOn  64 101
+[374850] noteOn  64 102
 [379259] noteOff 64
-[380363] noteOn  64 101
+[380363] noteOn  64 102
 [384772] noteOff 64
-[385875] noteOn  64 101
+[385875] noteOn  64 102
 [390284] noteOff 64
-[391388] noteOn  64 101
+[391388] noteOn  64 102
 [395797] noteOff 64
-[396900] noteOn  64 101
+[396900] noteOn  64 102
 [401309] noteOff 64
-[402413] noteOn  64 101
+[402413] noteOn  64 102
 [406822] noteOff 64
-[407925] noteOn  64 101
+[407925] noteOn  64 102
 [412334] noteOff 64
-[413438] noteOn  64 101
+[413438] noteOn  64 102
 [417847] noteOff 64
-[418950] noteOn  64 101
+[418950] noteOn  64 102
 [423359] noteOff 64
-[424463] noteOn  64 101
+[424463] noteOn  64 102
 [428872] noteOff 64
-[429975] noteOn  64 101
+[429975] noteOn  64 102
 [434384] noteOff 64
-[435488] noteOn  64 101
+[435488] noteOn  64 102
 [439897] noteOff 64
-[441000] noteOn  67 101
+[441000] noteOn  67 102
 [445409] noteOff 67
-[446513] noteOn  67 101
+[446513] noteOn  67 102
 [450922] noteOff 67
-[452025] noteOn  67 101
+[452025] noteOn  67 102
 [456434] noteOff 67
-[457538] noteOn  67 101
+[457538] noteOn  67 102
 [461947] noteOff 67
-[463050] noteOn  67 101
+[463050] noteOn  67 102
 [467459] noteOff 67
-[468563] noteOn  67 101
+[468563] noteOn  67 102
 [472972] noteOff 67
-[474075] noteOn  67 101
+[474075] noteOn  67 102
 [478484] noteOff 67
-[479588] noteOn  67 101
+[479588] noteOn  67 102
 [483997] noteOff 67
-[485100] noteOn  67 101
+[485100] noteOn  67 102
 [489509] noteOff 67
-[490613] noteOn  67 101
+[490613] noteOn  67 102
 [495022] noteOff 67
-[496125] noteOn  67 101
+[496125] noteOn  67 102
 [500534] noteOff 67
-[501638] noteOn  67 101
+[501638] noteOn  67 102
 [506047] noteOff 67
-[507150] noteOn  67 101
+[507150] noteOn  67 102
 [511559] noteOff 67
-[512663] noteOn  67 101
+[512663] noteOn  67 102
 [517072] noteOff 67
-[518175] noteOn  67 101
+[518175] noteOn  67 102
 [522584] noteOff 67
-[523688] noteOn  67 101
+[523688] noteOn  67 102
 [528097] noteOff 67
-[529200] noteOn  67 101
+[529200] noteOn  67 102
 [533609] noteOff 67
-[534713] noteOn  67 101
+[534713] noteOn  67 102
 [539122] noteOff 67
-[540225] noteOn  67 101
+[540225] noteOn  67 102
 [544634] noteOff 67
-[545738] noteOn  67 101
+[545738] noteOn  67 102
 [550147] noteOff 67
-[551250] noteOn  67 101
+[551250] noteOn  67 102
 [555659] noteOff 67
-[556763] noteOn  67 101
+[556763] noteOn  67 102
 [561172] noteOff 67
-[562275] noteOn  67 101
+[562275] noteOn  67 102
 [566684] noteOff 67
-[567788] noteOn  67 101
+[567788] noteOn  67 102
 [572197] noteOff 67
-[573300] noteOn  67 101
+[573300] noteOn  67 102
 [577709] noteOff 67
-[578813] noteOn  67 101
+[578813] noteOn  67 102
 [583222] noteOff 67
-[584325] noteOn  67 101
+[584325] noteOn  67 102
 [588734] noteOff 67
-[589838] noteOn  67 101
+[589838] noteOn  67 102
 [594247] noteOff 67
-[595350] noteOn  67 101
+[595350] noteOn  67 102
 [599759] noteOff 67
-[600863] noteOn  67 101
+[600863] noteOn  67 102
 [605272] noteOff 67
-[606375] noteOn  67 101
+[606375] noteOn  67 102
 [610784] noteOff 67
-[611888] noteOn  67 101
+[611888] noteOn  67 102
 [616297] noteOff 67
-[617400] noteOn  67 101
+[617400] noteOn  67 102
 [621809] noteOff 67
-[622913] noteOn  67 101
+[622913] noteOn  67 102
 [627322] noteOff 67
-[628425] noteOn  67 101
+[628425] noteOn  67 102
 [632834] noteOff 67
-[633938] noteOn  67 101
+[633938] noteOn  67 102
 [638347] noteOff 67
-[639450] noteOn  67 101
+[639450] noteOn  67 102
 [643859] noteOff 67
-[644963] noteOn  67 101
+[644963] noteOn  67 102
 [649372] noteOff 67
-[650475] noteOn  67 101
+[650475] noteOn  67 102
 [654884] noteOff 67
-[655988] noteOn  67 101
+[655988] noteOn  67 102
 [660397] noteOff 67
-[661500] noteOn  60 101
+[661500] noteOn  60 102
 [665909] noteOff 60
-[667013] noteOn  64 101
+[667013] noteOn  64 102
 [671422] noteOff 64
-[672525] noteOn  67 101
+[672525] noteOn  67 102
 [676934] noteOff 67
-[678038] noteOn  60 101
+[678038] noteOn  60 102
 [682447] noteOff 60
-[683550] noteOn  64 101
+[683550] noteOn  64 102
 [687959] noteOff 64
-[689063] noteOn  67 101
+[689063] noteOn  67 102
 [693472] noteOff 67
-[694575] noteOn  60 101
+[694575] noteOn  60 102
 [698984] noteOff 60
-[700088] noteOn  64 101
+[700088] noteOn  64 102
 [704497] noteOff 64
-[705600] noteOn  67 101
+[705600] noteOn  67 102
 [710009] noteOff 67
-[711113] noteOn  60 101
+[711113] noteOn  60 102
 [715522] noteOff 60
-[716625] noteOn  64 101
+[716625] noteOn  64 102
 [721034] noteOff 64
-[722138] noteOn  67 101
+[722138] noteOn  67 102
 [726547] noteOff 67
-[727650] noteOn  60 101
+[727650] noteOn  60 102
 [732059] noteOff 60
-[733163] noteOn  64 101
+[733163] noteOn  64 102
 [737572] noteOff 64
-[738675] noteOn  67 101
+[738675] noteOn  67 102
 [743084] noteOff 67
-[744188] noteOn  60 101
+[744188] noteOn  60 102
 [748597] noteOff 60
-[749700] noteOn  64 101
+[749700] noteOn  64 102
 [754109] noteOff 64
-[755213] noteOn  67 101
+[755213] noteOn  67 102
 [759622] noteOff 67
-[760725] noteOn  60 101
+[760725] noteOn  60 102
 [765134] noteOff 60
-[766238] noteOn  64 101
+[766238] noteOn  64 102
 [770647] noteOff 64
-[771750] noteOn  67 101
+[771750] noteOn  67 102
 [776159] noteOff 67
-[777263] noteOn  60 101
+[777263] noteOn  60 102
 [781672] noteOff 60
-[782775] noteOn  64 101
+[782775] noteOn  64 102
 [787184] noteOff 64
-[788288] noteOn  67 101
+[788288] noteOn  67 102
 [792697] noteOff 67
-[793800] noteOn  60 101
+[793800] noteOn  60 102
 [798209] noteOff 60
-[799313] noteOn  64 101
+[799313] noteOn  64 102
 [803722] noteOff 64
-[804825] noteOn  67 101
+[804825] noteOn  67 102
 [809234] noteOff 67
-[810338] noteOn  60 101
+[810338] noteOn  60 102
 [814747] noteOff 60
-[815850] noteOn  64 101
+[815850] noteOn  64 102
 [820259] noteOff 64
-[821363] noteOn  67 101
+[821363] noteOn  67 102
 [825772] noteOff 67
-[826875] noteOn  60 101
+[826875] noteOn  60 102
 [831284] noteOff 60
-[832388] noteOn  64 101
+[832388] noteOn  64 102
 [836797] noteOff 64
-[837900] noteOn  67 101
+[837900] noteOn  67 102
 [842309] noteOff 67
-[843413] noteOn  60 101
+[843413] noteOn  60 102
 [847822] noteOff 60
-[848925] noteOn  64 101
+[848925] noteOn  64 102
 [853334] noteOff 64
-[854438] noteOn  67 101
+[854438] noteOn  67 102
 [858847] noteOff 67
-[859950] noteOn  60 101
+[859950] noteOn  60 102
 [864359] noteOff 60
-[865463] noteOn  64 101
+[865463] noteOn  64 102
 [869872] noteOff 64
-[870975] noteOn  67 101
+[870975] noteOn  67 102
 [875384] noteOff 67
-[876488] noteOn  60 101
+[876488] noteOn  60 102
 [880897] noteOff 60
-[882000] noteOn  64 101
+[882000] noteOn  64 102
 [886409] noteOff 64
-[887513] noteOn  67 101
+[887513] noteOn  67 102
 [891922] noteOff 67
-[893025] noteOn  60 101
+[893025] noteOn  60 102
 [897434] noteOff 60
-[898538] noteOn  64 101
+[898538] noteOn  64 102
 [902947] noteOff 64
-[904050] noteOn  67 101
+[904050] noteOn  67 102
 [908459] noteOff 67
-[909563] noteOn  60 101
+[909563] noteOn  60 102
 [913972] noteOff 60
-[915075] noteOn  64 101
+[915075] noteOn  64 102
 [919484] noteOff 64
-[920588] noteOn  67 101
+[920588] noteOn  67 102
 [924997] noteOff 67
-[926100] noteOn  60 101
+[926100] noteOn  60 102
 [930509] noteOff 60
-[931613] noteOn  64 101
+[931613] noteOn  64 102
 [936022] noteOff 64
-[937125] noteOn  67 101
+[937125] noteOn  67 102
 [941534] noteOff 67
-[942638] noteOn  60 101
+[942638] noteOn  60 102
 [947047] noteOff 60
-[948150] noteOn  64 101
+[948150] noteOn  64 102
 [952559] noteOff 64
-[953663] noteOn  67 101
+[953663] noteOn  67 102
 [958072] noteOff 67
-[959175] noteOn  60 101
+[959175] noteOn  60 102
 [963584] noteOff 60
-[964688] noteOn  64 101
+[964688] noteOn  64 102
 [969097] noteOff 64
-[970200] noteOn  67 101
+[970200] noteOn  67 102
 [974609] noteOff 67
-[975713] noteOn  60 101
+[975713] noteOn  60 102
 [980122] noteOff 60
-[981225] noteOn  64 101
+[981225] noteOn  64 102
 [985634] noteOff 64
-[986738] noteOn  67 101
+[986738] noteOn  67 102
 [991147] noteOff 67
-[992250] noteOn  60 101
+[992250] noteOn  60 102
 [996659] noteOff 60
-[997763] noteOn  64 101
+[997763] noteOn  64 102
 [1002172] noteOff 64
-[1003275] noteOn  67 101
+[1003275] noteOn  67 102
 [1007684] noteOff 67
-[1008788] noteOn  60 101
+[1008788] noteOn  60 102
 [1013197] noteOff 60
-[1014300] noteOn  64 101
+[1014300] noteOn  64 102
 [1018709] noteOff 64
-[1019813] noteOn  67 101
+[1019813] noteOn  67 102
 [1024222] noteOff 67
-[1025325] noteOn  60 101
+[1025325] noteOn  60 102
 [1029734] noteOff 60
-[1030838] noteOn  64 101
+[1030838] noteOn  64 102
 [1035247] noteOff 64
-[1036350] noteOn  67 101
+[1036350] noteOn  67 102
 [1040759] noteOff 67
-[1041863] noteOn  60 101
+[1041863] noteOn  60 102
 [1046272] noteOff 60
-[1047375] noteOn  64 101
+[1047375] noteOn  64 102
 [1051784] noteOff 64
-[1052888] noteOn  67 101
+[1052888] noteOn  67 102
 [1057297] noteOff 67
-[1058400] noteOn  60 101
+[1058400] noteOn  60 102
 [1062809] noteOff 60
-[1063913] noteOn  64 101
+[1063913] noteOn  64 102
 [1068322] noteOff 64
-[1069425] noteOn  67 101
+[1069425] noteOn  67 102
 [1073834] noteOff 67
-[1074938] noteOn  60 101
+[1074938] noteOn  60 102
 [1079347] noteOff 60
-[1080450] noteOn  64 101
+[1080450] noteOn  64 102
 [1084859] noteOff 64
-[1085963] noteOn  67 101
+[1085963] noteOn  67 102
 [1090372] noteOff 67
-[1091475] noteOn  60 101
+[1091475] noteOn  60 102
 [1095884] noteOff 60
-[1096988] noteOn  64 101
+[1096988] noteOn  64 102
 [1101397] noteOff 64
-[1102500] noteOn  67 101
+[1102500] noteOn  67 102
 [1106909] noteOff 67
-[1108013] noteOn  60 101
+[1108013] noteOn  60 102
 [1112422] noteOff 60
-[1113525] noteOn  64 101
+[1113525] noteOn  64 102
 [1117934] noteOff 64
-[1119038] noteOn  67 101
+[1119038] noteOn  67 102
 [1123447] noteOff 67
-[1124550] noteOn  60 101
+[1124550] noteOn  60 102
 [1128959] noteOff 60
-[1130063] noteOn  64 101
+[1130063] noteOn  64 102
 [1134472] noteOff 64
-[1135575] noteOn  67 101
+[1135575] noteOn  67 102
 [1139984] noteOff 67
-[1141088] noteOn  60 101
+[1141088] noteOn  60 102
 [1145497] noteOff 60
-[1146600] noteOn  64 101
+[1146600] noteOn  64 102
 [1151009] noteOff 64
-[1152113] noteOn  67 101
+[1152113] noteOn  67 102
 [1156522] noteOff 67
-[1157625] noteOn  60 101
+[1157625] noteOn  60 102
 [1162034] noteOff 60
-[1163138] noteOn  64 101
+[1163138] noteOn  64 102
 [1167547] noteOff 64
-[1168650] noteOn  67 101
+[1168650] noteOn  67 102
 [1173059] noteOff 67
-[1174163] noteOn  60 101
+[1174163] noteOn  60 102
 [1178572] noteOff 60
-[1179675] noteOn  64 101
+[1179675] noteOn  64 102
 [1184084] noteOff 64
-[1185188] noteOn  67 101
+[1185188] noteOn  67 102
 [1189597] noteOff 67
-[1190700] noteOn  60 101
+[1190700] noteOn  60 102
 [1195109] noteOff 60
-[1196213] noteOn  64 101
+[1196213] noteOn  64 102
 [1200622] noteOff 64
-[1201725] noteOn  67 101
+[1201725] noteOn  67 102
 [1206134] noteOff 67
-[1207238] noteOn  60 101
+[1207238] noteOn  60 102
 [1211647] noteOff 60
-[1212750] noteOn  64 101
+[1212750] noteOn  64 102
 [1217159] noteOff 64
-[1218263] noteOn  67 101
+[1218263] noteOn  67 102
 [1222672] noteOff 67
-[1223775] noteOn  60 101
+[1223775] noteOn  60 102
 [1228184] noteOff 60
-[1229288] noteOn  64 101
+[1229288] noteOn  64 102
 [1233697] noteOff 64
-[1234800] noteOn  67 101
+[1234800] noteOn  67 102
 [1239209] noteOff 67
-[1240313] noteOn  60 101
+[1240313] noteOn  60 102
 [1244722] noteOff 60
-[1245825] noteOn  64 101
+[1245825] noteOn  64 102
 [1250234] noteOff 64
-[1251338] noteOn  67 101
+[1251338] noteOn  67 102
 [1255747] noteOff 67
-[1256850] noteOn  60 101
+[1256850] noteOn  60 102
 [1261259] noteOff 60
-[1262363] noteOn  64 101
+[1262363] noteOn  64 102
 [1266772] noteOff 64
-[1267875] noteOn  67 101
+[1267875] noteOn  67 102
 [1272284] noteOff 67
-[1273388] noteOn  60 101
+[1273388] noteOn  60 102
 [1277797] noteOff 60
-[1278900] noteOn  64 101
+[1278900] noteOn  64 102
 [1283309] noteOff 64
-[1284413] noteOn  67 101
+[1284413] noteOn  67 102
 [1288822] noteOff 67
-[1289925] noteOn  60 101
+[1289925] noteOn  60 102
 [1294334] noteOff 60
-[1295438] noteOn  64 101
+[1295438] noteOn  64 102
 [1299847] noteOff 64
-[1300950] noteOn  67 101
+[1300950] noteOn  67 102
 [1305359] noteOff 67
-[1306463] noteOn  60 101
+[1306463] noteOn  60 102
 [1310872] noteOff 60
-[1311975] noteOn  64 101
+[1311975] noteOn  64 102
 [1316384] noteOff 64
-[1317488] noteOn  67 101
+[1317488] noteOn  67 102
 [1321897] noteOff 67
-[1323000] noteOn  60 101
+[1323000] noteOn  60 102
 [1327409] noteOff 60
-[1328513] noteOn  64 101
+[1328513] noteOn  64 102
 [1332922] noteOff 64
-[1334025] noteOn  67 101
+[1334025] noteOn  67 102
 [1338434] noteOff 67
-[1339538] noteOn  60 101
+[1339538] noteOn  60 102
 [1343947] noteOff 60
-[1345050] noteOn  64 101
+[1345050] noteOn  64 102
 [1349459] noteOff 64
-[1350563] noteOn  67 101
+[1350563] noteOn  67 102
 [1354972] noteOff 67
-[1356075] noteOn  60 101
+[1356075] noteOn  60 102
 [1360484] noteOff 60
-[1361588] noteOn  64 101
+[1361588] noteOn  64 102
 [1365997] noteOff 64
-[1367100] noteOn  67 101
+[1367100] noteOn  67 102
 [1371509] noteOff 67
-[1372613] noteOn  60 101
+[1372613] noteOn  60 102
 [1377022] noteOff 60
-[1378125] noteOn  64 101
+[1378125] noteOn  64 102
 [1382534] noteOff 64
-[1383638] noteOn  67 101
+[1383638] noteOn  67 102
 [1388047] noteOff 67
-[1389150] noteOn  60 101
+[1389150] noteOn  60 102
 [1393559] noteOff 60
-[1394663] noteOn  64 101
+[1394663] noteOn  64 102
 [1399072] noteOff 64
-[1400175] noteOn  67 101
+[1400175] noteOn  67 102
 [1404584] noteOff 67
-[1405688] noteOn  60 101
+[1405688] noteOn  60 102
 [1410097] noteOff 60
-[1411200] noteOn  64 101
+[1411200] noteOn  64 102
 [1415609] noteOff 64
-[1416713] noteOn  67 101
+[1416713] noteOn  67 102
 [1421122] noteOff 67
-[1422225] noteOn  60 101
+[1422225] noteOn  60 102
 [1426634] noteOff 60
-[1427738] noteOn  64 101
+[1427738] noteOn  64 102
 [1432147] noteOff 64
-[1433250] noteOn  67 101
+[1433250] noteOn  67 102
 [1437659] noteOff 67
-[1438763] noteOn  60 101
+[1438763] noteOn  60 102
 [1443172] noteOff 60
-[1444275] noteOn  64 101
+[1444275] noteOn  64 102
 [1448684] noteOff 64
-[1449788] noteOn  67 101
+[1449788] noteOn  67 102
 [1454197] noteOff 67
-[1455300] noteOn  60 101
+[1455300] noteOn  60 102
 [1459709] noteOff 60
-[1460813] noteOn  64 101
+[1460813] noteOn  64 102
 [1465222] noteOff 64
-[1466325] noteOn  67 101
+[1466325] noteOn  67 102
 [1470734] noteOff 67
-[1471838] noteOn  60 101
+[1471838] noteOn  60 102
 [1476247] noteOff 60
-[1477350] noteOn  64 101
+[1477350] noteOn  64 102
 [1481759] noteOff 64
-[1482863] noteOn  67 101
+[1482863] noteOn  67 102
 [1487272] noteOff 67
-[1488375] noteOn  60 101
+[1488375] noteOn  60 102
 [1492784] noteOff 60
-[1493888] noteOn  64 101
+[1493888] noteOn  64 102
 [1498297] noteOff 64
-[1499400] noteOn  67 101
+[1499400] noteOn  67 102
 [1503809] noteOff 67
-[1504913] noteOn  60 101
+[1504913] noteOn  60 102
 [1509322] noteOff 60
-[1510425] noteOn  64 101
+[1510425] noteOn  64 102
 [1514834] noteOff 64
-[1515938] noteOn  67 101
+[1515938] noteOn  67 102
 [1520347] noteOff 67
-[1521450] noteOn  60 101
+[1521450] noteOn  60 102
 [1525859] noteOff 60
-[1526963] noteOn  64 101
+[1526963] noteOn  64 102
 [1531372] noteOff 64
-[1532475] noteOn  67 101
+[1532475] noteOn  67 102
 [1536884] noteOff 67
-[1537988] noteOn  60 101
+[1537988] noteOn  60 102
 [1542397] noteOff 60
-[1543500] noteOn  64 101
+[1543500] noteOn  64 102
 [1547909] noteOff 64
-[1549013] noteOn  67 101
+[1549013] noteOn  67 102
 [1553422] noteOff 67
-[1554525] noteOn  60 101
+[1554525] noteOn  60 102
 [1558934] noteOff 60
-[1560038] noteOn  64 101
+[1560038] noteOn  64 102
 [1564447] noteOff 64
-[1565550] noteOn  67 101
+[1565550] noteOn  67 102
 [1569959] noteOff 67
-[1571063] noteOn  60 101
+[1571063] noteOn  60 102
 [1575472] noteOff 60
-[1576575] noteOn  64 101
+[1576575] noteOn  64 102
 [1580984] noteOff 64
-[1582088] noteOn  67 101
+[1582088] noteOn  67 102
 [1586497] noteOff 67
-[1587600] noteOn  60 101
+[1587600] noteOn  60 102
 [1592009] noteOff 60
-[1593113] noteOn  64 101
+[1593113] noteOn  64 102
 [1597522] noteOff 64
-[1598625] noteOn  67 101
+[1598625] noteOn  67 102
 [1603034] noteOff 67
-[1604138] noteOn  60 101
+[1604138] noteOn  60 102
 [1608547] noteOff 60
-[1609650] noteOn  64 101
+[1609650] noteOn  64 102
 [1614059] noteOff 64
-[1615163] noteOn  67 101
+[1615163] noteOn  67 102
 [1619572] noteOff 67
-[1620675] noteOn  60 101
+[1620675] noteOn  60 102
 [1625084] noteOff 60
-[1626188] noteOn  64 101
+[1626188] noteOn  64 102
 [1630597] noteOff 64
-[1631700] noteOn  67 101
+[1631700] noteOn  67 102
 [1636109] noteOff 67
-[1637213] noteOn  60 101
+[1637213] noteOn  60 102
 [1641622] noteOff 60
-[1642725] noteOn  64 101
+[1642725] noteOn  64 102
 [1647134] noteOff 64
-[1648238] noteOn  67 101
+[1648238] noteOn  67 102
 [1652647] noteOff 67
-[1653750] noteOn  60 101
+[1653750] noteOn  60 102
 [1658159] noteOff 60
-[1659263] noteOn  64 101
+[1659263] noteOn  64 102
 [1663672] noteOff 64
-[1664775] noteOn  67 101
+[1664775] noteOn  67 102
 [1669184] noteOff 67
-[1670288] noteOn  60 101
+[1670288] noteOn  60 102
 [1674697] noteOff 60
-[1675800] noteOn  64 101
+[1675800] noteOn  64 102
 [1680209] noteOff 64
-[1681313] noteOn  67 101
+[1681313] noteOn  67 102
 [1685722] noteOff 67
-[1686825] noteOn  60 101
+[1686825] noteOn  60 102
 [1691234] noteOff 60
-[1692338] noteOn  64 101
+[1692338] noteOn  64 102
 [1696747] noteOff 64
-[1697850] noteOn  67 101
+[1697850] noteOn  67 102
 [1702259] noteOff 67
-[1703363] noteOn  60 101
+[1703363] noteOn  60 102
 [1707772] noteOff 60
-[1708875] noteOn  64 101
+[1708875] noteOn  64 102
 [1713284] noteOff 64
-[1714388] noteOn  67 101
+[1714388] noteOn  67 102
 [1718797] noteOff 67
-[1719900] noteOn  60 101
+[1719900] noteOn  60 102
 [1724309] noteOff 60
-[1725413] noteOn  64 101
+[1725413] noteOn  64 102
 [1729822] noteOff 64
-[1730925] noteOn  67 101
+[1730925] noteOn  67 102
 [1735334] noteOff 67
-[1736438] noteOn  60 101
+[1736438] noteOn  60 102
 [1740847] noteOff 60
-[1741950] noteOn  64 101
+[1741950] noteOn  64 102
 [1746359] noteOff 64
-[1747463] noteOn  67 101
+[1747463] noteOn  67 102
 [1751872] noteOff 67
-[1752975] noteOn  60 101
+[1752975] noteOn  60 102
 [1757384] noteOff 60
-[1758488] noteOn  64 101
+[1758488] noteOn  64 102
 [1762897] noteOff 64
-[1764000] noteOn  67 101
+[1764000] noteOn  67 102
 [1768409] noteOff 67
-[1769513] noteOn  60 101
+[1769513] noteOn  60 102
 [1773922] noteOff 60
-[1775025] noteOn  64 101
+[1775025] noteOn  64 102
 [1779434] noteOff 64
-[1780538] noteOn  67 101
+[1780538] noteOn  67 102
 [1784947] noteOff 67
-[1786050] noteOn  60 101
+[1786050] noteOn  60 102
 [1790459] noteOff 60
-[1791563] noteOn  64 101
+[1791563] noteOn  64 102
 [1795972] noteOff 64
-[1797075] noteOn  67 101
+[1797075] noteOn  67 102
 [1801484] noteOff 67
-[1802588] noteOn  60 101
+[1802588] noteOn  60 102
 [1806997] noteOff 60
-[1808100] noteOn  64 101
+[1808100] noteOn  64 102
 [1812509] noteOff 64
-[1813613] noteOn  67 101
+[1813613] noteOn  67 102
 [1818022] noteOff 67
-[1819125] noteOn  60 101
+[1819125] noteOn  60 102
 [1823534] noteOff 60
-[1824638] noteOn  64 101
+[1824638] noteOn  64 102
 [1829047] noteOff 64
-[1830150] noteOn  67 101
+[1830150] noteOn  67 102
 [1834559] noteOff 67
-[1835663] noteOn  60 101
+[1835663] noteOn  60 102
 [1840072] noteOff 60
-[1841175] noteOn  64 101
+[1841175] noteOn  64 102
 [1845584] noteOff 64
-[1846688] noteOn  67 101
+[1846688] noteOn  67 102
 [1851097] noteOff 67
-[1852200] noteOn  60 101
+[1852200] noteOn  60 102
 [1856609] noteOff 60
-[1857713] noteOn  64 101
+[1857713] noteOn  64 102
 [1862122] noteOff 64
-[1863225] noteOn  67 101
+[1863225] noteOn  67 102
 [1867634] noteOff 67
-[1868738] noteOn  60 101
+[1868738] noteOn  60 102
 [1873147] noteOff 60
-[1874250] noteOn  64 101
+[1874250] noteOn  64 102
 [1878659] noteOff 64
-[1879763] noteOn  67 101
+[1879763] noteOn  67 102
 [1884172] noteOff 67
-[1885275] noteOn  60 101
+[1885275] noteOn  60 102
 [1889684] noteOff 60
-[1890788] noteOn  64 101
+[1890788] noteOn  64 102
 [1895197] noteOff 64
-[1896300] noteOn  67 101
+[1896300] noteOn  67 102
 [1900709] noteOff 67
-[1901813] noteOn  60 101
+[1901813] noteOn  60 102
 [1906222] noteOff 60
-[1907325] noteOn  64 101
+[1907325] noteOn  64 102
 [1911734] noteOff 64
-[1912838] noteOn  67 101
+[1912838] noteOn  67 102
 [1917247] noteOff 67
-[1918350] noteOn  60 101
+[1918350] noteOn  60 102
 [1922759] noteOff 60
-[1923863] noteOn  64 101
+[1923863] noteOn  64 102
 [1928272] noteOff 64
-[1929375] noteOn  67 101
+[1929375] noteOn  67 102
 [1933784] noteOff 67
-[1934888] noteOn  60 101
+[1934888] noteOn  60 102
 [1939297] noteOff 60
-[1940400] noteOn  64 101
+[1940400] noteOn  64 102
 [1944809] noteOff 64
-[1945913] noteOn  67 101
+[1945913] noteOn  67 102
 [1950322] noteOff 67
-[1951425] noteOn  60 101
+[1951425] noteOn  60 102
 [1955834] noteOff 60
-[1956938] noteOn  64 101
+[1956938] noteOn  64 102
 [1961347] noteOff 64
-[1962450] noteOn  67 101
+[1962450] noteOn  67 102
 [1966859] noteOff 67
-[1967963] noteOn  60 101
+[1967963] noteOn  60 102
 [1972372] noteOff 60
-[1973475] noteOn  64 101
+[1973475] noteOn  64 102
 [1977884] noteOff 64
-[1978988] noteOn  67 101
+[1978988] noteOn  67 102
 [1983397] noteOff 67

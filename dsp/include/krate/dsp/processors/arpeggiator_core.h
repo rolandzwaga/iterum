@@ -1583,7 +1583,6 @@ private:
         laneSwingCounters_.fill(0);
         // v1.5 Part 2: Reset length jitter state
         lanePendingSkips_.fill(0);
-        laneLastSteps_.fill(0);
     }
 
     // =========================================================================
@@ -1714,7 +1713,6 @@ private:
     int transpose_{0};                ///< -24 to +24 semitones
     std::array<int, kNumLanes> laneLengthJitters_{};    ///< Per-lane jitter amount (0-4 steps)
     std::array<int8_t, kNumLanes> lanePendingSkips_{};  ///< Positive = skip next N advances (lengthens)
-    std::array<uint8_t, kNumLanes> laneLastSteps_{};    ///< Previous step position for wrap detection
     uint32_t lengthJitterRng_{0xFEEDBEEFu};     ///< Xorshift state for jitter re-rolls
 
     // v1.5 Part 3: Note Range Mapping

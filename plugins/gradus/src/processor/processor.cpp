@@ -16,6 +16,7 @@
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 
@@ -132,12 +133,23 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
                     // kNoteOffEvent) and permanently over-count
                     // physicalKeysHeld_. Note this convention is MIDI-1.0 only:
                     // a MIDI-2.0 UMP velocity-0 note-on is a genuine note-on.
-                    if (e.noteOn.velocity <= 0.0f) {
+                    if (!std::isfinite(e.noteOn.velocity) || e.noteOn.velocity <= 0.0f) {
                         arpCore_.noteOff(static_cast<uint8_t>(e.noteOn.pitch));
                     } else {
+                        // Round, do not truncate. The output path divides by
+                        // 127, so truncating here breaks the round trip: 72/127
+                        // is just under 0.566929 in float32, and multiplying
+                        // back gives 71.9999 -> 71. Eight of the 127 MIDI
+                        // velocities lost an LSB that way. Clamping also keeps
+                        // the float->uint8_t conversion defined if a
+                        // non-conformant host sends velocity outside [0,1]
+                        // (VST3 specifies normalized velocity, so this is
+                        // hardening, not a live-path change).
+                        const long midiVelocity = std::lround(
+                            static_cast<double>(e.noteOn.velocity) * 127.0);
                         arpCore_.noteOn(
                             static_cast<uint8_t>(e.noteOn.pitch),
-                            static_cast<uint8_t>(e.noteOn.velocity * 127.0f));
+                            static_cast<uint8_t>(std::clamp(midiVelocity, 1L, 127L)));
                     }
                 } else if (e.type == Event::kNoteOffEvent) {
                     arpCore_.noteOff(
@@ -161,12 +173,7 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
     if (data.processContext) {
         const auto& ctx = *data.processContext;
         const bool isPlaying = (ctx.state & ProcessContext::kPlaying) != 0;
-        const bool hasTempo = (ctx.state & ProcessContext::kTempoValid) != 0;
         const bool hasMusicalPos = (ctx.state & ProcessContext::kProjectTimeMusicValid) != 0;
-
-        if (hasTempo) {
-            hostSupportsTransport_ = true;
-        }
 
         // Detect transport start/loop
         if (hasMusicalPos) {

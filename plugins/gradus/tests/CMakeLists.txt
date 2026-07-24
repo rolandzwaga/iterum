@@ -62,6 +62,9 @@ add_executable(gradus_tests
     # Strummed offsets must stay inside the block (MIDI-flow audit GMF-007)
     unit/processor/strum_offset_range_test.cpp
 
+    # MIDI boundary representation guards (MIDI-flow audit GMF-013/015/017)
+    unit/processor/boundary_metadata_test.cpp
+
     # Piano-roll view tests (spec 142, Phase 6, US3)
     unit/ui/piano_roll_view_test.cpp
     unit/ui/piano_roll_playhead_test.cpp

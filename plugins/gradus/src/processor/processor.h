@@ -83,7 +83,6 @@ private:
 
     // Transport state
     bool wasTransportPlaying_{false};
-    bool hostSupportsTransport_{false};
     double prevProjectTimeMusic_{-1.0};
 
     // Audition voice

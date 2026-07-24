@@ -261,11 +261,15 @@ size_t ArpeggiatorCore::processBlock(const BlockContext& ctx,
                     fireStep(ctx, sampleOffset, outputEvents, eventCount,
                              maxEvents, samplesProcessed, blockSize);
                 } else {
-                    // Recalculate current step duration with reset swing counter
+                    // Recalculate current step duration with reset swing counter.
+                    // sampleCounter_ is intentionally left alone: the elapsed
+                    // count carries over against the new duration. That is safe
+                    // because swingStepCounter_ was just reset to 0, so the
+                    // recomputed duration is the LONG half of the swing pair and
+                    // therefore >= the duration the counter was accumulating
+                    // against -- samplesUntilStep (currentStepDuration_ -
+                    // sampleCounter_) cannot underflow.
                     currentStepDuration_ = calculateStepDuration(ctx);
-                    // Adjust sampleCounter_ to reflect position within new step
-                    // (the counter has been counting into the old step duration;
-                    // keep the same elapsed count but against the new duration)
                 }
             } else if (next == NextEvent::NoteOff) {
                 // Emit all pending NoteOffs that are due at this sample
@@ -567,8 +571,6 @@ void ArpeggiatorCore::fireStep(const BlockContext& ctx,
                                     static_cast<int8_t>(-jitter);
                             }
                         }
-                        laneLastSteps_[laneIdx] =
-                            static_cast<uint8_t>(lane.currentStep());
                     }
 
                     ++counter;

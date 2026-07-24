@@ -3904,3 +3904,61 @@ TEST_CASE("GMF-010: bar boundary coincident with a due NoteOff still fires patte
     }
     CHECK(foundBarStep);
 }
+
+// =============================================================================
+// Bar boundary + swing must not stall step firing (GMF-014)
+// =============================================================================
+// The bar-boundary else-branch recalculates currentStepDuration_ but leaves
+// sampleCounter_ alone, while its comment claimed to "adjust sampleCounter_ ...
+// against the new duration". No statement ever touched it. The behaviour is
+// nonetheless correct: swingStepCounter_ is reset to 0 first, so the recomputed
+// duration is the LONG half of the swing pair and is therefore >= the elapsed
+// count, meaning samplesUntilStep (currentStepDuration_ - sampleCounter_, an
+// unsigned subtraction) cannot underflow. The comment has been corrected to say
+// that; this test guards the invariant it now documents, so a future change to
+// the swing formula that broke it would surface as a stalled arp rather than a
+// silent wrap to a huge jump.
+
+TEST_CASE("GMF-014: samplesUntilStep never underflows across a bar boundary with swing",
+          "[processors][arpeggiator_core][barboundary][swing]") {
+    ArpeggiatorCore arp;
+    arp.prepare(44100.0, 512);
+    arp.setEnabled(true);
+    arp.setMode(ArpMode::Up);
+    arp.setNoteValue(NoteValue::Eighth, NoteModifier::None);
+    arp.setRetrigger(ArpRetriggerMode::Beat);
+    arp.setGateLength(50.0f);
+    arp.setSwing(60.0f);
+    arp.noteOn(48, 100);
+    arp.noteOn(52, 100);
+    arp.noteOn(55, 100);
+
+    BlockContext ctx;
+    ctx.sampleRate = 44100.0;
+    ctx.blockSize = 512;
+    ctx.tempoBPM = 120.0;
+    ctx.isPlaying = true;
+    ctx.timeSignatureNumerator = 4;
+    ctx.timeSignatureDenominator = 4;
+    ctx.transportPositionSamples = 0;
+
+    // Bar = 88200 samples; run well past two bar lines.
+    const auto events = collectEvents(arp, ctx, 400);
+    const auto noteOns = filterNoteOns(events);
+
+    // An underflowed samplesUntilStep would jump SIZE_MAX samples ahead and the
+    // arp would go silent from that point on. Require steps on both sides of
+    // each bar line instead of merely "some events".
+    const auto onsInRange = [&noteOns](int32_t lo, int32_t hi) {
+        return std::count_if(noteOns.begin(), noteOns.end(),
+                             [lo, hi](const ArpEvent& e) {
+                                 return e.sampleOffset >= lo && e.sampleOffset < hi;
+                             });
+    };
+    INFO("note-ons before bar 1: " << onsInRange(0, 88200));
+    CHECK(onsInRange(0, 88200) >= 4);
+    INFO("note-ons in bar 2: " << onsInRange(88200, 176400));
+    CHECK(onsInRange(88200, 176400) >= 4);
+    INFO("note-ons after bar 2: " << onsInRange(176400, 204800));
+    CHECK(onsInRange(176400, 204800) >= 1);
+}
