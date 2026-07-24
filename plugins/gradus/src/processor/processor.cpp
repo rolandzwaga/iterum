@@ -54,6 +54,51 @@ tresult PLUGIN_API Processor::terminate()
     return AudioEffect::terminate();
 }
 
+void Processor::dispatchAuditionEvents(
+    std::span<const Krate::DSP::VoiceEvent> events) noexcept
+{
+    for (const auto& e : events) {
+        if (e.voiceIndex >= kAuditionVoiceCount) continue;
+        auto& voice = auditionVoices_[e.voiceIndex];
+        switch (e.type) {
+            case Krate::DSP::VoiceEvent::Type::Steal:
+                // Hard steal: silence now. The allocator follows this with a
+                // NoteOn for the same slot, which restarts the voice.
+                voice.reset();
+                break;
+            case Krate::DSP::VoiceEvent::Type::NoteOn:
+                voice.noteOn(e.frequency, e.velocity);
+                break;
+            case Krate::DSP::VoiceEvent::Type::NoteOff:
+                voice.noteOff();
+                break;
+        }
+    }
+}
+
+void Processor::resetAuditionVoices() noexcept
+{
+    // voiceFinished() only moves Releasing -> Idle, so an Active slot has to be
+    // released first or it would stay allocated forever and shrink the usable
+    // pool. Release by note, then retire every slot.
+    for (size_t v = 0; v < kAuditionVoiceCount; ++v) {
+        const int note = auditionAllocator_.getVoiceNote(v);
+        if (note >= 0) {
+            (void)auditionAllocator_.noteOff(static_cast<uint8_t>(note));
+        }
+    }
+    for (size_t v = 0; v < kAuditionVoiceCount; ++v) {
+        auditionVoices_[v].reset();
+        auditionAllocator_.voiceFinished(v);
+    }
+}
+
+bool Processor::anyAuditionVoiceActive() const noexcept
+{
+    return std::ranges::any_of(auditionVoices_,
+                               [](const AuditionVoice& v) { return v.isActive(); });
+}
+
 tresult PLUGIN_API Processor::setActive(TBool state)
 {
     if (state) {
@@ -75,7 +120,7 @@ tresult PLUGIN_API Processor::setActive(TBool state)
         arpCore_.requestPanicNoteOff();
         midiDelay_.flushWithNoteOffs();
         pendingDeactivateFlush_ = true;
-        auditionVoice_.reset();
+        resetAuditionVoices();
     }
     return AudioEffect::setActive(state);
 }
@@ -94,7 +139,9 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup)
         arpCore_.prepareRetainingPanicNoteOff(sampleRate_, static_cast<size_t>(maxBlockSize_));
     else
         arpCore_.prepare(sampleRate_, static_cast<size_t>(maxBlockSize_));
-    auditionVoice_.prepare(sampleRate_);
+    for (auto& voice : auditionVoices_)
+        voice.prepare(sampleRate_);
+    (void)auditionAllocator_.setVoiceCount(kAuditionVoiceCount);
 
     return AudioEffect::setupProcessing(setup);
 }
@@ -268,7 +315,8 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
 
                 // Feed audition voice
                 if (auditionEnabled_.load(std::memory_order_relaxed)) {
-                    auditionVoice_.noteOn(evt.note, evt.velocity);
+                    dispatchAuditionEvents(
+                        auditionAllocator_.noteOn(evt.note, evt.velocity));
                 }
             } else if (evt.type == ArpEvent::Type::NoteOff) {
                 outEvent.type = Event::kNoteOffEvent;
@@ -280,7 +328,11 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
                 data.outputEvents->addEvent(outEvent);
 
                 // Feed audition voice
-                auditionVoice_.noteOff();
+                // Unconditional, like the note-on used to be gated: a note
+                // started while audition was on must still be released if the
+                // user switches audition off mid-note. If it was never started
+                // the allocator simply returns an empty span.
+                dispatchAuditionEvents(auditionAllocator_.noteOff(evt.note));
             }
         }
     }
@@ -326,26 +378,60 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
             outR[s] = 0.0f;
         }
 
-        // Apply audition voice params and render
+        // Apply audition voice params and render the pool
         const bool auditionOn = auditionEnabled_.load(std::memory_order_relaxed);
         if (auditionOn) {
-            auditionVoice_.setWaveform(auditionWaveform_.load(std::memory_order_relaxed));
-            auditionVoice_.setDecay(auditionDecay_.load(std::memory_order_relaxed));
-            auditionVoice_.setVolume(auditionVolume_.load(std::memory_order_relaxed));
-            auditionVoice_.processBlock(outL, outR, numSamples);
-        } else if (auditionVoice_.isActive()) {
-            // The voice stops being rendered the moment audition is switched
-            // off, and AuditionVoice::active_ only clears from inside
-            // processBlock -- so without this it would stay flagged active
-            // forever, and the silence report below would keep claiming a
-            // buffer we are in fact leaving at zero.
-            auditionVoice_.reset();
+            const int waveform = auditionWaveform_.load(std::memory_order_relaxed);
+            const float decayMs = auditionDecay_.load(std::memory_order_relaxed);
+            const float userVolume = auditionVolume_.load(std::memory_order_relaxed);
+
+            // Polyphony headroom. Voices accumulate into the same buffer, so N
+            // of them at the user's volume would sum past full scale.
+            //
+            // Scale by 1/N, not the usual equal-power 1/sqrt(N). Equal-power
+            // assumes the voices are decorrelated, and here they are not: a
+            // chord strikes every voice in the same block, from the same
+            // waveform, with phase starting at zero, so their peaks stack
+            // exactly. Measured: an 8-note chord under 1/sqrt(N) peaked at 1.99.
+            // 1/N is the only scale that provably cannot clip, and it leaves the
+            // single-voice case (N == 1) at exactly the level this monitor had
+            // when it was monophonic. The cost is that a chord whose voices
+            // later decorrelate sounds quieter than the sum of its parts --
+            // acceptable for an audition monitor, and preferable to clipping.
+            //
+            // The gain steps at block boundaries when polyphony changes, which
+            // coincides with a new note's own attack.
+            size_t soundingVoices = 0;
+            for (const auto& voice : auditionVoices_)
+                if (voice.isActive()) ++soundingVoices;
+            const float polyScale = (soundingVoices > 1)
+                ? 1.0f / static_cast<float>(soundingVoices)
+                : 1.0f;
+
+            for (size_t v = 0; v < kAuditionVoiceCount; ++v) {
+                auto& voice = auditionVoices_[v];
+                if (!voice.isActive()) continue;
+                voice.setWaveform(waveform);
+                voice.setDecay(decayMs);
+                voice.setVolume(userVolume * polyScale);
+                voice.processBlock(outL, outR, numSamples);
+                // A voice clears active_ from inside processBlock when its
+                // release finishes; hand the slot back so it can be reused.
+                if (!voice.isActive()) auditionAllocator_.voiceFinished(v);
+            }
+        } else if (anyAuditionVoiceActive()) {
+            // Voices stop being rendered the moment audition is switched off,
+            // and AuditionVoice::active_ only clears from inside processBlock --
+            // so without this they would stay flagged active forever, and the
+            // silence report below would keep claiming a buffer we are in fact
+            // leaving at zero.
+            resetAuditionVoices();
         }
 
         // Report silence from what we actually wrote: the buffers were cleared
-        // above and only the enabled audition voice adds to them.
+        // above and only enabled audition voices add to them.
         data.outputs[0].silenceFlags =
-            (auditionOn && auditionVoice_.isActive()) ? 0 : 0x3;
+            (auditionOn && anyAuditionVoiceActive()) ? 0 : 0x3;
     }
 
     return kResultOk;

@@ -65,6 +65,9 @@ add_executable(gradus_tests
     # MIDI boundary representation guards (MIDI-flow audit GMF-013/015/017)
     unit/processor/boundary_metadata_test.cpp
 
+    # Audition monitor must be polyphonic
+    unit/processor/audition_polyphony_test.cpp
+
     # Piano-roll view tests (spec 142, Phase 6, US3)
     unit/ui/piano_roll_view_test.cpp
     unit/ui/piano_roll_playhead_test.cpp

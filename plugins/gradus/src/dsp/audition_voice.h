@@ -1,10 +1,15 @@
 #pragma once
 
 // ==============================================================================
-// AuditionVoice — Minimal monophonic synth for pattern auditioning
+// AuditionVoice — Minimal single voice for pattern auditioning
 // ==============================================================================
 // Simple: PolyBlepOscillator + linear ADSR + gain.
 // Not a production synth — just so users can hear arp patterns.
+//
+// One voice of a polyphonic pool. Note-to-voice routing lives in
+// Krate::DSP::VoiceAllocator (Layer 3); this class owns no note identity, only
+// a frequency handed to it at noteOn. processBlock ACCUMULATES into the output
+// buffers, so a pool sums simply by rendering each voice in turn.
 // ==============================================================================
 
 #include <krate/dsp/primitives/polyblep_oscillator.h>
@@ -39,9 +44,11 @@ public:
         volume_ = std::clamp(vol, 0.0f, 1.0f);
     }
 
-    void noteOn(uint8_t pitch, uint8_t velocity) noexcept {
-        float freq = 440.0f * std::pow(2.0f, (static_cast<float>(pitch) - 69.0f) / 12.0f);
-        osc_.setFrequency(freq);
+    /// @param frequencyHz Pre-computed pitch. VoiceAllocator already derives it
+    ///        from the MIDI note, so the voice does not repeat a std::pow on the
+    ///        audio thread the way the old monophonic path did.
+    void noteOn(float frequencyHz, uint8_t velocity) noexcept {
+        osc_.setFrequency(frequencyHz);
         velocity_ = static_cast<float>(velocity) / 127.0f;
         envPhase_ = EnvPhase::Attack;
         envLevel_ = 0.0f;
