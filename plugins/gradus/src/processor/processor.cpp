@@ -125,9 +125,20 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
             Event e{};
             if (data.inputEvents->getEvent(i, e) == kResultOk) {
                 if (e.type == Event::kNoteOnEvent) { // NOLINT(bugprone-branch-clone)
-                    arpCore_.noteOn(
-                        static_cast<uint8_t>(e.noteOn.pitch),
-                        static_cast<uint8_t>(e.noteOn.velocity * 127.0f));
+                    // MIDI 1.0 running status expresses a key release as a
+                    // NoteOn with velocity 0, and hosts forward that verbatim on
+                    // this legacy Event path. Treating it as a note-on would
+                    // hold the pitch forever (the sender never follows up with a
+                    // kNoteOffEvent) and permanently over-count
+                    // physicalKeysHeld_. Note this convention is MIDI-1.0 only:
+                    // a MIDI-2.0 UMP velocity-0 note-on is a genuine note-on.
+                    if (e.noteOn.velocity <= 0.0f) {
+                        arpCore_.noteOff(static_cast<uint8_t>(e.noteOn.pitch));
+                    } else {
+                        arpCore_.noteOn(
+                            static_cast<uint8_t>(e.noteOn.pitch),
+                            static_cast<uint8_t>(e.noteOn.velocity * 127.0f));
+                    }
                 } else if (e.type == Event::kNoteOffEvent) {
                     arpCore_.noteOff(
                         static_cast<uint8_t>(e.noteOff.pitch));
