@@ -178,9 +178,16 @@ tresult PLUGIN_API Processor::process(ProcessData& data)
         // so resetting here orphaned every sounding note downstream and left
         // the arp silent until the keys were physically re-pressed. Pressing
         // Play is simply not the free-running arp's business.
+        //
+        // The echo tail is the host's problem either way: midiDelay_.process()
+        // runs every block regardless of transport (only step generation is
+        // gated at BlockContext::isPlaying), so echo NoteOns keep going out
+        // while stopped with their NoteOffs still pending. reset() would discard
+        // those obligations, so flush them the way setActive(false) does -- the
+        // retained NoteOffs discharge in this same block's midiDelay_.process().
         if (isSequencer && isPlaying && !wasTransportPlaying_) {
             arpCore_.reset();  // Also resets midiDelayLane_ inside
-            midiDelay_.reset();
+            midiDelay_.flushWithNoteOffs();
         }
         wasTransportPlaying_ = isPlaying;
     }
