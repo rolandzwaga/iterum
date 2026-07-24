@@ -105,13 +105,17 @@ tresult PLUGIN_API Controller::setParamNormalized(
              (tag >= kArpMidiDelayGateScaleStep0Id && tag < kArpMidiDelayGateScaleStep0Id + 32))
         viewDirtyFlags_.fetch_or(kDirtyMidiDelayLane, std::memory_order_relaxed);
 
-    // Playhead parameters (9 specific IDs, NOT a broad range)
+    // Playhead parameters (9 specific IDs, NOT a broad range).
+    // kDirtyRing too: the ring draws its own step highlight from the data
+    // bridge, so without an invalidation the highlight only moves when some
+    // unrelated parameter happens to raise kDirtyRing.
     else if (tag == kArpVelocityPlayheadId || tag == kArpGatePlayheadId ||
              tag == kArpPitchPlayheadId || tag == kArpRatchetPlayheadId ||
              tag == kArpModifierPlayheadId || tag == kArpConditionPlayheadId ||
              tag == kArpChordPlayheadId || tag == kArpInversionPlayheadId ||
              tag == kArpMidiDelayPlayheadId)
-        viewDirtyFlags_.fetch_or(kDirtyPlayheads, std::memory_order_relaxed);
+        viewDirtyFlags_.fetch_or(kDirtyPlayheads | kDirtyRing,
+                                 std::memory_order_relaxed);
 
     // Scale type
     else if (tag == kArpScaleTypeId)

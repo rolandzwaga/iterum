@@ -222,6 +222,15 @@ public:
         // so existing presets/behavior are unchanged.
         scaleHarmonizer_.setScale(ScaleType::Chromatic);
 
+        // Speed-curve triple buffer: the three slot indices must start DISTINCT
+        // (ready=0, writer=1, reader=2) or the writer and the audio thread would
+        // begin life aliasing the same staging buffer. Value-initialization
+        // would give all three 0.
+        laneSpeedCurveWriteSlot_.fill(uint8_t{1});
+        laneSpeedCurveReadSlot_.fill(uint8_t{2});
+        for (auto& ready : laneSpeedCurveReady_)
+            ready.store(uint8_t{0}, std::memory_order_relaxed);
+
         // Spec 142: Sequencer Note lane defaults. Pitch step[0]=60 (C4), all
         // rest flags=1 (rest) so a fresh pattern is silent until user populates.
         // Expand to full capacity first: ArpLane::setStep clamps its index to
@@ -246,6 +255,33 @@ public:
                         [[maybe_unused]] size_t maxBlockSize) noexcept {
         sampleRate_ = (sampleRate >= kMinSampleRate) ? sampleRate : kMinSampleRate;
         reset();
+    }
+
+    /// @brief Like `prepare()`, but carries an outstanding panic note-off
+    /// obligation across the reset.
+    ///
+    /// Hosts reconfigure with setActive(false) -> setupProcessing() ->
+    /// setActive(true). A plain `prepare()` in the middle of that sequence
+    /// clears `panicRequested_` *and* the `currentArpNotes_` list the panic
+    /// would have released, so notes already emitted to a MIDI *output* bus are
+    /// stranded downstream. Call this instead whenever a deactivation flush is
+    /// still outstanding: all timing state is reset for the new sample rate, but
+    /// the note-off obligation survives to discharge on the next `processBlock`.
+    inline void prepareRetainingPanicNoteOff(double sampleRate,
+                                             size_t maxBlockSize) noexcept {
+        const bool panic = panicRequested_;
+        const bool disableNoteOff = needsDisableNoteOff_;
+        const auto savedNotes = currentArpNotes_;
+        const size_t savedCount = currentArpNoteCount_;
+
+        prepare(sampleRate, maxBlockSize);
+
+        if (panic) {
+            currentArpNotes_ = savedNotes;
+            currentArpNoteCount_ = savedCount;
+            panicRequested_ = true;
+            needsDisableNoteOff_ = disableNoteOff;
+        }
     }
 
     /// @brief Reset all state to initial values. Configuration preserved.
@@ -666,17 +702,24 @@ public:
     }
 
     /// @brief Stage a baked speed curve lookup table for a lane.
-    /// Safe to call from any thread — the table is copied to a staging buffer
-    /// and an atomic dirty flag is set. The audio thread consumes it via
-    /// consumePendingCurveTables().
+    /// Safe to call from the message thread while the audio thread runs: the
+    /// table is written into the staging slot the audio thread is NOT reading,
+    /// and only then published via an atomic release.
     /// @param laneIndex Lane 0-7
     /// @param table 256-entry table with values in [0, 1] (0.5 = center)
     void setLaneSpeedCurveTable(size_t laneIndex,
                                 const std::array<float, 256>& table) noexcept {
-        if (laneIndex < kNumLanes) {
-            laneSpeedCurveTablesStaging_[laneIndex] = table;
-            laneSpeedCurveTableDirty_[laneIndex].store(true, std::memory_order_release);
-        }
+        if (laneIndex >= kNumLanes) return;
+        // Triple-buffer publish. Fill the slot this thread owns, then swap it
+        // into `ready` and take whatever was there as the next write target.
+        // The reader owns its own slot for as long as it is copying, so writer
+        // and reader can never touch the same buffer.
+        uint8_t& writeSlot = laneSpeedCurveWriteSlot_[laneIndex];
+        laneSpeedCurveTablesStaging_[laneIndex][writeSlot] = table;
+        const uint8_t prev = laneSpeedCurveReady_[laneIndex].exchange(
+            static_cast<uint8_t>(writeSlot | kCurveDirtyBit),
+            std::memory_order_acq_rel);
+        writeSlot = static_cast<uint8_t>(prev & kCurveSlotMask);
     }
 
     /// @brief Consume pending curve table updates. Call from audio thread only
@@ -687,10 +730,18 @@ public:
     /// even when staged from the controller.
     void consumePendingCurveTables() noexcept {
         for (size_t i = 0; i < kNumLanes; ++i) {
-            if (laneSpeedCurveTableDirty_[i].load(std::memory_order_acquire)) {
-                laneSpeedCurveTables_[i] = laneSpeedCurveTablesStaging_[i];
-                laneSpeedCurveTableDirty_[i].store(false, std::memory_order_relaxed);
-            }
+            if ((laneSpeedCurveReady_[i].load(std::memory_order_acquire)
+                 & kCurveDirtyBit) == 0)
+                continue;
+            // Hand our old slot back and take ownership of the published one.
+            // The exchange clears the dirty bit (our slot index carries none),
+            // and the writer's next target becomes the slot we just released --
+            // so the buffer we are about to copy stays ours for the whole copy.
+            uint8_t& readSlot = laneSpeedCurveReadSlot_[i];
+            const uint8_t prev = laneSpeedCurveReady_[i].exchange(
+                readSlot, std::memory_order_acq_rel);
+            readSlot = static_cast<uint8_t>(prev & kCurveSlotMask);
+            laneSpeedCurveTables_[i] = laneSpeedCurveTablesStaging_[i][readSlot];
         }
     }
 
@@ -1392,6 +1443,41 @@ private:
         panicRequested_ = false;
     }
 
+    /// @brief Clamp an emission offset into the host's [0, blockSize) window.
+    ///
+    /// `humanizedSampleOffset` is already clamped, but the strum offset (up to
+    /// strumTimeMs = 100 ms, i.e. 4800 samples at 48 kHz) is added afterwards
+    /// and can push a strummed chord note thousands of samples past the end of a
+    /// 64-sample host block. Neither the processor nor MidiNoteDelay re-clamps,
+    /// so such an event reaches the host out of range and is dropped -- while
+    /// its gate NoteOff, scheduled in range, still fires.
+    [[nodiscard]] static inline int32_t clampOffsetToBlock(
+        int32_t offset, size_t blockSize) noexcept {
+        const int32_t last =
+            (blockSize > 0) ? static_cast<int32_t>(blockSize) - 1 : 0;
+        return std::clamp(offset, int32_t{0}, last);
+    }
+
+    /// @brief Drop the first `releasedCount` tracked notes, keeping the rest.
+    ///
+    /// The chord/ratchet replace loops stop at the output-span cap, so they can
+    /// release only a prefix of `currentArpNotes_`. Zeroing the count regardless
+    /// would erase the un-released remainder from tracking: after a Tie/Slide
+    /// step (which schedules no pending NoteOff) those notes would have no
+    /// output NoteOff, no pending NoteOff and no tracking entry, leaving them
+    /// unreleasable even by a panic flush.
+    inline void retainUnreleasedArpNotes(size_t releasedCount) noexcept {
+        if (releasedCount >= currentArpNoteCount_) {
+            currentArpNoteCount_ = 0;
+            return;
+        }
+        const size_t remaining = currentArpNoteCount_ - releasedCount;
+        for (size_t i = 0; i < remaining; ++i) {
+            currentArpNotes_[i] = currentArpNotes_[releasedCount + i];
+        }
+        currentArpNoteCount_ = remaining;
+    }
+
     /// @brief Remove a note from the currentArpNotes_ tracking array.
     inline void removeFromCurrentArpNotes(uint8_t note) noexcept {
         for (size_t i = 0; i < currentArpNoteCount_; ++i) {
@@ -1497,7 +1583,6 @@ private:
         laneSwingCounters_.fill(0);
         // v1.5 Part 2: Reset length jitter state
         lanePendingSkips_.fill(0);
-        laneLastSteps_.fill(0);
     }
 
     // =========================================================================
@@ -1553,12 +1638,29 @@ private:
     // cycle. curveDepths_ controls the offset range; curveEnabled_ gates the
     // effect. Tables are sent from the controller via IMessage.
     //
-    // Thread safety: tables are written from the message thread (via notify())
-    // into staging buffers, then copied to the active tables on the audio thread
-    // in consumePendingCurveTables(). The atomic dirty flags gate the copy.
+    // Thread safety: tables are handed from the message thread (via notify())
+    // to the audio thread through a per-lane TRIPLE buffer, then copied into the
+    // active table in consumePendingCurveTables().
+    //
+    // Three slots, not one and not two. One was a plain data race: a 1 KB copy
+    // is nowhere near atomic, so a second publish landing mid-copy rewrote the
+    // bytes the audio thread was reading (ThreadSanitizer flags it directly).
+    // Two is still not enough -- while the reader holds the published slot, two
+    // further publishes wrap the writer straight back onto it. With three, the
+    // writer and reader each own a slot outright and `ready` holds the third, so
+    // the two never alias. Ownership rotates through the exchange below; the
+    // low bits carry the slot index and the top bit marks unread data.
+    static constexpr uint8_t kCurveSlotMask = 0x03;
+    static constexpr uint8_t kCurveDirtyBit = 0x80;
     std::array<std::array<float, 256>, kNumLanes> laneSpeedCurveTables_{};
-    std::array<std::array<float, 256>, kNumLanes> laneSpeedCurveTablesStaging_{};
-    std::array<std::atomic<bool>, kNumLanes> laneSpeedCurveTableDirty_{};
+    std::array<std::array<std::array<float, 256>, 3>, kNumLanes>
+        laneSpeedCurveTablesStaging_{};
+    /// Published slot + dirty bit. Starts at slot 0, clean.
+    std::array<std::atomic<uint8_t>, kNumLanes> laneSpeedCurveReady_{};
+    /// Writer-owned slot (message thread only). Starts at 1.
+    std::array<uint8_t, kNumLanes> laneSpeedCurveWriteSlot_{};
+    /// Reader-owned slot (audio thread only). Starts at 2.
+    std::array<uint8_t, kNumLanes> laneSpeedCurveReadSlot_{};
     // Written from the host message thread (Gradus routes depth through
     // Processor::notify), read on the audio thread every block -- atomic for
     // the same reason as laneSpeedCurveEnabled_ below.
@@ -1611,7 +1713,6 @@ private:
     int transpose_{0};                ///< -24 to +24 semitones
     std::array<int, kNumLanes> laneLengthJitters_{};    ///< Per-lane jitter amount (0-4 steps)
     std::array<int8_t, kNumLanes> lanePendingSkips_{};  ///< Positive = skip next N advances (lengthens)
-    std::array<uint8_t, kNumLanes> laneLastSteps_{};    ///< Previous step position for wrap detection
     uint32_t lengthJitterRng_{0xFEEDBEEFu};     ///< Xorshift state for jitter re-rolls
 
     // v1.5 Part 3: Note Range Mapping

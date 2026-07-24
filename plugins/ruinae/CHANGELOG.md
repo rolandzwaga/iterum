@@ -5,6 +5,26 @@ All notable changes to Ruinae will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-07-24
+
+Fixes in the shared KrateDSP arpeggiator engine, found by an adversarially-verified
+audit of the MIDI signal flow in Gradus. Ruinae drives the same engine, so they are
+listed here too and marked *(shared DSP)*. No Ruinae-specific code changed.
+
+### Fixed
+
+- **Notes cut short mid-step in Chord and Ratchet modes at gates above 100 %** *(shared DSP)* — Those modes replace the previous step's notes outright, but the previous step's scheduled release was not cancelled, so it fired part-way through the step that had just re-struck the same pitch. Measured on a sustained triad at 180 % gate: the first step sounded its full length and every step after it was clipped by 20 %, with an audible gap before the next strike.
+- **Phantom note-offs when a single block emitted more events than it could carry** *(shared DSP)* — Each block has a fixed event budget. Once it filled, the engine stopped writing note-ons but carried on recording them as sounding and scheduling their releases, so it emitted note-offs for notes that never started. A 20-note chord at 1/64 produced 2708 of them. Reachable with a large chord at a fast rate, especially with ratchets.
+- **Strummed chord notes could be emitted outside the block they belong to** *(shared DSP)* — The Strum control staggers a chord's notes in time, but that stagger was added after the safety clamp rather than before it. At 48 kHz a 50 ms strum in a 64-sample block placed note-ons roughly 2400 samples past the end of the block, while their releases still fired on time.
+- **Negative Humanize could kill a note the instant it was struck** *(shared DSP)* — Humanize shifts a step earlier or later, but in Chord and Ratchet modes the *release* of the previous step kept the un-shifted position. Shifted early, the new note-on came before the old release, so for a pitch held across two steps the note was silenced immediately. Measured 48 such inversions in a single 400-block run at 75 % Humanize.
+- **Positive Humanize cut notes short, and past a point orphaned them entirely** *(shared DSP)* — The gate length was counted from the step's un-shifted position, so a note shifted later lost exactly its shift from its own gate. Once the shift exceeded the gate, its release was scheduled *before* its note-on: an orphan note-off, and a note with nothing to release it. Measured 39 occurrences at 1/32 with a 1 % gate and full Humanize.
+- **With Retrigger = Beat, the first step of each bar played the previous bar's continuation** *(shared DSP)* — A gate near 100 % puts the previous step's release exactly on the bar line, and the release was handled ahead of the bar reset even though the documented priority puts the bar first. The pattern reset then slipped a full step, so the bar opened on the wrong note — pitch 55 instead of 48 in the new regression test.
+- **Ratchet decay could emit notes at velocity 0** *(shared DSP)* — A high Ratchet Decay drove later subdivisions to zero velocity, which many hosts read as a note-off. Ratchet subdivisions now floor at velocity 1, matching every other emission path.
+
+### Changed
+
+- **Eleven arpeggiated factory presets sound slightly different** — *Arp Chaos Matrix*, *Chaos Garden*, *Chaos Step*, *Dorian Cascade*, *Lydian Aurora*, *Noise Tick*, *Ratchet Fury*, *Reich Drift*, *Spectral Ratchet*, *Stab Machine* and *Vox Oracle* all use gates above 100 % or Humanize, so the two fixes above change what they emit. Note timing and pitch are unchanged; what changes is where the note-offs land — the notes now sustain for the length the gate asks for instead of being clipped early. Their reference captures were regenerated accordingly.
+
 ## [0.12.1] - 2026-07-21
 
 Fixes in the shared KrateDSP arpeggiator engine, found while auditing Gradus.

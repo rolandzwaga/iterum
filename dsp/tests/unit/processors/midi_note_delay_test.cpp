@@ -961,3 +961,100 @@ TEST_CASE("MidiNoteDelay: output events are non-decreasing in sampleOffset",
         CHECK(output[i].sampleOffset >= output[i - 1].sampleOffset);
     }
 }
+
+// =============================================================================
+// Overflow eviction must never drop a NoteOff obligation (GMF-003)
+// =============================================================================
+// Eviction of the oldest slot on a full 256-entry ring is unconditional, but the
+// emergency-NoteOff enqueue for an already-sounded evicted echo was gated on
+// `emergencyNoteOffCount_ < kMaxEmergencyNoteOffs` (16). Evictions all happen in
+// pass 1 of process() (scheduleEchoes) while emitEmergencyNoteOffs runs in pass
+// 2, so within a single block the queue only grows: the 17th and later sounded
+// evictions had their NoteOff obligation discarded outright, hanging those notes.
+
+TEST_CASE("GMF-003: overflow eviction of >16 sounded echoes never drops a NoteOff",
+          "[MidiNoteDelay][overflow][stuck]")
+{
+    MidiNoteDelay delay;
+    auto ctx = makeCtx(44100.0, 4096);
+
+    // 10 ms delay: all 16 echoes of a source note sound within ~7k samples (two
+    // blocks). Max gate scaling compounds geometrically, so none of them close
+    // again for minutes -- every pending echo sits sounded-but-unclosed, which is
+    // exactly the state that makes an eviction strand a NoteOff.
+    MidiDelayStepConfig config;
+    config.active = true;
+    config.timeMode = TimeMode::Free;
+    config.delayTimeMs = 10.0f;
+    config.feedbackCount = 16;
+    config.velocityDecay = 0.0f;
+    config.pitchShiftPerRepeat = 0;
+    config.gateScaling = 2.0f;
+    delay.setStepConfig(0, config);
+
+    std::array<int, 128> ons{};
+    std::array<int, 128> offs{};
+    std::array<ArpEvent, 512> output{};
+
+    auto runBlock = [&](std::span<const ArpEvent> input) {
+        const size_t count = delay.process(
+            ctx, input, input.size(),
+            std::span<ArpEvent>(output.data(), output.size()), 0);
+        REQUIRE(delay.pendingCount() <= 256);
+        for (size_t i = 0; i < count; ++i) {
+            const auto& e = output[i];
+            if (e.type == ArpEvent::Type::NoteOn) ons[e.note]++;
+            else if (e.type == ArpEvent::Type::NoteOff) offs[e.note]++;
+        }
+    };
+
+    // Feed each source note with its own NoteOff so pass-through traffic is
+    // self-balancing and any imbalance below is attributable to echoes alone.
+    auto sourcePair = [](uint8_t pitch) {
+        return std::array<ArpEvent, 2>{
+            ArpEvent{ArpEvent::Type::NoteOn, pitch, 100, 0, false},
+            ArpEvent{ArpEvent::Type::NoteOff, pitch, 0, 1, false}};
+    };
+
+    // Fill the 256-slot ring. Short-gate early echoes still close and compact
+    // out, so keep feeding one source note per block until the ring saturates;
+    // by then the surviving front slots are long-gated echoes that sounded
+    // blocks ago and cannot close for minutes.
+    // 2 source notes per block = 32 new echoes per block, well past the ring's
+    // headroom, so once it saturates every further add evicts a front slot that
+    // sounded blocks ago. (pendingCount() reads below 256 between blocks: the
+    // end-of-block compaction retires the short-gated early echoes.)
+    for (int n = 0; n < 40; ++n) {
+        std::array<ArpEvent, 4> fill{};
+        for (int k = 0; k < 2; ++k) {
+            const auto pitch = static_cast<uint8_t>(40 + ((n * 2 + k) % 32));
+            fill[static_cast<size_t>(k) * 2] =
+                ArpEvent{ArpEvent::Type::NoteOn, pitch, 100, 0, false};
+            fill[static_cast<size_t>(k) * 2 + 1] =
+                ArpEvent{ArpEvent::Type::NoteOff, pitch, 0, 1, false};
+        }
+        runBlock(std::span<const ArpEvent>(fill.data(), fill.size()));
+    }
+    REQUIRE(delay.pendingCount() >= 200);
+
+    // Dense burst in ONE block: 3 sources x 16 echoes = 48 evictions of
+    // sounded-but-unclosed front slots, far past the 16-entry emergency queue.
+    std::array<ArpEvent, 6> burst{};
+    for (int n = 0; n < 3; ++n) {
+        burst[static_cast<size_t>(n) * 2] =
+            ArpEvent{ArpEvent::Type::NoteOn, static_cast<uint8_t>(100 + n), 100, 0, false};
+        burst[static_cast<size_t>(n) * 2 + 1] =
+            ArpEvent{ArpEvent::Type::NoteOff, static_cast<uint8_t>(100 + n), 0, 1, false};
+    }
+    runBlock(std::span<const ArpEvent>(burst.data(), burst.size()));
+
+    // Discharge every remaining obligation, then drain the emergency queue.
+    delay.flushWithNoteOffs();
+    for (int b = 0; b < 40; ++b) runBlock({});
+
+    for (int p = 0; p < 128; ++p) {
+        INFO("pitch " << p << ": on=" << ons[static_cast<size_t>(p)]
+                      << " off=" << offs[static_cast<size_t>(p)]);
+        CHECK(offs[static_cast<size_t>(p)] >= ons[static_cast<size_t>(p)]);
+    }
+}

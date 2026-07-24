@@ -189,6 +189,73 @@ TEST_CASE("Sequencer follows host transport: Stop halts note emission (FR-031)",
     CHECK(offs >= ons);
 }
 
+TEST_CASE("GMF-002: Sequencer stop-then-play flushes in-flight echoes without stranding NoteOffs",
+          "[gradus][processor][sequencer][transport][echo]")
+{
+    // The rising transport-play edge called midiDelay_.reset(), which zeroes
+    // pendingCount_ with no NoteOff emission. midiDelay_.process() runs every
+    // block regardless of transport (only arp step generation is gated), so
+    // echo NoteOns keep reaching the host while stopped with their NoteOffs
+    // still pending -- reset() then discarded those obligations. setActive(false)
+    // deliberately uses flushWithNoteOffs() for exactly this reason; the
+    // transport edge is the same situation (the host is still listening).
+    ProcDriver d;
+    using namespace Gradus;
+
+    ParamChanges setupParams;
+    buildSequencerSetup(setupParams);
+    // MIDI-delay lane: length 1 (step 0 only), active, 8 echoes, ~200 ms Free.
+    // Gate scaling stays at 100% (it compounds geometrically, and 200% would
+    // give the 8th echo a ~40 s gate that no drain phase could outlast); the
+    // default 80%-of-delay gate already leaves echoes sounding with their
+    // NoteOff pending across the transport edge, which is what this pins.
+    setupParams.add(kArpMidiDelayLaneLengthId, 0.0);
+    setupParams.add(kArpMidiDelayActiveStep0Id, 1.0);
+    setupParams.add(kArpMidiDelayFeedbackStep0Id, 0.5);       // 8 echoes
+    setupParams.add(kArpMidiDelayTimeModeStep0Id, 0.0);       // Free
+    setupParams.add(kArpMidiDelayTimeStep0Id, 0.0955);        // ~200 ms
+    setupParams.add(kArpMidiDelayGateScaleStep0Id, 90.0 / 190.0);  // 100%
+    setupParams.add(kArpMidiDelayVelDecayStep0Id, 0.0);       // no velocity decay
+    ParamChanges none;
+
+    std::vector<CapturedMidi> all;
+    d.runBlock(&setupParams, /*transportPlaying=*/true, all);
+    for (int b = 0; b < 60; ++b)
+        d.runBlock(&none, /*transportPlaying=*/true, all);
+
+    // Guard against a vacuous pass: echoes must actually be in flight. The
+    // sequencer emits one NoteOn per step; with 8 echoes per step the capture
+    // holds far more NoteOns than steps if echoes are really being produced.
+    const int onsBeforeStop = countNoteOns(all);
+    INFO("note-ons before stop: " << onsBeforeStop);
+    REQUIRE(onsBeforeStop > 8);
+
+    // Stop for one block, then resume: the rising edge hits the reset.
+    d.runBlock(&none, /*transportPlaying=*/false, all);
+    d.runBlock(&none, /*transportPlaying=*/true, all);
+    for (int b = 0; b < 60; ++b)
+        d.runBlock(&none, /*transportPlaying=*/true, all);
+
+    // Drain: stop the transport (no new steps) and run long enough for the whole
+    // echo tail to play out -- 8 echoes x ~200 ms is ~1.6 s ~= 140 blocks. At
+    // quiescence every NoteOn ever emitted must have been closed, so a leftover
+    // imbalance is a genuinely stranded note rather than one still sounding.
+    for (int b = 0; b < 260; ++b)
+        d.runBlock(&none, /*transportPlaying=*/false, all);
+
+    std::array<int, 128> ons{};
+    std::array<int, 128> offs{};
+    for (const auto& c : all) {
+        if (c.pitch < 0 || c.pitch > 127) continue;
+        (c.isNoteOn ? ons : offs)[static_cast<size_t>(c.pitch)]++;
+    }
+    for (int p = 0; p < 128; ++p) {
+        INFO("pitch " << p << ": on=" << ons[static_cast<size_t>(p)]
+                      << " off=" << offs[static_cast<size_t>(p)]);
+        REQUIRE(offs[static_cast<size_t>(p)] >= ons[static_cast<size_t>(p)]);
+    }
+}
+
 TEST_CASE("Live mode free-runs while transport is stopped (no regression)",
           "[gradus][processor][live][transport][spec142]")
 {

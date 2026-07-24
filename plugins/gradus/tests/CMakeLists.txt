@@ -53,6 +53,21 @@ add_executable(gradus_tests
     # Audition silence reporting + tempo validity (audit F18, F19)
     unit/processor/audition_and_tempo_test.cpp
 
+    # Velocity-0 NoteOn must release, not hold (MIDI-flow audit GMF-004)
+    unit/processor/velocity_zero_noteon_test.cpp
+
+    # 128-event span cap: no phantom / stranded NoteOffs (MIDI-flow audit GMF-006)
+    unit/processor/event_cap_overflow_test.cpp
+
+    # Strummed offsets must stay inside the block (MIDI-flow audit GMF-007)
+    unit/processor/strum_offset_range_test.cpp
+
+    # MIDI boundary representation guards (MIDI-flow audit GMF-013/015/017)
+    unit/processor/boundary_metadata_test.cpp
+
+    # Audition monitor must be polyphonic
+    unit/processor/audition_polyphony_test.cpp
+
     # Piano-roll view tests (spec 142, Phase 6, US3)
     unit/ui/piano_roll_view_test.cpp
     unit/ui/piano_roll_playhead_test.cpp
@@ -63,6 +78,9 @@ add_executable(gradus_tests
 
     # Ring edit routing / geometry seeding lane-order guard (audit F11 + F12)
     unit/ui/ring_edit_routing_test.cpp
+
+    # Playhead advance must repaint the ring (step animation)
+    unit/ui/ring_playhead_invalidation_test.cpp
 
     # Processor/Controller implementation (needed by plugin shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp

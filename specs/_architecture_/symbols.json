@@ -1473,7 +1473,7 @@
       "scope": "Krate::DSP::ArpeggiatorCore",
       "layer": "processors",
       "header": "dsp/include/krate/dsp/processors/arpeggiator_core.h",
-      "line": 1019
+      "line": 1070
     },
     {
       "name": "PffftAlignedDeleter",

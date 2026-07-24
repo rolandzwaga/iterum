@@ -9,11 +9,13 @@
 
 #include <krate/dsp/processors/arpeggiator_core.h>
 #include <krate/dsp/processors/midi_note_delay.h>
+#include <krate/dsp/systems/voice_allocator.h>
 
 #include "public.sdk/source/vst/vstaudioeffect.h"
 
 #include <array>
 #include <atomic>
+#include <span>
 
 namespace Gradus {
 
@@ -24,6 +26,10 @@ static constexpr float kAuditionDecayMinMs = 10.0f;
 static constexpr float kAuditionDecayMaxMs = 2000.0f;
 static constexpr float kAuditionDecayRangeMs = kAuditionDecayMaxMs - kAuditionDecayMinMs;
 static constexpr int kAuditionWaveformCount = 3;
+/// Voices in the audition pool. The arp can sound a full held chord plus its
+/// MIDI-delay echoes at once, so a monophonic monitor misrepresented anything
+/// but a single-note pattern.
+static constexpr size_t kAuditionVoiceCount = 8;
 
 class Processor : public Steinberg::Vst::AudioEffect
 {
@@ -83,11 +89,19 @@ private:
 
     // Transport state
     bool wasTransportPlaying_{false};
-    bool hostSupportsTransport_{false};
     double prevProjectTimeMusic_{-1.0};
 
-    // Audition voice
-    AuditionVoice auditionVoice_;
+    // Audition voice pool. VoiceAllocator owns the note-to-voice routing and
+    // the stealing policy; the voices themselves hold no note identity.
+    std::array<AuditionVoice, kAuditionVoiceCount> auditionVoices_{};
+    Krate::DSP::VoiceAllocator auditionAllocator_;
+
+    /// Act on a VoiceAllocator event span (note-on / note-off / hard steal).
+    void dispatchAuditionEvents(
+        std::span<const Krate::DSP::VoiceEvent> events) noexcept;
+    /// Silence every audition voice and return the allocator to all-idle.
+    void resetAuditionVoices() noexcept;
+    [[nodiscard]] bool anyAuditionVoiceActive() const noexcept;
 
     // Audition sound params
     std::atomic<bool>  auditionEnabled_{false};

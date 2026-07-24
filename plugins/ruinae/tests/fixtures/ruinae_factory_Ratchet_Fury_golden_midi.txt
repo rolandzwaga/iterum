@@ -133,7 +133,6 @@
 [165375] noteOn  60 92
 [165376] noteOff 60
 [165376] noteOn  72 46
-[166557] noteOff 60
 [167740] noteOff 72
 [169014] noteOn  72 46
 [170232] noteOff 72

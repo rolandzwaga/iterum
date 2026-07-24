@@ -389,8 +389,18 @@ private:
             // Steal oldest (first slot). If its NoteOn was already emitted,
             // queue an emergency NoteOff to prevent stuck notes.
             const auto& evicted = pendingEchoes_[0];
-            if (evicted.noteOnEmitted && !evicted.noteOffEmitted
-                && emergencyNoteOffCount_ < kMaxEmergencyNoteOffs) {
+            if (evicted.noteOnEmitted && !evicted.noteOffEmitted) {
+                if (emergencyNoteOffCount_ >= kMaxEmergencyNoteOffs) {
+                    // Back-pressure. All evictions happen in pass 1 of
+                    // process() while the emergency queue only drains in pass
+                    // 2, so within one block the queue saturates and any
+                    // further eviction of a sounded echo would discard its
+                    // NoteOff outright and hang the note. Refuse the incoming
+                    // echo instead and leave the sounded one in place for a
+                    // later block: dropping a NoteOn that never sounded is
+                    // strictly better than dropping a NoteOff for one that did.
+                    return;
+                }
                 emergencyNoteOffs_[emergencyNoteOffCount_++] = evicted.note;
             }
             for (size_t i = 1; i < pendingCount_; ++i) {
