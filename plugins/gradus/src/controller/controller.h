@@ -114,15 +114,6 @@ public:
     template<typename SetParamFn>
     void loadFullState(Steinberg::IBStreamer& streamer, SetParamFn setParam);
 
-    static Steinberg::FUnknown* createInstance(void*)
-    {
-        return static_cast<Steinberg::Vst::IEditController*>(new Controller());
-    }
-
-private:
-    // Preset button factory (called from createCustomView)
-    VSTGUI::CView* createPresetButton(const VSTGUI::CRect& rect, bool isBrowse);
-
     // --- Deferred UI sync (thread-safe setParamNormalized) ---
     // Dirty flags categorize which UI regions need syncing.
     // setParamNormalized sets flags; a timer flushes on the UI thread.
@@ -148,6 +139,24 @@ private:
         kDirtyArpSourceMode = 1u << 18,
         kDirtySequencerNoteLane = 1u << 19,
     };
+
+    /// Consume the pending dirty bits exactly as the UI-thread timer does.
+    /// Test seam: lets a test assert setParamNormalized's classification
+    /// without pumping a VSTGUI run loop.
+    uint32_t takePendingViewDirtyFlags() noexcept
+    {
+        return viewDirtyFlags_.exchange(0, std::memory_order_relaxed);
+    }
+
+    static Steinberg::FUnknown* createInstance(void*)
+    {
+        return static_cast<Steinberg::Vst::IEditController*>(new Controller());
+    }
+
+private:
+    // Preset button factory (called from createCustomView)
+    VSTGUI::CView* createPresetButton(const VSTGUI::CRect& rect, bool isBrowse);
+
     std::atomic<uint32_t> viewDirtyFlags_{0};
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> viewSyncTimer_;
     void syncViewsFromParams();  // Runs on UI thread via timer

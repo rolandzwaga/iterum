@@ -79,6 +79,9 @@ add_executable(gradus_tests
     # Ring edit routing / geometry seeding lane-order guard (audit F11 + F12)
     unit/ui/ring_edit_routing_test.cpp
 
+    # Playhead advance must repaint the ring (step animation)
+    unit/ui/ring_playhead_invalidation_test.cpp
+
     # Processor/Controller implementation (needed by plugin shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/controller/controller.cpp
