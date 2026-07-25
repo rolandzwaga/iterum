@@ -272,6 +272,13 @@ add_executable(dsp_processors_tests
     unit/processors/bow_waveguide_coupling_test.cpp
     unit/processors/body_resonance_tests.cpp
     unit/processors/test_modal_bank_frequency.cpp
+    unit/processors/brownian_drift_test.cpp
+    unit/processors/breathing_modulator_test.cpp
+    unit/processors/tidal_modulator_test.cpp
+    unit/processors/orbit_modulator_test.cpp
+    unit/processors/spline_trajectory_test.cpp
+    unit/processors/growth_envelope_test.cpp
+    unit/processors/life_modulators_perf_test.cpp
 )
 
 target_link_libraries(dsp_processors_tests

@@ -71,7 +71,7 @@
     "processors": {
       "index": 2,
       "folder": "dsp/include/krate/dsp/processors",
-      "header_count": 96
+      "header_count": 102
     },
     "systems": {
       "index": 3,
