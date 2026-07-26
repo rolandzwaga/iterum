@@ -136,6 +136,8 @@ not noise and not LFO.
 
 ### Phase 2: Harmonic Cloud Oscillator
 
+**Status: ✅ COMPLETE (2026-07-26)** — see specs/seraphis-phase2-harmonic-cloud/compliance.md
+
 **Spec:** `seraphis-phase2-harmonic-cloud`
 **Goal:** The primary sound source. A 64-partial additive bank where every partial is an individual
 living entity with drift, pan, and its own envelope.
@@ -461,7 +463,7 @@ build → tests → pluginval strictness 5 → version.json/CHANGELOG.
 ## Dependency Graph
 
 ```
-Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ──┬─→ Phase 3 (morph/entropy) ─┐
+Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/entropy) ─┐
                       │                     │                            │
                       ├─→ Phase 4 (body) ───┤                            ├─→ Phase 7 (voice/engine)
                       │                     │                            │        │

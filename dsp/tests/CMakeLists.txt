@@ -329,6 +329,9 @@ add_executable(dsp_systems_tests
     unit/systems/harmonizer_engine_test.cpp
     unit/systems/harmonic_model_builder_tests.cpp
     unit/systems/sympathetic_resonance_test.cpp
+    unit/systems/harmonic_cloud_test.cpp
+    unit/systems/harmonic_cloud_spectral_test.cpp
+    unit/systems/harmonic_cloud_perf_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
