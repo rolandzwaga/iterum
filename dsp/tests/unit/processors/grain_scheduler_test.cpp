@@ -30,7 +30,7 @@ TEST_CASE("GrainScheduler prepare and reset lifecycle", "[processors][scheduler]
 
         // Process some samples
         for (int i = 0; i < 1000; ++i) {
-            scheduler.process();
+            (void)scheduler.process();
         }
 
         scheduler.reset();

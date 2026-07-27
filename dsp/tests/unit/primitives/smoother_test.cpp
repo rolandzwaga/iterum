@@ -210,8 +210,8 @@ TEST_CASE("OnePoleSmoother getCurrentValue without advancing", "[smoother][onepo
 
     SECTION("does not advance state") {
         float before = smoother.getCurrentValue();
-        smoother.getCurrentValue();
-        smoother.getCurrentValue();
+        (void)smoother.getCurrentValue();
+        (void)smoother.getCurrentValue();
         REQUIRE(smoother.getCurrentValue() == before);
     }
 }
@@ -283,7 +283,7 @@ TEST_CASE("OnePoleSmoother re-targeting mid-transition", "[smoother][onepole][US
 
         // Process partially
         for (int i = 0; i < 100; ++i) {
-            smoother.process();
+            (void)smoother.process();
         }
         float midValue = smoother.getCurrentValue();
 
@@ -298,13 +298,13 @@ TEST_CASE("OnePoleSmoother re-targeting mid-transition", "[smoother][onepole][US
     SECTION("direction can reverse") {
         smoother.setTarget(1.0f);
         for (int i = 0; i < 200; ++i) {
-            smoother.process();
+            (void)smoother.process();
         }
         float risingValue = smoother.getCurrentValue();
 
         smoother.setTarget(0.0f);
         for (int i = 0; i < 200; ++i) {
-            smoother.process();
+            (void)smoother.process();
         }
 
         REQUIRE(smoother.getCurrentValue() < risingValue);
@@ -329,7 +329,7 @@ TEST_CASE("OnePoleSmoother reset", "[smoother][onepole][US1]") {
     smoother.configure(10.0f, 44100.0f);
     smoother.setTarget(1.0f);
     for (int i = 0; i < 100; ++i) {
-        smoother.process();
+        (void)smoother.process();
     }
 
     smoother.reset();
@@ -355,7 +355,7 @@ TEST_CASE("OnePoleSmoother isComplete during transition", "[smoother][onepole][U
     OnePoleSmoother smoother;
     smoother.configure(10.0f, 44100.0f);
     smoother.setTarget(1.0f);
-    smoother.process();
+    (void)smoother.process();
 
     REQUIRE_FALSE(smoother.isComplete());
 }
@@ -373,7 +373,7 @@ TEST_CASE("OnePoleSmoother isComplete within threshold", "[smoother][onepole][US
 
     // Process until near completion
     while (!smoother.isComplete()) {
-        smoother.process();
+        (void)smoother.process();
     }
 
     REQUIRE(smoother.isComplete());
@@ -389,12 +389,12 @@ TEST_CASE("OnePoleSmoother auto-snaps to target when within threshold", "[smooth
     // Process until complete
     int iterations = 0;
     while (!smoother.isComplete() && iterations < 10000) {
-        smoother.process();
+        (void)smoother.process();
         ++iterations;
     }
 
     // Process one more time to trigger the snap-to-target
-    smoother.process();
+    (void)smoother.process();
 
     // Should have snapped to exact target
     REQUIRE(smoother.getCurrentValue() == 1.0f);
@@ -408,7 +408,7 @@ TEST_CASE("OnePoleSmoother snapToTarget", "[smoother][onepole][US3]") {
     OnePoleSmoother smoother;
     smoother.configure(10.0f, 44100.0f);
     smoother.setTarget(1.0f);
-    smoother.process();  // Start transition
+    (void)smoother.process();  // Start transition
 
     smoother.snapToTarget();
 
@@ -425,7 +425,7 @@ TEST_CASE("OnePoleSmoother snapTo", "[smoother][onepole][US3]") {
     OnePoleSmoother smoother;
     smoother.configure(10.0f, 44100.0f);
     smoother.setTarget(1.0f);
-    smoother.process();
+    (void)smoother.process();
 
     smoother.snapTo(0.75f);
 
@@ -446,7 +446,7 @@ TEST_CASE("OnePoleSmoother snapToTarget clears transition state", "[smoother][on
 
     // Process partially
     for (int i = 0; i < 50; ++i) {
-        smoother.process();
+        (void)smoother.process();
     }
     REQUIRE_FALSE(smoother.isComplete());
 
@@ -530,7 +530,7 @@ TEST_CASE("LinearRamp exact sample count", "[smoother][linearramp][US4]") {
     int actualSamples = 0;
 
     while (!ramp.isComplete() && actualSamples < expectedSamples + 10) {
-        ramp.process();
+        (void)ramp.process();
         ++actualSamples;
     }
 
@@ -546,7 +546,7 @@ TEST_CASE("LinearRamp direction reversal", "[smoother][linearramp][US4]") {
 
     // Ramp up partially
     for (int i = 0; i < 500; ++i) {
-        ramp.process();
+        (void)ramp.process();
     }
     float midValue = ramp.getCurrentValue();
     REQUIRE(midValue > 0.0f);
@@ -586,7 +586,7 @@ TEST_CASE("LinearRamp timing accuracy (SC-001)", "[smoother][linearramp][SC-001]
     int actualSamples = 0;
 
     while (!ramp.isComplete() && actualSamples < expectedSamples * 2) {
-        ramp.process();
+        (void)ramp.process();
         ++actualSamples;
     }
 
@@ -604,13 +604,13 @@ TEST_CASE("LinearRamp isComplete, snapToTarget, snapTo, reset", "[smoother][line
     SECTION("isComplete") {
         REQUIRE(ramp.isComplete());
         ramp.setTarget(1.0f);
-        ramp.process();
+        (void)ramp.process();
         REQUIRE_FALSE(ramp.isComplete());
     }
 
     SECTION("snapToTarget") {
         ramp.setTarget(1.0f);
-        ramp.process();
+        (void)ramp.process();
         ramp.snapToTarget();
         REQUIRE(ramp.getCurrentValue() == 1.0f);
         REQUIRE(ramp.isComplete());
@@ -625,7 +625,7 @@ TEST_CASE("LinearRamp isComplete, snapToTarget, snapTo, reset", "[smoother][line
 
     SECTION("reset") {
         ramp.setTarget(1.0f);
-        ramp.process();
+        (void)ramp.process();
         ramp.reset();
         REQUIRE(ramp.getCurrentValue() == 0.0f);
         REQUIRE(ramp.getTarget() == 0.0f);
@@ -661,7 +661,7 @@ TEST_CASE("SlewLimiter configure asymmetric", "[smoother][slewlimiter][US5]") {
     float risingDelta = 0.0f;
     for (int i = 0; i < 100; ++i) {
         float before = limiter.getCurrentValue();
-        limiter.process();
+        (void)limiter.process();
         float after = limiter.getCurrentValue();
         if (!limiter.isComplete()) {
             risingDelta = after - before;
@@ -675,7 +675,7 @@ TEST_CASE("SlewLimiter configure asymmetric", "[smoother][slewlimiter][US5]") {
     float fallingDelta = 0.0f;
     for (int i = 0; i < 100; ++i) {
         float before = limiter.getCurrentValue();
-        limiter.process();
+        (void)limiter.process();
         float after = limiter.getCurrentValue();
         if (!limiter.isComplete()) {
             fallingDelta = before - after;
@@ -692,7 +692,7 @@ TEST_CASE("SlewLimiter configure symmetric", "[smoother][slewlimiter][US5]") {
     limiter.configure(1.0f, 44100.0f);
 
     limiter.setTarget(1.0f);
-    limiter.process();
+    (void)limiter.process();
 
     // Should be working
     REQUIRE(limiter.getCurrentValue() > 0.0f);
@@ -748,7 +748,7 @@ TEST_CASE("SlewLimiter asymmetric rates", "[smoother][slewlimiter][US5]") {
     limiter.setTarget(1.0f);
     int riseSamples = 0;
     while (!limiter.isComplete()) {
-        limiter.process();
+        (void)limiter.process();
         ++riseSamples;
         if (riseSamples > 50000) break;  // Safety
     }
@@ -757,7 +757,7 @@ TEST_CASE("SlewLimiter asymmetric rates", "[smoother][slewlimiter][US5]") {
     limiter.setTarget(0.0f);
     int fallSamples = 0;
     while (!limiter.isComplete()) {
-        limiter.process();
+        (void)limiter.process();
         ++fallSamples;
         if (fallSamples > 50000) break;
     }
@@ -773,7 +773,7 @@ TEST_CASE("SlewLimiter instant transition within rate limit", "[smoother][slewli
 
     // Small change that's within one sample's rate
     limiter.setTarget(0.500001f);
-    limiter.process();
+    (void)limiter.process();
 
     REQUIRE(limiter.isComplete());
     REQUIRE(limiter.getCurrentValue() == limiter.getTarget());
@@ -794,7 +794,7 @@ TEST_CASE("SlewLimiter timing accuracy (SC-001)", "[smoother][slewlimiter][SC-00
     int actualSamples = 0;
 
     while (!limiter.isComplete() && actualSamples < expectedSamples * 2) {
-        limiter.process();
+        (void)limiter.process();
         ++actualSamples;
     }
 
@@ -812,7 +812,7 @@ TEST_CASE("SlewLimiter isComplete, snapToTarget, snapTo, reset", "[smoother][sle
     SECTION("isComplete") {
         REQUIRE(limiter.isComplete());
         limiter.setTarget(1.0f);
-        limiter.process();
+        (void)limiter.process();
         // May or may not be complete depending on rate
     }
 
@@ -847,7 +847,7 @@ TEST_CASE("OnePoleSmoother setSampleRate recalculates coefficient", "[smoother][
     smoother.setTarget(1.0f);
 
     // Process some samples at original rate
-    for (int i = 0; i < 100; ++i) smoother.process();
+    for (int i = 0; i < 100; ++i) (void)smoother.process();
     float lowSrValue = smoother.getCurrentValue();
 
     // Reset and change sample rate
@@ -858,7 +858,7 @@ TEST_CASE("OnePoleSmoother setSampleRate recalculates coefficient", "[smoother][
     smoother.setTarget(1.0f);
 
     // Process same number of samples at higher rate
-    for (int i = 0; i < 100; ++i) smoother.process();
+    for (int i = 0; i < 100; ++i) (void)smoother.process();
     float highSrValue = smoother.getCurrentValue();
 
     // Higher sample rate should progress less per sample
@@ -885,8 +885,8 @@ TEST_CASE("Smoother timing consistency across sample rates", "[smoother][US6]") 
         int lowSamples = static_cast<int>(targetTimeMs * 0.001f * 44100.0f);
         int highSamples = static_cast<int>(targetTimeMs * 0.001f * 96000.0f);
 
-        for (int i = 0; i < lowSamples; ++i) low.process();
-        for (int i = 0; i < highSamples; ++i) high.process();
+        for (int i = 0; i < lowSamples; ++i) (void)low.process();
+        for (int i = 0; i < highSamples; ++i) (void)high.process();
 
         // Both should be at similar progress
         REQUIRE(low.getCurrentValue() == Approx(high.getCurrentValue()).margin(tolerance));
@@ -903,8 +903,8 @@ TEST_CASE("Smoother timing consistency across sample rates", "[smoother][US6]") 
         int lowSamples = static_cast<int>(targetTimeMs * 0.001f * 44100.0f);
         int highSamples = static_cast<int>(targetTimeMs * 0.001f * 96000.0f);
 
-        for (int i = 0; i < lowSamples; ++i) low.process();
-        for (int i = 0; i < highSamples; ++i) high.process();
+        for (int i = 0; i < lowSamples; ++i) (void)low.process();
+        for (int i = 0; i < highSamples; ++i) (void)high.process();
 
         REQUIRE(low.getCurrentValue() == Approx(high.getCurrentValue()).margin(tolerance));
     }
@@ -918,7 +918,7 @@ TEST_CASE("LinearRamp setSampleRate", "[smoother][linearramp][US6]") {
 
     // Should work without crashing
     for (int i = 0; i < 100; ++i) {
-        ramp.process();
+        (void)ramp.process();
     }
 }
 
@@ -942,7 +942,7 @@ TEST_CASE("OnePoleSmoother works at all sample rates", "[smoother][onepole][US6]
 
             // Process for smoothing time
             for (int i = 0; i < samplesFor10ms; ++i) {
-                smoother.process();
+                (void)smoother.process();
             }
 
             // Should have made significant progress (at least 90% after 10ms = ~2 tau)
@@ -950,10 +950,10 @@ TEST_CASE("OnePoleSmoother works at all sample rates", "[smoother][onepole][US6]
 
             // Process to completion (isComplete = within threshold, process snaps to exact)
             while (!smoother.isComplete()) {
-                smoother.process();
+                (void)smoother.process();
             }
             // One more process() to snap to exact target when within threshold
-            smoother.process();
+            (void)smoother.process();
 
             REQUIRE(smoother.getCurrentValue() == 1.0f);
         }
@@ -975,7 +975,7 @@ TEST_CASE("LinearRamp works at all sample rates", "[smoother][linearramp][US6][S
             int actualSamples = 0;
 
             while (!ramp.isComplete() && actualSamples < expectedSamples + 10) {
-                ramp.process();
+                (void)ramp.process();
                 ++actualSamples;
             }
 
@@ -1002,7 +1002,7 @@ TEST_CASE("SlewLimiter works at all sample rates", "[smoother][slewlimiter][US6]
             int actualSamples = 0;
 
             while (!limiter.isComplete() && actualSamples < expectedSamples * 2) {
-                limiter.process();
+                (void)limiter.process();
                 ++actualSamples;
             }
 
@@ -1027,7 +1027,7 @@ TEST_CASE("Timing consistency across all sample rates (SC-005/SC-008)", "[smooth
 
     const int refSamples = static_cast<int>(smoothTimeMs * 0.001f * 44100.0f);
     for (int i = 0; i < refSamples; ++i) {
-        reference.process();
+        (void)reference.process();
     }
     const float referenceValue = reference.getCurrentValue();
 
@@ -1040,7 +1040,7 @@ TEST_CASE("Timing consistency across all sample rates (SC-005/SC-008)", "[smooth
             // Process for equivalent wall-clock time
             const int samples = static_cast<int>(smoothTimeMs * 0.001f * sr);
             for (int i = 0; i < samples; ++i) {
-                smoother.process();
+                (void)smoother.process();
             }
 
             // Should match reference value within tolerance
@@ -1057,7 +1057,7 @@ TEST_CASE("SlewLimiter setSampleRate", "[smoother][slewlimiter][US6]") {
 
     // Should work without crashing
     for (int i = 0; i < 100; ++i) {
-        limiter.process();
+        (void)limiter.process();
     }
 }
 
@@ -1201,7 +1201,7 @@ TEST_CASE("Denormal values flush to zero", "[smoother][edge]") {
 
     // Process - should eventually flush to zero
     for (int i = 0; i < 10000; ++i) {
-        smoother.process();
+        (void)smoother.process();
     }
 
     // Should not have denormal values
@@ -1216,7 +1216,7 @@ TEST_CASE("Smoothing time 0ms behaves like snap", "[smoother][edge]") {
 
     // With minimum smoothing time, should reach target very quickly
     for (int i = 0; i < 100; ++i) {
-        smoother.process();
+        (void)smoother.process();
     }
 
     REQUIRE(smoother.isComplete());
@@ -1264,7 +1264,7 @@ TEST_CASE("Very long smoothing times work correctly", "[smoother][edge]") {
 
     // Process for a reasonable number of samples
     for (int i = 0; i < 44100; ++i) {  // 1 second worth
-        smoother.process();
+        (void)smoother.process();
     }
 
     // Should have made significant progress but may not be complete
@@ -1278,7 +1278,7 @@ TEST_CASE("Very short smoothing times work correctly", "[smoother][edge]") {
 
     // Should complete within a few samples
     for (int i = 0; i < 50; ++i) {
-        smoother.process();
+        (void)smoother.process();
     }
 
     REQUIRE(smoother.isComplete());

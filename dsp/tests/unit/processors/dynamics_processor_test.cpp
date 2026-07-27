@@ -72,7 +72,7 @@ TEST_CASE("DynamicsProcessor reset() clears state", "[dynamics]") {
     // Process some signal to build up state
     float sample = 0.5f;
     for (int i = 0; i < 100; ++i) {
-        dp.processSample(sample);
+        (void)dp.processSample(sample);
     }
 
     // Reset should clear gain reduction state
@@ -240,7 +240,7 @@ TEST_CASE("US1: Various ratios produce correct gain reduction", "[dynamics][US1]
         dp.setRatio(2.0f);
         // GR = 10 * (1 - 1/2) = 5 dB
         for (int i = 0; i < 4410; ++i) {
-            dp.processSample(inputLinear);
+            (void)dp.processSample(inputLinear);
         }
         REQUIRE(dp.getCurrentGainReduction() == Approx(-5.0f).margin(0.5f));
     }
@@ -249,7 +249,7 @@ TEST_CASE("US1: Various ratios produce correct gain reduction", "[dynamics][US1]
         dp.setRatio(4.0f);
         // GR = 10 * (1 - 1/4) = 7.5 dB
         for (int i = 0; i < 4410; ++i) {
-            dp.processSample(inputLinear);
+            (void)dp.processSample(inputLinear);
         }
         REQUIRE(dp.getCurrentGainReduction() == Approx(-7.5f).margin(0.5f));
     }
@@ -258,7 +258,7 @@ TEST_CASE("US1: Various ratios produce correct gain reduction", "[dynamics][US1]
         dp.setRatio(8.0f);
         // GR = 10 * (1 - 1/8) = 8.75 dB
         for (int i = 0; i < 4410; ++i) {
-            dp.processSample(inputLinear);
+            (void)dp.processSample(inputLinear);
         }
         REQUIRE(dp.getCurrentGainReduction() == Approx(-8.75f).margin(0.5f));
     }
@@ -318,7 +318,7 @@ TEST_CASE("US2: Attack responds within specified time constant", "[dynamics][US2
 
     // First, let it fully settle
     for (int i = 0; i < 44100; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
     float finalGR = std::abs(dp.getCurrentGainReduction());
 
@@ -329,7 +329,7 @@ TEST_CASE("US2: Attack responds within specified time constant", "[dynamics][US2
     // At 44100 Hz, 20ms = 882 samples
     int attackSamples = static_cast<int>(44100.0 * 0.020);
     for (int i = 0; i < attackSamples; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
 
     float grAtAttackTime = std::abs(dp.getCurrentGainReduction());
@@ -356,7 +356,7 @@ TEST_CASE("US2: Release allows gain to recover", "[dynamics][US2]") {
     // First, fully engage compression
     float inputLoud = dbToGain(-10.0f);  // 10 dB above threshold
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputLoud);
+        (void)dp.processSample(inputLoud);
     }
     float engagedGR = std::abs(dp.getCurrentGainReduction());
     REQUIRE(engagedGR > 5.0f);  // Verify compression is engaged
@@ -367,7 +367,7 @@ TEST_CASE("US2: Release allows gain to recover", "[dynamics][US2]") {
     // Process for 100ms (one release time constant)
     int releaseSamples = static_cast<int>(44100.0 * 0.100);
     for (int i = 0; i < releaseSamples; ++i) {
-        dp.processSample(inputQuiet);
+        (void)dp.processSample(inputQuiet);
     }
 
     float grAfterRelease = std::abs(dp.getCurrentGainReduction());
@@ -391,7 +391,7 @@ TEST_CASE("US2: Fast attack responds within samples", "[dynamics][US2]") {
 
     // Process 50 samples (about 1ms - should be enough for 0.1ms attack)
     for (int i = 0; i < 50; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
 
     // Should have some meaningful gain reduction after ~10x attack time
@@ -414,7 +414,7 @@ TEST_CASE("US2: No clicks or discontinuities during attack", "[dynamics][US2]") 
 
     // Process some silence first
     for (int i = 0; i < 100; ++i) {
-        dp.processSample(silence);
+        (void)dp.processSample(silence);
     }
 
     // Now process the transient and check for smooth output
@@ -473,7 +473,7 @@ TEST_CASE("US3: Hard knee (0 dB) has abrupt transition", "[dynamics][US3]") {
     // Test just below threshold - no compression
     float inputBelowLinear = dbToGain(-20.1f);
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputBelowLinear);
+        (void)dp.processSample(inputBelowLinear);
     }
     float grBelow = std::abs(dp.getCurrentGainReduction());
     REQUIRE(grBelow < 0.1f);  // No significant GR below threshold
@@ -483,7 +483,7 @@ TEST_CASE("US3: Hard knee (0 dB) has abrupt transition", "[dynamics][US3]") {
     // Test just above threshold - should have compression
     float inputAboveLinear = dbToGain(-19.9f);
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputAboveLinear);
+        (void)dp.processSample(inputAboveLinear);
     }
     float grAbove = std::abs(dp.getCurrentGainReduction());
 
@@ -508,7 +508,7 @@ TEST_CASE("US3: Soft knee begins compression before threshold", "[dynamics][US3]
     float inputLinear = dbToGain(-23.0f);
 
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
 
     // Should have SOME gain reduction in knee region
@@ -535,7 +535,7 @@ TEST_CASE("US3: Soft knee provides gradual transition", "[dynamics][US3]") {
 
         // Let it settle
         for (int i = 0; i < 4410; ++i) {
-            dp.processSample(inputLinear);
+            (void)dp.processSample(inputLinear);
         }
 
         grValues.push_back(std::abs(dp.getCurrentGainReduction()));
@@ -568,7 +568,7 @@ TEST_CASE("US3: Above knee region uses full ratio", "[dynamics][US3]") {
     float inputLinear = dbToGain(-10.0f);
 
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
 
     float gr = std::abs(dp.getCurrentGainReduction());
@@ -591,7 +591,7 @@ TEST_CASE("US3: Soft knee 6dB at 3dB below threshold", "[dynamics][US3]") {
     float inputLinear = dbToGain(-23.0f);
 
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputLinear);
+        (void)dp.processSample(inputLinear);
     }
 
     // At knee start, GR should be near 0 (just beginning)
@@ -727,8 +727,8 @@ TEST_CASE("US5: Both Peak and RMS modes respond to transients", "[dynamics][US5]
 
     // Process same number of samples (50 samples at 44.1kHz ≈ 1.1ms)
     for (int i = 0; i < 50; ++i) {
-        dpPeak.processSample(inputLinear);
-        dpRMS.processSample(inputLinear);
+        (void)dpPeak.processSample(inputLinear);
+        (void)dpRMS.processSample(inputLinear);
     }
 
     float grPeak = std::abs(dpPeak.getCurrentGainReduction());
@@ -805,8 +805,8 @@ TEST_CASE("US6: Sidechain filter reduces bass-triggered compression", "[dynamics
         float t = static_cast<float>(i) / sampleRate;
         float sample = 0.5f * std::sin(2.0f * 3.14159f * freq * t);
 
-        dpNoSC.processSample(sample);
-        dpWithSC.processSample(sample);
+        (void)dpNoSC.processSample(sample);
+        (void)dpWithSC.processSample(sample);
     }
 
     float grNoSC = std::abs(dpNoSC.getCurrentGainReduction());
@@ -834,14 +834,14 @@ TEST_CASE("US7: Gain reduction metering reflects applied reduction", "[dynamics]
     // Signal below threshold - no GR
     float inputQuiet = dbToGain(-30.0f);
     for (int i = 0; i < 1000; ++i) {
-        dp.processSample(inputQuiet);
+        (void)dp.processSample(inputQuiet);
     }
     REQUIRE(std::abs(dp.getCurrentGainReduction()) < 0.5f);
 
     // Signal above threshold - expect ~7.5 dB GR
     float inputLoud = dbToGain(-10.0f);
     for (int i = 0; i < 4410; ++i) {
-        dp.processSample(inputLoud);
+        (void)dp.processSample(inputLoud);
     }
 
     float gr = dp.getCurrentGainReduction();
@@ -864,7 +864,7 @@ TEST_CASE("US7: Gain reduction updates per-sample", "[dynamics][US7]") {
 
     // Process samples and count how often GR changes
     for (int i = 0; i < 100; ++i) {
-        dp.processSample(input);
+        (void)dp.processSample(input);
         float currentGR = dp.getCurrentGainReduction();
         if (std::abs(currentGR - lastGR) > 0.001f) {
             changesCount++;
@@ -979,8 +979,8 @@ TEST_CASE("US8: Lookahead helps with limiting accuracy", "[dynamics][US8]") {
 
     // Pre-fill with quiet signal
     for (int i = 0; i < 1000; ++i) {
-        dpNoLA.processSample(quiet);
-        dpWithLA.processSample(quiet);
+        (void)dpNoLA.processSample(quiet);
+        (void)dpWithLA.processSample(quiet);
     }
 
     // Now send the transient and measure average level after settling

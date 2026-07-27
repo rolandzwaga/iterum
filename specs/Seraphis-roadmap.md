@@ -169,6 +169,8 @@ verification of tilt, inharmonicity law, gravity mapping).
 
 ### Phase 3: Spectral States & Morphing Engine
 
+**Status: ✅ COMPLETE (2026-07-27)** — see specs/seraphis-phase3-spectral-morph/compliance.md
+
 **Spec:** `seraphis-phase3-spectral-morph`
 **Goal:** The heart of the instrument — the sound travels between spectral identities instead of
 sitting still.
@@ -463,15 +465,15 @@ build → tests → pluginval strictness 5 → version.json/CHANGELOG.
 ## Dependency Graph
 
 ```
-Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/entropy) ─┐
-                      │                     │                            │
-                      ├─→ Phase 4 (body) ───┤                            ├─→ Phase 7 (voice/engine)
-                      │                     │                            │        │
-                      ├─→ Phase 5 (atmos) ──┘                            │        ▼
-                      │                                                  │   Phase 8 (scaffold)
-                      └─→ Phase 6 (aether) ──────────────────────────────┘        │
-                                                                                  ▼
-                                                              Phase 9 → 10 → 11 → 12
+Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/entropy) ✅─┐
+                      │                     │                              │
+                      ├─→ Phase 4 (body) ───┤                              ├─→ Phase 7 (voice/engine)
+                      │                     │                              │        │
+                      ├─→ Phase 5 (atmos) ──┘                              │        ▼
+                      │                                                    │   Phase 8 (scaffold)
+                      └─→ Phase 6 (aether) ────────────────────────────────┘        │
+                                                                                    ▼
+                                                                Phase 9 → 10 → 11 → 12
 ```
 
 Phases 2, 4, 5, 6 are independent of each other once Phase 1 lands — they can be specced/built in

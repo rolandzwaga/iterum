@@ -4,7 +4,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <set>
 #include <array>
 
@@ -178,5 +181,46 @@ TEST_CASE("Xorshift32 distribution is approximately uniform", "[random][US1]") {
     for (int i = 0; i < 10; ++i) {
         CHECK(bins[i] > expected - tolerance);
         CHECK(bins[i] < expected + tolerance);
+    }
+}
+
+// ==============================================================================
+// deriveStreamSeed (Seraphis Phase 3, FR-006)
+// ==============================================================================
+
+TEST_CASE("DeriveStreamSeed_IsNonZeroAndDistinct", "[random][seraphis]") {
+    // The 4 x 64 = 256 salt cross product EntropyProcessor uses (plan 4.4).
+    constexpr std::size_t kSaltCount = 256;
+
+    SECTION("never returns 0 over a wide base x salt grid") {
+        // base == 0 is included deliberately: it is exactly the value
+        // Xorshift32::seed() silently substitutes away (core/random.h:72-74).
+        constexpr std::array<std::uint32_t, 11> kBases{
+            0u, 1u, 7u, 13u, 29u, 101u, 257u, 1009u, 65537u, 0x9E3779B9u, 0xFFFFFFFFu};
+
+        for (std::uint32_t base : kBases) {
+            for (std::size_t salt = 0; salt < kSaltCount; ++salt) {
+                REQUIRE(deriveStreamSeed(base, salt) != 0u);
+            }
+        }
+    }
+
+    SECTION("all 256 derived seeds are pairwise distinct for each pinned seed") {
+        constexpr std::array<std::uint32_t, 8> kPinnedSeeds{1u,   7u,    13u,   29u,
+                                                            101u, 257u,  1009u, 65537u};
+
+        for (std::uint32_t base : kPinnedSeeds) {
+            std::array<std::uint32_t, kSaltCount> derived{};
+            for (std::size_t salt = 0; salt < kSaltCount; ++salt) {
+                derived[salt] = deriveStreamSeed(base, salt);
+            }
+
+            std::sort(derived.begin(), derived.end());
+            REQUIRE(std::adjacent_find(derived.begin(), derived.end()) == derived.end());
+        }
+    }
+
+    SECTION("usable in a constant expression") {
+        STATIC_REQUIRE(deriveStreamSeed(1u, 0u) != 0u);
     }
 }

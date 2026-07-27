@@ -432,3 +432,115 @@ TEST_CASE("frequencyToCentsDeviation returns cents deviation from nearest note c
         REQUIRE(frequencyToCentsDeviation(-100.0f) == 0.0f);
     }
 }
+
+// =============================================================================
+// centsToPitchRatio Tests (Seraphis Phase 3, FR-072 / deviation D2)
+// =============================================================================
+//
+// FR-072 specifies the body as semitonesToRatio(cents / 100.0f), i.e. one
+// std::pow(2.0f, s / 12.0f) (pitch_utils.h:23,25). We ship std::exp2(cents / 1200)
+// because it is the same real number and 2-4x cheaper (SC-010's 16,000 ns/block
+// budget needs it). This case is what makes deviation D2 a CHECKED PROPERTY rather
+// than a claim: it pins the shipped implementation to the specified definition at
+// 1e-6 relative over the whole float-relevant cent range.
+
+TEST_CASE("CentsToPitchRatio_MatchesSemitonesToRatio", "[pitch_utils][seraphis]") {
+
+    SECTION("Zero cents returns exactly unity (bitwise)") {
+        REQUIRE(centsToPitchRatio(0.0f) == 1.0f);
+    }
+
+    SECTION("Matches semitonesToRatio(cents / 100) within 1e-6 relative") {
+        constexpr float kCentsGrid[] = {-4800.0f, -1200.0f, -100.0f, -11.0f, -1.0f, 0.0f,
+                                        1.0f,     11.0f,    100.0f,  1200.0f, 4800.0f};
+
+        for (float cents : kCentsGrid) {
+            const float expected = semitonesToRatio(cents / 100.0f);
+            const float actual = centsToPitchRatio(cents);
+            INFO("cents = " << cents << ", expected = " << expected << ", actual = " << actual);
+            REQUIRE(std::abs(actual - expected) <= 1e-6f * std::abs(expected));
+        }
+    }
+
+    SECTION("Monotonic about unity") {
+        REQUIRE(centsToPitchRatio(1.0f) > 1.0f);
+        REQUIRE(centsToPitchRatio(-1.0f) < 1.0f);
+    }
+}
+
+// =============================================================================
+// centsToPitchRatioFast Tests (Seraphis Phase 3, plan section 8 lever 4)
+// =============================================================================
+//
+// The degree-4 Horner promoted out of HarmonicCloud::detail::centsToDriftRatio,
+// which is now a one-line forward to it. The Phase 2 case
+// HarmonicCloud_CentsToRatioMatchesExp2 still gates the promoted body through that
+// forward; this case gates it at its OWN Layer 0 name, so a future caller that
+// reaches for it directly is covered whether or not HarmonicCloud still exists.
+//
+// The DOMAIN is the point. This function is only accurate on [-50, +50] cents and
+// its two production callers are both bounded well inside that: HarmonicCloud's
+// drift lanes clamp to [-1, +1] x kMaxDriftCents = 50, and EntropyProcessor's
+// stage-2 + stage-3 sum is bounded by FR-074 at +-11.0 cents. The out-of-domain
+// section below is therefore not a failure demonstration - it is the recorded
+// reason the two names are separate functions.
+
+TEST_CASE("CentsToPitchRatioFast_MatchesExp2OnItsDomain", "[pitch_utils][seraphis]") {
+    /// The published worst case, measured over [-50, +50] at 20,001 points.
+    constexpr double kPublishedWorstRelative = 6.15e-08;
+
+    SECTION("Zero cents returns exactly unity (bitwise)") {
+        // Load-bearing: the zero-entropy / zero-detune pass-through must be
+        // bitwise, and the macOS leg builds -ffast-math, so this cannot be left
+        // to the arithmetic being "obviously" exact.
+        REQUIRE(centsToPitchRatioFast(0.0f) == 1.0f);
+    }
+
+    SECTION("Within the published bound over the whole [-50, +50] domain") {
+        constexpr int kPoints = 20001;
+        double worst = 0.0;
+        float worstAt = 0.0f;
+        for (int k = 0; k < kPoints; ++k) {
+            const double t = static_cast<double>(k) / static_cast<double>(kPoints - 1);
+            const auto cents = static_cast<float>(-50.0 + (100.0 * t));
+            const double expected = std::exp2(static_cast<double>(cents) / 1200.0);
+            const double actual = static_cast<double>(centsToPitchRatioFast(cents));
+            const double relative = std::abs(actual - expected) / expected;
+            if (relative > worst) {
+                worst = relative;
+                worstAt = cents;
+            }
+        }
+        INFO("worst relative error " << worst << " at " << worstAt << " cents");
+        // 1.5x the published figure: the measurement is a float-rounding pattern
+        // and moves in the last bits across MSVC / GCC / Apple Clang, so pinning
+        // it at exactly 6.15e-08 would be a bit-exactness demand in disguise.
+        REQUIRE(worst <= 1.5 * kPublishedWorstRelative);
+        // Non-vacuity: a polynomial that had somehow become exact would make the
+        // bound above meaningless, and so would a sweep that never ran.
+        REQUIRE(worst > 0.0);
+    }
+
+    SECTION("Agrees with centsToPitchRatio over the FR-074 entropy domain") {
+        // EntropyProcessor::applyStages feeds this function a sum bounded by
+        // kMaxDecoherenceCents + kMaxScatterCents = 11.0 cents.
+        constexpr float kEntropyDomainCents = 11.0f;
+        for (int k = -110; k <= 110; ++k) {
+            const auto cents = static_cast<float>(k) * 0.1f;
+            REQUIRE(std::abs(cents) <= kEntropyDomainCents + 1e-4f);
+            const float exact = centsToPitchRatio(cents);
+            const float fast = centsToPitchRatioFast(cents);
+            INFO("cents = " << cents << ", exact = " << exact << ", fast = " << fast);
+            REQUIRE(std::abs(fast - exact) <= 1e-6f * exact);
+        }
+    }
+
+    SECTION("Monotonically increasing across the domain") {
+        float previous = centsToPitchRatioFast(-50.0f);
+        for (int k = -49; k <= 50; ++k) {
+            const float next = centsToPitchRatioFast(static_cast<float>(k));
+            REQUIRE(next > previous);
+            previous = next;
+        }
+    }
+}

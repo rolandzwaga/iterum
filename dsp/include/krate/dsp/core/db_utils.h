@@ -63,6 +63,9 @@ constexpr float kLn10 = 2.302585093f;
 /// 1 / ln(10), used for log10 calculation
 constexpr float kInvLn10 = 0.434294482f;
 
+/// Natural log of 2. Shared by every constexprExp(x * ln 2) constant.
+constexpr float kLn2 = 0.693147181f;
+
 // Suppress -Wnan-infinity-disabled for constexpr math functions that legitimately
 // use infinity. These are evaluated at compile time, not affected by -ffast-math.
 #if defined(__clang__)
@@ -81,7 +84,6 @@ constexpr float constexprLn(float x) noexcept {
 
     // Reduce x to range [0.5, 2] for better convergence
     // ln(x * 2^n) = ln(x) + n * ln(2)
-    constexpr float kLn2 = 0.693147181f;
     int exponent = 0;
     float mantissa = x;
 
@@ -127,7 +129,6 @@ constexpr float constexprExp(float x) noexcept {
 
     // Reduce x to range [-1, 1] for better convergence
     // exp(x) = exp(x/n)^n, use powers of 2 for efficiency
-    constexpr float kLn2 = 0.693147181f;
     int k = static_cast<int>(x / kLn2);
     float r = x - static_cast<float>(k) * kLn2;
 

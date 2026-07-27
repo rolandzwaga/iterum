@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Krate {
@@ -89,6 +90,25 @@ private:
 
     uint32_t state_;
 };
+
+// ==============================================================================
+// Stream seed derivation
+// ==============================================================================
+
+/// @brief Derive a guaranteed-non-zero per-stream seed from a base seed and a salt.
+/// lowbias32 finaliser. The non-zero substitution is load-bearing: Xorshift32::seed()
+/// silently replaces 0 with its own default (random.h:72-74), so two lanes hashing to 0
+/// would COLLAPSE ONTO ONE STREAM.
+[[nodiscard]] constexpr std::uint32_t deriveStreamSeed(std::uint32_t base,
+                                                       std::size_t salt) noexcept {
+    std::uint32_t h = base ^ (static_cast<std::uint32_t>(salt + 1u) * 0x9E3779B9u);
+    h ^= h >> 16;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16;
+    return (h != 0u) ? h : 0x2545F491u;
+}
 
 } // namespace DSP
 } // namespace Krate

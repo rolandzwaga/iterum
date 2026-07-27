@@ -165,7 +165,7 @@ TEST_CASE("DuckingProcessor prepare and reset", "[ducking][foundational]") {
         // Process some samples to build up state
         const float loudSidechain = dbToGain(-10.0f);
         for (int i = 0; i < 1000; ++i) {
-            ducker.processSample(1.0f, loudSidechain);
+            (void)ducker.processSample(1.0f, loudSidechain);
         }
 
         // Gain reduction should be active
@@ -399,7 +399,7 @@ TEST_CASE("DuckingProcessor attack timing (SC-002)", "[ducking][US2][SC]") {
     std::array<float, kTestSamples> grValues{};
 
     for (size_t i = 0; i < kTestSamples; ++i) {
-        ducker.processSample(1.0f, sidechainLevel);
+        (void)ducker.processSample(1.0f, sidechainLevel);
         grValues[i] = ducker.getCurrentGainReduction();
     }
 
@@ -439,7 +439,7 @@ TEST_CASE("DuckingProcessor release timing (SC-002)", "[ducking][US2][SC]") {
 
     // First, fully engage ducking
     for (int i = 0; i < 5000; ++i) {
-        ducker.processSample(1.0f, sidechainLoud);
+        (void)ducker.processSample(1.0f, sidechainLoud);
     }
 
     // Verify we're at full depth
@@ -451,7 +451,7 @@ TEST_CASE("DuckingProcessor release timing (SC-002)", "[ducking][US2][SC]") {
     std::array<float, kTestSamples> grValues{};
 
     for (size_t i = 0; i < kTestSamples; ++i) {
-        ducker.processSample(1.0f, sidechainQuiet);
+        (void)ducker.processSample(1.0f, sidechainQuiet);
         grValues[i] = ducker.getCurrentGainReduction();
     }
 
@@ -515,7 +515,7 @@ TEST_CASE("DuckingProcessor hold time delays release (FR-009)", "[ducking][US3]"
 
     // Engage ducking
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, sidechainLoud);
+        (void)ducker.processSample(1.0f, sidechainLoud);
     }
 
     // Record GR at start of hold
@@ -525,7 +525,7 @@ TEST_CASE("DuckingProcessor hold time delays release (FR-009)", "[ducking][US3]"
     // Process through hold period - GR should stay similar
     const size_t holdSamples = msToSamples(kHoldMs, kSampleRate);
     for (size_t i = 0; i < holdSamples / 2; ++i) {
-        ducker.processSample(1.0f, sidechainQuiet);
+        (void)ducker.processSample(1.0f, sidechainQuiet);
     }
 
     // During hold, GR should still be significant
@@ -549,7 +549,7 @@ TEST_CASE("DuckingProcessor hold time 0ms starts release immediately", "[ducking
 
     // Engage ducking
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, sidechainLoud);
+        (void)ducker.processSample(1.0f, sidechainLoud);
     }
 
     float grBefore = ducker.getCurrentGainReduction();
@@ -558,7 +558,7 @@ TEST_CASE("DuckingProcessor hold time 0ms starts release immediately", "[ducking
     // With 0ms hold and very fast release (1ms), envelope decays quickly
     // Process enough samples for envelope to decay below threshold and GR to recover
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, sidechainQuiet);
+        (void)ducker.processSample(1.0f, sidechainQuiet);
     }
 
     float grAfter = ducker.getCurrentGainReduction();
@@ -584,18 +584,18 @@ TEST_CASE("DuckingProcessor hold timer resets on re-trigger (FR-010)", "[ducking
 
     // Engage ducking
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, sidechainLoud);
+        (void)ducker.processSample(1.0f, sidechainLoud);
     }
 
     // Start hold period
     const size_t holdSamples = msToSamples(kHoldMs, kSampleRate);
     for (size_t i = 0; i < holdSamples / 2; ++i) {
-        ducker.processSample(1.0f, sidechainQuiet);
+        (void)ducker.processSample(1.0f, sidechainQuiet);
     }
 
     // Re-trigger during hold
     for (int i = 0; i < 500; ++i) {
-        ducker.processSample(1.0f, sidechainLoud);
+        (void)ducker.processSample(1.0f, sidechainLoud);
     }
 
     // Should be back in ducking state, GR should still be high
@@ -742,8 +742,8 @@ TEST_CASE("DuckingProcessor sidechain HPF reduces bass trigger response (SC-005)
     float grWithoutFilter = 0.0f;
 
     for (size_t i = 0; i < kBlockSize; ++i) {
-        duckerWithFilter.processSample(main[i], sidechain[i]);
-        duckerWithoutFilter.processSample(main[i], sidechain[i]);
+        (void)duckerWithFilter.processSample(main[i], sidechain[i]);
+        (void)duckerWithoutFilter.processSample(main[i], sidechain[i]);
     }
 
     grWithFilter = duckerWithFilter.getCurrentGainReduction();
@@ -767,7 +767,7 @@ TEST_CASE("DuckingProcessor sidechain HPF disabled = full bandwidth (FR-016)", "
     const float bassLevel = dbToGain(-20.0f);
 
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, bassLevel);
+        (void)ducker.processSample(1.0f, bassLevel);
     }
 
     // Should have triggered ducking
@@ -788,7 +788,7 @@ TEST_CASE("DuckingProcessor getCurrentGainReduction returns 0 when idle (FR-025)
     // Process with quiet sidechain
     const float quietSidechain = dbToGain(-60.0f);
     for (int i = 0; i < 1000; ++i) {
-        ducker.processSample(1.0f, quietSidechain);
+        (void)ducker.processSample(1.0f, quietSidechain);
     }
 
     // Should still report ~0 dB gain reduction
@@ -805,7 +805,7 @@ TEST_CASE("DuckingProcessor getCurrentGainReduction returns negative during duck
     const float loudSidechain = dbToGain(-10.0f);
 
     for (int i = 0; i < 2000; ++i) {
-        ducker.processSample(1.0f, loudSidechain);
+        (void)ducker.processSample(1.0f, loudSidechain);
     }
 
     // Should report negative gain reduction
@@ -990,8 +990,8 @@ TEST_CASE("SC-003: Hold time accuracy within 5ms", "[ducking][SC][US3]") {
 
     // Engage both duckers
     for (int i = 0; i < 2000; ++i) {
-        duckerWithHold.processSample(1.0f, sidechainLoud);
-        duckerNoHold.processSample(1.0f, sidechainLoud);
+        (void)duckerWithHold.processSample(1.0f, sidechainLoud);
+        (void)duckerNoHold.processSample(1.0f, sidechainLoud);
     }
 
     // After the hold period, GR with hold should still be deep
@@ -1000,8 +1000,8 @@ TEST_CASE("SC-003: Hold time accuracy within 5ms", "[ducking][SC][US3]") {
 
     // Process exactly the hold duration
     for (size_t i = 0; i < holdSamples; ++i) {
-        duckerWithHold.processSample(1.0f, sidechainQuiet);
-        duckerNoHold.processSample(1.0f, sidechainQuiet);
+        (void)duckerWithHold.processSample(1.0f, sidechainQuiet);
+        (void)duckerNoHold.processSample(1.0f, sidechainQuiet);
     }
 
     float grWithHold = duckerWithHold.getCurrentGainReduction();

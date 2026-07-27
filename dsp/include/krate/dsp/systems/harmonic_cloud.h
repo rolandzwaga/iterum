@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>  // std::memcmp - FR-085 lever 1's bit-identical array skip
 
 // Suppress MSVC C4324: structure was padded due to alignment specifier.
 // Same idiom as harmonic_oscillator_bank.h:45-49 — the alignas(32) on the SoA
@@ -102,11 +103,15 @@ inline const std::array<float, 64> kHarmonicCloudLog2N = [] {
 /// leaves SC-001/SC-002/SC-003/SC-004 measuring the undetuned law unchanged.
 ///
 /// @param cents Detune in cents; accurate on `[-50, +50]`, degrading outside it
+///
+/// PROMOTED TO LAYER 0 (Phase 3 §8 lever 4). The body now lives at
+/// `core/pitch_utils.h` as `centsToPitchRatioFast`, so this and Phase 3's entropy
+/// stage share ONE definition instead of two copies that can drift apart. This
+/// name is kept — it is the identifier the Phase 2 accuracy case, the drift lanes
+/// and the whole FR-031 documentation trail refer to — in the same shape as
+/// FR-006's `deriveSeed` forward.
 [[nodiscard]] inline float centsToDriftRatio(float cents) noexcept {
-    constexpr float kCentsToNatLog = 0.693147180559945309f / 1200.0f;  // ln(2)/1200
-    const float u = cents * kCentsToNatLog;
-    // e^u = 1 + u(1 + u/2(1 + u/3(1 + u/4)))  — Horner, 4 fused multiply-adds.
-    return 1.0f + u * (1.0f + u * (0.5f + u * (1.0f / 6.0f + u * (1.0f / 24.0f))));
+    return centsToPitchRatioFast(cents);
 }
 
 }  // namespace detail
@@ -230,6 +235,28 @@ public:
     /// `Xorshift32` start from the same documented place.
     static constexpr std::uint32_t kDefaultCloudSeed = 1u;
 
+    /// FR-085 lever 3 — the per-slot "has this partial actually moved?" epsilons
+    /// `setSpectralTarget` compares an incoming target against (plan §6.1).
+    ///
+    /// 0.05 cent is four orders of magnitude below the smallest perturbation
+    /// Phase 3 produces and ~2000x below SC-001's 0.1-cent pitch bound, so a slot
+    /// the mask leaves undirtied is inaudibly stationary rather than merely
+    /// slow-moving.
+    ///
+    /// DEVIATION D4: FR-085 specifies the compare "in the precomputed log domain",
+    /// i.e. `|log2 r_new - log2 r_old| > cents/1200`. It is implemented as the
+    /// equivalent RELATIVE test `|r_new - r_old| > r_old * kTargetRatioRelEpsilon`
+    /// because a per-slot `log2` per chunk costs strictly more than the `exp2` the
+    /// lever exists to save. The two agree to first order over the whole reachable
+    /// ratio range.
+    ///
+    /// `detail::constexprExp` rather than `std::exp2`, which is not constexpr in
+    /// C++20 (`core/db_utils.h:123`, `detail::kLn2` at `:67`).
+    static constexpr float kTargetRatioEpsilonCents = 0.05f;
+    static constexpr float kTargetRatioRelEpsilon =
+        detail::constexprExp(kTargetRatioEpsilonCents / 1200.0f * detail::kLn2) - 1.0f;  // 2.887e-5
+    static constexpr float kTargetAmpEpsilon = 1e-5f;
+
     // NOTE: `kCompletionThreshold` is deliberately NOT redeclared here. The drift
     // lanes use the shared namespace-scope `Krate::DSP::kCompletionThreshold`
     // (`primitives/smoother.h:55`) so they snap on exactly the value
@@ -306,7 +333,22 @@ public:
 
         reseed();
 
-        recalculateFrequencies();
+        // FR-085 lever 3, and this ORDER is load-bearing (plan §6.1). The two
+        // recomputes below are called DIRECTLY and UNCONDITIONALLY — they never
+        // go through the dirty flags — but with a spectral target active their
+        // per-slot guard skips any slot whose mask bit is clear. With the masks
+        // left at zero both loops would iterate 64 times and write NOTHING.
+        // That is not a corner case: prepare() recomputes nyquist_/invSampleRate_
+        // and THEN calls reset(), so a sample-rate change on a target-active
+        // cloud would leave every epsilon_[i] derived from the OLD rate — every
+        // partial rendering at the wrong pitch, and recalculateAntiAliasing()
+        // below computing fade/correction from that stale epsilon.
+        // Marking everything dirty here makes a reset() the full recompute it
+        // was before the amendment; the two flags are cleared again below.
+        markFreqDirty();
+        markAmpDirty();
+
+        recalculateFrequencies(false);  // reset(): the orbit is being re-established
         recalculateAmplitudes();
 
         // reset() has just zeroed every currentAmplitude_, so no FR-043 tail
@@ -357,7 +399,7 @@ public:
             crossfadeRemaining_ = crossfadeLengthSamples_;
         }
         fundamentalHz_ = v;
-        freqDirty_ = true;  // recomputing epsilon must NOT touch sinState_/cosState_
+        markFreqDirty();  // recomputing epsilon must NOT touch sinState_/cosState_
     }
 
     [[nodiscard]] float getFundamentalHz() const noexcept { return fundamentalHz_; }
@@ -376,8 +418,8 @@ public:
             return;
         }
         richness_ = v;
-        freqDirty_ = true;  // N(r) may move
-        ampDirty_ = true;   // and the rolloff exponent with it
+        markFreqDirty();  // N(r) may move
+        markAmpDirty();   // and the rolloff exponent with it
     }
 
     /// @brief Inharmonicity B in the piano/bell law sqrt(1 + B*n^2). [0, 0.1] (FR-051/052).
@@ -390,7 +432,7 @@ public:
             return;
         }
         inharmonicity_ = v;
-        freqDirty_ = true;
+        markFreqDirty();
     }
 
     /// @brief Spectral tilt in dB/octave. [-12, +12] (FR-061/062).
@@ -403,7 +445,7 @@ public:
             return;
         }
         tiltDb_ = v;
-        ampDirty_ = true;
+        markAmpDirty();
     }
 
     /// @brief Mutation: slow random re-weighting of partial amplitudes. [0, 1] (FR-071).
@@ -442,7 +484,7 @@ public:
             return;
         }
         gravity_ = v;
-        freqDirty_ = true;
+        markFreqDirty();
     }
 
     [[nodiscard]] float getRichness() const noexcept { return richness_; }
@@ -597,9 +639,9 @@ public:
             // Flush the deferred config-rate recomputes first — snapping to a target
             // derived from a stale `baseAmplitude_` would just move the bug.
             if (freqDirty_) {
-                recalculateFrequencies();
+                recalculateFrequencies(false);  // redrawPhases() just ran: nothing to preserve
                 freqDirty_ = false;
-                ampDirty_ = true;
+                markAmpDirty();  // a frequency recompute invalidates EVERY amplitude slot
             }
             if (ampDirty_) {
                 recalculateAmplitudes();
@@ -650,13 +692,7 @@ public:
     /// @return A non-zero 32-bit stream seed (lowbias32 finaliser)
     [[nodiscard]] static constexpr std::uint32_t deriveSeed(std::uint32_t base,
                                                             std::size_t salt) noexcept {
-        std::uint32_t h = base ^ (static_cast<std::uint32_t>(salt + 1u) * 0x9E3779B9u);
-        h ^= h >> 16;
-        h *= 0x7FEB352Du;  // lowbias32 finaliser
-        h ^= h >> 15;
-        h *= 0x846CA68Bu;
-        h ^= h >> 16;
-        return (h != 0u) ? h : 0x2545F491u;
+        return deriveStreamSeed(base, salt);  // FR-006: the hash moved to Layer 0 (core/random.h).
     }
 
     /// @brief Set the cloud seed and redraw all once-per-seed state (plan §4.6).
@@ -670,6 +706,166 @@ public:
     }
 
     [[nodiscard]] std::uint32_t getSeed() const noexcept { return configuredSeed_; }
+
+    // =========================================================================
+    // Spectral-target injection (FR-081 – FR-086) — Seraphis Phase 3, plan §6
+    // =========================================================================
+
+    /// @brief Override the parametric partial ratios and amplitudes with an
+    ///        externally supplied spectrum (FR-081).
+    ///
+    /// STRICTLY ADDITIVE: everything this enables is inert while no target has
+    /// been supplied, so an untargeted cloud renders exactly what Phase 2 shipped.
+    ///
+    /// FR-082: the supplied ratio REPLACES the `pow(n, 1 + g*range)` grid law, but
+    /// Spectral Gravity still applies as a WARP FACTOR on top of it, and
+    /// Inharmonicity's `sqrt(1 + B*n^2)` stretch is untouched — the FR-083
+    /// composition order is unchanged.
+    /// FR-083: the supplied amplitude replaces the Richness ROLLOFF only. Tilt,
+    /// the FR-041 active count N(r), the FR-043 tail and the FR-017 normalizer all
+    /// still apply, so entropy stays level-neutral by construction.
+    /// FR-084: nothing here touches `sinState_`/`cosState_`, so a target change is
+    /// phase-continuous, and the amplitude change is chased by the same FR-014
+    /// smoother — it cannot click. The next chunk's `recalculateFrequencies()`
+    /// does SCALE both by one positive factor, which is a level correction and not
+    /// a phase step — see `preserveOrbitEnergy()` for why it is required and why
+    /// it is ~1e-4 per chunk at the FR-086 cadence.
+    ///
+    /// @par FR-086 — composition cadence
+    /// @code
+    /// // A consumer driving HarmonicCloud from a SpectralMorphEngine MUST do so in slices of
+    /// // <= HarmonicCloud::kControlChunkSamples (= 64) samples, in this order:
+    /// //
+    /// //   for (each slice of <= 64 samples) {
+    /// //       engine.updateChunk(n);
+    /// //       cloud.setSpectralTarget(engine.getOutputRatios(),
+    /// //                               engine.getOutputAmplitudes(),
+    /// //                               engine.getOutputCount());
+    /// //       cloud.processStereoBlock(left + offset, right + offset, n);
+    /// //   }
+    /// //
+    /// // WHY A BOUND AND NOT A SUGGESTION: processStereoBlock restarts its internal 64-sample
+    /// // control grid on every call (harmonic_cloud.h:713-716) and setSpectralTarget only raises
+    /// // freqDirty_/ampDirty_, consumed at the head of the FIRST updateControl of that call
+    /// // (:1313-1321). A target supplied once per 512-sample host block is therefore frozen for
+    /// // all 8 internal chunks and the morph's effective resolution silently becomes the host
+    /// // block size.
+    /// @endcode
+    ///
+    /// @par Rejection (FR-081, AUTHORITATIVE for this entry point)
+    /// Rejected WHOLESALE — nothing is written, not even the slots that passed —
+    /// on a null pointer, `count == 0`, `count > kMaxPartials`, any NaN/Inf, any
+    /// `ratios[i] <= 0.0f` (which rejects `-0.0f`, whose zero frequency would
+    /// collapse the partial) or any `amplitudes[i] < 0.0f` (which ACCEPTS
+    /// `-0.0f`). Non-monotone ratios, ratios outside
+    /// `[SpectralState::kMinStateRatio, kMaxStateRatio]` and amplitudes above 1
+    /// are all ACCEPTED — that is the point of the surface. FR-012's authored-state
+    /// validity governs `SpectralState`, not this live post-entropy array, and the
+    /// two diverge on purpose.
+    ///
+    /// @param ratios     `count` partial ratios relative to the fundamental
+    /// @param amplitudes `count` linear amplitudes; may exceed 1
+    /// @param count      Number of supplied partials, `1 .. kMaxPartials`
+    void setSpectralTarget(const float* ratios, const float* amplitudes,
+                           std::size_t count) noexcept {
+        if (ratios == nullptr || amplitudes == nullptr || count == 0 || count > kMaxPartials) {
+            return;
+        }
+
+        // ---------------------------------------------------------------------
+        // FR-085 LEVER 1 - THE WHOLE-ARRAY SKIP, and it is the FIRST thing this
+        // function does.
+        // ---------------------------------------------------------------------
+        // "The recompute is skipped when the supplied arrays are bit-identical to
+        // the stored ones" (FR-085), and SC-010 clause 3 times exactly this path:
+        // an unchanged target must cost no more than 10 % over the no-target
+        // cloud. Without this early-out the unchanged case still pays the full
+        // per-partial validation scan plus 128 epsilon compares and 128 stores,
+        // which MEASURED 12.1 % on the reference machine - i.e. the clause fails
+        // on cost alone even though not one slot is marked dirty.
+        //
+        // WHY RETURNING HERE CANNOT LOSE A DIRTY BIT. The mask below compares the
+        // supplied value against committedRatio_/committedAmp_ (deviation D14).
+        // committedRatio_[i] is only ever assigned targetRatio_[i], and only for
+        // slots a recompute actually consumed - so between two bit-identical
+        // calls the committed value can only move TOWARDS the supplied one (to it
+        // exactly, or not at all). The mask this call would have produced is
+        // therefore a SUBSET of the one the previous call produced, and every bit
+        // of that one is either still standing in freqSlotDirty_/ampSlotDirty_
+        // (they are sticky until a recompute clears them) or has already been
+        // consumed by the recompute that zeroed the distance. Skipping is exact,
+        // not approximate.
+        //
+        // Validation is skipped with it, which is also exact: the stored arrays
+        // were validated when they were accepted, and these are bit-identical to
+        // them. hasTarget_ gates the whole thing, so the FIRST call always runs
+        // the full path.
+        if (hasTarget_ && count == targetCount_) {
+            const std::size_t bytes = count * sizeof(float);
+            // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - float arrays,
+            // and FR-085 states the skip in terms of BIT-identical arrays.
+            if (std::memcmp(ratios, targetRatio_.data(), bytes) == 0
+                // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
+                && std::memcmp(amplitudes, targetAmp_.data(), bytes) == 0) {
+                return;
+            }
+        }
+
+        for (std::size_t i = 0; i < count; ++i) {
+            if (detail::isNaN(ratios[i]) || detail::isInf(ratios[i])
+                || detail::isNaN(amplitudes[i]) || detail::isInf(amplitudes[i])
+                || ratios[i] <= 0.0f || amplitudes[i] < 0.0f) {
+                return;  // wholesale rejection, nothing written
+            }
+        }
+
+        std::uint64_t fMask = 0;
+        std::uint64_t aMask = 0;
+        for (std::size_t i = 0; i < kMaxPartials; ++i) {
+            const float r = (i < count) ? ratios[i] : static_cast<float>(i + 1);
+            const float a = (i < count) ? amplitudes[i] : 0.0f;
+            // COMPARE AGAINST THE COMMITTED VALUE — the one the last recompute
+            // actually consumed — NEVER against targetRatio_/targetAmp_, which
+            // this loop is about to overwrite. Deviation D14: with the stored
+            // target as baseline, the baseline advances with the input while the
+            // recompute is skipped, so sub-epsilon per-chunk motion accumulates
+            // FOREVER and never trips the threshold. At the FR-005 default travel
+            // rate a 64-sample chunk moves partial 24 of the SineStack->Bell pair
+            // by 0.0061 cent — permanently under kTargetRatioEpsilonCents — so
+            // most partials would freeze at their start frequency for the whole
+            // journey and the phase's central feature would silently not render.
+            if (!hasTarget_
+                || std::abs(r - committedRatio_[i]) > committedRatio_[i] * kTargetRatioRelEpsilon) {
+                fMask |= (std::uint64_t{1} << i);
+            }
+            if (!hasTarget_ || std::abs(a - committedAmp_[i]) > kTargetAmpEpsilon) {
+                aMask |= (std::uint64_t{1} << i);
+            }
+            targetRatio_[i] = r;  // latest supplied value; always stored
+            targetAmp_[i] = a;
+        }
+        targetCount_ = count;  // FR-085 lever 1's comparand length
+        hasTarget_ = true;
+        if (fMask != 0) {
+            freqDirty_ = true;
+            freqSlotDirty_ |= fMask;
+        }
+        if (aMask != 0) {
+            ampDirty_ = true;
+            ampSlotDirty_ |= aMask;
+        }
+    }
+
+    /// @brief Return to the parametric ratio and amplitude laws (FR-084).
+    /// @note Goes through the same dirty-flag path and the same FR-014 amplitude
+    ///       smoother as every other configuration change, so it cannot click.
+    void clearSpectralTarget() noexcept {
+        hasTarget_ = false;
+        markFreqDirty();
+        markAmpDirty();
+    }
+
+    [[nodiscard]] bool hasSpectralTarget() const noexcept { return hasTarget_; }
 
     // =========================================================================
     // Render (FR-004) — plan §4.1
@@ -1050,6 +1246,20 @@ private:
     // Configuration-rate recomputes (plan §2, §3, §4.3) — filled by later tasks
     // =========================================================================
 
+    /// @brief Schedule a frequency recompute of EVERY partial (plan §6.2).
+    /// A parametric change invalidates every slot, so the per-slot mask goes to
+    /// all-ones; only `setSpectralTarget` ever sets a partial mask.
+    void markFreqDirty() noexcept {
+        freqDirty_ = true;
+        freqSlotDirty_ = ~std::uint64_t{0};
+    }
+
+    /// @brief Schedule an amplitude recompute of EVERY partial (plan §6.2).
+    void markAmpDirty() noexcept {
+        ampDirty_ = true;
+        ampSlotDirty_ = ~std::uint64_t{0};
+    }
+
     /// @brief FR-083 combined frequency law + epsilon (plan §2). CONFIG RATE ONLY.
     ///
     /// For 1-based partial number n:
@@ -1061,7 +1271,16 @@ private:
     /// `ratio_g(1) == 1` exactly for every gravity setting (`pow(1, x) == 1`), so the
     /// fundamental never moves. This never touches sinState_/cosState_, so a
     /// frequency change is phase-continuous by construction (FR-034).
-    void recalculateFrequencies() noexcept {
+    /// @param preserveOrbit True only on the per-chunk path, where the partial is
+    ///        already sounding on an established orbit whose energy must survive
+    ///        the epsilon rewrite. False from `reset()` and from `noteOn()`'s
+    ///        flush, where the orbit is being (re)established and there is nothing
+    ///        to preserve — `noteOn()` calls `redrawPhases()` FIRST (`:632`), so a
+    ///        rescale there would act on a brand-new draw against an epsilon
+    ///        derived from a stale configuration and would break SC-014 clause 2's
+    ///        identity render (measured: worst sample error 1.7e-3 against the
+    ///        1.0e-4 fingerprint tolerance, at `r = 0, g = -1, tilt = -12`).
+    void recalculateFrequencies(bool preserveOrbit) noexcept {
         const float exponent = 1.0f + gravity_ * kGravityExponentRange;
         // FR-081 says the g = 0 grid is EXACTLY the integers, so take that branch
         // exactly — the same identity-branch idiom tiltGain() copies from
@@ -1081,15 +1300,120 @@ private:
         // (4e-5 cent), against SC-002/SC-004's 1-cent tolerance.
         const bool gravityIsZero = (gravity_ == 0.0f);
         for (std::size_t i = 0; i < kMaxPartials; ++i) {
+            // FR-085 lever 3: with a target active, recompute only the slots
+            // setSpectralTarget marked as having actually MOVED. INERT while
+            // hasTarget_ is false, so the untargeted loop is the shipped loop.
+            if (hasTarget_ && (freqSlotDirty_ & (std::uint64_t{1} << i)) == 0) {
+                continue;
+            }
             const float n = static_cast<float>(i + 1);
-            const float ratioG =
-                gravityIsZero ? n : std::exp2(exponent * detail::kHarmonicCloudLog2N[i]);
+            committedRatio_[i] = targetRatio_[i];  // this slot IS being recomputed now
+            float ratioG = 0.0f;  // both arms below assign; initialised for clang-tidy
+            if (hasTarget_ && targetRatio_[i] != n) {
+                // FR-082: the branch is scoped to the WARP FACTOR ALONE — the
+                // supplied ratio replaces the grid law, gravity still warps it.
+                const float warp =
+                    gravityIsZero
+                        ? 1.0f
+                        : std::exp2(gravity_ * kGravityExponentRange
+                                    * detail::kHarmonicCloudLog2N[i]);
+                ratioG = targetRatio_[i] * warp;
+            } else {
+                // No target, or the FR-082 identity guard: fall back to the
+                // UNMODIFIED parametric law INCLUDING its own gravityIsZero
+                // branch. Falling back to the std::exp2 arm alone would evaluate
+                // exp2(1.0f * log2N[i]) — exactly the rewrite the comment above
+                // warns hands back 31.999998 for n = 32 under -ffast-math,
+                // destroying the bit-exactness that branch exists to protect and
+                // doing it invisibly to a fingerprint tolerance.
+                ratioG = gravityIsZero ? n : std::exp2(exponent * detail::kHarmonicCloudLog2N[i]);
+            }
             const float stretch = std::sqrt(1.0f + inharmonicity_ * n * n);  // additive_oscillator.h:472
             const float f = fundamentalHz_ * ratioG * stretch;
             frequencyHz_[i] = f;
-            epsilon_[i] = std::clamp(2.0f * std::sin(kPi * f * invSampleRate_),  // …bank.h:1054-1055
-                                     -kMaxEpsilon, kMaxEpsilon);
+            const float epsOld = epsilon_[i];
+            const float epsNew = std::clamp(2.0f * std::sin(kPi * f * invSampleRate_),
+                                            -kMaxEpsilon, kMaxEpsilon);  // …bank.h:1054-1055
+            epsilon_[i] = epsNew;
+            if (preserveOrbit) {
+                preserveOrbitEnergy(i, epsOld, epsNew);
+            }
         }
+        freqSlotDirty_ = 0;
+    }
+
+    /// @brief Hold the MCF orbit energy fixed across an epsilon change (SC-009).
+    ///
+    /// SPEC GAP, RECORDED HERE DELIBERATELY: no FR covers this. It is the fix for a
+    /// defect SC-009 clauses 1 and 2 caught on the `Bell -> Breath` pair, and it
+    /// belongs with FR-084's phase-continuity guarantee, which is silent about the
+    /// orbit's AMPLITUDE. See the plan's deviation table.
+    ///
+    /// THE PROBLEM THIS SOLVES IS A LEVEL ERROR, NOT A PHASE ERROR. The kernel's
+    /// recurrence (`harmonic_oscillator_bank_simd.cpp:103-105`)
+    /// `s' = s + eps*c`, `c' = c - eps*s'` conserves
+    /// @code
+    ///   E = s^2 + c^2 + eps*s*c
+    /// @endcode
+    /// exactly — for FIXED `eps`. The orbit's peak `|s|` is `sqrt(E)/cos(w/2)`, and
+    /// FR-015's correction factor is exactly `cos(w/2)`
+    /// (`updateAntiAliasGain`, `:1436-1451`), so the RENDERED peak of a partial is
+    /// `targetAmplitude * fade * sqrt(E)`. `E == 1` is therefore the condition for a
+    /// partial to render at the amplitude it was asked for, and Phase 2's measured
+    /// +1.60 / −2.55 dB per-partial spread at partial 64
+    /// (`harmonic_cloud_spectral_test.cpp:104-125`) is precisely `E`'s FR-016 phase
+    /// draw: `E = 1 + (eps/2)*sin(4*pi*phase)` right after `redrawPhases()`.
+    ///
+    /// Rewriting `eps` at a fixed state moves `E` by `(eps_new - eps_old)*s*c`, and
+    /// `|s|` grows like `1/cos(w/2)` — 10x at the `kMaxEpsilon` clamp. A partial
+    /// swept through the near-Nyquist region therefore accumulates a LARGE,
+    /// one-directional energy error which stays with it after it comes back down,
+    /// and it is inaudible while it happens because FR-015 has already faded that
+    /// partial out. Measured on the SC-009 `Bell -> Breath` journey before this
+    /// function existed: per-partial render-gain errors of +11.3 dB and −12.7 dB
+    /// after the sweep, a whole-render RMS 3.8 dB above the FR-017 target and a peak
+    /// pinned at `kOutputClamp`. Rescaling `s` and `c` by `sqrt(E_old / E_new)`
+    /// restores the invariant the recurrence itself cannot.
+    ///
+    /// @par Why this does not contradict FR-034 / FR-084
+    /// Both say a frequency change must not STEP the waveform. This scales `s` and
+    /// `c` by one positive factor rather than rotating them, so the phase is
+    /// untouched; the sample moves by `|scale - 1|`, which over the FR-086 cadence
+    /// is ~1e-4 per chunk (0.001 dB) because `eps` moves by ~3e-5 per chunk at the
+    /// travel rates FR-061 admits. A `setState` swap is absorbed over
+    /// `kStateChangeFadeSec` by FR-047, so no caller can present a large jump.
+    ///
+    /// @par Why it is gated on `hasTarget_`
+    /// Non-Goals forbid any change to Phase 2 behaviour when the injection surface
+    /// is unused, and SC-014 is the standing gate on that. Off the injection path
+    /// `epsilon_` only moves on a configuration-time setter, never thousands of
+    /// times per second, so the accumulation this corrects is not reachable there.
+    /// Same "inert until a target is supplied" rule as FR-085's three levers.
+    /// With an IDENTITY target (SC-014 clause 2) `epsNew == epsOld` bitwise, so this
+    /// is a bitwise no-op there too, which is what keeps that clause satisfiable.
+    ///
+    /// @param index  Partial index, < kMaxPartials
+    /// @param epsOld The epsilon the current state's energy was accumulated under
+    /// @param epsNew The epsilon just written to `epsilon_[index]`
+    void preserveOrbitEnergy(std::size_t index, float epsOld, float epsNew) noexcept {
+        if (!hasTarget_ || epsNew == epsOld) {
+            return;
+        }
+        const float s = sinState_[index];
+        const float c = cosState_[index];
+        const float quad = s * s + c * c;
+        const float cross = s * c;
+        const float eOld = quad + epsOld * cross;
+        const float eNew = quad + epsNew * cross;
+        // `E` is positive definite for |eps| < 2 (discriminant eps^2 - 4 < 0), so the
+        // only way either is non-positive is the quiescent all-zero state before the
+        // first noteOn() — where there is no orbit to preserve.
+        if (eOld <= 0.0f || eNew <= 0.0f) {
+            return;
+        }
+        const float scale = std::sqrt(eOld / eNew);
+        sinState_[index] = s * scale;
+        cosState_[index] = c * scale;
     }
 
     /// @brief FR-061 per-partial tilt gain for the 1-based partial number `n`.
@@ -1148,12 +1472,26 @@ private:
                 baseAmplitude_[i] = 0.0f;  // a_n = 0 for n > N(r)
                 continue;
             }
+            // FR-085 lever 3, and it MUST sit after the zeroing above so a
+            // Richness reduction still silences a slot the mask left undirtied.
+            // INERT while hasTarget_ is false.
+            if (hasTarget_ && (ampSlotDirty_ & (std::uint64_t{1} << i)) == 0) {
+                continue;
+            }
+            committedAmp_[i] = targetAmp_[i];  // this slot IS being recomputed now
             // FR-041 x FR-061. `pow(n, -p)` is `exp2(-p * log2(n))` off the shared
             // table (SC-007) — the identity, to within the table's ~2e-8 rounding,
             // which is 2e-7 dB against SC-003's 0.5 dB per-partial bound. n = 1 is
             // exact either way: log2(1) is 0, so exp2(0) is 1.0f.
+            //
+            // FR-083: a supplied amplitude replaces the Richness ROLLOFF ONLY —
+            // tilt still multiplies it. Richness's rolloff exponent therefore has
+            // no effect while a target is active, deliberately (C-3): multiplying
+            // a state's own shape by n^(-p) would erase exactly the timbral
+            // distinction between the factory states.
             baseAmplitude_[i] =
-                std::exp2(-exponent * detail::kHarmonicCloudLog2N[i]) * tiltGain(i);
+                hasTarget_ ? targetAmp_[i] * tiltGain(i)
+                           : std::exp2(-exponent * detail::kHarmonicCloudLog2N[i]) * tiltGain(i);
         }
 
         // FR-043: a partial dropped from the active count keeps being handed to the
@@ -1162,6 +1500,12 @@ private:
         // it INSIDE the SIMD path. Truncation would click; this cannot.
         tailHighWater_ = std::max(tailHighWater_, activeCount_);
         kernelCount_ = std::max(activeCount_, tailHighWater_);
+
+        // FR-085 lever 3: consume the mask. Placed HERE rather than at the end of
+        // the function because FR-017 below must remain the last statement.
+        // Without it the mask saturates after a few chunks (setSpectralTarget
+        // accumulates with |=) and the amplitude half of the lever is dead code.
+        ampSlotDirty_ = 0;
 
         // FR-017. THIS MUST BE THE LAST STATEMENT OF THIS FUNCTION. reset() calls
         // normGain_.snapTo(...), after which OnePoleSmoother::advanceSamples()
@@ -1311,9 +1655,9 @@ private:
         // Step 0: consume the config-rate dirty flags — at most one recompute of each
         // per chunk, no matter how many setters ran since the last chunk.
         if (freqDirty_) {
-            recalculateFrequencies();
+            recalculateFrequencies(true);
             freqDirty_ = false;
-            ampDirty_ = true;
+            markAmpDirty();  // a frequency recompute invalidates EVERY amplitude slot
         }
         if (ampDirty_) {
             recalculateAmplitudes();
@@ -1707,6 +2051,29 @@ private:
     alignas(32) std::array<float, kMaxPartials> envValue_{};        ///< [0,1]
     std::array<std::uint8_t, kMaxPartials> envStage_{};             ///< Idle/Attack/Hold/Release
     std::array<bool, kMaxPartials> masked_{};                       ///< FR-008 solo/mask
+
+    // --- FR-081 spectral-target injection (Phase 3, plan §6.1) ---
+    alignas(32) std::array<float, kMaxPartials> targetRatio_{};     ///< latest supplied
+    alignas(32) std::array<float, kMaxPartials> targetAmp_{};
+    /// The values the LAST RECOMPUTE ACTUALLY CONSUMED. The dirty test in
+    /// setSpectralTarget compares against THESE, never against
+    /// targetRatio_/targetAmp_ (deviation D14). Written only inside
+    /// recalculateFrequencies()/recalculateAmplitudes(), and only for slots those
+    /// functions actually recomputed, so the comparison baseline can never drift
+    /// away from the values the audio path is using. reset() marks every slot
+    /// dirty, so they re-synchronise there and need no separate clearing.
+    alignas(32) std::array<float, kMaxPartials> committedRatio_{};
+    alignas(32) std::array<float, kMaxPartials> committedAmp_{};
+    std::uint64_t freqSlotDirty_ = 0;  ///< FR-085 lever 3, one bit per partial
+    std::uint64_t ampSlotDirty_ = 0;
+    /// Length of the array pair that produced targetRatio_/targetAmp_. FR-085
+    /// lever 1's skip requires the SAME count as well as the same bytes: slots at
+    /// or above `count` are filled by this class (ratio i+1, amplitude 0), so two
+    /// calls with different counts can agree on their first `count` floats and
+    /// still describe different spectra.
+    std::size_t targetCount_ = 0;
+    /// NOT cleared by reset() — a spectral target is CONFIGURATION, like Richness.
+    bool hasTarget_ = false;
 
     // --- two drift lane banks (plan §4.5) ---
     DriftLanes detuneLanes_{};    ///< FR-031 bank

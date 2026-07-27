@@ -71,12 +71,12 @@
     "processors": {
       "index": 2,
       "folder": "dsp/include/krate/dsp/processors",
-      "header_count": 102
+      "header_count": 104
     },
     "systems": {
       "index": 3,
       "folder": "dsp/include/krate/dsp/systems",
-      "header_count": 35
+      "header_count": 36
     },
     "effects": {
       "index": 4,

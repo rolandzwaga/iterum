@@ -279,6 +279,8 @@ add_executable(dsp_processors_tests
     unit/processors/spline_trajectory_test.cpp
     unit/processors/growth_envelope_test.cpp
     unit/processors/life_modulators_perf_test.cpp
+    unit/processors/spectral_state_test.cpp
+    unit/processors/entropy_processor_test.cpp
 )
 
 target_link_libraries(dsp_processors_tests
@@ -332,6 +334,9 @@ add_executable(dsp_systems_tests
     unit/systems/harmonic_cloud_test.cpp
     unit/systems/harmonic_cloud_spectral_test.cpp
     unit/systems/harmonic_cloud_perf_test.cpp
+    unit/systems/spectral_morph_engine_test.cpp
+    unit/systems/spectral_morph_render_test.cpp
+    unit/systems/spectral_morph_perf_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
