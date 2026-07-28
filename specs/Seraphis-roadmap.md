@@ -197,6 +197,8 @@ control), state round-trip serialization. Audible A/B renders for each factory s
 
 ### Phase 4: Continuous Resonant Body
 
+**Status: ✅ COMPLETE (2026-07-28)** — see specs/seraphis-phase4-continuous-body/compliance.md
+
 **Spec:** `seraphis-phase4-continuous-body`
 **Goal:** A physical "body" the cloud speaks through — glass, string, metal plate, chamber, ice —
 as continuous resonance, not percussion.
@@ -467,7 +469,7 @@ build → tests → pluginval strictness 5 → version.json/CHANGELOG.
 ```
 Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/entropy) ✅─┐
                       │                     │                              │
-                      ├─→ Phase 4 (body) ───┤                              ├─→ Phase 7 (voice/engine)
+                      ├─→ Phase 4 (body) ✅─┤                              ├─→ Phase 7 (voice/engine)
                       │                     │                              │        │
                       ├─→ Phase 5 (atmos) ──┘                              │        ▼
                       │                                                    │   Phase 8 (scaffold)

@@ -145,6 +145,87 @@ public:
     /// @warning Updates internal state; call order matters in feedback networks.
     [[nodiscard]] float readAllpass(float delaySamples) noexcept;
 
+    /// @brief Precomputed tap for `readAllpass` at a FIXED fractional delay.
+    ///
+    /// `readAllpass(float)` re-derives a clamp, a `std::floor`, a subtraction
+    /// and a float DIVISION on every sample. In a diffusion cascade or a
+    /// static feedback loop the delay does not move from sample to sample, so
+    /// all four are loop-invariant. The two indices are RELATIVE offsets from
+    /// the write head (`read()` computes `(writeIndex_ - 1 - offset) & mask_`),
+    /// so a tap stays valid for the life of the delay setting, across any
+    /// number of `write()` calls.
+    struct AllpassTap {
+        std::size_t index0 = 0;  ///< integer part of the delay, in samples
+        std::size_t index1 = 0;  ///< index0 + 1, clamped to the maximum delay
+        float coeff = 1.0f;      ///< (1 - frac) / (1 + frac)
+    };
+
+    /// @brief Precomputed tap for `readLinear` at a FIXED fractional delay.
+    /// @see AllpassTap - same motivation, same relative-offset guarantee.
+    struct LinearTap {
+        std::size_t index0 = 0;
+        std::size_t index1 = 0;
+        float frac = 0.0f;
+    };
+
+    /// @brief Build a `LinearTap` for `delaySamples`.
+    /// @note Bit-for-bit the same clamp/floor/frac arithmetic
+    ///       `readLinear(float)` performs inline.
+    [[nodiscard]] LinearTap makeLinearTap(float delaySamples) const noexcept;
+
+    /// @brief Linear-interpolated read through a precomputed tap.
+    [[nodiscard]] float readLinear(const LinearTap& tap) const noexcept;
+
+    /// @brief Build an `AllpassTap` for `delaySamples`.
+    /// @note Bit-for-bit the same clamp/floor/frac/coefficient arithmetic
+    ///       `readAllpass(float)` performs inline, so
+    ///       `readAllpass(makeAllpassTap(d))` and `readAllpass(d)` return
+    ///       identical values for identical state.
+    [[nodiscard]] AllpassTap makeAllpassTap(float delaySamples) const noexcept;
+
+    /// @brief Allpass-interpolated read through a precomputed tap.
+    /// @note Advances `allpassState_` exactly as `readAllpass(float)` does.
+    [[nodiscard]] float readAllpass(const AllpassTap& tap) noexcept;
+
+    /// @brief Fused read-then-write loop at a FIXED allpass tap.
+    ///
+    /// For each of `numSamples` steps this performs exactly one
+    /// `readAllpass(tap)` followed by exactly one `write()`, with `fn(i, y)`
+    /// choosing what is written from the sample index and the interpolated
+    /// read. That is the read-before-write shape every allpass and comb
+    /// structure in this library uses, and expressing it as one call is what
+    /// lets `buffer_`, `mask_`, `writeIndex_` and `allpassState_` live in
+    /// registers for the whole block instead of being re-loaded through
+    /// `this` on every sample.
+    ///
+    /// Bit-identical to the equivalent `readAllpass(tap)` / `write()` pair
+    /// repeated `numSamples` times: same reads, same arithmetic, same order.
+    ///
+    /// @param tap Precomputed tap; must come from `makeAllpassTap`.
+    /// @param numSamples Iteration count.
+    /// @param fn Callable `float(size_t index, float interpolatedRead)`
+    ///           returning the value to write.
+    template <typename Fn>
+    void processFixedTap(const AllpassTap& tap, std::size_t numSamples, Fn&& fn) noexcept {
+        float* const buf = buffer_.data();
+        const std::size_t m = mask_;
+        std::size_t w = writeIndex_;
+        float state = allpassState_;
+
+        for (std::size_t i = 0; i < numSamples; ++i) {
+            const float x0 = buf[(w - 1 - tap.index0) & m];
+            const float x1 = buf[(w - 1 - tap.index1) & m];
+            const float y = x0 + (tap.coeff * (state - x1));
+            state = y;
+
+            buf[w] = fn(i, y);
+            w = (w + 1) & m;
+        }
+
+        allpassState_ = state;
+        writeIndex_ = w;
+    }
+
     // =========================================================================
     // Query Methods
     // =========================================================================
@@ -291,6 +372,48 @@ inline float DelayLine::readAllpass(float delaySamples) noexcept {
     // Update state for next call
     allpassState_ = y;
 
+    return y;
+}
+
+inline DelayLine::LinearTap DelayLine::makeLinearTap(float delaySamples) const noexcept {
+    // Identical arithmetic to readLinear(float) - see that function.
+    const float clampedDelay = std::clamp(delaySamples, 0.0f, static_cast<float>(maxDelaySamples_));
+
+    const float intPart = std::floor(clampedDelay);
+
+    LinearTap tap;
+    tap.frac = clampedDelay - intPart;
+    tap.index0 = static_cast<size_t>(intPart);
+    tap.index1 = std::min(tap.index0 + 1, maxDelaySamples_);
+    return tap;
+}
+
+inline float DelayLine::readLinear(const LinearTap& tap) const noexcept {
+    const float y0 = read(tap.index0);
+    const float y1 = read(tap.index1);
+    return y0 + tap.frac * (y1 - y0);
+}
+
+inline DelayLine::AllpassTap DelayLine::makeAllpassTap(float delaySamples) const noexcept {
+    // Identical arithmetic to readAllpass(float) - see that function.
+    const float clampedDelay = std::clamp(delaySamples, 0.0f, static_cast<float>(maxDelaySamples_));
+
+    const float intPart = std::floor(clampedDelay);
+    const float frac = clampedDelay - intPart;
+
+    AllpassTap tap;
+    tap.index0 = static_cast<size_t>(intPart);
+    tap.index1 = std::min(tap.index0 + 1, maxDelaySamples_);
+    tap.coeff = (1.0f - frac) / (1.0f + frac);
+    return tap;
+}
+
+inline float DelayLine::readAllpass(const AllpassTap& tap) noexcept {
+    const float x0 = read(tap.index0);
+    const float x1 = read(tap.index1);
+
+    const float y = x0 + tap.coeff * (allpassState_ - x1);
+    allpassState_ = y;
     return y;
 }
 

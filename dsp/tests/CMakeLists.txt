@@ -281,6 +281,9 @@ add_executable(dsp_processors_tests
     unit/processors/life_modulators_perf_test.cpp
     unit/processors/spectral_state_test.cpp
     unit/processors/entropy_processor_test.cpp
+    # Seraphis Phase 4 (specs/seraphis-phase4-continuous-body): shared Layer 2 amendments
+    unit/processors/waveguide_string_retune_test.cpp
+    unit/processors/diffusion_network_zeromod_test.cpp
 )
 
 target_link_libraries(dsp_processors_tests
@@ -337,6 +340,10 @@ add_executable(dsp_systems_tests
     unit/systems/spectral_morph_engine_test.cpp
     unit/systems/spectral_morph_render_test.cpp
     unit/systems/spectral_morph_perf_test.cpp
+    # Seraphis Phase 4 (specs/seraphis-phase4-continuous-body): ContinuousBody
+    unit/systems/continuous_body_test.cpp
+    unit/systems/continuous_body_spectral_test.cpp
+    unit/systems/continuous_body_perf_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
@@ -651,6 +658,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/processors/bow_waveguide_coupling_test.cpp
         unit/processors/body_resonance_tests.cpp
         unit/processors/test_modal_bank_frequency.cpp
+        # Seraphis Phase 4: T014 injects NaN/Inf via bit patterns in this TU
+        # (SC-013). Only this one of the five Phase 4 TUs does so - the other
+        # four must NOT be listed here.
+        unit/systems/continuous_body_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 

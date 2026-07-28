@@ -131,6 +131,51 @@ public:
         return output;
     }
 
+    /// @brief Build a reusable tap for a delay that will not move.
+    /// @note Same clamp as `process(float, float)`, so
+    ///       `process(x, makeTap(d))` == `process(x, d)` bit-for-bit.
+    [[nodiscard]] DelayLine::AllpassTap makeTap(float delaySamples) const noexcept {
+        const float clampedDelay = std::clamp(delaySamples, 1.0f, maxDelaySamples_);
+        return delayLine_.makeAllpassTap(clampedDelay - 1.0f);
+    }
+
+    /// @brief Whole-block processing at a fixed tap, with the diffusion
+    ///        stage-enable crossfade folded into the same loop.
+    ///
+    /// `buf[n] = buf[n] + enable * (stageOut - buf[n])`, in place, which is
+    /// exactly what the per-sample path computes - the expression is kept in
+    /// this form rather than simplified at `enable == 1`, because
+    /// `s + 1.0f*(o - s)` is not `o` in floating point.
+    ///
+    /// Everything else is identical to `process(input, tap)` repeated
+    /// `numSamples` times; the delay line's buffer pointer, mask, write index
+    /// and allpass state are hoisted into registers for the block.
+    void processBlend(float* buf, std::size_t numSamples,
+                      const DelayLine::AllpassTap& tap, float enable) noexcept {
+        delayLine_.processFixedTap(tap, numSamples, [buf, enable](std::size_t i,
+                                                                  float delayedV) noexcept {
+            const float sample = buf[i];
+            const float v = sample + kAllpassCoeff * delayedV;
+            const float output = -kAllpassCoeff * v + delayedV;
+            buf[i] = sample + enable * (output - sample);
+            return v;
+        });
+    }
+
+    /// @brief Process one sample through a precomputed tap.
+    /// @see makeTap - hoists the per-sample clamp, floor and DIVISION out of
+    ///      the inner loop when the delay time is static.
+    [[nodiscard]] float process(float input, const DelayLine::AllpassTap& tap) noexcept {
+        const float delayedV = delayLine_.readAllpass(tap);
+
+        const float v = input + kAllpassCoeff * delayedV;
+        const float output = -kAllpassCoeff * v + delayedV;
+
+        delayLine_.write(v);
+
+        return output;
+    }
+
 private:
     DelayLine delayLine_;
     float sampleRate_ = 44100.0f;
@@ -299,6 +344,30 @@ public:
 
     /// @brief Set modulation rate.
     /// @param rateHz Rate in Hz [0.1Hz, 5Hz]
+    /// @brief Snap every internal parameter smoother to its target.
+    ///
+    /// The network's own 10 ms smoothers (`kDiffusionSmoothingMs`) exist for
+    /// callers that push raw parameter values from a UI thread. A caller that
+    /// already smooths on its own control grid - `ContinuousBody` smooths size
+    /// at 50 ms and width at 20 ms and forwards the smoothed value once per
+    /// 64-sample control chunk - puts a SECOND lag in series with its own and
+    /// gains nothing for it, while permanently defeating the static fast path
+    /// in `process()` (nothing is ever settled, so every sample re-derives
+    /// eleven smoother steps and sixteen fractional-delay coefficients).
+    ///
+    /// Calling this after each parameter push makes the network's parameters
+    /// piecewise-constant over the caller's control chunk. Continuity is then
+    /// exactly the caller's own smoother, sampled on the caller's grid.
+    void snapSmoothers() noexcept {
+        sizeSmoother_.snapToTarget();
+        densitySmoother_.snapToTarget();
+        widthSmoother_.snapToTarget();
+        modDepthSmoother_.snapToTarget();
+        for (auto& s : stageEnableSmoothers_) {
+            s.snapToTarget();
+        }
+    }
+
     void setModRate(float rateHz) noexcept {
         modRate_ = std::clamp(rateHz, kMinModRate, kMaxModRate);
         lfoPhaseIncrement_ = kTwoPi * modRate_ / sampleRate_;
@@ -330,6 +399,11 @@ public:
         // Early exit for zero-length input
         if (numSamples == 0) return;
 
+        if (canUseStaticPath()) {
+            processStatic(leftIn, rightIn, leftOut, rightOut, numSamples);
+            return;
+        }
+
         for (size_t n = 0; n < numSamples; ++n) {
             // Update smoothed parameters
             const float size = sizeSmoother_.process();
@@ -359,7 +433,21 @@ public:
                 // We use the base LFO value and apply per-stage phase offset manually
                 // Phase offset: i * 45° = i * π/4 radians
                 const float stagePhaseOffset = static_cast<float>(i) * (kPi / 4.0f);
-                const float lfoValue = std::sin(lfoPhase_ + stagePhaseOffset);
+                // RA-4 (specs/seraphis-phase4-continuous-body): the sin() below was
+                // evaluated per stage per sample UNCONDITIONALLY - 8 transcendentals
+                // per sample per instance (~384 k/s at 48 kHz) even at modDepth = 0,
+                // which is the default (kDefaultModDepth, :181). The guard is
+                // BIT-IDENTICAL, not a behaviour change: lfoValue feeds exactly one
+                // expression, `modMs = modDepth * kMaxModDepthMs * lfoValue` (:363),
+                // and with modDepth == 0 that product is 0 for every finite lfoValue,
+                // leaving delayMsL/R (:369, :373) unchanged bit-for-bit (baseDelayMs
+                // = kBaseDelayMs * size is strictly positive after the :344 bypass,
+                // so delayMsL/R can never be -0.0f). The LFO phase accumulator
+                // (:398-401) is OUTSIDE this loop and still advances, so a later
+                // modDepth > 0 resumes on the same phase.
+                const float lfoValue = (modDepth > 0.0f)
+                                     ? std::sin(lfoPhase_ + stagePhaseOffset)
+                                     : 0.0f;
                 const float modMs = modDepth * kMaxModDepthMs * lfoValue;
 
                 // Base delay time scaled by size
@@ -403,6 +491,126 @@ public:
     }
 
 private:
+    // =========================================================================
+    // Static (fully-settled, zero-modulation) fast path
+    // =========================================================================
+    // WHY: the per-sample loop above re-derives, for every sample, eleven
+    // OnePoleSmoother steps and — per stage, per channel — a delay time in ms,
+    // a delay time in samples, a clamp, a std::floor and a float DIVISION
+    // inside DelayLine::readAllpass. Every one of those is loop-invariant once
+    // the smoothers have settled and modDepth is zero (the DEFAULT,
+    // kDefaultModDepth = 0.0f), which is the state a diffusion cascade spends
+    // essentially all of its life in. Measured on this repo's MSVC Release
+    // build, 512 samples through an 8-stage stereo network cost
+    // 48,735 ns/block before this path existed.
+    //
+    // BIT-IDENTICAL, not an approximation:
+    //  * gate on OnePoleSmoother::isComplete(), and take each smoothed value
+    //    from ONE process() call. process() snaps `current_ = target_` and
+    //    returns `target_` the moment it is within kCompletionThreshold
+    //    (smoother.h:197-211), so every one of the numSamples calls the slow
+    //    path would have made returns exactly that same float;
+    //  * modDepth is required to be EXACTLY 0.0f, so `modMs` is 0.0f and
+    //    `delayMs = base*ratio + 0.0f` is unchanged bit-for-bit (RA-4's
+    //    argument, specs/seraphis-phase4-continuous-body/spec.md);
+    //  * the delay-to-samples arithmetic is reproduced in the SAME operand
+    //    order as the slow path;
+    //  * `AllpassStage::makeTap` performs the same clamp/floor/frac/division
+    //    the per-sample read performed, once;
+    //  * the stages are a pure CASCADE (nothing couples two stages within one
+    //    sample), so running the whole block through stage i before stage i+1
+    //    presents each stage with the identical input sequence it saw before;
+    //  * the stage-enable crossfade keeps the slow path's
+    //    `s + enable*(out - s)` form rather than being simplified at
+    //    enable == 1, because `s + 1.0f*(out - s)` is not `out` in float;
+    //  * the LFO phase accumulator is advanced exactly numSamples times, with
+    //    the same wrap test, so a later modDepth > 0 resumes on the phase the
+    //    slow path would have reached. The `size < 0.001f` bypass does NOT
+    //    advance it, mirroring the slow path's `continue`.
+
+    /// @brief True when every smoothed quantity is settled and modDepth is
+    ///        exactly zero, i.e. when the per-sample loop would compute the
+    ///        same numbers on every sample.
+    [[nodiscard]] bool canUseStaticPath() const noexcept {
+        if (!sizeSmoother_.isComplete() || !widthSmoother_.isComplete()
+            || !modDepthSmoother_.isComplete()) {
+            return false;
+        }
+        if (modDepthSmoother_.getTarget() != 0.0f) {
+            return false;
+        }
+        for (size_t i = 0; i < kNumDiffusionStages; ++i) {
+            if (!stageEnableSmoothers_[i].isComplete()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void processStatic(const float* leftIn, const float* rightIn,
+                       float* leftOut, float* rightOut,
+                       size_t numSamples) noexcept {
+        // One step each: settled, so this is the value every sample would see.
+        const float size = sizeSmoother_.process();
+        const float width = widthSmoother_.process();
+        (void)modDepthSmoother_.process();
+
+        std::array<float, kNumDiffusionStages> stageEnable{};
+        for (size_t i = 0; i < kNumDiffusionStages; ++i) {
+            stageEnable[i] = stageEnableSmoothers_[i].process();
+        }
+
+        // Size=0% means bypass - and, exactly as the slow path's `continue`
+        // does, it leaves the LFO phase where it is.
+        if (size < 0.001f) {
+            for (size_t n = 0; n < numSamples; ++n) {
+                leftOut[n] = leftIn[n];
+                rightOut[n] = rightIn[n];
+            }
+            return;
+        }
+
+        // Work in the output buffers: the copy below is the only read of the
+        // input, so an in-place caller (leftIn == leftOut) is safe.
+        for (size_t n = 0; n < numSamples; ++n) {
+            leftOut[n] = leftIn[n];
+            rightOut[n] = rightIn[n];
+        }
+
+        const float baseDelayMs = kBaseDelayMs * size;
+        for (size_t i = 0; i < kNumDiffusionStages; ++i) {
+            const float enable = stageEnable[i];
+            if (enable < 0.001f) continue;
+
+            // modMs == 0.0f, and `base*ratio` is strictly positive, so the
+            // slow path's `+ modMs` is a no-op that is omitted rather than
+            // written out.
+            const float delayMsL = baseDelayMs * kDelayRatiosL[i];
+            const float delaySamplesL = delayMsL * 0.001f * sampleRate_;
+            const float delayMsR = baseDelayMs * kDelayRatiosL[i] * kStereoOffset;
+            const float delaySamplesR = delayMsR * 0.001f * sampleRate_;
+
+            const DelayLine::AllpassTap tapL = stagesL_[i].makeTap(delaySamplesL);
+            const DelayLine::AllpassTap tapR = stagesR_[i].makeTap(delaySamplesR);
+
+            stagesL_[i].processBlend(leftOut, numSamples, tapL, enable);
+            stagesR_[i].processBlend(rightOut, numSamples, tapR, enable);
+        }
+
+        // Stereo width, then the LFO phase the slow path would have reached.
+        for (size_t n = 0; n < numSamples; ++n) {
+            const float mid = (leftOut[n] + rightOut[n]) * 0.5f;
+            const float side = (leftOut[n] - rightOut[n]) * 0.5f;
+            leftOut[n] = mid + side * width;
+            rightOut[n] = mid - side * width;
+
+            lfoPhase_ += lfoPhaseIncrement_;
+            if (lfoPhase_ >= kTwoPi) {
+                lfoPhase_ -= kTwoPi;
+            }
+        }
+    }
+
     /// @brief Update stage enable targets based on density setting.
     void updateDensityTargets() noexcept {
         // Density maps to active stages:
