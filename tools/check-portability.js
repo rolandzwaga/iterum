@@ -27,8 +27,9 @@
 // ==============================================================================
 'use strict';
 
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -79,6 +80,12 @@ function discoverGeneratedIncludes() {
 
 // Per-plugin include roots and the compile definitions their targets set.
 function pluginFlagsFor(file) {
+    // The DSP test targets get the absolute fixture root the same way plugin
+    // test targets do (dsp/tests/CMakeLists.txt). Same rule as below: the value
+    // only has to exist as a token, nothing here opens it.
+    if (file.startsWith('dsp/tests/')) {
+        return ['-DKRATE_DSP_TESTS_DIR=\\"/tmp\\"'];
+    }
     const m = file.match(/plugins\/([a-z0-9-]+)\//);
     if (!m) return [];
     const plugin = m[1];
@@ -91,23 +98,34 @@ function pluginFlagsFor(file) {
     return flags;
 }
 
-function changedFiles(mode) {
-    let args;
-    if (mode === '--staged') {
-        args = ['diff', '--cached', '--name-only', '--diff-filter=ACMR'];
-    } else {
-        // Everything this branch adds on top of main, plus uncommitted work.
-        args = ['diff', '--name-only', '--diff-filter=ACMR', 'origin/main...HEAD'];
-    }
-    let tracked = [];
+// Prefer the current branch's own upstream as the diff base: on a long-lived
+// feature branch, diffing against origin/main re-checks every TU the branch
+// ever added (already pushed, already CI-verified) on every single run, and
+// the check degrades to O(branch) instead of O(unpushed work).
+function baseRef() {
     try {
-        tracked = execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
-            .split('\n')
-            .filter(Boolean);
+        const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+            cwd: ROOT,
+            encoding: 'utf8',
+        }).trim();
+        if (branch && branch !== 'HEAD') {
+            const remote = `origin/${branch}`;
+            const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', remote], {
+                cwd: ROOT,
+                encoding: 'utf8',
+            });
+            if (r.status === 0) return remote;
+        }
     } catch {
-        // No origin/main (fresh clone, detached) -> fall back to the working tree.
+        // fall through to origin/main
+    }
+    return 'origin/main';
+}
+
+function changedFiles(mode) {
+    if (mode === '--staged') {
         try {
-            tracked = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', 'HEAD'], {
+            return execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR'], {
                 cwd: ROOT,
                 encoding: 'utf8',
             })
@@ -117,7 +135,32 @@ function changedFiles(mode) {
             return [];
         }
     }
-    return tracked;
+    // Unpushed commits on this branch, plus uncommitted work (the base...HEAD
+    // form only sees committed trees, so the working-tree diff is unioned in).
+    const seen = new Set();
+    try {
+        execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${baseRef()}...HEAD`], {
+            cwd: ROOT,
+            encoding: 'utf8',
+        })
+            .split('\n')
+            .filter(Boolean)
+            .forEach((f) => seen.add(f));
+    } catch {
+        // No usable base (fresh clone, detached) -> working tree only.
+    }
+    try {
+        execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', 'HEAD'], {
+            cwd: ROOT,
+            encoding: 'utf8',
+        })
+            .split('\n')
+            .filter(Boolean)
+            .forEach((f) => seen.add(f));
+    } catch {
+        // ignore
+    }
+    return [...seen];
 }
 
 // Only translation units are worth checking: a header alone has no TU to compile,
@@ -145,23 +188,52 @@ function wslRoot() {
 function checkFile(file, generated) {
     const includes = [...INCLUDES, ...generated].map((i) => `-I ${i}`).join(' ');
     const pluginFlags = pluginFlagsFor(file).join(' ');
+    // bash -c, not -lc: a login shell re-reads the user profile on every spawn,
+    // and nothing here needs it.
     const cmd =
         `cd ${wslRoot()} && g++ -std=c++20 -fsyntax-only -DNDEBUG -DRELEASE ` +
         `${includes} ${pluginFlags} "${file}" 2>&1`;
 
-    const r = spawnSync('wsl', ['-e', 'bash', '-lc', cmd], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-    const out = (r.stdout || '') + (r.stderr || '');
-    // Missing headers mean the include set is incomplete for this TU, which is a
-    // limitation of this script rather than a portability problem in the code.
-    if (/fatal error: .*: No such file or directory/.test(out)) {
-        return { status: 'skipped', detail: (out.match(/fatal error: ([^\n]*)/) || [])[1] || '' };
-    }
-    if (r.status === 0) return { status: 'ok' };
-    const firstError = (out.match(/^[^\n]*error:[^\n]*$/m) || [])[0] || out.slice(0, 400);
-    return { status: 'failed', detail: firstError.trim() };
+    return new Promise((resolve) => {
+        const child = spawn('wsl', ['-e', 'bash', '-c', cmd]);
+        let out = '';
+        child.stdout.on('data', (d) => { out += d; });
+        child.stderr.on('data', (d) => { out += d; });
+        child.on('close', (code) => {
+            // Missing headers mean the include set is incomplete for this TU, which
+            // is a limitation of this script rather than a portability problem.
+            if (/fatal error: .*: No such file or directory/.test(out)) {
+                resolve({ status: 'skipped', detail: (out.match(/fatal error: ([^\n]*)/) || [])[1] || '' });
+                return;
+            }
+            if (code === 0) {
+                resolve({ status: 'ok' });
+                return;
+            }
+            const firstError = (out.match(/^[^\n]*error:[^\n]*$/m) || [])[0] || out.slice(0, 400);
+            resolve({ status: 'failed', detail: firstError.trim() });
+        });
+    });
 }
 
-function main() {
+// The per-file work is a full g++ front-end pass reading headers through the
+// /mnt 9p bridge — heavily I/O bound, so a modest pool overlaps well.
+async function checkAll(files, generated) {
+    const concurrency = Math.max(1, Math.min(6, os.cpus().length - 2, files.length));
+    const results = new Array(files.length);
+    let next = 0;
+    async function worker() {
+        for (;;) {
+            const i = next++;
+            if (i >= files.length) return;
+            results[i] = await checkFile(files[i], generated);
+        }
+    }
+    await Promise.all(Array.from({ length: concurrency }, worker));
+    return results;
+}
+
+async function main() {
     const args = process.argv.slice(2);
     const mode = args.find((a) => a.startsWith('--'));
     const explicit = args.filter((a) => !a.startsWith('--'));
@@ -181,10 +253,13 @@ function main() {
     const generated = discoverGeneratedIncludes();
     console.log(`check-portability: ${files.length} translation unit(s) with g++\n`);
 
+    const results = await checkAll(files, generated);
+
     const failed = [];
     let skipped = 0;
-    for (const f of files) {
-        const res = checkFile(f, generated);
+    for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const res = results[i];
         const label = f.length > 66 ? '...' + f.slice(-63) : f;
         if (res.status === 'ok') {
             console.log(`  OK      ${label}`);
@@ -232,4 +307,7 @@ function main() {
     process.exit(0);
 }
 
-main();
+main().catch((err) => {
+    console.error(`check-portability: internal error: ${err && err.message ? err.message : err}`);
+    process.exit(1);
+});
