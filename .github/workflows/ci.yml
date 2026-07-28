@@ -196,6 +196,17 @@ jobs:
       - name: SIMD aligned Load/Store lint
         run: node tools/lint-simd-aligned-loadstore.js
 
+      # Catches std::isnan / std::isinf / numeric_limits::infinity() /
+      # quiet_NaN() in files that are NOT built with -fno-fast-math. Under
+      # -ffinite-math-only (the macOS leg, and /fp:fast on MSVC) the predicates
+      # fold to `false` and the constants fold to finite garbage, so a NaN guard
+      # silently disappears and a NaN-injecting test silently stops injecting.
+      # Neither is visible on the Windows leg. Gates an explicit list of
+      # converted files; run with --all to survey the pre-existing tree-wide
+      # debt.
+      - name: Non-finite symbol lint (fast-math safety)
+        run: node tools/lint-nonfinite-symbols.js
+
   build-windows:
     name: Windows (MSVC)
     # Pinned to windows-2022 (Visual Studio 2022 / MSVC v143). GitHub migrated

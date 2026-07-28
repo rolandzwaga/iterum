@@ -50,6 +50,7 @@
 
 #pragma once
 
+#include <krate/dsp/core/spectral_simd.h>  // reconstructCartesianBulk (SIMD)
 #include <krate/dsp/primitives/fft.h>
 #include <krate/dsp/primitives/spectral_buffer.h>
 #include <krate/dsp/primitives/spectral_utils.h>
@@ -154,8 +155,18 @@ public:
         }
         colaNormalization_ = 1.0f / colaSum;
 
-        // Allocate output ring buffer (2x fftSize for overlap-add)
+        // Allocate output ring buffer (2x fftSize for overlap-add).
+        //
+        // fftSize_ is a power of two (snapped above), so the ring length is too
+        // and its wraparound is a MASK, not a `%`. That matters: the ring is
+        // wrapped fftSize_ times per synthesised frame in the overlap-add loop
+        // and once per output sample in processBlock(), and `% v.size()` on a
+        // runtime value compiles to a hardware integer divide - tens of cycles
+        // each, MEASURED at roughly the whole cost of the freeze leg in
+        // AtmosphereEngine's SC-004 configuration (d). The mask is exact, not an
+        // approximation, for a power-of-two length.
         outputBuffer_.resize(fftSize_ * 2, 0.0f);
+        outputMask_ = outputBuffer_.size() - 1;
 
         // Formant analysis buffers
         formantPreserver_.prepare(fftSize_, sampleRate);
@@ -280,10 +291,10 @@ public:
         // Clear the skipped positions so they don't accumulate stale data
         // when the write pointer wraps around later.
         for (size_t i = 0; i < skipSamples; ++i) {
-            outputBuffer_[i % outputBuffer_.size()] = 0.0f;
+            outputBuffer_[i & outputMask_] = 0.0f;
         }
 
-        outputReadIndex_ = skipSamples % outputBuffer_.size();
+        outputReadIndex_ = skipSamples & outputMask_;
         samplesInBuffer_ -= skipSamples;
     }
 
@@ -339,7 +350,7 @@ public:
             // Pull sample from output ring buffer
             float sample = outputBuffer_[outputReadIndex_];
             outputBuffer_[outputReadIndex_] = 0.0f;  // Clear for next overlap-add
-            outputReadIndex_ = (outputReadIndex_ + 1) % outputBuffer_.size();
+            outputReadIndex_ = (outputReadIndex_ + 1) & outputMask_;
             --samplesInBuffer_;
 
             // Apply unfreeze crossfade (FR-005)
@@ -553,19 +564,29 @@ private:
         // Apply formant shift if active (FR-019, FR-020, FR-021, FR-022)
         applyFormantShift(workingMagnitudes_.data());
 
-        // Construct complex spectrum from magnitudes + accumulated phases
-        // Skip zero-magnitude bins for efficiency
-        for (size_t k = 0; k < numBins_; ++k) {
-            const float mag = workingMagnitudes_[k];
-            if (mag < 1e-20f) {
-                workingSpectrum_.setCartesian(k, 0.0f, 0.0f);
-            } else {
-                const float phase = phaseAccumulators_[k];
-                const float real = mag * std::cos(phase);
-                const float imag = mag * std::sin(phase);
-                workingSpectrum_.setCartesian(k, real, imag);
-            }
-        }
+        // Construct complex spectrum from magnitudes + accumulated phases.
+        //
+        // BULK, NOT A PER-BIN std::cos/std::sin PAIR. The scalar loop this
+        // replaces ran two libm transcendentals per bin per synthesis frame -
+        // 2050 of them at the default 2048-point FFT - and MEASURED as the
+        // dominant term of the whole oscillator. reconstructCartesianBulk is the
+        // SIMD (Google Highway) form of exactly this expression, and it is the
+        // same routine SpectralBuffer itself uses to rebuild Cartesian data from
+        // its polar cache (spectral_buffer.h:193-195), so there is no second
+        // implementation of the maths.
+        //
+        // The old loop forced bins with magnitude < 1e-20 to exactly (0, 0);
+        // the bulk form multiplies them by cos/sin like any other bin, which
+        // differs by at most 1e-20 per bin - below the denormal floor that
+        // FTZ/DAZ flushes on the audio thread, and ~140 dB under the +/-2.0
+        // output clamp.
+        //
+        // data() syncs Cartesian from the polar cache (a no-op in steady state)
+        // and then invalidates polar, which is exactly right: the next writer of
+        // this buffer is the line below.
+        reconstructCartesianBulk(workingMagnitudes_.data(), phaseAccumulators_.data(),
+                                 numBins_,
+                                 reinterpret_cast<float*>(workingSpectrum_.data()));
 
         // Inverse FFT
         fft_.inverse(workingSpectrum_.data(), ifftBuffer_.data());
@@ -574,12 +595,12 @@ private:
         for (size_t i = 0; i < fftSize_; ++i) {
             const float windowed = ifftBuffer_[i] * synthesisWindow_[i]
                                  * colaNormalization_;
-            const size_t outIdx = (outputWriteIndex_ + i) % outputBuffer_.size();
+            const size_t outIdx = (outputWriteIndex_ + i) & outputMask_;
             outputBuffer_[outIdx] += windowed;
         }
 
         // Advance write index by hop size
-        outputWriteIndex_ = (outputWriteIndex_ + hopSize_) % outputBuffer_.size();
+        outputWriteIndex_ = (outputWriteIndex_ + hopSize_) & outputMask_;
         samplesInBuffer_ += hopSize_;
 
         // Advance phase accumulators for next frame (FR-008, FR-014)
@@ -622,6 +643,7 @@ private:
     std::vector<float> ifftBuffer_;
     std::vector<float> synthesisWindow_;
     std::vector<float> outputBuffer_;
+    size_t outputMask_ = 0;         ///< outputBuffer_.size() - 1 (a power of two)
     size_t outputWriteIndex_ = 0;
     size_t outputReadIndex_ = 0;
     size_t samplesInBuffer_ = 0;

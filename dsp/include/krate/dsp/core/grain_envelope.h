@@ -168,13 +168,27 @@ inline void generate(float* output, size_t size, GrainEnvelopeType type,
         return 0.0f;
     }
 
-    // Clamp phase to valid range
-    phase = std::clamp(phase, 0.0f, 1.0f);
+    // Clamp phase to valid range.
+    //
+    // TWO ORDERED COMPARISONS, NOT std::clamp, and SIGNED integer intermediates
+    // below - both are codegen decisions on a function that sits on granular
+    // inner loops (one call per grain per output sample).
+    //   - std::clamp returns a const reference, so MSVC materialises the two
+    //     bounds on the stack and selects between three ADDRESSES with cmov,
+    //     then loads through the winner: a store/load round trip per call.
+    //   - `size_t` conversions either way have no x86-64 instruction below
+    //     AVX-512, so each expands to a compare, a branch and a fix-up. The
+    //     index is bounded by tableSize, so ptrdiff_t is value-identical.
+    // The comparison ORDER also makes a NaN phase land on 0 rather than on
+    // `static_cast<size_t>(NaN)`, which was an out-of-range table index.
+    if (!(phase >= 0.0f)) { phase = 0.0f; }  // negatives, -Inf, NaN
+    if (phase > 1.0f)     { phase = 1.0f; }  // +Inf, over-range finite
 
     // Calculate fractional index
-    const float indexFloat = phase * static_cast<float>(tableSize - 1);
-    const auto index0 = static_cast<size_t>(indexFloat);
-    const size_t index1 = std::min(index0 + 1, tableSize - 1);
+    const auto last = static_cast<ptrdiff_t>(tableSize - 1);
+    const float indexFloat = phase * static_cast<float>(last);
+    const auto index0 = static_cast<ptrdiff_t>(indexFloat);
+    const ptrdiff_t index1 = (index0 < last) ? (index0 + 1) : last;
     const float frac = indexFloat - static_cast<float>(index0);
 
     // Linear interpolation

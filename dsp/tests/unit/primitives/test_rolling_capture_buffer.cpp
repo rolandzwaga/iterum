@@ -19,6 +19,9 @@
 
 #include <krate/dsp/primitives/rolling_capture_buffer.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <numeric>
 #include <vector>
 
@@ -326,4 +329,276 @@ TEST_CASE("RollingCaptureBuffer getAvailableSamples", "[primitives][capture_buff
     }
 
     REQUIRE(buffer.getAvailableSamples() == capacity);
+}
+
+// =============================================================================
+// SC-012 - readStereoLinear (specs/seraphis-phase5-atmosphere, RA-1 / FR-080..084)
+// =============================================================================
+// Pins BOTH anchoring conventions rather than assuming they agree:
+//   extractSlice anchors from the END of the slice (rolling_capture_buffer.h
+//   :161-162), so out[i] has age offsetSamples + lengthSamples - 1 - i. The two
+//   agree on "same offset" ONLY at lengthSamples == 1.
+//
+// Sub-case 6 (non-finite ages) is deliberately duplicated in
+// dsp/tests/unit/systems/atmosphere_engine_test.cpp, which is NOT in the
+// -fno-fast-math list: a guard that only works under -fno-fast-math is a guard
+// that never works in a shipped build.
+
+namespace {
+
+/// Build a non-finite float from its bit pattern through a volatile sink.
+/// std::numeric_limits<float>::quiet_NaN() / infinity() fold to finite garbage
+/// under -ffast-math (the macOS leg), so they are never used in this repo's
+/// tests. 0x7FC00000 = quiet NaN, 0x7F800000 = +Inf, 0xFF800000 = -Inf.
+[[nodiscard]] float makeNonFinite(std::uint32_t bits) noexcept {
+    volatile std::uint32_t b = bits;  // defeats constant folding
+    const std::uint32_t materialized = b;  // the volatile READ is the sink
+    float f = 0.0f;
+    std::memcpy(&f, &materialized, sizeof(f));
+    return f;
+}
+
+/// prepare(48000, 1.0) -> capacity 65536, then write a ramp whose every sample
+/// is distinguishable (step 1e-4, far above the float ULP at these magnitudes).
+void prepareAndFillRamp(RollingCaptureBuffer& buffer, size_t numSamples) {
+    buffer.prepare(48000.0, 1.0f);
+    for (size_t i = 0; i < numSamples; ++i) {
+        const float value = static_cast<float>(i) * 1e-4f;
+        buffer.writeStereo(value, -value);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("RollingCaptureBuffer_ReadStereoLinear", "[rolling_capture_buffer]") {
+    SECTION("Length 1 slice matches readStereoLinear at the same offset") {
+        RollingCaptureBuffer buffer;
+        prepareAndFillRamp(buffer, 1000);
+        REQUIRE(buffer.getCapacitySamples() == 65536);
+
+        constexpr float kAge = 100.0f;
+
+        float l = 0.0f;
+        float r = 0.0f;
+        buffer.readStereoLinear(kAge, l, r);
+
+        float sliceL = 0.0f;
+        float sliceR = 0.0f;
+        buffer.extractSlice(&sliceL, &sliceR, /*lengthSamples=*/1,
+                            /*offsetSamples=*/100);
+
+        // Integer age -> frac == 0 -> no interpolation, so this is exact.
+        REQUIRE(l == sliceL);
+        REQUIRE(r == sliceR);
+    }
+
+    SECTION("Length > 1 slice follows the end-anchored identity") {
+        RollingCaptureBuffer buffer;
+        prepareAndFillRamp(buffer, 1000);
+
+        constexpr size_t kLength = 8;
+        constexpr size_t kOffset = 5;
+
+        std::vector<float> outL(kLength, 0.0f);
+        std::vector<float> outR(kLength, 0.0f);
+        buffer.extractSlice(outL.data(), outR.data(), kLength, kOffset);
+
+        // extractSlice(outL, outR, L, O)[i] == readStereoLinear(O + L - 1 - i)
+        // i = 0 -> age 12 (the OLDEST sample of the slice, not age O)
+        float firstL = 0.0f;
+        float firstR = 0.0f;
+        buffer.readStereoLinear(
+            static_cast<float>(kOffset + kLength - 1 - 0), firstL, firstR);
+        REQUIRE(outL[0] == firstL);
+        REQUIRE(outR[0] == firstR);
+
+        // i = L - 1 -> age 5 == O (the only index where "same offset" holds)
+        float lastL = 0.0f;
+        float lastR = 0.0f;
+        buffer.readStereoLinear(
+            static_cast<float>(kOffset + kLength - 1 - (kLength - 1)), lastL,
+            lastR);
+        REQUIRE(outL[kLength - 1] == lastL);
+        REQUIRE(outR[kLength - 1] == lastR);
+    }
+
+    SECTION("Fractional age interpolates between the two neighbours") {
+        RollingCaptureBuffer buffer;
+        prepareAndFillRamp(buffer, 1000);
+
+        float l10 = 0.0f;
+        float r10 = 0.0f;
+        buffer.readStereoLinear(10.0f, l10, r10);
+
+        float l11 = 0.0f;
+        float r11 = 0.0f;
+        buffer.readStereoLinear(11.0f, l11, r11);
+
+        float lHalf = 0.0f;
+        float rHalf = 0.0f;
+        buffer.readStereoLinear(10.5f, lHalf, rHalf);
+
+        REQUIRE(lHalf == Approx(0.5f * (l10 + l11)).margin(1e-6));
+        REQUIRE(rHalf == Approx(0.5f * (r10 + r11)).margin(1e-6));
+    }
+
+    SECTION("Degenerate buffers yield (0,0) and read nothing out of bounds") {
+        // (a) default-constructed, never prepared: capacity_ == mask_ == 0 and
+        //     both vectors are EMPTY, so any `& mask_` index would be an
+        //     out-of-bounds read (visible under ASan/valgrind).
+        {
+            RollingCaptureBuffer buffer;
+            float l = 1.0f;
+            float r = 1.0f;
+            buffer.readStereoLinear(0.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+
+            l = 1.0f;
+            r = 1.0f;
+            buffer.readStereoLinear(1.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+        }
+
+        // (b) prepared but empty: getAvailableSamples() == 0, so a bare
+        //     `available - 2` would wrap to ~2^64 and the clamp would become a
+        //     no-op in exactly the case it exists for.
+        {
+            RollingCaptureBuffer buffer;
+            buffer.prepare(48000.0, 1.0f);
+            REQUIRE(buffer.getAvailableSamples() == 0);
+
+            float l = 1.0f;
+            float r = 1.0f;
+            buffer.readStereoLinear(0.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+
+            l = 1.0f;
+            r = 1.0f;
+            buffer.readStereoLinear(1.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+        }
+
+        // (c) exactly one sample written: still < 2, so still (0,0).
+        {
+            RollingCaptureBuffer buffer;
+            buffer.prepare(48000.0, 1.0f);
+            buffer.writeStereo(0.75f, -0.75f);
+            REQUIRE(buffer.getAvailableSamples() == 1);
+
+            float l = 1.0f;
+            float r = 1.0f;
+            buffer.readStereoLinear(0.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+
+            l = 1.0f;
+            r = 1.0f;
+            buffer.readStereoLinear(1.0f, l, r);
+            REQUIRE(l == 0.0f);
+            REQUIRE(r == 0.0f);
+        }
+    }
+
+    SECTION("Wraparound keeps every legal age on the correct side of the head") {
+        RollingCaptureBuffer buffer;
+        buffer.prepare(48000.0, 1.0f);
+        const size_t capacity = buffer.getCapacitySamples();
+        REQUIRE(capacity == 65536);
+
+        const size_t totalWritten = 2 * capacity;
+        for (size_t i = 0; i < totalWritten; ++i) {
+            const float value = static_cast<float>(i) * 1e-4f;
+            buffer.writeStereo(value, -value);
+        }
+        REQUIRE(buffer.getAvailableSamples() == capacity);
+
+        // Age a addresses the sample written at ordinal (totalWritten - 1 - a).
+        // The largest legal age is capacity - 2 (the interpolation needs the
+        // neighbour at floor(age) + 1 to stay on the live side of the head).
+        const size_t maxAge = capacity - 2;
+
+        float oldestL = 0.0f;
+        float oldestR = 0.0f;
+        buffer.readStereoLinear(static_cast<float>(maxAge), oldestL, oldestR);
+
+        const float expectedOldest =
+            static_cast<float>(totalWritten - 1 - maxAge) * 1e-4f;
+        REQUIRE(oldestL == Approx(expectedOldest).margin(1e-5));
+        REQUIRE(oldestR == Approx(-expectedOldest).margin(1e-5));
+
+        // Sweep every legal age: the ramp must be reproduced exactly and must
+        // decrease strictly as age grows. A sample from the wrong side of the
+        // write head shows up as either a value mismatch or a monotonicity
+        // break (the ramp jumps by ~6.55 across the head).
+        size_t valueMismatches = 0;
+        size_t monotonicityBreaks = 0;
+        float previousL = 0.0f;
+        for (size_t age = 0; age <= maxAge; ++age) {
+            float l = 0.0f;
+            float r = 0.0f;
+            buffer.readStereoLinear(static_cast<float>(age), l, r);
+
+            const float expected =
+                static_cast<float>(totalWritten - 1 - age) * 1e-4f;
+            if (std::fabs(l - expected) > 1e-5f) {
+                ++valueMismatches;
+            }
+            if (std::fabs(r + expected) > 1e-5f) {
+                ++valueMismatches;
+            }
+            if (age > 0 && !(l < previousL)) {
+                ++monotonicityBreaks;
+            }
+            previousL = l;
+        }
+        REQUIRE(valueMismatches == 0);
+        REQUIRE(monotonicityBreaks == 0);
+    }
+
+    SECTION("Non-finite ages land on the clamp bounds, not on (0,0)") {
+        RollingCaptureBuffer buffer;
+        prepareAndFillRamp(buffer, 1000);
+
+        const float nanAge = makeNonFinite(0x7FC00000u);
+        const float posInfAge = makeNonFinite(0x7F800000u);
+        const float negInfAge = makeNonFinite(0xFF800000u);
+
+        // Age 0 == the most recent sample.
+        float youngestL = 0.0f;
+        float youngestR = 0.0f;
+        buffer.readStereoLinear(0.0f, youngestL, youngestR);
+        REQUIRE(youngestL != 0.0f);  // guard against a vacuous comparison
+
+        // The largest legal finite age.
+        const float maxAge =
+            static_cast<float>(buffer.getAvailableSamples() - 2);
+        float oldestL = 0.0f;
+        float oldestR = 0.0f;
+        buffer.readStereoLinear(maxAge, oldestL, oldestR);
+
+        // NaN: `!(age >= 0)` is taken because an unordered compare is false.
+        float l = 0.0f;
+        float r = 0.0f;
+        buffer.readStereoLinear(nanAge, l, r);
+        REQUIRE(l == youngestL);
+        REQUIRE(r == youngestR);
+
+        // -Inf: taken by the same first comparison.
+        l = 0.0f;
+        r = 0.0f;
+        buffer.readStereoLinear(negInfAge, l, r);
+        REQUIRE(l == youngestL);
+        REQUIRE(r == youngestR);
+
+        // +Inf: taken by the second comparison, `age > maxAge`.
+        l = 0.0f;
+        r = 0.0f;
+        buffer.readStereoLinear(posInfAge, l, r);
+        REQUIRE(l == oldestL);
+        REQUIRE(r == oldestR);
+    }
 }

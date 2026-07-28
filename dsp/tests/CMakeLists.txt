@@ -344,6 +344,11 @@ add_executable(dsp_systems_tests
     unit/systems/continuous_body_test.cpp
     unit/systems/continuous_body_spectral_test.cpp
     unit/systems/continuous_body_perf_test.cpp
+    # Seraphis Phase 5 (specs/seraphis-phase5-atmosphere): AtmosphereEngine
+    unit/systems/atmosphere_engine_test.cpp
+    unit/systems/atmosphere_engine_spectral_test.cpp
+    unit/systems/atmosphere_engine_perf_test.cpp
+    unit/systems/atmosphere_engine_nonfinite_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
@@ -390,6 +395,25 @@ target_link_libraries(dsp_effects_tests
 )
 
 target_compile_features(dsp_effects_tests PRIVATE cxx_std_20)
+
+
+# ==============================================================================
+# Fixture location (must not depend on the launch working directory)
+# ==============================================================================
+# A few tests read/write committed golden fixtures under dsp/tests/ (the
+# ArpeggiatorCore SC-002 baselines and the HarmonizerEngine phase-vocoder
+# golden). They used to build those paths relative to the process working
+# directory, so the fstream only opened when the executable happened to be
+# launched from the repo root: under `ctest` (cwd = the build tree) or from any
+# other directory the open failed silently and the test reported an EMPTY
+# fixture — a "0 >= 1000" failure that looks like a DSP regression but is not.
+# Hand the tests the absolute source path instead, matching the
+# <PLUGIN>_FIXTURES_DIR convention already used by the plugin test targets
+# (e.g. plugins/gradus/tests/CMakeLists.txt:135).
+target_compile_definitions(dsp_processors_tests
+    PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(dsp_systems_tests
+    PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 
 # ==============================================================================
@@ -662,6 +686,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # (SC-013). Only this one of the five Phase 4 TUs does so - the other
         # four must NOT be listed here.
         unit/systems/continuous_body_test.cpp
+        # Seraphis Phase 5: SC-014's clauses (a)-(c) inject NaN/Inf via bit patterns
+        # in this TU and need the FP semantics preserved to assert on them.
+        # ONLY this one of the four Phase 5 TUs is listed. The other three must NOT
+        # be, and for atmosphere_engine_test.cpp that is DELIBERATE AND LOAD-BEARING,
+        # not an omission: SC-014's fourth clause
+        # (AtmosphereEngine_NonFiniteGuardSurvivesFastMath) and SC-012's sub-case 6
+        # live there precisely so the ITERUM_NOINLINE guard and the
+        # ordered-comparison clamp are proved under the /fp:fast + -ffast-math
+        # settings the header actually ships in. Adding it here would silently
+        # disable the only check that has teeth. The perf TU must stay out too:
+        # -fno-fast-math would change the figures the baselines are pinned to.
+        unit/systems/atmosphere_engine_nonfinite_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 

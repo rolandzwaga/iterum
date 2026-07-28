@@ -226,6 +226,8 @@ under glide, CPU ≤ 1% per voice with body active.
 
 ### Phase 5: Granular Atmosphere Engine
 
+**Status: ✅ COMPLETE (2026-07-28)** — see specs/seraphis-phase5-atmosphere/compliance.md
+
 **Spec:** `seraphis-phase5-atmosphere`
 **Goal:** The third generator: frozen moments and cloud particles, not slicing. A parallel texture
 layer that captures the voice's own output and suspends it.
@@ -245,7 +247,11 @@ New component (Layer 3, `dsp/include/krate/dsp/systems/atmosphere_engine.h`):
 
 **Success criteria:** zero allocation after prepare (30 s × density worst case pre-allocated and
 asserted), no clicks at grain boundaries at any lifetime, blur metric tests (spectral flatness rises
-with blur), CPU budget ≤ 1% per voice at default density.
+with blur), **CPU budget ≤ 1.5% per voice at default density** (amended 2026-07-28 from ≤ 1% by user
+budget decision, derived from the five measured configurations; the saturated 64-grain configuration
+is out-of-region — measured and regression-tracked, not gated. Phase 7 tallies the *measured*
+1.048%/voice unfrozen and 1.440%/voice frozen, not the gate. See
+specs/seraphis-phase5-atmosphere/spec.md → SC-004's "AMENDED 2026-07-28" box and RA-4).
 
 ---
 
