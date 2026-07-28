@@ -3470,8 +3470,8 @@ TEST_CASE("T003a: Capture pre-refactor PhaseVocoder golden reference",
     }
 
     // Write binary file
-    const std::string fixturePath =
-        "dsp/tests/unit/systems/fixtures/harmonizer_engine_pv_golden.bin";
+    const std::string fixturePath = std::string(KRATE_DSP_TESTS_DIR) +
+        "/unit/systems/fixtures/harmonizer_engine_pv_golden.bin";
     std::ofstream file(fixturePath, std::ios::binary);
     REQUIRE(file.is_open());
 
@@ -3518,8 +3518,8 @@ TEST_CASE("T027: HarmonizerEngine PhaseVocoder shared-analysis output equivalenc
     constexpr int voiceIntervals[4] = {3, 5, 7, 12};
 
     // Load golden reference fixture
-    const std::string fixturePath =
-        "dsp/tests/unit/systems/fixtures/harmonizer_engine_pv_golden.bin";
+    const std::string fixturePath = std::string(KRATE_DSP_TESTS_DIR) +
+        "/unit/systems/fixtures/harmonizer_engine_pv_golden.bin";
     std::ifstream file(fixturePath, std::ios::binary);
     REQUIRE(file.is_open());
 

@@ -9,7 +9,7 @@
 TEST_CASE("ArpeggiatorCore: generate SC-002 baseline fixtures",
           "[processors][arpeggiator_core][fixture_gen]") {
     // Generate baseline fixtures at 3 BPMs
-    const std::string basePath = "dsp/tests/fixtures/";
+    const std::string basePath = std::string(KRATE_DSP_TESTS_DIR) + "/fixtures/";
 
     SECTION("120 BPM baseline") {
         size_t count = generateAndWriteBaseline(
@@ -36,7 +36,7 @@ TEST_CASE("ArpeggiatorCore: generate SC-002 baseline fixtures",
 
 TEST_CASE("ArpeggiatorCore: verify SC-002 baseline fixtures are readable",
           "[processors][arpeggiator_core][fixture_verify]") {
-    const std::string basePath = "dsp/tests/fixtures/";
+    const std::string basePath = std::string(KRATE_DSP_TESTS_DIR) + "/fixtures/";
 
     SECTION("120 BPM fixture readable") {
         auto events = readBaselineFixture(basePath + "arp_baseline_120bpm.dat");
