@@ -385,6 +385,11 @@ add_executable(dsp_effects_tests
     unit/effects/test_pattern_freeze_mode.cpp
     unit/effects/reverb_test.cpp
     unit/effects/fdn_reverb_test.cpp
+    unit/effects/aether_reverb_test.cpp
+    unit/effects/aether_reverb_matrix_test.cpp
+    unit/effects/aether_reverb_spectral_test.cpp
+    unit/effects/aether_reverb_perf_test.cpp
+    unit/effects/aether_reverb_nonfinite_test.cpp
 )
 
 target_link_libraries(dsp_effects_tests
@@ -393,6 +398,15 @@ target_link_libraries(dsp_effects_tests
         Catch2::Catch2
         test_helpers
 )
+
+# Seraphis Phase 6: compiles AetherReverb's FR-083 fault-injection hook
+# (injectNonFiniteStateForTest). Target-wide, NOT per-source: the hook changes
+# the class definition, so every TU linked into this executable must see the
+# same one or it is an ODR violation. KrateDSP itself never compiles
+# aether_reverb.h (header-only, no .cpp), and dsp_lint_stub is a separate
+# EXCLUDE_FROM_ALL object library, so no other image sees a differently-defined
+# AetherReverb. The shipping build never defines this.
+target_compile_definitions(dsp_effects_tests PRIVATE KRATE_DSP_AETHER_TEST_HOOKS)
 
 target_compile_features(dsp_effects_tests PRIVATE cxx_std_20)
 
@@ -698,6 +712,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # disable the only check that has teeth. The perf TU must stay out too:
         # -fno-fast-math would change the figures the baselines are pinned to.
         unit/systems/atmosphere_engine_nonfinite_test.cpp
+        # Seraphis Phase 6: SC-014 injects NaN/Inf via bit patterns in this TU and
+        # needs IEEE semantics to assert on them. ONLY this one of the five Phase 6
+        # TUs is listed; the other four must NOT be. For aether_reverb_test.cpp and
+        # aether_reverb_spectral_test.cpp that is DELIBERATE AND LOAD-BEARING, not
+        # an omission: SC-012's non-finite clause, FR-082's input guard and SC-015
+        # live there precisely so the ITERUM_NOINLINE guards are proved in the
+        # /fp:fast + -ffast-math mode the header actually ships in. The perf TU
+        # must stay out too: -fno-fast-math would change the figures its baselines
+        # are pinned to.
+        unit/effects/aether_reverb_nonfinite_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 
@@ -708,6 +732,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/effects/reverb_test.cpp
         unit/effects/fdn_reverb_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only -O2"
+    )
+
+    # Seraphis Phase 6: same GCC 13+ -O3 reverb pathology as reverb_test.cpp /
+    # fdn_reverb_test.cpp above (an N-channel recirculating delay network), and
+    # B-1's 60 s always-on wall budget is a requirement. -fno-fast-math is
+    # DELIBERATELY ABSENT here: these two TUs must build in the header's shipping
+    # FP mode so the ITERUM_NOINLINE finiteness guards are proved under
+    # -ffast-math on the macOS leg. Only aether_reverb_nonfinite_test.cpp gets
+    # IEEE semantics, and it is listed in the block above -- not here, because
+    # COMPILE_FLAGS is a single string property and a file may appear in only one
+    # set_source_files_properties() call.
+    set_source_files_properties(
+        unit/effects/aether_reverb_test.cpp
+        unit/effects/aether_reverb_spectral_test.cpp
+        PROPERTIES COMPILE_FLAGS "-O2"
     )
 endif()
 

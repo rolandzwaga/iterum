@@ -81,7 +81,7 @@
     "effects": {
       "index": 4,
       "folder": "dsp/include/krate/dsp/effects",
-      "header_count": 14
+      "header_count": 15
     }
   },
   "dependencies": [

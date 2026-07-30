@@ -168,6 +168,7 @@
 #include <krate/dsp/systems/poly_synth_engine.h>
 
 // Layer 4: Effects
+#include <krate/dsp/effects/aether_reverb.h>
 #include <krate/dsp/effects/bbd_delay.h>
 #include <krate/dsp/effects/digital_delay.h>
 #include <krate/dsp/effects/ducking_delay.h>

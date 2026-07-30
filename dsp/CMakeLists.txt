@@ -167,6 +167,7 @@ set(KRATE_DSP_SYSTEMS_HEADERS
 
 # Layer 4: Effects
 set(KRATE_DSP_EFFECTS_HEADERS
+    include/krate/dsp/effects/aether_reverb.h
     include/krate/dsp/effects/bbd_delay.h
     include/krate/dsp/effects/digital_delay.h
     include/krate/dsp/effects/ducking_delay.h

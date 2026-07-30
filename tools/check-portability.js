@@ -84,7 +84,16 @@ function pluginFlagsFor(file) {
     // test targets do (dsp/tests/CMakeLists.txt). Same rule as below: the value
     // only has to exist as a token, nothing here opens it.
     if (file.startsWith('dsp/tests/')) {
-        return ['-DKRATE_DSP_TESTS_DIR=\\"/tmp\\"'];
+        const flags = ['-DKRATE_DSP_TESTS_DIR=\\"/tmp\\"'];
+        // dsp_effects_tests sets this TARGET-WIDE (dsp/tests/CMakeLists.txt:409)
+        // so AetherReverb's FR-083 fault-injection hook is declared. Without it,
+        // aether_reverb_nonfinite_test.cpp hits its own #error guard and this
+        // script reports a portability failure that does not exist -- which would
+        // block every commit through tools/hooks/guard-portability.js.
+        if (file.startsWith('dsp/tests/unit/effects/')) {
+            flags.push('-DKRATE_DSP_AETHER_TEST_HOOKS');
+        }
+        return flags;
     }
     const m = file.match(/plugins\/([a-z0-9-]+)\//);
     if (!m) return [];

@@ -70,11 +70,25 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // -fno-fast-math source properties in dsp/tests/CMakeLists.txt precisely so it
 // can build non-finite inputs, and collectFastMathExemptTus() would exempt it
 // anyway.
+//
+// Seraphis Phase 6 (specs/seraphis-phase6-aether-space, SC-013 / FR-008) adds
+// the AetherReverb header and its four FAST-MATH-BUILT test TUs. Same rule as
+// Phase 5: aether_reverb_nonfinite_test.cpp is deliberately ABSENT -- it carries
+// -fno-fast-math source properties in dsp/tests/CMakeLists.txt precisely so it
+// can build non-finite inputs, and collectFastMathExemptTus() would exempt it
+// anyway. Without these entries the gate is vacuous for Phase 6: the header's
+// ITERUM_NOINLINE isFinite() (composing detail::isNaN / detail::isInf) could be
+// swapped for std::isnan and nothing would go red.
 const GUARDED = [
   'dsp/include/krate/dsp/systems/atmosphere_engine.h',
   'dsp/tests/unit/systems/atmosphere_engine_test.cpp',
   'dsp/tests/unit/systems/atmosphere_engine_spectral_test.cpp',
   'dsp/tests/unit/systems/atmosphere_engine_perf_test.cpp',
+  'dsp/include/krate/dsp/effects/aether_reverb.h',
+  'dsp/tests/unit/effects/aether_reverb_test.cpp',
+  'dsp/tests/unit/effects/aether_reverb_matrix_test.cpp',
+  'dsp/tests/unit/effects/aether_reverb_spectral_test.cpp',
+  'dsp/tests/unit/effects/aether_reverb_perf_test.cpp',
 ];
 
 const SCAN_DIRS = ['dsp', 'plugins', 'tests'];
@@ -93,6 +107,52 @@ const BANNED = [
   { re: /(^|[^A-Za-z0-9_])INFINITY([^A-Za-z0-9_]|$)/, what: 'INFINITY macro' },
   { re: /(^|[^A-Za-z0-9_])HUGE_VALF([^A-Za-z0-9_]|$)/, what: 'HUGE_VALF macro' },
 ];
+
+// -----------------------------------------------------------------------------
+// CMake `#` comment stripping, for the exemption scan below.
+//
+// WHY THIS IS NOT OPTIONAL. The set_source_files_properties() blocks in
+// dsp/tests/CMakeLists.txt carry long prose comments INSIDE the parentheses,
+// explaining which TUs are deliberately NOT in the list. Those explanations
+// name the excluded files, with extensions:
+//
+//     set_source_files_properties(
+//         # ... For aether_reverb_test.cpp and aether_reverb_spectral_test.cpp
+//         # that is DELIBERATE AND LOAD-BEARING, not an omission ...
+//         unit/effects/aether_reverb_nonfinite_test.cpp
+//         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
+//     )
+//
+// The filename regex below runs over the block text. Without this strip it
+// harvests the names out of the comment and hands an exemption to the exact
+// two TUs the comment says must NOT have one -- so scan() returns early on
+// them and this gate reports "all clear" while checking nothing. Measured:
+// four files (aether_reverb_test.cpp, aether_reverb_spectral_test.cpp,
+// atmosphere_engine_test.cpp, arpeggiator_core_test.cpp) held a comment-only
+// exemption before this was added, two of them on the GUARDED list.
+//
+// The -fno-fast-math detection is run on the stripped text too, for the mirror
+// image of the same bug: a block whose PROPERTIES are something else entirely
+// (e.g. "-O2") but whose comment mentions -fno-fast-math to say it is absent
+// would otherwise be read as an exempting block.
+//
+// Quote-aware, because a `#` inside a quoted flag string is not a comment.
+function stripCMakeComments(block) {
+  return block
+    .split(/\r?\n/)
+    .map((line) => {
+      let out = '';
+      let inQuote = false;
+      for (let i = 0; i < line.length; ++i) {
+        const c = line[i];
+        if (c === '"' && (i === 0 || line[i - 1] !== '\\')) inQuote = !inQuote;
+        if (c === '#' && !inQuote) break;
+        out += c;
+      }
+      return out;
+    })
+    .join('\n');
+}
 
 // -----------------------------------------------------------------------------
 // The exemption list: translation units built WITHOUT fast-math.
@@ -125,7 +185,10 @@ function collectFastMathExemptTus() {
         while (i < lines.length && !/^\s*\)\s*$/.test(lines[i])) ++i;
         blocks.push(lines.slice(start, i + 1).join('\n'));
     }
-    for (const block of blocks) {
+    for (const rawBlock of blocks) {
+      // Comments stripped FIRST: both decisions below must read actual CMake
+      // arguments, never the prose that explains them (see stripCMakeComments).
+      const block = stripCMakeComments(rawBlock);
       if (!/-fno-fast-math|-fno-finite-math-only|\/fp:precise|\/fp:strict/.test(block)) continue;
       const names = block.match(/[\w./-]+\.(?:cpp|cc|mm|h|hpp)/g) || [];
       for (const n of names) exempt.add(path.basename(n));
