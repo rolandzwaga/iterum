@@ -167,6 +167,11 @@
 #include <krate/dsp/systems/synth_voice.h>
 #include <krate/dsp/systems/poly_synth_engine.h>
 
+// Seraphis Phase 7 (specs/seraphis-phase7-voice-engine), FR-080
+#include <krate/dsp/systems/seraphis_voice.h>
+#include <krate/dsp/systems/seraphis_engine.h>
+#include <krate/dsp/systems/seraphis_macro_matrix.h>
+
 // Layer 4: Effects
 #include <krate/dsp/effects/aether_reverb.h>
 #include <krate/dsp/effects/bbd_delay.h>

@@ -163,6 +163,10 @@ set(KRATE_DSP_SYSTEMS_HEADERS
     include/krate/dsp/systems/synth_voice.h
     include/krate/dsp/systems/poly_synth_engine.h
     include/krate/dsp/systems/harmonizer_engine.h
+    # Seraphis Phase 7 (specs/seraphis-phase7-voice-engine), FR-080
+    include/krate/dsp/systems/seraphis_voice.h
+    include/krate/dsp/systems/seraphis_engine.h
+    include/krate/dsp/systems/seraphis_macro_matrix.h
 )
 
 # Layer 4: Effects

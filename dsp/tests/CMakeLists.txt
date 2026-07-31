@@ -349,6 +349,14 @@ add_executable(dsp_systems_tests
     unit/systems/atmosphere_engine_spectral_test.cpp
     unit/systems/atmosphere_engine_perf_test.cpp
     unit/systems/atmosphere_engine_nonfinite_test.cpp
+    # Seraphis Phase 7 (specs/seraphis-phase7-voice-engine): SeraphisVoice,
+    # SeraphisEngine, SeraphisMacroMatrix. This list is ENUMERATED, not globbed -
+    # an unregistered TU silently drops out of the build and its cases never run.
+    unit/systems/seraphis_voice_test.cpp
+    unit/systems/seraphis_engine_test.cpp
+    unit/systems/seraphis_macro_test.cpp
+    unit/systems/seraphis_nonfinite_test.cpp
+    unit/systems/seraphis_perf_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
@@ -722,6 +730,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # must stay out too: -fno-fast-math would change the figures its baselines
         # are pinned to.
         unit/effects/aether_reverb_nonfinite_test.cpp
+        # Seraphis Phase 7: SC-018 injects NaN/Inf via bit patterns in this TU and
+        # needs IEEE semantics to assert on them. ONLY this one of the five Phase 7
+        # TUs is listed; the other four must NOT be. seraphis_voice_test.cpp,
+        # seraphis_engine_test.cpp and seraphis_macro_test.cpp stay out so the
+        # FR-035/FR-072 guards they exercise are proved in the /fp:fast +
+        # -ffast-math mode the headers actually ship in. The perf TU must stay out
+        # too: -fno-fast-math would change the figures its baselines are pinned to.
+        unit/systems/seraphis_nonfinite_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 

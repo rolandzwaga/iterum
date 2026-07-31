@@ -287,6 +287,8 @@ tail-smoothness spectral tests, CPU ≤ 5% global.
 
 ### Phase 7: Seraphis Voice & Engine
 
+**Status: ✅ COMPLETE (2026-07-31)** — see specs/seraphis-phase7-voice-engine/compliance.md
+
 **Spec:** `seraphis-phase7-voice-engine`
 **Goal:** Compose phases 1–6 into the playable instrument core.
 
@@ -477,7 +479,7 @@ build → tests → pluginval strictness 5 → version.json/CHANGELOG.
 ```
 Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/entropy) ✅─┐
                       │                     │                              │
-                      ├─→ Phase 4 (body) ✅─┤                              ├─→ Phase 7 (voice/engine)
+                      ├─→ Phase 4 (body) ✅─┤                              ├─→ Phase 7 (voice/engine) ✅
                       │                     │                              │        │
                       ├─→ Phase 5 (atmos) ──┘                              │        ▼
                       │                                                    │   Phase 8 (scaffold)
