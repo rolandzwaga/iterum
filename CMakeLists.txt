@@ -491,6 +491,7 @@ add_subdirectory(plugins/ruinae)
 add_subdirectory(plugins/innexus)
 add_subdirectory(plugins/gradus)
 add_subdirectory(plugins/membrum)
+add_subdirectory(plugins/seraphis)
 
 # ==============================================================================
 # Tools (Shared development tools)

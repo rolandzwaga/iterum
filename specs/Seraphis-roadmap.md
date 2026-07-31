@@ -322,6 +322,9 @@ determinism harness (seeded engine renders are reproducible for golden tests —
 
 ### Phase 8: Plugin Scaffold
 
+**Status: ✅ COMPLETE (2026-07-31)** — see specs/seraphis-phase8-plugin-scaffold/compliance.md
+(local gates all green; SC-001 Linux/macOS legs + SC-004 auval pending first macOS/Linux CI run after push)
+
 **Spec:** `seraphis-phase8-plugin-scaffold`
 **Goal:** A registered, buildable, sound-making `plugins/seraphis/` that passes pluginval strictness 5
 and is wired into every CI/tooling roster on day one.

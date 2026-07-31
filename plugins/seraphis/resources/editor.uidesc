@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+  <!-- Phase 8 PLACEHOLDER — Phase 11 replaces this file wholesale. Stock views
+       only: a custom class name here would be dropped silently on a leg where
+       the ViewCreator TU was not linked, making SC-012 pass vacuously. -->
+  <colors>
+    <color name="bg"    rgba="#1A1A2Eff"/>
+    <color name="text"  rgba="#E0E0F0ff"/>
+    <color name="track" rgba="#242438ff"/>
+    <color name="accent" rgba="#8FA8D8ff"/>
+  </colors>
+  <fonts>
+    <font name="label-font" font-name="Arial" size="11"/>
+  </fonts>
+  <control-tags>
+    <control-tag name="MasterGain"    tag="0"/>
+    <control-tag name="Polyphony"     tag="1"/>
+    <control-tag name="SoftLimit"     tag="2"/>
+    <control-tag name="MacroDream"    tag="100"/>
+    <control-tag name="MacroBloom"    tag="101"/>
+    <control-tag name="MacroDissolve" tag="102"/>
+    <control-tag name="MacroGravity"  tag="103"/>
+    <control-tag name="MacroEntropy"  tag="104"/>
+  </control-tags>
+  <template name="editor" class="CViewContainer" size="420, 300"
+            background-color="bg" background-color-draw-style="filled">
+    <!-- 6 continuous parameters (plain Vst::Parameter, §2.1's freeze table) -> CSlider -->
+    <view class="CTextLabel" title="Master Gain" origin="16, 16"  size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MasterGain" origin="150, 16" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <view class="CTextLabel" title="Dream" origin="16, 48"  size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MacroDream" origin="150, 48" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <view class="CTextLabel" title="Bloom" origin="16, 80"  size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MacroBloom" origin="150, 80" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <view class="CTextLabel" title="Dissolve" origin="16, 112" size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MacroDissolve" origin="150, 112" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <view class="CTextLabel" title="Gravity" origin="16, 144" size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MacroGravity" origin="150, 144" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <view class="CTextLabel" title="Entropy" origin="16, 176" size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CSlider" control-tag="MacroEntropy" origin="150, 176" size="240, 20"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent"/>
+
+    <!-- StringListParameter -> COptionMenu (type MUST match FR-048's registration) -->
+    <view class="CTextLabel" title="Polyphony" origin="16, 220" size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="COptionMenu" control-tag="Polyphony" origin="150, 218" size="120, 20"
+          font="label-font" font-color="text" frame-color="accent" back-color="track"
+          fill-color="track" frame-width="1" transparent="false"
+          style-3D-in="false" style-3D-out="false"/>
+
+    <!-- stepped toggle -> CCheckBox -->
+    <view class="CTextLabel" title="Soft Limit" origin="16, 252" size="120, 16" font="label-font" font-color="text" transparent="true"/>
+    <view class="CCheckBox" control-tag="SoftLimit" origin="150, 250" size="40, 20"
+          title="" font="label-font" font-color="text"/>
+  </template>
+</vstgui-ui-description>

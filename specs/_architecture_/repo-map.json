@@ -55,6 +55,14 @@
         "ruinae_tests"
       ],
       "pluginval_bundle": "build/windows-x64-release/VST3/Release/Ruinae.vst3"
+    },
+    {
+      "dir": "plugins/seraphis",
+      "name": "Seraphis",
+      "test_targets": [
+        "seraphis_tests"
+      ],
+      "pluginval_bundle": "build/windows-x64-release/VST3/Release/Seraphis.vst3"
     }
   ],
   "dsp_layers": {

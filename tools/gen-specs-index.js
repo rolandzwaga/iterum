@@ -17,6 +17,10 @@ const OUT_FILE = path.join(SPECS_DIR, 'INDEX.md');
 
 // Subsystem inference: first keyword found in the spec's slug wins; order matters.
 const SUBSYSTEMS = [
+  // 'seraphis' MUST precede the DSP keywords below: its phase slugs contain
+  // 'spectral' / 'grain' / 'oscillat', which would otherwise win and file the
+  // plugin's own specs under "DSP / …".
+  ['seraphis', 'Seraphis'],
   ['membrum', 'Membrum'],
   ['gradus', 'Gradus'],
   ['ruinae', 'Ruinae'],

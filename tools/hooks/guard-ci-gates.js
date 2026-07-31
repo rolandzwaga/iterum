@@ -44,6 +44,7 @@ const LINTS = [
     { script: 'lint-platform-type-literals.js', what: 'hardcoded platform-type constant in a test' },
     { script: 'lint-allocation-operator-overrides.js', what: 'hand-rolled global operator new/delete' },
     { script: 'lint-simd-aligned-loadstore.js', what: 'aligned hn::Load/Store (faults on AVX-512 runners)' },
+    { script: 'lint-plugin-roster.js', what: 'plugin missing from a CI/tooling roster' },
 ];
 
 function readStdin() {

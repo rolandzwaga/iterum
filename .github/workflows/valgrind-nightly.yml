@@ -273,14 +273,14 @@ jobs:
       - name: Build all plugin test targets
         run: |
           cmake --build build-vg-editor --parallel --target \
-            gradus_tests plugin_tests disrumpo_tests ruinae_tests innexus_tests membrum_tests
+            gradus_tests plugin_tests disrumpo_tests ruinae_tests innexus_tests membrum_tests seraphis_tests
 
       - name: Run editor-lifecycle tests under Valgrind/memcheck (xvfb)
         timeout-minutes: 60
         run: |
           set -e
           BINDIR="build-vg-editor/bin/${{ env.BUILD_TYPE }}"
-          for bin in gradus_tests plugin_tests disrumpo_tests ruinae_tests innexus_tests membrum_tests; do
+          for bin in gradus_tests plugin_tests disrumpo_tests ruinae_tests innexus_tests membrum_tests seraphis_tests; do
             echo "==== $bin [lifecycle] ===="
             test -x "$BINDIR/$bin" || { echo "FAIL: $BINDIR/$bin not found"; exit 1; }
             xvfb-run -a valgrind \
