@@ -473,7 +473,7 @@
       "scope": "Krate::DSP::ContinuousBody",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/continuous_body.h",
-      "line": 1562
+      "line": 1641
     },
     {
       "name": "DelayEngine",
@@ -1201,7 +1201,7 @@
       "scope": "Krate::DSP::ContinuousBody",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/continuous_body.h",
-      "line": 574
+      "line": 653
     },
     {
       "name": "MatrixMorph",
@@ -2233,7 +2233,7 @@
       "scope": "Krate::DSP::ContinuousBody",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/continuous_body.h",
-      "line": 1525
+      "line": 1604
     },
     {
       "name": "Slot",

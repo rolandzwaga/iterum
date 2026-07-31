@@ -1349,7 +1349,14 @@ TEST_CASE("SeraphisEngine_QuietestStealWithAmnesty") {
         // band that clause 1's branch requires (`kAmnesty` = 0.0316). The
         // criterion is untouched; only the OPERATING POINT of its fixture moves,
         // by the factor the body's own normalisation moved.
-        const std::array<float, 4> drives{0.04f, 0.13f, 0.4f, 1.1f};
+        //
+        // RE-SCALED AGAIN 2026-08-01: FR-033a's per-material seed removes the
+        // estimator's cold start, so within this section's 2 s render the voices
+        // now reach their level instead of still climbing to it. At
+        // {0.04, 0.13, 0.4, 1.1} the ladder measured 0.01137 / 0.02305 / 0.0478
+        // and slot 2 left the amnesty-eligible band again. Same criterion, same
+        // ordering, operating point moved once more.
+        const std::array<float, 4> drives{0.022f, 0.07f, 0.22f, 0.6f};
         for (std::size_t v = 0; v < drives.size(); ++v) {
             mutableVoice(*engine, v).setDrive(drives[v]);
         }
@@ -1439,7 +1446,13 @@ TEST_CASE("SeraphisEngine_QuietestStealWithAmnesty") {
         auto engine = makeEngine(4, 27u);
         // Slot 0 takes the first note-on, so this is the slot that ends up loud.
         mutableVoice(*engine, 0).setMix(0.0f);
-        const std::array<std::uint8_t, 4> velocities{vel(127), vel(70), vel(10), vel(30)};
+        // RE-SCALED 2026-08-01 (FR-033a's per-material seed): slot 2 is the
+        // amnesty-eligible candidate and must sit under kAmnesty = 0.0316. At
+        // velocity 10 it measured 0.05467 once the body stopped running 30-40 dB
+        // under its documented level; the lever is exactly linear on this path
+        // (the banner's own measurement), so velocity 4 puts it back at ~0.022.
+        // Same criterion, same ordering, operating point moved.
+        const std::array<std::uint8_t, 4> velocities{vel(127), vel(70), vel(4), vel(30)};
         for (std::size_t v = 0; v < velocities.size(); ++v) {
             engine->noteOn(midi(60 + 2 * static_cast<int>(v)), velocities[v]);
         }

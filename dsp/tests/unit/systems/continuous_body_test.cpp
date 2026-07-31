@@ -6862,3 +6862,174 @@ TEST_CASE("ContinuousBody_CloudExcitationHitsTarget")
         }
     }
 }
+
+// =============================================================================
+// SC-007b (added 2026-08-01, phase-owner ruling closing FR-033a's recorded
+// cold-start limitation) - the documented level must be reached QUICKLY, not
+// merely eventually.
+//
+// FR-033a's estimator measures the excitation's coupling to the engine and
+// corrects for it. SC-007a pins where it CONVERGES; this case pins how long it
+// takes to get there, which SC-007a cannot see because it measures the tail of
+// a `max(5 s, 3*T60)` render. Recorded as a known limitation when FR-033a
+// landed: starting from `excitationComp = 1` the estimator has ~30-56 dB to
+// climb at a rate floored to the resonator's own charging constant, and a
+// Seraphis single note measured -29.35 dBFS at 4 s against -19.13 dBFS settled.
+// A user hears that as the first note of a session swelling for several
+// seconds.
+//
+// THE WINDOW IS SECONDS 2-4, deliberately. Seconds 0-2 belong to the resonator
+// itself - a body with `T60 = 4.57 s` has an amplitude constant of 0.66 s and is
+// legitimately still charging - so a bound there would be measuring physics
+// rather than the estimator. By 2 s the plant is within 5 % of its asymptote for
+// every material in the table and anything still missing is the correction.
+// =============================================================================
+namespace {
+
+/// @brief SeraphisVoice's shipped body settings, applied to a body whose
+///        material is selected BEFORE `prepare()`.
+///
+/// NOT assignShippedBody. That helper prepares first and then does SC-007's
+/// Chamber round trip to force a fresh assignment, and a material change on a
+/// PREPARED body is a live crossfade - which FR-033a deliberately does not
+/// re-seed (see reseedExcitationCompFor). Selecting the material first takes
+/// continuous_body.h's pre-prepare adopt path, so `prepare()`'s own `reset()`
+/// seeds the estimator for the material actually under test. That is also the
+/// order a host gives a plugin: configure, then prepare.
+void assignShippedBodyCold(Krate::DSP::ContinuousBody& body, double sampleRate, float noteHz,
+                           Krate::DSP::ContinuousBody::BodyMaterial material)
+{
+    body.setMaterial(material);  // pre-prepare adopt (continuous_body.h:1130-1132)
+    body.prepare(sampleRate);
+    body.setCloudMix(0.0f);
+    body.setInputAgcEnabled(true);
+    body.setResonance(0.7f);
+    body.setDamping(0.25f);
+    body.setKeyTracking(1.0f);
+    body.setDrive(1.0f);
+    body.setMix(1.0f);
+    body.setNoteFrequencyHz(noteHz);
+}
+
+struct CloudColdStart {
+    double earlyPeak = 0.0;   ///< mean per-block peak over seconds 2-4
+    double steadyPeak = 0.0;  ///< mean per-block peak over the final 1 s
+};
+
+/// @brief One continuous render of the SC-007a excitation, reporting the level
+///        in an EARLY window and in the settled tail of the same render.
+///
+/// One render, not two: the quantity under test is how far the early window is
+/// from the level THAT SAME BODY eventually reaches, so a second body (with its
+/// own seed draw and its own smoother state) would add a difference that is not
+/// the estimator's.
+[[nodiscard]] CloudColdStart cloudColdStartProfile(Krate::DSP::ContinuousBody& body,
+                                                   double sampleRate, double fundamentalHz,
+                                                   double targetRms, double totalSeconds)
+{
+    const double scale = targetRms / cloudUnitRms();
+    const double blocksPerSecond = sampleRate / static_cast<double>(kCloudBlockSize);
+    const auto totalBlocks = static_cast<std::size_t>(std::ceil(totalSeconds * blocksPerSecond));
+    const auto earlyFirst = static_cast<std::size_t>(std::ceil(2.0 * blocksPerSecond));
+    const auto earlyLast = static_cast<std::size_t>(std::ceil(4.0 * blocksPerSecond));
+    const auto tailFirst = totalBlocks - static_cast<std::size_t>(std::ceil(blocksPerSecond));
+
+    std::array<float, kCloudBlockSize> inLeft{};
+    std::array<float, kCloudBlockSize> inRight{};
+    std::array<float, kCloudBlockSize> outLeft{};
+    std::array<float, kCloudBlockSize> outRight{};
+
+    constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
+    const double inc = kTwoPi * fundamentalHz / sampleRate;
+    double phase = 0.0;
+    double earlySum = 0.0;
+    std::size_t earlyCount = 0;
+    double tailSum = 0.0;
+    std::size_t tailCount = 0;
+
+    for (std::size_t b = 0; b < totalBlocks; ++b) {
+        for (std::size_t i = 0; i < kCloudBlockSize; ++i) {
+            const auto v = static_cast<float>(scale * cloudSample(phase));
+            inLeft[i] = v;
+            inRight[i] = v;
+            phase += inc;
+            if (phase > kTwoPi) {
+                phase -= kTwoPi;
+            }
+        }
+        body.processStereoBlock(inLeft.data(), inRight.data(), outLeft.data(), outRight.data(),
+                                kCloudBlockSize);
+        const double blockPeak = peakOf(outLeft.data(), kCloudBlockSize);
+        if (b >= earlyFirst && b < earlyLast) {
+            earlySum += blockPeak;
+            ++earlyCount;
+        }
+        if (b >= tailFirst) {
+            tailSum += blockPeak;
+            ++tailCount;
+        }
+    }
+
+    CloudColdStart out;
+    out.earlyPeak = (earlyCount > 0) ? (earlySum / static_cast<double>(earlyCount)) : 0.0;
+    out.steadyPeak = (tailCount > 0) ? (tailSum / static_cast<double>(tailCount)) : 0.0;
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("ContinuousBody_ColdStartReachesTargetQuickly")
+{
+    using CB = Krate::DSP::ContinuousBody;
+    using BodyMaterial = CB::BodyMaterial;
+
+    constexpr double kSampleRate = 48000.0;
+    constexpr float kNoteHz = 220.0f;
+    constexpr double kRenderSeconds = 12.0;
+    /// +/-6 dB between the seconds 2-4 window and the settled level of the same
+    /// render. Loose enough to admit the plant's own residual charge at 2 s,
+    /// tight enough that the ~10 dB shortfall the unseeded estimator produces
+    /// still fails.
+    constexpr double kColdStartToleranceDb = 6.0;
+
+    constexpr std::array<BodyMaterial, 5> kAllMaterials = {
+        {BodyMaterial::Glass, BodyMaterial::Strings, BodyMaterial::MetalPlate,
+         BodyMaterial::Chamber, BodyMaterial::Ice}};
+    constexpr std::array<const char*, 5> kAllNames = {
+        {"Glass", "Strings", "MetalPlate", "Chamber", "Ice"}};
+
+    SECTION("seconds 2-4 land within +/-6 dB of the settled level, from a fresh prepare()")
+    {
+        // Measured FIRST, all five, then asserted - a REQUIRE inside the render
+        // loop would abort at the first material and hide the rest of the table.
+        std::array<CloudColdStart, kAllMaterials.size()> profiles{};
+        for (std::size_t m = 0; m < kAllMaterials.size(); ++m) {
+            CB body;
+            assignShippedBodyCold(body, kSampleRate, kNoteHz, kAllMaterials[m]);
+            profiles[m] =
+                cloudColdStartProfile(body, kSampleRate, kNoteHz,
+                                      static_cast<double>(CB::kTargetInputRms), kRenderSeconds);
+            WARN("SC-007b " << kAllNames[m] << ": peak[2-4 s] = " << profiles[m].earlyPeak << " ("
+                            << linearToDb(profiles[m].earlyPeak) << " dBFS), settled = "
+                            << profiles[m].steadyPeak << " ("
+                            << linearToDb(profiles[m].steadyPeak) << " dBFS), shortfall = "
+                            << (linearToDb(profiles[m].earlyPeak)
+                                - linearToDb(profiles[m].steadyPeak))
+                            << " dB; excitationComp = " << body.getExcitationComp());
+            REQUIRE(body.stateFinite());
+        }
+
+        for (std::size_t m = 0; m < kAllMaterials.size(); ++m) {
+            const double deltaDb =
+                linearToDb(profiles[m].earlyPeak) - linearToDb(profiles[m].steadyPeak);
+            INFO("material = " << kAllNames[m] << ", peak[2-4 s] = " << profiles[m].earlyPeak
+                               << ", settled = " << profiles[m].steadyPeak
+                               << ", shortfall = " << deltaDb << " dB");
+            // Non-vacuity: a silent render would make the ratio trivially 0 dB.
+            REQUIRE(profiles[m].earlyPeak > 0.0);
+            REQUIRE(profiles[m].steadyPeak > 0.0);
+            REQUIRE(deltaDb >= -kColdStartToleranceDb);
+            REQUIRE(deltaDb <= kColdStartToleranceDb);
+        }
+    }
+}

@@ -477,3 +477,63 @@ original carried. The arms differ by 24× on L and 163× on R. `peak[0.5 s..]` i
 | `seraphis_tests` | `All tests passed (1922 assertions in 8 test cases)` |
 | `dsp_systems_tests` | `All tests passed (6037277 assertions in 1208 test cases)` |
 | `dsp_effects_tests` | `All tests passed (98155 assertions in 477 test cases)` |
+
+---
+
+## Addendum — 2026-08-01: SC-005b added; SC-005a's render length is no longer a workaround
+
+**Trigger.** The phase-owner ruling of 2026-08-01 directed that FR-033a's recorded cold-start limitation
+be closed with a per-material seeded initial estimate. See
+`specs/seraphis-phase4-continuous-body/spec.md`, where that limitation is now marked **CLOSED** with the
+before/after table and the residual risk.
+
+### SC-005b — `Seraphis_HeldNoteReachesLevelQuickly` (new)
+
+SC-005 is a non-silence criterion and SC-005a is a delivered-level criterion; neither can see how long
+the chain takes to reach that level. New section, one 12 s render, two windows of it:
+
+- single note, velocity 127, master gain unity, registered-default polyphony 8;
+- peak over **seconds 2–4** must be within **8 dB** of the peak over **seconds 8–10**.
+
+Seconds 0–2 are excluded deliberately: FR-020's 2 000 ms voice attack and the body's own 0.66 s charging
+constant legitimately own that window, so a bound there would measure the instrument rather than the
+estimator. 8 dB rather than the body-level criterion's 6 dB because the plugin window also carries the
+voice envelope, the atmosphere tap and the reverb build-up.
+
+Measured, **identical code with FR-033a's seed table neutralised to 1 as the control**:
+
+| | seeds = 1 | seeded (shipped) |
+|---|---|---|
+| peak[2–4 s] | −35.67 dBFS | **−23.47 dBFS** |
+| peak[8–10 s] | −19.79 dBFS | −19.88 dBFS |
+| shortfall | **−15.89 dB — fails** | **−3.59 dB — passes** |
+
+**+12.2 dB at 2–4 s, with the settled level unchanged.** A control with FR-033a bypassed entirely
+(`excitationComp` forced to 1 in the drive law, i.e. the pre-fix component) measures the instrument's own
+build-up at **−2.87 dB**, so the criterion's floor is not swallowed by reverb/atmosphere growth.
+
+### SC-005a — unchanged assertion, but its 8 s render is now honest rather than a workaround
+
+SC-005a still renders 8 s and still asserts `[−28, −12] dBFS`; it now measures **−21.79 dBFS**. When it
+landed, 8 s was chosen *because* 4 s was still climbing (−29.35 dBFS). With the seed in place the 4 s
+figure is inside the window on its own; the render length is left at 8 s so the criterion keeps measuring
+a settled level rather than a transient.
+
+### Test fixtures re-pinned this round (operating points, not criteria)
+
+| test | change | why |
+|---|---|---|
+| `seraphis_voice_test.cpp:884` reset-vs-virgin | bound 1e-6 → **1e-4** | The SAME residual measured 38 dB higher. The original 1e-6 was ~15× a measured 6.7e-8 taken while the body ran 30–40 dB under level; the seed puts the voice at full level from sample 0 and the same residual reads 6.58e-6 — a ratio of 98× (39.8 dB) against the 37.9 dB the Glass seed raises the render by. 1e-4 restores the original ~15× margin. |
+| `seraphis_engine_test.cpp` amnesty clause 1 | drives → `{0.022, 0.07, 0.22, 0.6}` | The seed removes the estimator's cold start, so within the section's 2 s render the voices now reach their level instead of still climbing. Slot 2 had left the amnesty-eligible band. |
+| `seraphis_engine_test.cpp` amnesty clause 3 | slot 2 velocity 10 → **4** | Same cause: at velocity 10 the quiet candidate measured 0.05467 against `kAmnesty` = 0.0316. The lever is exactly linear on that path (the section's own banner measurement). |
+
+None of these changes an assertion's shape or its direction; each moves a fixture's operating point by the
+factor the body's own normalisation moved.
+
+### Suites re-run for this addendum
+
+| suite | verbatim summary |
+|---|---|
+| `dsp_systems_tests` | `All tests passed (6037302 assertions in 1209 test cases)` |
+| `dsp_effects_tests` | `All tests passed (98155 assertions in 477 test cases)` |
+| `seraphis_tests` | `All tests passed (1932 assertions in 8 test cases)` |

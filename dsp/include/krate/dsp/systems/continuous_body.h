@@ -347,6 +347,59 @@ public:
     /// input/output pair cannot park the drive at an absurd value that then takes
     /// `kExcitationCompSmoothMs` to unwind.
     static constexpr float kMaxExcitationComp = 1024.0f;
+    /// @brief FR-033a's PER-MATERIAL STARTING POINT for `excitationComp`, indexed
+    ///        by `BodyMaterial`.
+    ///
+    /// **Why a seed exists at all.** The estimator converges to the right answer
+    /// but not instantly: it climbs at a rate floored to the resonator's own
+    /// charging constant (`kEstimatorPlantFactor`, and a faster loop overshoots -
+    /// SC-001(b) catches it), so from `excitationComp = 1` a body needing x126
+    /// spends several seconds under level. Measured end to end before this table
+    /// existed, Seraphis single held note, cold: **-29.35 dBFS at 4 s against
+    /// -18.85 settled**, i.e. a 10.5 dB swell on the first note of a session.
+    /// That was recorded as an open limitation when FR-033a landed and is what
+    /// the phase-owner ruling of 2026-08-01 directed be closed here.
+    ///
+    /// **PROVENANCE - these are measured STEADY STATES of the estimator itself,
+    /// not derived numbers.** Each entry is the value `excitationComp` converges
+    /// to when the body is driven by the excitation it actually ships inside,
+    /// rendered end to end for 30 s and read at 28-30 s: `HarmonicCloud` at the
+    /// shipped `SeraphisVoice` defaults (richness 0.60, inharmonicity 0.030,
+    /// mutation 0.25, gravity 0.20, tilt 0), note 60 = 261.63 Hz, through a
+    /// 2 000 ms linear attack (FR-020's voice envelope), into a body at
+    /// resonance 0.7 / damping 0.25 / keyTracking 1.0 / drive 1.0 / mix 1.0 /
+    /// cloudMix 0.25, AGC on:
+    ///
+    ///     Glass       x78.8      Strings  x20.6     Metal Plate x382.2
+    ///     Chamber     x89.1      Ice      x69.9
+    ///
+    /// **A FIRST DRAFT OF THIS TABLE WAS WRONG AND IS RECORDED SO THE MISTAKE IS
+    /// NOT REPEATED.** It was back-computed from FR-033a's own deficit table
+    /// (`10^(42.0/20) = 125.9` for Glass and so on), which measures the BODY
+    /// OUTPUT - i.e. after the decay cloud's equal-power blend - while the
+    /// estimator regulates the ENGINE output. Those seeds ran 1.6x to 2.5x hot,
+    /// and on excitations that need far less correction than the cloud (a
+    /// full-scale sine parked on a mode needs about x3) the over-drive was
+    /// severe enough to break SC-001: Chamber's sine probe reached body peak
+    /// 13.01 with 14,414 FR-037 clamp engagements, and Metal Plate's SC-001(c)
+    /// recovery reached 0.913 against its 0.730 bound. Measuring the estimator's
+    /// OWN converged value removes the systematic error by construction.
+    ///
+    /// **A SEED IS NOT A CORRECTION.** It moves only the starting point; the
+    /// estimator refines from it exactly as it refined from 1, converges to the
+    /// same steady state, and every FR-033a criterion is unchanged. A body fed
+    /// something other than the shipped cloud simply walks away from the seed -
+    /// SC-007a's 16-partial harmonic excitation needs x3.1 to x51.1 rather than
+    /// these values and still lands within 2.4 dB of `kTargetPeak`.
+    static constexpr std::array<float, 5> kExcitationCompSeed = {
+        {78.8f, 20.6f, 382.2f, 89.1f, 69.9f}};
+    static_assert(kExcitationCompSeed.size() == 5,
+                  "one seed per BodyMaterial, in enum order");
+    /// `log2(kMaxExcitationComp)`, spelled out because `std::log2` is not
+    /// constexpr. The static_assert below is what keeps the two in step.
+    static constexpr float kMaxExcitationCompLog2 = 10.0f;
+    static_assert(kMaxExcitationComp > 1023.0f && kMaxExcitationComp < 1025.0f,
+                  "kMaxExcitationCompLog2 is log2(kMaxExcitationComp)");
     /// The floor is EXACTLY 1, and that is a statement, not a guard: `Ĝ` is an
     /// upper bound, so the realised gain can never exceed it and the correction
     /// can never legitimately be an attenuation. `excitationComp_ == 1` reproduces
@@ -399,6 +452,32 @@ public:
     /// SC-004 renders and far above the residual jitter of a settled pitch
     /// smoother. See updateExcitationComp's clause 4.
     static constexpr float kEstimatorPitchEpsilon = 1.0e-3f;
+    /// @brief Time constant of the slow reference the excitation-stationarity
+    ///        gate compares each window's input RMS against.
+    ///
+    /// Long enough that window-to-window RMS jitter (about +/-3 % on a 10 ms
+    /// window of noise, i.e. 0.04 in log2) averages out, short enough that the
+    /// gate reopens promptly once a real level move has finished.
+    static constexpr float kEstimatorLevelRefMs = 300.0f;
+    /// @brief log2 deviation of a window's input RMS from that slow reference
+    ///        above which the estimate is HELD. 0.25 == 1.5 dB.
+    ///
+    /// **This is the gate that makes a SEEDED estimator usable.** A coupling is a
+    /// steady-state quantity; measured while the excitation ENVELOPE is still
+    /// ramping it is wrong by roughly (ramp rate x the plant time constant),
+    /// because the plant-lagged denominator trails a ramp by exactly that much.
+    /// FR-020's voice attack is 2 000 ms, so a Seraphis note ramps ~20 dB/s into
+    /// a body whose amplitude constant is 0.66 s - about 13 dB of false
+    /// "coupling has risen", which the fast decrease then acts on. It cost
+    /// nothing while the estimate started at the floor of 1 (there was nowhere to
+    /// dive to); with the seed table there is 30-56 dB of room and it dives into
+    /// it. MEASURED, Seraphis single held note, seeded but ungated:
+    /// **-35.40 dBFS at 2-4 s against -20.31 settled**, i.e. the seed made the
+    /// cold start WORSE than the 10.5 dB it was meant to fix.
+    ///
+    /// 0.25 sits ~6x above the jitter and ~4x below the 1.0 (6 dB) offset that
+    /// same 20 dB/s ramp produces against a 300 ms reference.
+    static constexpr float kEstimatorLevelEpsilon = 0.08f;
     /// Estimator gate: a measured coupling at or below this is treated as
     /// "nothing to measure" and the estimate is HELD. The realised couplings in
     /// the table above run from ~2 to ~900, so this only ever fires before the
@@ -2047,7 +2126,12 @@ private:
     /// (`modal_resonator_bank.h:264-265`) safe here: it can only ever clear the
     /// state of the slot being assigned, and a slot is only ever assigned at
     /// crossfade gain 0.
-    void configureSlotEngine(Slot& slot, std::size_t slotIndex) noexcept
+    /// @param reseedExcitation FR-033a. TRUE only on the paths that assign a
+    ///        material with NO crossfade in flight (`reset()`, `prepare()`, the
+    ///        pre-prepare adopt). See reseedExcitationCompFor for why a live
+    ///        material change deliberately does NOT re-scale the estimate.
+    void configureSlotEngine(Slot& slot, std::size_t slotIndex,
+                             bool reseedExcitation) noexcept
     {
         const MaterialProfile& p = profileFor(slot.material);
         slot.engine = p.engine;
@@ -2056,6 +2140,13 @@ private:
             configureModalSlot(slot);
         } else {
             configureNonModalSlot(slot);
+        }
+        // FR-033a: on a no-fade assignment the excitation estimate is re-scaled
+        // to the incoming material's seed BEFORE the drive is snapped, so the
+        // snap lands on the new material's own starting point rather than on the
+        // previous material's.
+        if (reseedExcitation) {
+            reseedExcitationCompFor(slot.material);
         }
         // FR-033: the drive is SNAPPED to the new engine's `1/G-hat`, never
         // glided into it - see snapSlotDrive().
@@ -2068,7 +2159,7 @@ private:
     void assignSoundingSlotEngine() noexcept
     {
         configureSlotEngine(slots_[static_cast<std::size_t>(soundingSlot_)],
-                            static_cast<std::size_t>(soundingSlot_));
+                            static_cast<std::size_t>(soundingSlot_), true);
     }
 
     /// @brief Is the engine INSTANCE material `m` needs free of the outgoing
@@ -2139,7 +2230,7 @@ private:
         // feedback solve.
         updateBodyPitch();
         updateEngineTargets();
-        configureSlotEngine(incoming, incomingIndex);
+        configureSlotEngine(incoming, incomingIndex, false);  // FR-033a: see there
 
         // FR-024 step 3: the outgoing engine's INPUT is muted so it decays
         // through its own damping law - the physically correct behaviour for a
@@ -2170,7 +2261,7 @@ private:
         incoming.material = m;
         updateBodyPitch();
         updateEngineTargets();
-        configureSlotEngine(incoming, incomingIndex);
+        configureSlotEngine(incoming, incomingIndex, false);  // FR-033a: see there
         pendingMaterial_ = m;
     }
 
@@ -2807,18 +2898,92 @@ private:
                > (kDampingEpsilonRel * std::max(applied, magnitudeFloor));
     }
 
-    /// @brief FR-033a. Reset the excitation estimator to the state in which it
-    ///        contributes NOTHING, i.e. FR-033's original law exactly.
+    /// @brief FR-033a's log2 seed for one material, or 0 (i.e. unity, FR-033's
+    ///        original law exactly) whenever FR-034a has the AGC off.
+    ///
+    /// The AGC-off branch is not a guard, it is the contract: with
+    /// `setInputAgcEnabled(false)` the component is a fixed gain and
+    /// `updateExcitationComp` forces unity on every control step anyway. Seeding
+    /// there would put ONE control chunk's worth of a wrong drive on the path
+    /// between `reset()`'s `snapDrive()` and the first control step.
+    [[nodiscard]] float seedLog2For(BodyMaterial m) const noexcept
+    {
+        if (!agcEnabled_) {
+            return 0.0f;
+        }
+        const auto index = static_cast<std::size_t>(m);
+        const float seed = (index < kExcitationCompSeed.size())
+                               ? kExcitationCompSeed[index]
+                               : kMinExcitationComp;
+        return std::log2(std::clamp(seed, kMinExcitationComp, kMaxExcitationComp));
+    }
+
+    /// @brief FR-033a. Return the excitation estimator to its per-material
+    ///        STARTING POINT and drop every measurement taken before it.
+    ///
+    /// Called by `prepare()` and `reset()`. The followers are cleared rather than
+    /// carried: they describe an excitation/engine pair that no longer exists.
     void clearExcitationComp() noexcept
     {
-        excitationCompLog2_ = 0.0f;
-        excitationComp_ = kMinExcitationComp;
+        seedMaterial_ = material_;
+        excitationCompLog2_ = seedLog2For(material_);
+        excitationComp_ = std::clamp(std::exp2(excitationCompLog2_), kMinExcitationComp,
+                                     kMaxExcitationComp);
         enginePeakAccum_ = 0.0f;
         couplingEnv_ = 0.0f;
         engineInEnv_ = 0.0f;
         estAppliedBodyHz_ = 0.0f;
+        estLevelRef_ = 0.0f;
         estSumSq_ = 0.0f;
         estChunks_ = 0;
+    }
+
+    /// @brief FR-033a. RE-SCALE the estimate to a new material's seed, by the
+    ///        RATIO of the two materials' seeds.
+    ///
+    /// **ONLY on assignments with no crossfade in flight** - `reset()`,
+    /// `prepare()` and the pre-prepare adopt path. A LIVE material change does
+    /// NOT re-scale, and that is a measured decision, not an omission: the seeds
+    /// span 25 dB (Strings x20.6 to Metal Plate x382.2), so re-scaling mid-fade
+    /// steps the incoming engine's drive by up to 14.7 dB inside the exact window
+    /// SC-012's transition clauses analyse - measured, Ice -> Metal Plate:
+    /// max|dx| 0.0752 against a 0.0750 budget, i.e. it failed. Nothing is lost by
+    /// holding: `Ĝ_slot` already re-levels the incoming engine for the new
+    /// material (that is what FR-032 is for), and the excitation correction is a
+    /// second-order term the estimator re-acquires within its own time constant
+    /// on a body that is already sounding. The cold start the seeds exist to
+    /// remove is a PREPARE/RESET problem, not a material-change one.
+    ///
+    /// **A ratio, not a re-seed, and the difference matters.** The converged
+    /// `excitationComp` encodes two things multiplied together: what the SEED
+    /// knows (this engine's coupling under the shipped cloud) and what the
+    /// ESTIMATOR learned (how the excitation actually in the path differs from
+    /// that). A hard re-seed would throw the second away on every material
+    /// change; scaling by `seed[new] / seed[old]` keeps it and moves only the
+    /// part that is genuinely per-material. On a body that has been fed the
+    /// shipped cloud the two are identical, because the learned factor is 1.
+    ///
+    /// **Why this is clickless.** It is applied from `configureSlotEngine`, the
+    /// one funnel every material assignment passes through, immediately before
+    /// `snapSlotDrive` - i.e. at the instant FR-024 step 1 puts the incoming slot
+    /// at crossfade gain ZERO. The only other slot that can be active is the
+    /// OUTGOING one, whose input FR-024 step 3 mutes for the remainder of the
+    /// fade, so its drive scales nothing. This is exactly the argument that makes
+    /// `snapSlotDrive` itself legal, and SC-012's transition, retarget and
+    /// collapse clauses are what check it.
+    ///
+    /// Idempotent: assigning the same material twice moves nothing.
+    void reseedExcitationCompFor(BodyMaterial m) noexcept
+    {
+        const float delta = seedLog2For(m) - seedLog2For(seedMaterial_);
+        seedMaterial_ = m;
+        if (delta == 0.0f) {
+            return;
+        }
+        excitationCompLog2_ =
+            std::clamp(excitationCompLog2_ + delta, 0.0f, kMaxExcitationCompLog2);
+        excitationComp_ = std::clamp(std::exp2(excitationCompLog2_), kMinExcitationComp,
+                                     kMaxExcitationComp);
     }
 
     /// @brief FR-033a - measure how far under its `Ĝ` bound the CURRENT
@@ -2867,6 +3032,7 @@ private:
     ///   2. `couplingEnv_ <= kEnginePeakFloor`: nothing has come out yet.
     ///   3. `drive <= kMinDriveGain`: the divisor is degenerate.
 ///   4. `f_body` moved across the window - see the in-body comment.
+///   5. the excitation level is not stationary across the window - ditto.
     void updateExcitationComp(float chunkRms) noexcept
     {
         if (!agcEnabled_) {
@@ -2973,11 +3139,32 @@ private:
         // and told the next reader NOT to raise). `Ĝ` still tracks the glide, so
         // the drive still follows the pitch throughout - only the excitation
         // correction, which the glide does not change, stays put.
+        // Clause 5: the excitation level is not stationary across this window.
+        // See kEstimatorLevelEpsilon for the measurement that forces it. The
+        // reference is advanced ALWAYS, so the gate reopens on its own once the
+        // move has finished; only the estimate is held.
+        const float levelRefAlpha =
+            std::min(estWindowSeconds_ / (kEstimatorLevelRefMs * 1.0e-3f), 1.0f);
+        const float levelNow = std::max(windowRms, kRmsFloor);
+        bool levelMoved = false;
+        if (!(estLevelRef_ > kRmsFloor)) {
+            // FIRST window after a clear: there is no reference yet, so there is
+            // nothing to call stationary. SNAP the reference and HOLD - an
+            // ungated first window is exactly the one taken at a note onset,
+            // where the excitation is least stationary and the estimate has the
+            // furthest to fall.
+            estLevelRef_ = levelNow;
+            levelMoved = true;
+        } else {
+            levelMoved = std::fabs(std::log2(levelNow / estLevelRef_)) > kEstimatorLevelEpsilon;
+            estLevelRef_ += levelRefAlpha * (levelNow - estLevelRef_);
+        }
+
         const float pitchRef = std::max(estAppliedBodyHz_, 1.0f);
         const bool pitchMoved =
             std::fabs(bodyHz_ - estAppliedBodyHz_) > (kEstimatorPitchEpsilon * pitchRef);
         estAppliedBodyHz_ = bodyHz_;
-        if (pitchMoved) {
+        if (pitchMoved || levelMoved) {
             return;
         }
         if (rmsGain_ >= kMaxRmsGain) {
@@ -3665,6 +3852,7 @@ private:
                && isFiniteBits(couplingEnv_) && isFiniteBits(enginePeakAccum_)
                && isFiniteBits(engineInEnv_) && isFiniteBits(estSumSq_)
                && isFiniteBits(estAppliedBodyHz_)
+               && isFiniteBits(estLevelRef_)
                && isFiniteBits(bodyHz_) && isFiniteBits(crossfadePos_)
                && isFiniteBits(collapsePos_) && isFiniteBits(collapseBasePos_)
                && isFiniteBits(bypassPos_) && isFiniteBits(bypassBasePos_)
@@ -3756,8 +3944,12 @@ private:
         // reset; the window is restarted either way, because its accumulator
         // spans samples the engine is about to have silenced.
         if (!isFiniteBits(excitationCompLog2_) || !isFiniteBits(excitationComp_)) {
-            excitationCompLog2_ = 0.0f;
-            excitationComp_ = kMinExcitationComp;
+            // Back to the material's SEED, not to unity: a poisoned estimate is
+            // no reason to hand the body the 30-56 dB cold start the seed table
+            // exists to remove.
+            excitationCompLog2_ = seedLog2For(seedMaterial_);
+            excitationComp_ = std::clamp(std::exp2(excitationCompLog2_), kMinExcitationComp,
+                                         kMaxExcitationComp);
         }
         if (!isFiniteBits(couplingEnv_)) {
             couplingEnv_ = 0.0f;
@@ -3767,6 +3959,9 @@ private:
         }
         if (!isFiniteBits(estAppliedBodyHz_)) {
             estAppliedBodyHz_ = 0.0f;
+        }
+        if (!isFiniteBits(estLevelRef_)) {
+            estLevelRef_ = 0.0f;
         }
         enginePeakAccum_ = 0.0f;
         estSumSq_ = 0.0f;
@@ -4040,6 +4235,9 @@ private:
     float rmsGain_ = 1.0f;
 
     // --- FR-033a excitation compensation (see kMaxExcitationComp) ------------
+    /// The material `excitationCompLog2_` is currently scaled for - see
+    /// reseedExcitationCompFor.
+    BodyMaterial seedMaterial_ = kDefaultMaterial;
     /// Smoothed in log2, read back through `exp2f` into `excitationComp_`.
     float excitationCompLog2_ = 0.0f;
     float excitationComp_ = kMinExcitationComp;
@@ -4055,6 +4253,8 @@ private:
     float engineInEnv_ = 0.0f;
     /// `bodyHz_` as of the previous estimator window - clause 4's reference.
     float estAppliedBodyHz_ = 0.0f;
+    /// Slow reference for clause 5's excitation-stationarity gate.
+    float estLevelRef_ = 0.0f;
     /// Rebuilt in `prepare()`. The estimator's own coefficient is derived per
     /// control chunk from this and the sounding slot's `T60`, so a material
     /// change re-times the loop without a second configure pass.

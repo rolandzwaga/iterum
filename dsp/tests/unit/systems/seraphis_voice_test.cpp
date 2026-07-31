@@ -876,13 +876,23 @@ TEST_CASE("SeraphisVoice_PrepareAndResetAreIdempotent") {
         renderInto(*fresh, freshL.data(), freshR.data(), oneSecond, 512);
 
         // Per channel, so the M/S width - which a mono sum cancels out - is in
-        // scope. 1e-6 is ~15x the measured 6.7e-8 and ~2 orders of magnitude
-        // under the stale-width step it replaced.
+        // scope.
+        //
+        // RE-PINNED 2026-08-01 (phase-owner gain-staging ruling; ContinuousBody
+        // FR-033a + its per-material seed table). THE RESIDUAL IS THE SAME ONE,
+        // MEASURED AT A LEVEL 38 dB HIGHER. This is an ABSOLUTE sample bound on
+        // a RELATIVE numerical residual: the original 1e-6 was ~15x a measured
+        // 6.7e-8, taken when the body ran 30-40 dB under its documented level.
+        // With FR-033a's seed the voice reaches full level from sample 0 and the
+        // same residual measures 6.58e-6 - a ratio of 98x, i.e. 39.8 dB, against
+        // the 37.9 dB the Glass seed (x78.8) raises the render by. 1e-4 restores
+        // the original ~15x margin over the new measurement. The criterion is
+        // untouched: a reset voice must still render what a virgin one does.
         const float diffL = maxAbsDiff(afterResetL, freshL);
         const float diffR = maxAbsDiff(afterResetR, freshR);
         INFO("max |reset - virgin|: L = " << diffL << ", R = " << diffR);
-        REQUIRE(diffL <= 1.0e-6f);
-        REQUIRE(diffR <= 1.0e-6f);
+        REQUIRE(diffL <= 1.0e-4f);
+        REQUIRE(diffR <= 1.0e-4f);
 
         // The fingerprint's per-sample clause still applies in full; only its
         // aggregate-metric clause is out of reach (see the banner above).

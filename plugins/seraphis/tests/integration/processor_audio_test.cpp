@@ -193,6 +193,18 @@ constexpr std::uint8_t kEngineVelocityMax = 127;
     return peak;
 }
 
+/// Peak over the half-open sample window [first, last), clamped to the buffer.
+/// SC-005b needs two windows of ONE render, so it cannot use maxAbs.
+[[nodiscard]] float maxAbsWindow(const std::vector<float>& v, std::size_t first,
+                                 std::size_t last) {
+    const std::size_t hi = std::min(last, v.size());
+    float peak = 0.0f;
+    for (std::size_t i = std::min(first, hi); i < hi; ++i) {
+        peak = std::max(peak, std::abs(v[i]));
+    }
+    return peak;
+}
+
 /// Largest per-sample |a - b| over the common prefix.
 [[nodiscard]] float maxAbsDiff(const std::vector<float>& a, const std::vector<float>& b) {
     float worst = 0.0f;
@@ -700,6 +712,64 @@ TEST_CASE("Seraphis_ProcessorRendersHeldNote", "[seraphis][integration]") {
         REQUIRE(allFiniteBits(rendered.right));
         REQUIRE(peakDb >= kLoudnessFloorDbfs);
         REQUIRE(peakDb <= kLoudnessCeilingDbfs);
+    }
+
+    // --------------------------------------------------------------------------
+    // SC-005b - END-TO-END COLD-START (added 2026-08-01, phase-owner ruling
+    //           closing FR-033a's recorded cold-start limitation).
+    //
+    // SC-005a measures the level the chain DELIVERS. This measures how long it
+    // takes to get there. ContinuousBody's FR-033a estimator starts from a
+    // per-material seed and refines; before the seeding landed it started from
+    // `excitationComp = 1` and had ~42 dB to climb at a rate floored to the
+    // resonator's own charging constant, which a user hears as the first note of
+    // a session swelling for several seconds. Measured then, this render:
+    // -29.35 dBFS at 4 s against -19.13 settled.
+    //
+    // Seconds 2-4 against seconds 8-10, ONE render, 8 dB. Seconds 0-2 are
+    // excluded because FR-020's 2 000 ms voice attack and the body's own 0.66 s
+    // charging constant legitimately own that window; a bound there would be
+    // measuring the instrument, not the estimator. 8 dB rather than SC-007b's
+    // 6 dB because the plugin window also carries the voice envelope, the
+    // atmosphere tap and the reverb's own build-up, none of which the body-level
+    // criterion sees.
+    // --------------------------------------------------------------------------
+    SECTION("Seraphis_HeldNoteReachesLevelQuickly") {
+        constexpr float kColdStartToleranceDb = 8.0f;
+        constexpr std::size_t kEarlyFirst = 96000;   // 2 s
+        constexpr std::size_t kEarlyLast = 192000;   // 4 s
+        constexpr std::size_t kSettledFirst = 384000;  // 8 s
+        constexpr std::size_t kSettledLast = 480000;   // 10 s
+
+        Drive drive;
+        drive.pitches = std::span<const Steinberg::int16>(kSingleNote);
+        drive.velocity = kHostVelocityMax;
+        drive.masterGainNorm = kMasterGainNormUnity;
+        drive.automatePolyphony = false;
+        drive.numBlocks = 3 * kFourSecondBlocks;  // 12 s
+
+        const Render rendered = renderThroughProcessor(drive);
+
+        const float early = std::max(maxAbsWindow(rendered.left, kEarlyFirst, kEarlyLast),
+                                     maxAbsWindow(rendered.right, kEarlyFirst, kEarlyLast));
+        const float settled = std::max(maxAbsWindow(rendered.left, kSettledFirst, kSettledLast),
+                                       maxAbsWindow(rendered.right, kSettledFirst, kSettledLast));
+        const float earlyDb = 20.0f * std::log10(std::max(early, 1.0e-30f));
+        const float settledDb = 20.0f * std::log10(std::max(settled, 1.0e-30f));
+        const float shortfallDb = earlyDb - settledDb;
+
+        WARN("SC-005b single note, registered defaults, 12 s: peak[2-4 s] = "
+             << early << " (" << earlyDb << " dBFS), peak[8-10 s] = " << settled << " ("
+             << settledDb << " dBFS), shortfall = " << shortfallDb << " dB | tolerance +/-"
+             << kColdStartToleranceDb << " dB");
+
+        REQUIRE(allFiniteBits(rendered.left));
+        REQUIRE(allFiniteBits(rendered.right));
+        // Non-vacuity: two silences would make the ratio trivially 0 dB.
+        REQUIRE(early > 0.0f);
+        REQUIRE(settled > 0.0f);
+        REQUIRE(shortfallDb >= -kColdStartToleranceDb);
+        REQUIRE(shortfallDb <= kColdStartToleranceDb);
     }
 
     // --------------------------------------------------------------------------

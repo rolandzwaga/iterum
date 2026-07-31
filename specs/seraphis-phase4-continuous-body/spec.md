@@ -990,6 +990,12 @@ engine that attains its bound.
      still follows the pitch throughout; only the excitation correction, which the glide does not change,
      stays put. Without it SC-004’s waveguide click count reached 51 against a 28 control (ratio 1.82)
      versus the 1.6 the phase pinned with an explicit instruction not to raise it.
+  5. **The excitation level is not stationary across the window** — its RMS deviates from a 300 ms
+     reference (`kEstimatorLevelRefMs`) by more than `kEstimatorLevelEpsilon` (0.08 in log2, 0.5 dB).
+     ADDED 2026-08-01 with the seed table, and required by it: see the closed-limitation block below for
+     the measurement. The reference is advanced on every window, so the gate reopens on its own once a
+     move has finished; the FIRST window after a clear snaps the reference and holds, because an ungated
+     first window is exactly the one taken at a note onset.
 - **Per component, not per slot.** `Ĝ_slot` already carries everything that distinguishes the two slots,
   so a crossfade keeps its equal-power relationship and `snapSlotDrive` still lands an incoming engine at
   the right level on its first sample.
@@ -999,12 +1005,15 @@ engine that attains its bound.
   per 10 ms window. Measured on the `[.perf]` lane in isolation: `ContinuousBody` SC-005 operating point
   52,006 ns/block worst material (gate 53,250) — *faster* than the same run with the correction pinned to
   unity (57,718 ns/block).
-- **State.** Cleared by `reset()` and `prepare()`. FR-038a’s control-state recovery PATCHES rather than
+- **State.** `reset()` and `prepare()` return it to its per-material SEED (`kExcitationCompSeed`), not
+  to unity. FR-038a’s control-state recovery PATCHES rather than
   clears it: `excitationComp` is a property of the excitation’s coupling to the engine, not of the
   poisoned state, and clearing it drops the body ~40 dB and walks it back over seconds — an artefact far
   larger than the poisoning event FR-038a exists to hide (measured with the clearing form, SC-012’s
   poisoned-input ensemble on Strings: **51** detections against a **28** control). Only the parts that
-  are actually non-finite are reset. Observed by `stateFinite()`.
+  are actually non-finite are reset, and a non-finite estimate goes back to the material’s seed rather
+  than to unity — a poisoned estimate is no reason to hand the body the cold start the seeds remove.
+  Observed by `stateFinite()`.
 - **Observable** as `getExcitationComp()` (FR-007).
 
 **Measured after the fix**, same configuration as the table above: every material lands within **2.4 dB**
@@ -1013,23 +1022,66 @@ Chamber +0.05, Ice −0.07 dB), and the Seraphis single held note renders at **�
 −59.66). New criteria: `ContinuousBody_CloudExcitationHitsTarget` (this file's suite) and Phase 8's
 SC-005a `Seraphis_HeldNoteLoudnessIsNominal`.
 
-> **KNOWN LIMITATION — the cold-start ramp, stated rather than discovered.** `excitationComp` starts at 1
-> after every `prepare()` and `reset()` and has to climb ~42 dB, at a rate deliberately floored to the
-> resonator's own charging constant (`kEstimatorPlantFactor`; a faster loop overshoots and SC-001 catches
-> it). Measured end to end, Seraphis single held note, cold: **−29.35 dBFS at 4 s, −20.33 at 8 s, −19.13
-> at 12 s.** The first note after a prepare/reset is therefore audibly quiet for ~4 s and settled by ~8 s.
-> It affects the FIRST note only — the estimate persists across note events, and only `SeraphisEngine`'s
-> steal/orphan teardown and `silence()` reset a voice. Three faster arrangements were built and MEASURED
-> during this session and all three are worse:
-> - a flat 250 ms loop (no plant floor): SC-001(b) Strings reaches 0.827 against its 0.730 pre-clip
->   headroom bound;
-> - `kEstimatorPlantFactor = 0.75`: SC-001 still fails, and 4 s only reaches −28.65 dBFS;
-> - a far-from-target fast approach (use the decrease rate while >6 dB under): 4 s got *worse*, −32.96
->   dBFS, consistent with a limit cycle between the fast approach and the fast decrease.
+> **THE COLD-START RAMP — RECORDED 2026-07-31, CLOSED 2026-08-01 by phase-owner ruling.**
 >
-> Closing it properly needs either a seeded initial estimate (which risks a transient over-drive on a
-> resonant excitation) or a faster, better-compensated coupling estimator. **Recorded as open for the
-> phase owner; not fixed here.**
+> **What it was.** `excitationComp` started at 1 after every `prepare()` / `reset()` and had to climb
+> 26–52 dB at a rate floored to the resonator's own charging constant (`kEstimatorPlantFactor`; a faster
+> loop overshoots and SC-001 catches it). The first note after a prepare/reset was audibly quiet for
+> seconds. Measured end to end, Seraphis single held note, cold: **−29.35 dBFS at 4 s, −20.33 at 8 s,
+> −19.13 at 12 s.** Three faster loop arrangements were built and measured and all three were worse:
+> a flat 250 ms loop (SC-001(b) Strings 0.827 against 0.730), `kEstimatorPlantFactor = 0.75` (SC-001
+> still fails; 4 s only reaches −28.65 dBFS), and a far-from-target fast approach (4 s got *worse*,
+> −32.96 dBFS — a limit cycle against the fast decrease).
+>
+> **How it is closed.** Two changes, and BOTH are required — either alone makes things worse:
+>
+> 1. **`kExcitationCompSeed`, a per-material starting point** (see the constant's own provenance block).
+>    The estimator refines from the seed instead of from 1. Applied by `prepare()` and `reset()`, and by
+>    the pre-prepare adopt path; **NOT** by a live material change — see `reseedExcitationCompFor`, where
+>    the 14.7 dB mid-fade step it caused is measured against SC-012's transition budget.
+> 2. **HOLD clause 5, excitation stationarity** (`kEstimatorLevelEpsilon`). A coupling is a steady-state
+>    quantity; measured while the excitation ENVELOPE is ramping it is wrong by roughly
+>    (ramp rate × plant time constant), because the plant-lagged denominator trails a ramp by exactly
+>    that much. FR-020's 2 000 ms voice attack ramps ~20 dB/s into a body whose amplitude constant is
+>    0.66 s — about 13 dB of false "the coupling has risen", which the fast decrease then acts on. It
+>    cost nothing while the estimate started at the floor of 1 (there was nowhere to dive to). **With the
+>    seed there is 26–52 dB of room and it dived into it: seeded but ungated, the single held note
+>    measured −35.40 dBFS at 2–4 s against −20.31 settled, i.e. the seed alone made the cold start WORSE
+>    than the 10.5 dB it was meant to fix.**
+>
+> **Measured, before against after, IDENTICAL CODE with the seed table neutralised to 1 as the control.**
+>
+> Body level, fresh cold `prepare()`, 16-partial cloud excitation, peak over seconds 2–4 against the
+> settled tail of the same 12 s render (SC-007b, bound ±6 dB):
+>
+> | material | seeds = 1 | seeded |
+> |---|---|---|
+> | Glass | −4.10 dB | **−2.99 dB** |
+> | Strings | −2.35 dB | **−2.28 dB** |
+> | Metal Plate | **−8.97 dB (fails)** | **−5.82 dB** |
+> | Chamber | −0.64 dB | **−0.87 dB** |
+> | Ice | −4.97 dB | **−3.95 dB** |
+>
+> End to end (Phase 8 SC-005b), Seraphis single held note at the registered defaults, 12 s, peak over
+> seconds 2–4 against seconds 8–10 (bound ±8 dB):
+>
+> | | seeds = 1 | seeded |
+> |---|---|---|
+> | peak[2–4 s] | −35.67 dBFS | **−23.47 dBFS** |
+> | peak[8–10 s] | −19.79 dBFS | −19.88 dBFS |
+> | shortfall | **−15.89 dB (fails)** | **−3.59 dB** |
+>
+> i.e. **+12.2 dB at 2–4 s** end to end, and the settled level is unchanged — which is the whole claim
+> about a seed: it moves the starting point and nothing else.
+>
+> **RESIDUAL RISK, STATED.** Metal Plate's SC-007b margin is **0.18 dB** (−5.82 against −6.00). Its seed
+> (×382.2, for the shipped inharmonic cloud) is 18 dB above what SC-007b's synthetic harmonic excitation
+> needs (×48.8), so that clause measures the estimator recovering from a deliberately wrong seed, and it
+> recovers by overshooting downward first. A gate on the ENGINE OUTPUT's stationarity was built to remove
+> the overshoot and measured at two thresholds; it improved Metal Plate to +5.10 dB but broke SC-001
+> both times (Strings recovery 0.916 / 0.787 against 0.730; Chamber sweep clamp 26 engagements), so it
+> was **rejected**. The margin is thin and is flagged for CI: if a Linux/macOS leg fails SC-007b on Metal
+> Plate, the cause is this, not a new defect.
 
 ---
 
