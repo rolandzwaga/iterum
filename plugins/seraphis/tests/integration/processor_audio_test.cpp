@@ -636,6 +636,73 @@ TEST_CASE("Seraphis_ProcessorRendersHeldNote", "[seraphis][integration]") {
     }
 
     // --------------------------------------------------------------------------
+    // SC-005a - END-TO-END LOUDNESS (added 2026-07-31, phase-owner gain-staging
+    //           ruling).
+    //
+    // SC-005 above is a NON-SILENCE criterion and nothing more: its floor is
+    // 5.0e-4 (-66 dBFS), so it passes on a plugin that is inaudible in a mix.
+    // It did exactly that. The shipped chain rendered a single held note at
+    // -60.4 dBFS peak and SC-005 was green throughout, because the defect was a
+    // LEVEL defect and no criterion in this phase measured level.
+    //
+    // The root cause was ContinuousBody's FR-033 drive normalisation dividing by
+    // FR-032's `Ĝ` - an all-modes-in-phase, exactly-on-resonance UPPER BOUND -
+    // while the body's real excitation (HarmonicCloud's inharmonic multi-partial
+    // signal) realises a small fraction of that bound. See
+    // specs/seraphis-phase4-continuous-body/spec.md's 2026-07-31 amendment.
+    //
+    // THE WINDOW IS TWO-SIDED AND BOTH SIDES HAVE TEETH:
+    //   floor  -28 dBFS: a single note at the registered defaults must be
+    //                    audible at a normal monitoring level. The old -60.4
+    //                    dBFS fails it by 32 dB.
+    //   ceiling -12 dBFS: one note of eight-voice polyphony must leave room for
+    //                    the other seven before the TruePeakLimiter (SC-006) has
+    //                    to work. A fix that simply cranked a gain until the
+    //                    floor passed trips this.
+    // --------------------------------------------------------------------------
+    SECTION("Seraphis_HeldNoteLoudnessIsNominal") {
+        constexpr float kLoudnessFloorDbfs = -28.0f;
+        constexpr float kLoudnessCeilingDbfs = -12.0f;
+
+        Drive drive;
+        drive.pitches = std::span<const Steinberg::int16>(kSingleNote);
+        drive.velocity = kHostVelocityMax;            // MIDI 127
+        drive.masterGainNorm = kMasterGainNormUnity;  // linear 1.0
+        drive.automatePolyphony = false;              // registered default: 8 voices
+        // 8 s, NOT the 4 s SC-005 uses, and the reason is a MEASURED LIMITATION
+        // of the fix rather than a convenience. FR-033a's estimator starts from
+        // `excitationComp = 1` after every `prepare()` / `reset()` and has to
+        // climb ~42 dB to the value the shipped body needs, at a rate deliberately
+        // slowed to the resonator's own charging constant (see
+        // `kEstimatorPlantFactor`). Measured, this render, cold:
+        //
+        //     4 s  -> -29.35 dBFS      8 s -> -20.33 dBFS     12 s -> -19.13 dBFS
+        //
+        // i.e. the level is ~10 dB short at 4 s and settled by 8. THAT RAMP IS
+        // AUDIBLE and is recorded as a known limitation in
+        // specs/seraphis-phase4-continuous-body/spec.md's FR-033a amendment; it
+        // affects the first note after a prepare/reset only, because the estimate
+        // persists across note events. Rendering 8 s measures the criterion -
+        // the DELIVERED LEVEL - rather than the estimator's cold-start.
+        drive.numBlocks = 2 * kFourSecondBlocks;  // 8 s
+
+        const Render rendered = renderThroughProcessor(drive);
+        const float peak = std::max(maxAbs(rendered.left), maxAbs(rendered.right));
+        const float peakDb = 20.0f * std::log10(std::max(peak, 1.0e-30f));
+
+        WARN("SC-005a single note, registered defaults (48 kHz / 512, master gain unity, "
+             "polyphony 8, note 60, velocity 127, 4 s): peak = "
+             << peak << " (" << peakDb << " dBFS), rms L = " << rmsOf(rendered.left)
+             << " | window = [" << kLoudnessFloorDbfs << ", " << kLoudnessCeilingDbfs
+             << "] dBFS");
+
+        REQUIRE(allFiniteBits(rendered.left));
+        REQUIRE(allFiniteBits(rendered.right));
+        REQUIRE(peakDb >= kLoudnessFloorDbfs);
+        REQUIRE(peakDb <= kLoudnessCeilingDbfs);
+    }
+
+    // --------------------------------------------------------------------------
     // SC-006 - the ceiling bound, AND proof that the output stage ran.
     //
     // THE MASTER GAIN DIFFERS PER CLAUSE AND THAT IS LOAD-BEARING:

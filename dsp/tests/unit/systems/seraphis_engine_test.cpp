@@ -1339,7 +1339,17 @@ TEST_CASE("SeraphisEngine_QuietestStealWithAmnesty") {
         // set. The drive ratios are chosen to dominate it, and the measured
         // outcome (0.000541 / 0.00112 / 0.00228 / 0.00579) keeps ~2x of margin
         // on every one of the three comparisons below.
-        const std::array<float, 4> drives{0.15f, 0.5f, 1.5f, 4.0f};
+        //
+        // RE-SCALED 2026-07-31 (phase-owner gain-staging ruling; ContinuousBody
+        // FR-033a). The ladder used to be {0.15, 0.5, 1.5, 4.0} and measured
+        // 0.000541 / 0.00112 / 0.00228 / 0.00579 - a body running 30-40 dB under
+        // its documented level, which is the defect FR-033a fixes. At the
+        // corrected level the SAME drives measure 0.01878 / 0.03056 / 0.05381 /
+        // 0.09935 and slots 1 and 2 no longer sit inside the amnesty-eligible
+        // band that clause 1's branch requires (`kAmnesty` = 0.0316). The
+        // criterion is untouched; only the OPERATING POINT of its fixture moves,
+        // by the factor the body's own normalisation moved.
+        const std::array<float, 4> drives{0.04f, 0.13f, 0.4f, 1.1f};
         for (std::size_t v = 0; v < drives.size(); ++v) {
             mutableVoice(*engine, v).setDrive(drives[v]);
         }

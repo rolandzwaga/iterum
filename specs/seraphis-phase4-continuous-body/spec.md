@@ -844,6 +844,195 @@ logarithm's argument strictly positive, which is also what `setDrive(0)` resolve
 `cloudDrive` uses the same mechanism and the same constant. `getDriveGain()` (FR-007) reports the sounding
 slot's smoothed `engineDrive`.
 
+---
+
+**FR-033a — Excitation compensation. ADDED 2026-07-31 by phase-owner ruling, closing a shipped
+gain-staging defect.**
+
+> **The defect.** FR-033 divides by `Ĝ`, and FR-032 defines `Ĝ` as an *upper bound*: all contributors in
+> phase, every one of them driven exactly on resonance. Only the waveguide attains it. Under the
+> excitation `ContinuousBody` actually ships inside — `SeraphisVoice`'s `HarmonicCloud`, whose partials
+> are *inharmonic* (`setInharmonicity(0.030)`) while the modal materials' mode ratios are *also*
+> inharmonic and unrelated — almost no partial energy lands inside a mode's ~0.3 Hz bandwidth, so the
+> realised gain is a small fraction of `Ĝ`. The header's own warning that modal materials "run 5–15 dB
+> under their bound" understated it by more than 25 dB.
+>
+> **Measured, this session** (`HarmonicCloud` at the shipped `SeraphisVoice` defaults — richness 0.60,
+> inharmonicity 0.030, mutation 0.25, gravity 0.20, tilt 0 — note 60 = 261.63 Hz, body at
+> `resonance 0.7 / damping 0.25 / keyTracking 1.0 / drive 1.0 / mix 1.0`, AGC on; engine steady-state
+> peak relative to `kTargetPeak`):
+>
+> | Material | dB under `kTargetPeak` | drive multiplier needed |
+> |---|---|---|
+> | Glass | −42.0 | ×126 |
+> | Strings | −30.8 | ×34.8 |
+> | Metal Plate | −55.8 | ×618 |
+> | Chamber | −44.5 | ×167 |
+> | Ice | −41.0 | ×112 |
+>
+> Downstream consequence: a Seraphis single held note at the registered defaults rendered at
+> **−59.66 dBFS peak** — a plugin that is inaudible in a mix — while every Phase 8 criterion stayed
+> green, because SC-005 is a *non-silence* criterion with a −66 dBFS floor and nothing in the phase
+> measured level.
+>
+> **Why no static correction can fix it.** The spread above is 25 dB, so a single constant is arithmetically
+> excluded. A *per-material* constant is excluded too, and for a stronger reason: the correction is a
+> property of the excitation's spectrum, not of the engine. The same Glass bank driven by a full-scale
+> sine parked on mode 0 runs only 8.2 dB under `kTargetPeak` (SC-007(ii)'s measured table), so the
+> +42 dB the cloud case needs would drive the sine case ~34 dB *into* `applyOutputStage`'s soft clipper,
+> destroying SC-007(ii)'s +3 dB ceiling, SC-007(iii)'s linearity clause and SC-001's headroom clause at
+> once. The missing term has to be *measured from the signal that is there*.
+
+The component therefore maintains a scalar **`excitationComp`**, and FR-033's engine drive becomes
+
+```
+engineDrive_slot = clamp(kTargetPeak · excitationComp / Ĝ_slot, kMinDriveGain, kMaxDriveGain)
+                   · rmsGain · userDrive
+```
+
+`cloudDrive` is unchanged (no resonator, no `Ĝ`, no coupling to measure).
+
+**The estimated quantity is a coupling, not a level.** Once per **measurement window**
+(`kEstimatorWindowMs = 10`, i.e. a whole number of 64-sample control chunks — 8 at 48 kHz, 15 at 96 kHz)
+the component forms
+
+```
+coupling_window = windowPeak / engineInEnv
+```
+
+where `windowPeak` is the peak of the **post-crossfade, post-`kOutputClamp` engine output** accumulated
+over that window, and `engineInEnv` is the engine INPUT level (`engineDrive · windowRms`) passed through
+a one-pole whose time constant is the resonator’s own amplitude constant `T60 / ln(1000)`.
+
+Four properties, each of which was forced by a criterion that caught its absence:
+
+- **The window is fixed in TIME, not in control chunks.** The statistic is a peak over an RMS, and that
+  ratio depends on how many signal *cycles* the window spans — 64 samples is 0.29 cycles of a 220 Hz tone
+  at 48 kHz and 0.15 at 96 kHz. Measured with a one-chunk window, SC-018’s 96 kHz-vs-48 kHz steady-state
+  RMS differed by **1.14 dB** against a 1.0 dB bound.
+- **The ratio is formed FIRST; only the ratio is followed.** Following the numerator and the denominator
+  separately closes a positive-feedback loop through the drive, because the drive then scales one side of
+  a *held* quantity. Both alternatives were built and both are unstable, in opposite directions:
+  held-peak / instantaneous-input lost **23.7 dB** on SC-007(iv)’s 20 dB input step (bound 6 dB);
+  held-peak / held-input reached body peak **12.16** with **2,045** FR-037 clamp engagements on SC-001’s
+  sweep. Per window the drive divides out exactly and there is no loop at all.
+- **The denominator is lagged by the plant’s own time constant.** The numerator is the output of a
+  resonator whose envelope trails its excitation by `T60 / ln(1000)`; the raw engine input does not trail
+  at all, so every level TRANSIENT would read as a coupling change. Measured without it, Glass came back
+  **14.1 dB** low on the same SC-007(iv) step. It re-introduces no feedback: `drive` scales both sides
+  identically and with the same delay.
+- **A PEAK follower runs on the coupling** — attack `kCouplingAttackMs = 50`, release
+  `kEnginePeakReleaseMs = 2000`. The long release is what makes the drive follow the *worst* recent
+  coupling rather than the average, so a sweeping or mutating excitation that crosses a resonance only
+  occasionally cannot leave the body over-driven between crossings. The attack is a time constant rather
+  than an instantaneous max-hold because the windowed statistic still carries noise and a max-hold takes
+  its largest excursion: measured at max-hold, Metal Plate landed **8.03 dB** under `kTargetPeak`.
+
+The correction follows in one step, not by iteration:
+
+```
+targetPeak            = softClip(kTargetPeak · userDrive)
+excitationComp_target = clamp( Ĝ_sounding · targetPeak
+                               / (coupling · kTargetPeak · kTargetInputRms · userDrive),
+                               kMinExcitationComp = 1, kMaxExcitationComp = 1024 )
+```
+
+- **The target is stated in the domain the measurement lives in — AFTER the engine’s own output soft
+  clip.** `kTargetPeak` is a PRE-clip level (it is derived from
+  `kEngineHeadroomFrac · kEngineClipThreshold`). At `userDrive = 1` the two agree to 0.03 dB, but at
+  `kMaxUserDrive` the intended pre-clip 0.9 images to 0.730 — *exactly* SC-001(b)’s bound — and
+  regulating the post-clip peak to 0.9 instead asks for 2.8 dB more pre-clip level than the design point.
+  Applying the forward clip to the TARGET is also what makes runaway structurally impossible: `softClip`
+  is bounded by `kEngineClipThreshold`, so the estimator can never chase a level the engine cannot
+  produce. The measured result is that every material now lands at 0.7229–0.7254 on SC-001(b), i.e. on
+  the design point, where before the fix they sat at 0.00065–0.195.
+- **The one-pole on `log2(excitationComp)` is ASYMMETRIC and PLANT-AWARE.** An increase is floored at
+  `max(kExcitationCompSmoothMs = 250 ms, kEstimatorPlantFactor = 1.5 · T60/ln(1000))`; a decrease at
+  `max(kExcitationCompDecreaseMs = 50 ms, kEstimatorDecreasePlantFactor = 0.25 · T60/ln(1000))`.
+  A loop faster than its plant overshoots: measured with a flat 250 ms constant, Glass at `resonance = 1`
+  (`T60 = 13.82 s`, plant τ = 2.0 s) parked the drive ~20 dB high, steady-state peak **0.819** against
+  SC-001(b)’s 0.730. The asymmetry is a limiter’s, and for a limiter’s reason: an under-driven body is a
+  slow benign error, an over-driven one is an immediate headroom problem — measured with a symmetric
+  loop, Chamber’s SC-001 sweep reached body peak **16.3** with **98,994** clamp engagements.
+
+`userDrive` divides out of `coupling` and reappears in the drive, so the steady state is
+`kTargetPeak · userDrive` and `setDrive(kMaxUserDrive)` still reaches saturation exactly as FR-033
+documents. The `static_assert` on `kTargetPeak · kMaxUserDrive ≤ kEngineHeadroomFrac ·
+kEngineClipThreshold` is unchanged and now holds for the *realistic* excitation rather than only for an
+engine that attains its bound.
+
+- **The floor is exactly 1, and it is a statement.** `Ĝ` is an upper bound, so a realised gain can never
+  exceed it and the correction can never legitimately be an attenuation. `excitationComp = 1` reproduces
+  FR-033’s original law bit-for-bit.
+- **The ceiling is 1024 (+60 dB), 4.4 dB over the largest measured requirement (Metal Plate, ×618).** It
+  bounds the *estimator*, not the output: the engine’s own soft clip holds the output at ~+13 dB over
+  `kTargetPeak` whatever this constant is, and FR-037’s `kOutputClamp` sits behind that. **The `Ĝ`
+  stability argument is untouched** — `Ĝ` still governs every pole radius, damping coefficient and
+  feedback gain; `excitationComp` moves only an input gain, and an input gain cannot make a
+  strictly-stable resonator unstable. Measured across SC-001’s 60 s renders at maximum resonance,
+  maximum drive and a full-blend 30 s decay cloud: `log10` slope ≤ 3e-4 per 15 s window on every
+  material and excitation (i.e. flat), and `clampDelta == 0` throughout.
+- **Gated on FR-034a.** With `setInputAgcEnabled(false)` the estimate is forced to exactly 1, so the
+  AGC-off path — where SC-007 (i), (ii) and (iii) all measure — is bit-for-bit what it was before this
+  requirement existed.
+- **Four HOLD conditions**, under which the estimate is held (never zeroed, never decayed):
+  1. `rmsGain ≥ kMaxRmsGain` — the AGC has run out of range, so the excitation is below the operating
+     point the correction is defined at. **This is the musically load-bearing one.** On note-off the
+     cloud decays in ~0.5 s while a modal body rings for `T60` seconds; without this gate the estimator
+     would see a falling output with no input to explain it and pump the tail back up. Holding lets the
+     tail decay at exactly the rate the damping law sets, which is what SC-008 and
+     `ContinuousBody_DecaysToSilence` measure.
+  2. `coupling ≤ kEnginePeakFloor` (1e-7) — nothing has come out yet.
+  3. `engineDrive ≤ kMinDriveGain`, or `userDrive == 0` — degenerate divisor.
+  4. **`f_body` moved by more than `kEstimatorPitchEpsilon` (0.1 %) across the window.** A coupling
+     measured while the body pitch is gliding belongs to neither pitch — every mode moves, `Ĝ` is
+     recomputed under it and the resonators are mid-retune. `Ĝ` still tracks the glide, so the drive
+     still follows the pitch throughout; only the excitation correction, which the glide does not change,
+     stays put. Without it SC-004’s waveguide click count reached 51 against a 28 control (ratio 1.82)
+     versus the 1.6 the phase pinned with an explicit instruction not to raise it.
+- **Per component, not per slot.** `Ĝ_slot` already carries everything that distinguishes the two slots,
+  so a crossfade keeps its equal-power relationship and `snapSlotDrive` still lands an incoming engine at
+  the right level on its first sample.
+- **RT-safe and block-size invariant.** The peak accumulator and the `Σx²` accumulator carry across
+  `processStereoBlock` calls and are consumed only on the absolute 64-sample control grid, exactly as
+  FR-034’s `Σx²` and `cloud_.lastPeak` do. No allocation, no lock; one `sqrt`, one `log2` and one `exp2`
+  per 10 ms window. Measured on the `[.perf]` lane in isolation: `ContinuousBody` SC-005 operating point
+  52,006 ns/block worst material (gate 53,250) — *faster* than the same run with the correction pinned to
+  unity (57,718 ns/block).
+- **State.** Cleared by `reset()` and `prepare()`. FR-038a’s control-state recovery PATCHES rather than
+  clears it: `excitationComp` is a property of the excitation’s coupling to the engine, not of the
+  poisoned state, and clearing it drops the body ~40 dB and walks it back over seconds — an artefact far
+  larger than the poisoning event FR-038a exists to hide (measured with the clearing form, SC-012’s
+  poisoned-input ensemble on Strings: **51** detections against a **28** control). Only the parts that
+  are actually non-finite are reset. Observed by `stateFinite()`.
+- **Observable** as `getExcitationComp()` (FR-007).
+
+**Measured after the fix**, same configuration as the table above: every material lands within **2.4 dB**
+of `kTargetPeak` under a 16-partial cloud-like excitation (Glass +0.02, Strings +0.05, Metal Plate +2.39,
+Chamber +0.05, Ice −0.07 dB), and the Seraphis single held note renders at **−19.13 dBFS** peak (was
+−59.66). New criteria: `ContinuousBody_CloudExcitationHitsTarget` (this file's suite) and Phase 8's
+SC-005a `Seraphis_HeldNoteLoudnessIsNominal`.
+
+> **KNOWN LIMITATION — the cold-start ramp, stated rather than discovered.** `excitationComp` starts at 1
+> after every `prepare()` and `reset()` and has to climb ~42 dB, at a rate deliberately floored to the
+> resonator's own charging constant (`kEstimatorPlantFactor`; a faster loop overshoots and SC-001 catches
+> it). Measured end to end, Seraphis single held note, cold: **−29.35 dBFS at 4 s, −20.33 at 8 s, −19.13
+> at 12 s.** The first note after a prepare/reset is therefore audibly quiet for ~4 s and settled by ~8 s.
+> It affects the FIRST note only — the estimate persists across note events, and only `SeraphisEngine`'s
+> steal/orphan teardown and `silence()` reset a voice. Three faster arrangements were built and MEASURED
+> during this session and all three are worse:
+> - a flat 250 ms loop (no plant floor): SC-001(b) Strings reaches 0.827 against its 0.730 pre-clip
+>   headroom bound;
+> - `kEstimatorPlantFactor = 0.75`: SC-001 still fails, and 4 s only reaches −28.65 dBFS;
+> - a far-from-target fast approach (use the decrease rate while >6 dB under): 4 s got *worse*, −32.96
+>   dBFS, consistent with a limit cycle between the fast approach and the fast decrease.
+>
+> Closing it properly needs either a seeded initial estimate (which risks a transient over-drive on a
+> resonant excitation) or a faster, better-compensated coupling estimator. **Recorded as open for the
+> phase owner; not fixed here.**
+
+---
+
 **FR-034 — Input RMS tracking (roadmap line 210 verbatim: "input RMS tracking → resonator drive
 compensation").** An `EnvelopeFollower` (`processors/envelope_follower.h:82`) in `DetectionMode::RMS`
 (`setMode`, `:202`) with `setAttackTime(50.0f)` (`:220`) and `setReleaseTime(200.0f)` (`:227`) tracks the

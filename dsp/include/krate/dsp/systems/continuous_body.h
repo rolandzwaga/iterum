@@ -305,6 +305,134 @@ public:
     static constexpr float kMaxRmsGain = 4.0f;
     static constexpr float kRmsAttackMs = 50.0f;
     static constexpr float kRmsReleaseMs = 200.0f;
+
+    // --- excitation compensation (FR-033a, added 2026-07-31) -----------------
+    /// @brief Upper clamp on `excitationComp_`, FR-033a's measured correction
+    ///        between `Ĝ` and the gain an engine ACTUALLY realises.
+    ///
+    /// **Why FR-033's `kTargetPeak / Ĝ` alone is not a level normalisation, and
+    /// the defect that proved it.** `Ĝ` (FR-032) is an all-contributors-in-phase,
+    /// exactly-on-resonance UPPER BOUND. Only the waveguide attains it (a sine at
+    /// `f_body` sits on a comb tooth); every other engine, under every excitation
+    /// that is not a full-scale sine parked on a mode, realises a small fraction
+    /// of it. The header already warned that modal materials "run 5-15 dB under
+    /// their bound". MEASURED against the excitation ContinuousBody actually
+    /// ships inside - SeraphisVoice's HarmonicCloud at the shipped voice defaults
+    /// (richness 0.60, inharmonicity 0.030, mutation 0.25, gravity 0.20), note 60,
+    /// body at resonance 0.7 / damping 0.25 / keyTracking 1.0 / drive 1.0 - the
+    /// realised engine peak sat these many dB under `kTargetPeak`:
+    ///
+    ///     Glass -42.0   Strings -30.8   MetalPlate -55.8   Chamber -44.5   Ice -41.0
+    ///
+    /// i.e. the body delivered -55 dBFS where it documents -13 dBFS, and a
+    /// Seraphis single note reached the user at -60 dBFS. That is the defect this
+    /// constant exists to close (phase-owner ruling 2026-07-31; see
+    /// specs/seraphis-phase4-continuous-body/spec.md's amendment).
+    ///
+    /// **Why the correction cannot be a constant.** The spread above is 25 dB and
+    /// it is not a property of the engine alone - it is a property of the
+    /// engine AND the excitation's spectrum. The same Glass bank driven by a
+    /// full-scale sine on mode 0 runs only 8.2 dB under `kTargetPeak`
+    /// (SC-007(ii)'s measured table). A static +42 dB would therefore drive the
+    /// sine case 34 dB INTO `applyOutputStage`'s soft clipper. No fixed number,
+    /// per-material or global, can serve both; the correction has to be measured
+    /// from the signal that is actually there. Hence FR-033a.
+    ///
+    /// **The clamp value.** The largest measured requirement is Metal Plate's
+    /// x618. 1024 (+60 dB) leaves 4.4 dB over it. The clamp is NOT the thing that
+    /// bounds a transient: `applyOutputStage`'s soft clip at
+    /// `kEngineClipThreshold` bounds the engine output at ~+13 dB over
+    /// `kTargetPeak` whatever this constant is, and FR-037's `kOutputClamp` sits
+    /// behind that. This clamp bounds the ESTIMATOR, so a pathological
+    /// input/output pair cannot park the drive at an absurd value that then takes
+    /// `kExcitationCompSmoothMs` to unwind.
+    static constexpr float kMaxExcitationComp = 1024.0f;
+    /// The floor is EXACTLY 1, and that is a statement, not a guard: `Ĝ` is an
+    /// upper bound, so the realised gain can never exceed it and the correction
+    /// can never legitimately be an attenuation. `excitationComp_ == 1` reproduces
+    /// FR-033's original law bit-for-bit, which is what the AGC-off path uses.
+    static constexpr float kMinExcitationComp = 1.0f;
+    /// Floor on the time constant for an INCREASE of `log2(excitationComp_)`,
+    /// advanced once per estimator window (`kEstimatorWindowMs`). Log domain for
+    /// FR-033's own reason: the quantity spans three decades between engines and
+    /// a linear one-pole would spend its whole trajectory near the larger
+    /// endpoint. The effective constant is the larger of this and
+    /// `kEstimatorPlantFactor * T60 / ln(1000)`.
+    static constexpr float kExcitationCompSmoothMs = 250.0f;
+    /// @brief Time constant for a DECREASE of the correction. Fast, fixed, and
+    ///        deliberately asymmetric against `kExcitationCompSmoothMs`.
+    ///
+    /// **A sweeping excitation is the worst case and SC-001 carries one.** Its
+    /// 20 Hz -> 8 kHz log sweep spends most of its time off every resonance, so
+    /// the estimator settles on a low coupling - and then the sweep crosses a
+    /// mode and the realised gain jumps by tens of dB. Measured with a symmetric
+    /// (plant-slowed) loop, Chamber at `resonance = 1` / `userDrive = 4` /
+    /// `cloudMix = 1`: body peak **16.3** and 98,994 `kOutputClamp` engagements,
+    /// against SC-001's 1.5 bound and its `clampDelta == 0` clause.
+    ///
+    /// The asymmetry is the standard answer and it is sound here for the same
+    /// reason it is in a limiter: an UNDER-driven body is a slow, benign error
+    /// that must not be corrected faster than the resonator can charge (see
+    /// `kEstimatorPlantFactor`), while an OVER-driven one is an immediate
+    /// headroom problem. 50 ms matches `kDriveSmoothMs`, so the decrease is
+    /// never faster than the smoother that has to carry it.
+    static constexpr float kExcitationCompDecreaseMs = 50.0f;
+    /// RELEASE time constant of the peak follower the estimator runs on the
+    /// measured COUPLING (not on the raw engine peak - see updateExcitationComp).
+    /// Long, because it is what makes the drive follow the WORST coupling seen
+    /// recently rather than the average: a sweeping or mutating excitation
+    /// crosses a resonance only occasionally, and forgetting the crossing faster
+    /// than the body rings leaves the body over-driven at the next one.
+    static constexpr float kEnginePeakReleaseMs = 2000.0f;
+    /// Attack time constant of that same follower. See updateExcitationComp.
+    static constexpr float kCouplingAttackMs = 50.0f;
+    /// @brief Length of the estimator's measurement window, in ms.
+    ///
+    /// The peak and the RMS the coupling is formed from are accumulated over
+    /// THIS span rather than over one control chunk, so the peak-over-RMS
+    /// statistic covers the same number of signal cycles at every sample rate -
+    /// see updateExcitationComp for the SC-018 measurement that forces it.
+    /// 10 ms is 8 control chunks at 48 kHz and 15 at 96 kHz.
+    static constexpr float kEstimatorWindowMs = 10.0f;
+    /// Relative `f_body` movement across one estimator window above which the
+    /// estimate is HELD. 0.1 % is 1.7 cents per 10 ms - far below any glide
+    /// SC-004 renders and far above the residual jitter of a settled pitch
+    /// smoother. See updateExcitationComp's clause 4.
+    static constexpr float kEstimatorPitchEpsilon = 1.0e-3f;
+    /// Estimator gate: a measured coupling at or below this is treated as
+    /// "nothing to measure" and the estimate is HELD. The realised couplings in
+    /// the table above run from ~2 to ~900, so this only ever fires before the
+    /// first driven window or on a fully bypassed resonator.
+    static constexpr float kEnginePeakFloor = 1.0e-7f;
+    /// @brief How many plant time constants the estimator's own one-pole is
+    ///        slowed to, whenever `T60` makes the plant the slower of the two.
+    ///
+    /// **The estimator regulates a resonator whose own charging time constant is
+    /// `T60 / ln(1000)` - up to 2 s. A loop faster than its plant overshoots,
+    /// and SC-001 catches that too.** Measured with a fixed 250 ms one-pole,
+    /// Glass at `resonance = 1` (`T60 = 13.82 s`, plant tau = 2.0 s): the
+    /// estimator raced the charging resonator, read the still-rising output as
+    /// "far under target", and parked the drive ~20 dB high - steady-state peak
+    /// 0.819 against SC-001(b)'s 0.730. At `kEstimatorPlantFactor = 1.5` the
+    /// loop is over-damped for every material in the table and the same
+    /// measurement lands where FR-033 says it should.
+    ///
+    /// The cost is convergence time on a COLD start (nothing else: the estimate
+    /// persists across notes, so only the first note of a session sees it). At
+    /// the shipped Seraphis body settings `T60 = 4.57 s`, so tau = 0.99 s.
+    static constexpr float kEstimatorPlantFactor = 1.5f;
+    /// The same plant floor applied to a DECREASE, at a quarter of the weight.
+    /// A decrease has to stay fast enough to protect headroom against a sweeping
+    /// excitation (see kExcitationCompDecreaseMs) but a 50 ms gain move on a body
+    /// that is now running at its documented level is itself an audible event -
+    /// SC-012's transition, glide and parameter-sweep clauses count it.
+    static constexpr float kEstimatorDecreasePlantFactor = 0.25f;
+    /// Upper clamp on the estimator's per-chunk one-pole coefficient. The
+    /// coefficient is formed as `chunkSec / tau` - the first-order form of
+    /// `1 - exp(-chunkSec/tau)`, exact to 0.3 % at the 250 ms floor and cheaper
+    /// than an `exp` per control chunk - so it needs a ceiling to stay a
+    /// contraction if a pathological sample rate ever makes the chunk long.
+    static constexpr float kMaxEstimatorAlpha = 0.5f;
     /// Hard ceiling on the value handed to `rmsFollower_.processSample`.
     /// `EnvelopeFollower::processRMS` squares its argument IN FLOAT
     /// (`envelope_follower.h:313`), so any |x| > ~1.8e19 overflows to +Inf and
@@ -793,6 +921,7 @@ public:
         rmsFollower_.reset();
         inputRms_ = 0.0f;
         rmsGain_ = 1.0f;
+        clearExcitationComp();
 
         sampleCounter_ = 0;
         chunkSumSq_ = 0.0;
@@ -1280,6 +1409,12 @@ public:
     ///        overflow (envelope_follower.h:313, :316-321).
     [[nodiscard]] float getInputRms() const noexcept { return inputRms_; }
 
+    /// @brief FR-033a's measured excitation compensation - the factor between
+    ///        FR-032's `Ĝ` bound and the gain the CURRENT excitation actually
+    ///        realises. Exactly 1 whenever the AGC is off (FR-034a) or the
+    ///        estimator has never had a driven chunk to measure.
+    [[nodiscard]] float getExcitationComp() const noexcept { return excitationComp_; }
+
     /// @brief FR-032's steady-state gain bound for the sounding slot.
     [[nodiscard]] float getSteadyStateGainBound() const noexcept
     {
@@ -1469,6 +1604,40 @@ private:
         for (Slot& slot : slots_) {
             slot.driveLog10.configure(kDriveSmoothMs, sr);
         }
+        configureExcitationComp(sr);
+    }
+
+    /// FR-033a's two per-control-chunk one-pole coefficients. Both are advanced
+    /// exactly once per `kControlChunkSamples`, never per sample, so the chunk
+    /// period - not the sample period - is what the time constants are built
+    /// against. That is also what makes the estimator block-size invariant.
+    void configureExcitationComp(float sr) noexcept
+    {
+        const float chunkSec = static_cast<float>(kControlChunkSamples) / std::max(sr, 1.0f);
+        estWindowChunks_ = std::max<std::uint32_t>(
+            1u, static_cast<std::uint32_t>(
+                    std::ceil((kEstimatorWindowMs * 1.0e-3f) / std::max(chunkSec, 1.0e-9f))));
+        estWindowSeconds_ = chunkSec * static_cast<float>(estWindowChunks_);
+        estSumSq_ = 0.0f;
+        estChunks_ = 0;
+    }
+
+    /// @brief `dsp_utils.h`'s `softClip` (`:105-113`), restated rather than
+    ///        included.
+    ///
+    /// FR-003 pins this header's krate include set at thirteen and deliberately
+    /// EXCLUDES `dsp_utils.h`; `modal_resonator_bank.h` supplies the real one
+    /// transitively, and depending on a transitive include for a control-path
+    /// expression is exactly the fragility FR-003 exists to prevent. Five flops,
+    /// once per control chunk. If the shared helper's shape ever changes, this
+    /// copy must follow it - it exists only to predict what
+    /// `applyOutputStage` (`modal_resonator_bank.h:816-823`) and
+    /// `WaveguideString::process` (`waveguide_string.h:181`) will do to the
+    /// estimator's target.
+    [[nodiscard]] static float engineSoftClip(float x) noexcept
+    {
+        const float x2 = x * x;
+        return (x * (27.0f + x2)) / (27.0f + (9.0f * x2));
     }
 
     void refreshSmootherTargets() noexcept
@@ -2638,13 +2807,242 @@ private:
                > (kDampingEpsilonRel * std::max(applied, magnitudeFloor));
     }
 
+    /// @brief FR-033a. Reset the excitation estimator to the state in which it
+    ///        contributes NOTHING, i.e. FR-033's original law exactly.
+    void clearExcitationComp() noexcept
+    {
+        excitationCompLog2_ = 0.0f;
+        excitationComp_ = kMinExcitationComp;
+        enginePeakAccum_ = 0.0f;
+        couplingEnv_ = 0.0f;
+        engineInEnv_ = 0.0f;
+        estAppliedBodyHz_ = 0.0f;
+        estSumSq_ = 0.0f;
+        estChunks_ = 0;
+    }
+
+    /// @brief FR-033a - measure how far under its `Ĝ` bound the CURRENT
+    ///        excitation actually drives the sounding engine, and correct for it.
+    ///
+    /// @par What is estimated, and why it is not a level compressor
+    /// The estimated quantity is
+    ///
+    ///     A = enginePeak / (engineDrive * inputRms)
+    ///
+    /// - the engine's realised peak output per unit of (drive x input RMS). Both
+    /// divisors are known exactly, so `A` is INVARIANT under the drive this
+    /// function then sets (no loop gain: the plant is linear in the drive below
+    /// its clipper) and INVARIANT under the input level. It is a measurement of
+    /// the excitation's SPECTRAL coupling to the engine - the one term FR-032's
+    /// bound cannot know - and nothing else. The correction is then computed in
+    /// ONE step from that measurement,
+    ///
+    ///     excitationComp = Ĝ / (A * kTargetInputRms)
+    ///
+    /// which puts the engine at `kTargetPeak * userDrive` at the AGC's own
+    /// operating point. `userDrive` divides out of `A` and reappears in the
+    /// drive, so the Drive control keeps its full documented authority - it is
+    /// NOT regulated away, and driving it to `kMaxUserDrive` still reaches
+    /// saturation exactly as FR-033 documents.
+    ///
+    /// @par Why it is gated on the AGC
+    /// With `setInputAgcEnabled(false)` the component's contract is a FIXED
+    /// gain (SC-007(iii) measures exactly that: a 20 dB input drop must give a
+    /// 20 dB output drop). `A`'s level-invariance means the estimator would not
+    /// break that clause, but the honest reading of FR-034a is "no automatic
+    /// level behaviour at all", so the estimate is forced to unity there and the
+    /// AGC-off path is bit-for-bit what it was before FR-033a existed.
+    ///
+    /// @par The three HOLD conditions, and the ring-out they exist for
+    /// The estimate is held - not zeroed, not decayed - whenever it cannot be
+    /// measured honestly:
+    ///   1. `rmsGain_ >= kMaxRmsGain`: the AGC has run out of range, so the
+    ///      excitation is below the operating point the correction is defined
+    ///      at. THIS IS THE ONE THAT MATTERS MUSICALLY. On note-off the cloud
+    ///      decays in ~0.5 s while a modal body rings for `T60` seconds; without
+    ///      this gate the estimator would see the output falling with no input to
+    ///      explain it, read a rising `A`, and pump the tail back up. Holding
+    ///      lets the tail decay at exactly the rate the damping law sets, which
+    ///      is what SC-008 and `ContinuousBody_DecaysToSilence` measure.
+    ///   2. `couplingEnv_ <= kEnginePeakFloor`: nothing has come out yet.
+    ///   3. `drive <= kMinDriveGain`: the divisor is degenerate.
+///   4. `f_body` moved across the window - see the in-body comment.
+    void updateExcitationComp(float chunkRms) noexcept
+    {
+        if (!agcEnabled_) {
+            // FR-034a: no automatic level behaviour at all. Unity, and the
+            // window is abandoned rather than carried across the mode change.
+            excitationCompLog2_ = 0.0f;
+            excitationComp_ = kMinExcitationComp;
+            enginePeakAccum_ = 0.0f;
+            estSumSq_ = 0.0f;
+            estChunks_ = 0;
+            return;
+        }
+
+        // --- the measurement window ------------------------------------------
+        //
+        // FIXED IN TIME (kEstimatorWindowMs), NOT in control chunks, and that is
+        // what makes the estimator sample-rate invariant. The statistic being
+        // formed is a PEAK over an RMS, and the ratio of those two over a window
+        // of `n` samples depends on how many CYCLES of the signal the window
+        // spans: 64 samples is 0.29 cycles of a 220 Hz tone at 48 kHz and 0.15 at
+        // 96 kHz, a systematic difference no amount of downstream smoothing
+        // removes. MEASURED with the window pinned at one control chunk,
+        // SC-018's 96 kHz-against-48 kHz steady-state RMS: 1.14 dB, against that
+        // clause's 1.0 dB bound.
+        //
+        // The peak accumulator is filled by `renderSub` and consumed HERE and
+        // only here, so it spans exactly the same samples as the RMS.
+        estSumSq_ += chunkRms * chunkRms;
+        ++estChunks_;
+        if (estChunks_ < estWindowChunks_) {
+            return;
+        }
+        const float windowPeak = enginePeakAccum_;
+        const float windowRms = std::sqrt(estSumSq_ / static_cast<float>(estChunks_));
+        enginePeakAccum_ = 0.0f;
+        estSumSq_ = 0.0f;
+        estChunks_ = 0;
+
+        const Slot& slot = slots_[static_cast<std::size_t>(soundingSlot_)];
+        const float drive = exp10Fast(slot.driveLog10.getCurrentValue());
+
+        // --- the coupling ----------------------------------------------------
+        //
+        // *** THE RATIO IS FORMED FIRST AND ONLY THE RATIO IS FOLLOWED. ***
+        // Every arrangement that follows the numerator and the denominator
+        // separately closes a positive-feedback loop through the drive, because
+        // the drive scales one side of a HELD quantity. Both were built and both
+        // are unstable, in opposite directions:
+        //
+        //   held peak / instantaneous (drive x rms)
+        //       A decrease of `excitationComp` shrinks the denominator at once
+        //       while the held numerator does not move, so the ratio rises and
+        //       the estimator decreases again. MEASURED: Chamber came back
+        //       23.7 dB low on SC-007(iv)'s 20 dB input step (bound 6 dB).
+        //   held peak / held (drive x rms)
+        //       The mirror image upward - between two resonance crossings the
+        //       held denominator remembers the largest recent drive, the ratio
+        //       under-reads and the estimator climbs. MEASURED: Chamber's SC-001
+        //       sweep reached body peak 12.16 with 2,045 FR-037 clamp
+        //       engagements.
+        //
+        // Formed per window, the drive divides out exactly and there is no loop.
+        //
+        // THE DENOMINATOR IS LAGGED BY THE PLANT'S OWN TIME CONSTANT. The
+        // numerator is the output of a resonator whose amplitude envelope trails
+        // its excitation by `T60 / ln(1000)`; the raw engine input does not
+        // trail at all, so dividing one by the other makes every level TRANSIENT
+        // read as a coupling change. On SC-007(iv)'s step the input collapses at
+        // once while the body is still ringing, the ratio spikes, and the fast
+        // decrease cuts the drive on an artefact (MEASURED: Glass 14.1 dB low
+        // against the same 6 dB bound). Lagging the denominator by the same
+        // constant makes both sides move together, and it re-introduces no
+        // feedback: `drive` scales numerator and denominator identically and
+        // with the same delay.
+        const float plantTauSec = std::max(estWindowSeconds_, slot.engineT60 / kT60OverB1);
+        const float inAlpha = std::min(estWindowSeconds_ / plantTauSec, 1.0f);
+        engineInEnv_ += inAlpha * ((drive * std::max(windowRms, kRmsFloor)) - engineInEnv_);
+        const float windowCoupling = windowPeak / std::max(engineInEnv_, kRmsFloor);
+
+        // A PEAK follower on the coupling - fast attack, slow release. The slow
+        // release is what makes the estimator conservative rather than merely
+        // average: a sweeping or mutating excitation crosses a resonance
+        // occasionally and realises tens of dB more gain than it does between
+        // crossings, and a follower that forgot the crossing faster than the body
+        // rings would set the drive from the quiet intervals and be over-driven
+        // at every subsequent one. The attack is a time constant rather than an
+        // instantaneous max-hold because the windowed statistic still carries
+        // noise, and a max-hold takes the largest excursion of it: MEASURED at
+        // max-hold, Metal Plate landed 8.03 dB under `kTargetPeak` on SC-007a.
+        const float couplingTauMs =
+            (windowCoupling > couplingEnv_) ? kCouplingAttackMs : kEnginePeakReleaseMs;
+        const float couplingAlpha =
+            std::min(estWindowSeconds_ / (couplingTauMs * 1.0e-3f), 1.0f);
+        couplingEnv_ += couplingAlpha * (windowCoupling - couplingEnv_);
+
+        // Clause 4: the body pitch moved across this window. A coupling measured
+        // while `f_body` is gliding belongs to neither the old pitch nor the new
+        // one - every mode moves, `Ĝ` is recomputed under it, and the resonators
+        // are mid-retune. Holding is also the only thing that keeps SC-004's
+        // waveguide count clause inside `kGlideRetuneFloorFactor`, whose own
+        // banner forbids raising that number: the estimator's motion on top of
+        // `WaveguideString`'s block-rate retune took Strings from 44 detections
+        // to 51 against a 28 control (ratio 1.82 against the 1.6 the phase pinned
+        // and told the next reader NOT to raise). `Ĝ` still tracks the glide, so
+        // the drive still follows the pitch throughout - only the excitation
+        // correction, which the glide does not change, stays put.
+        const float pitchRef = std::max(estAppliedBodyHz_, 1.0f);
+        const bool pitchMoved =
+            std::fabs(bodyHz_ - estAppliedBodyHz_) > (kEstimatorPitchEpsilon * pitchRef);
+        estAppliedBodyHz_ = bodyHz_;
+        if (pitchMoved) {
+            return;
+        }
+        if (rmsGain_ >= kMaxRmsGain) {
+            return;  // hold - see the banner's clause 1
+        }
+        if (!(drive > kMinDriveGain) || !(userDrive_ > kMinDriveGain)) {
+            return;  // hold - clause 3, and setDrive(0) leaves nothing to normalise
+        }
+        const float coupling = couplingEnv_;
+        if (!(coupling > kEnginePeakFloor)) {
+            return;  // hold - clause 2: nothing has come out of the engine yet
+        }
+
+        // The target is stated in the domain the measurement lives in - AFTER
+        // the engine's own output soft clip. FR-033's `kTargetPeak` is a PRE-clip
+        // level (it is derived from `kEngineHeadroomFrac * kEngineClipThreshold`),
+        // and at `userDrive = 1` the two agree to 0.03 dB, but at `kMaxUserDrive`
+        // the intended pre-clip 0.9 images to 0.730 and regulating the post-clip
+        // peak to 0.9 instead would ask for 2.8 dB more pre-clip level than the
+        // design point - which is exactly SC-001(b)'s bound. Applying the forward
+        // clip to the TARGET is also what makes runaway structurally impossible:
+        // `softClip` is bounded by `kEngineClipThreshold`, so the estimator can
+        // never chase a level the engine cannot produce.
+        const float targetPeak = engineSoftClip(kTargetPeak * userDrive_);
+        const float compTarget = std::clamp(
+            (std::max(slot.gainBound, kGainBoundEps) * targetPeak)
+                / (coupling * kTargetPeak * kTargetInputRms * userDrive_),
+            kMinExcitationComp, kMaxExcitationComp);
+
+        // FR-033a's ASYMMETRIC one-pole. An increase is slowed to the PLANT
+        // whenever the plant is slower (see kEstimatorPlantFactor);
+        // `engineT60 / kT60OverB1` is the resonator's own amplitude time
+        // constant. A decrease runs at the fixed, fast
+        // kExcitationCompDecreaseMs - see that constant for the sweep
+        // measurement that forces the asymmetry.
+        const float errorLog2 = std::log2(compTarget) - excitationCompLog2_;
+        const float tauSec =
+            (errorLog2 < 0.0f)
+                ? std::max(kExcitationCompDecreaseMs * 1.0e-3f,
+                           kEstimatorDecreasePlantFactor * slot.engineT60 / kT60OverB1)
+                : std::max(kExcitationCompSmoothMs * 1.0e-3f,
+                           kEstimatorPlantFactor * slot.engineT60 / kT60OverB1);
+        const float alpha = std::min(estWindowSeconds_ / std::max(tauSec, 1.0e-6f),
+                                     kMaxEstimatorAlpha);
+        excitationCompLog2_ += alpha * errorLog2;
+        excitationComp_ = std::clamp(std::exp2(excitationCompLog2_), kMinExcitationComp,
+                                     kMaxExcitationComp);
+    }
+
     /// FR-033: `engineDrive = clamp(kTargetPeak/G-hat, ...) * rmsGain * userDrive`,
     /// smoothed in log10 so the trajectory is a constant dB/ms slope across the
     /// 3-5 decades `G-hat` spans between engines.
+    ///
+    /// FR-033a inserts `excitationComp_` into the numerator. It is EXACTLY 1
+    /// whenever the AGC is off or the estimator has never had anything to
+    /// measure, so this expression is unchanged on every path that predates it.
+    /// It is a per-COMPONENT scalar, not per-slot, deliberately: `Ĝ_slot` already
+    /// carries everything that distinguishes the two slots, so a crossfade keeps
+    /// its equal-power relationship and `snapSlotDrive` still lands the incoming
+    /// engine at the right level on the first sample.
     [[nodiscard]] float engineDriveFor(const Slot& slot) const noexcept
     {
-        const float comp = std::clamp(kTargetPeak / std::max(slot.gainBound, kGainBoundEps),
-                                      kMinDriveGain, kMaxDriveGain);
+        const float comp =
+            std::clamp((kTargetPeak * excitationComp_) / std::max(slot.gainBound, kGainBoundEps),
+                       kMinDriveGain, kMaxDriveGain);
         return comp * rmsGain_ * userDrive_;
     }
 
@@ -2819,11 +3217,22 @@ private:
         // while no bypass is engaged, and the direct path has to fade in DURING
         // the ramp or the 10 ms toggle would be a dip rather than a crossfade.
         const float cloudDrive = cloudDriveGain();
+        float enginePeak = enginePeakAccum_;
         for (std::size_t s = 0; s < n; ++s) {
             const float engineOut = clampEngineSum(mixScratch_[s]);
-            bodyScratch_[s] = (engineGain * engineOut)
-                              + (bypassGain * cloudDrive * mono[s]);
+            const float engineMixed = engineGain * engineOut;
+            // FR-033a's measurement point: the post-crossfade, post-clamp engine
+            // output, which is the quantity `kTargetPeak` is defined on. The
+            // direct cloud-drive path deliberately does NOT enter it - it has no
+            // resonator, so it has no `Ĝ` to correct (spec Q1).
+            //
+            // `std::max(a, NaN)` returns `a` (`a < NaN` is false), so a poisoned
+            // sample cannot latch the accumulator; `stateFinite()` remains the
+            // mechanism that observes one.
+            enginePeak = std::max(enginePeak, std::fabs(engineMixed));
+            bodyScratch_[s] = engineMixed + (bypassGain * cloudDrive * mono[s]);
         }
+        enginePeakAccum_ = enginePeak;
 
         // --- the decay cloud (FR-050 - FR-053a) ------------------------------
         // FR-053a: the cloud is skipped only when it is BOTH inaudible and
@@ -3092,6 +3501,10 @@ private:
                                     kMinRmsGain, kMaxRmsGain)
                        : 1.0f;
 
+        // 1b. FR-033a's excitation compensation. BEFORE step 3, so the drive
+        //     recomputed below already carries this chunk's estimate.
+        updateExcitationComp(followerIn);
+
         // 2. G-hat recompute (FR-032). It does NOT get its own pass: it is
         //    computed at material assignment (assignSoundingSlotEngine) and
         //    recomputed inside step 5's retune, on exactly the dirty gate that
@@ -3248,6 +3661,10 @@ private:
     [[nodiscard]] bool controlStateFinite() const noexcept
     {
         return isFiniteBits(chunkSumSq_) && isFiniteBits(inputRms_) && isFiniteBits(rmsGain_)
+               && isFiniteBits(excitationCompLog2_) && isFiniteBits(excitationComp_)
+               && isFiniteBits(couplingEnv_) && isFiniteBits(enginePeakAccum_)
+               && isFiniteBits(engineInEnv_) && isFiniteBits(estSumSq_)
+               && isFiniteBits(estAppliedBodyHz_)
                && isFiniteBits(bodyHz_) && isFiniteBits(crossfadePos_)
                && isFiniteBits(collapsePos_) && isFiniteBits(collapseBasePos_)
                && isFiniteBits(bypassPos_) && isFiniteBits(bypassBasePos_)
@@ -3329,6 +3746,31 @@ private:
         rmsFollower_.reset();
         inputRms_ = 0.0f;
         chunkSumSq_ = 0.0;
+        // FR-033a's estimator is patched, NOT cleared. `excitationComp_` is a
+        // property of the excitation's coupling to the engine, not of the
+        // poisoned state, and clearing it drops the body ~40 dB and then walks
+        // it back up over seconds - an artefact far larger and far longer than
+        // the poisoning event FR-038a exists to hide. MEASURED with the clearing
+        // form, SC-012's poisoned-input ensemble on Strings: 51 detections
+        // against a 28 control. Only the parts that are actually non-finite are
+        // reset; the window is restarted either way, because its accumulator
+        // spans samples the engine is about to have silenced.
+        if (!isFiniteBits(excitationCompLog2_) || !isFiniteBits(excitationComp_)) {
+            excitationCompLog2_ = 0.0f;
+            excitationComp_ = kMinExcitationComp;
+        }
+        if (!isFiniteBits(couplingEnv_)) {
+            couplingEnv_ = 0.0f;
+        }
+        if (!isFiniteBits(engineInEnv_)) {
+            engineInEnv_ = 0.0f;
+        }
+        if (!isFiniteBits(estAppliedBodyHz_)) {
+            estAppliedBodyHz_ = 0.0f;
+        }
+        enginePeakAccum_ = 0.0f;
+        estSumSq_ = 0.0f;
+        estChunks_ = 0;
 
         snapSmootherIfNonFinite(keyTrackSmoother_, keyTracking_);
         snapSmootherIfNonFinite(noteLog2Smoother_, std::log2(noteHz_));
@@ -3596,6 +4038,30 @@ private:
     float bodyHz_ = kDefaultNoteHz;
     float inputRms_ = 0.0f;
     float rmsGain_ = 1.0f;
+
+    // --- FR-033a excitation compensation (see kMaxExcitationComp) ------------
+    /// Smoothed in log2, read back through `exp2f` into `excitationComp_`.
+    float excitationCompLog2_ = 0.0f;
+    float excitationComp_ = kMinExcitationComp;
+    /// Per-control-chunk peak of the post-crossfade ENGINE output, accumulated
+    /// in `renderSub` and consumed by `controlStep` - the same carry-across-
+    /// blocks contract as `cloudPeakAccum_`, which is what keeps the estimator
+    /// block-size invariant.
+    float enginePeakAccum_ = 0.0f;
+    /// Max-hold of the PER-CHUNK coupling (engine peak per unit engine input).
+    /// See updateExcitationComp for why the hold is on the ratio.
+    float couplingEnv_ = 0.0f;
+    /// Plant-lagged engine input level - the coupling estimate's denominator.
+    float engineInEnv_ = 0.0f;
+    /// `bodyHz_` as of the previous estimator window - clause 4's reference.
+    float estAppliedBodyHz_ = 0.0f;
+    /// Rebuilt in `prepare()`. The estimator's own coefficient is derived per
+    /// control chunk from this and the sounding slot's `T60`, so a material
+    /// change re-times the loop without a second configure pass.
+    float estWindowSeconds_ = 0.0f;
+    std::uint32_t estWindowChunks_ = 1u;
+    float estSumSq_ = 0.0f;
+    std::uint32_t estChunks_ = 0u;
 
     // --- the control-grid walker (FR-005a) ------------------------------------
     /// Absolute sample position. Cleared ONLY by prepare()/reset().

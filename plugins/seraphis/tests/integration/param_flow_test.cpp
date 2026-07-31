@@ -262,15 +262,19 @@ constexpr float kSingleVelocity = 0.8f;
 // the output for a few tens of milliseconds. That residue is NOT master gain
 // leaking through; it is the output stage emptying.
 //
-// MEASURED (MSVC / windows-x64-release, 48 kHz, this exact script):
-//   snapTo   (shipped)  peak[0..] = 1.16e-5, all of it inside the first ~2000
-//                       samples; peak[2000..] = 8.5e-7; peak[0.5 s..] = 0.0
-//   setTarget (BROKEN)  peak[0..] = 2.8e-4 L / 4.3e-4 R
-// The two arms differ by ~24x, so a bound of 5e-5 - about 4x above the shipped
-// figure and ~5.6x below the broken one - discriminates them with headroom on
-// both sides. Verified by temporarily replacing snapTo with setTarget in
-// src/processor/processor.cpp: the section fails, then passes again on revert.
-constexpr float kSnapSeamFlushBound = 5.0e-5f;
+// RE-MEASURED 2026-07-31 (MSVC / windows-x64-release, 48 kHz, this exact script),
+// after ContinuousBody's FR-033a excitation compensation raised the whole chain
+// to its documented level. BOTH arms scale with the level of the material the
+// output stage is flushing, so both moved and the discrimination is intact; the
+// broken arm was re-measured the same way the original was, by temporarily
+// replacing snapTo with setTarget at processor.cpp:374 and reverting:
+//   snapTo   (shipped)  peak[0..] = 3.0e-4 L / 7.0e-5 R; peak[0.5 s..] = 0.0
+//   setTarget (BROKEN)  peak[0..] = 7.22e-3 L / 1.138e-2 R
+// (was, pre-FR-033a: shipped 1.16e-5; broken 2.8e-4 L / 4.3e-4 R.)
+// The two arms differ by 24x on L and 163x on R, so a bound of 1.2e-3 - 4x above
+// the shipped figure and 6x below the broken one - discriminates them with
+// headroom on both sides, the same margins the original bound carried.
+constexpr float kSnapSeamFlushBound = 1.2e-3f;
 
 /// 0.5 s at 48 kHz - well past the output stage's flush (measured to be over
 /// within ~2000 samples). From here on the shipped implementation measures
@@ -330,73 +334,66 @@ struct DriveRung {
 // -----------------------------------------------------------------------------
 // SC-027 MEASURED RESULT - READ THIS BEFORE CHANGING EITHER THRESHOLD BELOW
 // -----------------------------------------------------------------------------
-// Measured during the T022 implementation, MSVC / windows-x64-release, 48 kHz,
-// 512-sample blocks, engine and reverb seed 1, Phase 8 macro defaults, on the
-// exact ladder below (max over L and R):
+// *** REWRITTEN 2026-07-31. SC-027 CLAUSE 1 PRIMARY CRITERION IS NOW MET AND
+//     THE INSPECTION FALLBACK IS RETIRED. ***
 //
-//   rung                                        pre-output rms   peak      maxAbsDiff  relRmsDiff  relRmsDrop
-//   L0  1 note,  vel 0.8, gain x1, poly  8,  2 s   4.90e-4      9.68e-4    1.05e-9     3.48e-7    -1.51e-8
-//   L1  6 notes, vel 1.0, gain x2, poly  8,  2 s   2.11e-3      6.51e-3    1.82e-8     8.39e-7     4.62e-7
-//   L2 16 notes, vel 1.0, gain x2, poly 16,  2 s   3.53e-3      1.25e-2    9.59e-8     2.53e-6     1.67e-6
-//   L3 16 notes, vel 1.0, gain x2, poly 16,  4 s   4.12e-3      1.35e-2    1.25e-7     2.69e-6     1.66e-6
-//   L4 16 notes, vel 1.0, gain x2, poly 16, 16 s   4.35e-3      1.42e-2    1.46e-7     2.73e-6     1.40e-6
+// The shipped tree could not reach clause 1's `maxAbsDiff > kSampleTolerance`
+// (1e-4) - the loudest configuration the Phase 8 surface could produce measured
+// 1.46e-7, three orders short - so FR-044 was recorded in compliance.md as
+// verified by inspection plus a sub-tolerance measurement, guarded by a
+// deliberate tripwire (`REQUIRE(bestMaxAbsDiff < kSampleTolerance)`) whose whole
+// purpose was to fail the day the bound became reachable.
 //
-//   relRmsDrop is the SIGNED, worst-of-the-two-channels relative RMS drop
-//   (offRms - onRms) / offRms, added after the ladder was first measured. L0's
-//   NEGATIVE value is real and is why the assertion is made on the loudest rung
-//   only: at 4.9e-4 rms the on/off difference is dominated by filter-state noise
-//   rather than by the cubic term (its symmetric relRmsDiff, 3.48e-7, is 20x the
-//   magnitude of the signed drop), so the drop only becomes coherent once the
-//   saturator is genuinely engaged, from L1 up.
-//   (a 32 s rung was also measured and is NOT kept: peak 1.42e-2 and maxAbsDiff
-//    1.46e-7, IDENTICAL to L4 - the level plateaus, so nothing is gained by
-//    paying another 64 s of rendering.)
+// IT FAILED. ContinuousBody's FR-033a excitation compensation (phase-owner
+// gain-staging ruling, specs/seraphis-phase4-continuous-body/spec.md) made the
+// body deliver its documented level instead of running 30-40 dB under it, and
+// the chain that fed the saturator |x| ~ 0.0142 now feeds it |x| up to the
+// limiter ceiling. The tripwire read 0.0270903 against 1e-4. Per its own
+// instruction the reduced form is deleted and clause 1 is asserted as specified.
 //
-// SC-027 CLAUSE 1 AS SPECIFIED IS NOT REACHABLE IN PHASE 8. It asks for
-// maxAbsDiff > kSampleTolerance (1e-4); the loudest reachable configuration
-// produces 1.46e-7, three orders of magnitude short. That is not an
-// implementation defect - it is arithmetic. TapeSaturator's Simple model blends
-// linear with tanh (tape_saturator.h:418-424) and the engine ships mix = 1.0,
-// drive = 0 dB, bias = 0 (seraphis_engine.h:228-233), so the on/off difference
-// is ~ sat * x^3 / 3 = 0.15 * x^3 / 3. Reaching 1e-4 needs |x| ~ 0.13; the
-// Phase 8 parameter surface tops out at |x| ~ 0.0142 because the only levers it
-// has are polyphony (max 16, and the engine's sum gain normalises by voice
-// count) and master gain (max linear 2.0, FR-043). Phase 7 saw the same order:
-// SC-015 recorded peak 0.128 only at 16 voices over a 60 s run with a much
-// denser script (specs/seraphis-phase7-voice-engine/compliance.md, SC-015 row).
+// MEASURED 2026-07-31, MSVC / windows-x64-release, 48 kHz, 512-sample blocks,
+// engine and reverb seed 1, Phase 8 macro defaults, the SAME ladder (max over
+// L and R), with the pre-FR-033a maxAbsDiff alongside:
 //
-// PER SC-027'S OWN ESCAPE CLAUSE, FR-044 IS THEREFORE TO BE RECORDED IN
-// compliance.md AS VERIFIED BY CODE INSPECTION PLUS THIS SUB-TOLERANCE
-// MEASUREMENT, WITH THE LADDER ABOVE ATTACHED. It is NOT silently marked
-// verified, and the criterion is NOT relaxed by renaming its threshold: what is
-// asserted below is strictly weaker than clause 1 and says so.
+//   rung                                       pre-out rms  peak     maxAbsDiff  relRmsDiff  relRmsDrop  (was)
+//   L0  1 note,  vel 0.8, gain x1, poly  8,  2 s   5.20e-3  1.80e-2  2.96e-7     6.04e-6     +3.26e-6    (1.05e-9)
+//   L1  6 notes, vel 1.0, gain x2, poly  8,  2 s   2.50e-2  1.23e-1  9.02e-5     2.58e-4     +1.28e-4    (1.82e-8)
+//   L2 16 notes, vel 1.0, gain x2, poly 16,  2 s   3.19e-2  1.76e-1  2.80e-4     4.11e-4     +3.09e-4    (9.59e-8)
+//   L3 16 notes, vel 1.0, gain x2, poly 16,  4 s   8.27e-2  4.46e-1  4.20e-3     2.43e-3     +1.50e-3    (1.25e-7)
+//   L4 16 notes, vel 1.0, gain x2, poly 16, 16 s   2.24e-1  8.91e-1  2.71e-2     1.13e-2     -1.89e-3    (1.46e-7)
 //
-// What IS still a real, non-vacuous detector: both arms are rendered by the SAME
-// binary, from the SAME seed, with the SAME script, and differ ONLY in the value
-// handed to SeraphisEngine::setOutputSaturation. A soft-limit parameter that
-// never reached the engine therefore yields a difference of EXACTLY 0.0f,
-// bit for bit - there is no toolchain-spread floor to hide in. The two measured
-// thresholds below are both set at roughly a third to a half of the measured
-// figure, which is headroom for cross-toolchain level differences (which move
-// the render by parts in 1e-5 and the cubic delta by a few percent) while
-// staying far above the exact zero a broken wiring produces.
+// THE SIGN FLIP ON L4 IS REAL, EXPLAINED, AND IS WHY CLAUSE 3 NO LONGER USES THE
+// LOUDEST RUNG. L4's pre-output peak is 0.891251 - EXACTLY TruePeakLimiter's
+// ceiling - so on that rung the LIMITER is the actor: with the saturator ON the
+// peaks it has to catch are smaller, it applies LESS reduction, and the on-arm
+// RMS comes out 0.19 % HIGHER (0.224917 vs 0.224492). That is the limiter
+// compensating, not an inverted saturator mapping. Clause 3's direction test
+// therefore runs on the loudest rung whose pre-output peak is still clear of the
+// ceiling (L3, peak 0.446, drop +1.50e-3), where the saturator alone decides the
+// level. Clauses 1 and 2 keep using the loudest rung outright - both are
+// symmetric magnitudes and the limiter cannot flip their sign.
 //
-// PHASE 9/10 OWE THIS CRITERION A REVISIT: the moment a drive, level or
-// saturation-amount parameter exists, clause 1's kSampleTolerance bound becomes
-// reachable and MUST be restored here.
+// The direction clause is still measured away from the low end for the reason
+// the original ladder recorded: at L0's level the on/off difference is dominated
+// by filter-state noise rather than by the cubic term, so the drop only becomes
+// coherent from L1 up.
+//
+// What is STILL a real, non-vacuous detector, unchanged: both arms are rendered
+// by the SAME binary, from the SAME seed, with the SAME script, and differ ONLY
+// in the value handed to SeraphisEngine::setOutputSaturation. A soft-limit
+// parameter that never reached the engine yields a difference of EXACTLY 0.0f.
 // -----------------------------------------------------------------------------
 
-/// MEASURED (L4 above): 1.46e-7. Floor set to ~1/3 of it.
-constexpr float kSoftLimitMaxAbsDiffFloor = 5.0e-8f;
+/// MEASURED (L3, the direction rung): 2.43e-3; L4 reads 1.13e-2 and every rung
+/// from L2 up is >= 4.11e-4. Floor set to ~1/2 of the L3 figure. This is SC-027
+/// clause 2's named, measured constant. It was 1.3e-6 while the chain ran
+/// 30-40 dB quiet.
+constexpr double kSoftLimitRelRmsFloor = 1.2e-3;
 
-/// MEASURED (L4 above): 2.73e-6, and >= 2.5e-6 on every rung from L2 up.
-/// Floor set to ~1/2 of it. This is SC-027 clause 2's named, measured constant.
-constexpr double kSoftLimitRelRmsFloor = 1.3e-6;
-
-/// MEASURED (L4 above): 1.40e-6, and >= 1.39e-6 on every rung from L2 up.
-/// Floor set to ~1/3 of it.
+/// MEASURED (L3, the direction rung): +1.50e-3. Floor set to ~1/3 of it. It was
+/// 4.0e-7 while the chain ran 30-40 dB quiet.
 ///
-/// WHY THIS EXISTS AND THE TWO ABOVE ARE NOT ENOUGH: maxAbsDiff and rmsDiff are
+/// WHY THIS EXISTS AND THE ONES ABOVE ARE NOT ENOUGH: maxAbsDiff and rmsDiff are
 /// both SYMMETRIC in (on, off) - swap the two arms and every number in the ladder
 /// is bit-identical - so neither can distinguish FR-044's mapping
 /// (on -> kOutputSaturation = 0.15f, off -> 0.0f, seraphis_engine.h:566, :142)
@@ -405,7 +402,12 @@ constexpr double kSoftLimitRelRmsFloor = 1.3e-6;
 /// and the shipped saturator attenuates (TapeSaturator's Simple model blends
 /// linear with tanh at mix = 1.0, drive 0 dB - tape_saturator.h:418-424), so an
 /// inverted mapping produces a NEGATIVE drop and fails here.
-constexpr double kSoftLimitRelRmsDropFloor = 4.0e-7;
+constexpr double kSoftLimitRelRmsDropFloor = 5.0e-4;
+
+/// Clause 3's rung filter: the direction test only uses rungs whose pre-output
+/// peak is at or below this fraction of the limiter ceiling, so the limiter is
+/// demonstrably not the actor deciding the level. L3 sits at 0.50 of it.
+constexpr float kSoftLimitDirectionCeilingFrac = 0.75f;
 
 }  // namespace
 
@@ -494,9 +496,9 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
 
         // 3. Master gain 0 from the very next block. A SNAP zeroes the wet
         //    buffers from sample 0 and only the output stage's own state flushes
-        //    (measured peak 1.16e-5); a ramp from the smoother's current 1.0
-        //    lets ~20 ms of the ringing chain through (measured 2.8e-4 / 4.3e-4),
-        //    which is ~24x the snap figure and ~5.6x this bound.
+        //    (measured peak 3.0e-4); a ramp from the smoother's current 1.0
+        //    lets ~20 ms of the ringing chain through (measured 7.22e-3 /
+        //    1.138e-2), which is 24x the snap figure and 6x this bound.
         fx.renderBlocks(kTwoSeconds / blockSize, blockSize,
                         [](std::size_t b, Krate::Test::EventList& /*events*/,
                            SeraphisTest::ParameterChanges& params) {
@@ -718,6 +720,12 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
         double bestRelRms = 0.0;
         double bestRelRmsDrop = 0.0;
         const char* bestName = "";
+        // Clause 3's rung: the loudest one whose pre-output peak is clear of the
+        // limiter ceiling - see kSoftLimitDirectionCeilingFrac.
+        float dirOffPeak = 0.0f;
+        double dirRelRmsDrop = 0.0;
+        const char* dirName = "";
+        bool dirFound = false;
 
         for (const DriveRung& rung : rungs) {
             const Drive base{.masterGainNorm = rung.masterGainNorm,
@@ -776,6 +784,14 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
             // Non-vacuity: this rung must not be comparing two silences.
             CHECK(offRms > 1.0e-6);
 
+            if (offPeak <= (kSoftLimitDirectionCeilingFrac * kLimiterCeilingLin)
+                && offPeak > dirOffPeak) {
+                dirOffPeak = offPeak;
+                dirRelRmsDrop = relRmsDrop;
+                dirName = rung.name;
+                dirFound = true;
+            }
+
             if (diff > bestMaxAbsDiff) {
                 bestMaxAbsDiff = diff;
                 bestRelRms = relRms;
@@ -794,32 +810,21 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
                                      << " | on-arm rms=" << bestOnRms
                                      << " | worst-channel relative RMS drop=" << bestRelRmsDrop);
 
-        // Clause 1, IN ITS REDUCED FORM. The specified bound is
-        // `> kSampleTolerance` (1e-4); the loudest reachable Phase 8
-        // configuration produces 1.46e-7 and NO configuration reaches 1e-4 - see
-        // the measured ladder and the arithmetic in the block above
-        // kSoftLimitMaxAbsDiffFloor. FR-044 is recorded in compliance.md as
-        // verified by code inspection plus this measurement, NOT as a clean
-        // SC-027 pass. Kept here as the assertion that still has teeth: an
-        // unwired soft limit yields EXACTLY 0.0f, bit for bit.
-        REQUIRE(bestMaxAbsDiff > kSoftLimitMaxAbsDiffFloor);
+        WARN("SC-027 direction rung: " << dirName << " | pre-output-stage peak="
+                                       << dirOffPeak << " | worst-channel relative RMS drop="
+                                       << dirRelRmsDrop);
 
-        // DELIBERATE TRIPWIRE, not a pinned defect: the day a drive/level/
-        // saturation-amount parameter makes clause 1's bound reachable, THIS
-        // line fails, and whoever made it reachable must restore
-        // `REQUIRE(bestMaxAbsDiff > kSampleTolerance)` above and delete the
-        // inspection-only note in compliance.md. Without it the reduced form
-        // would quietly outlive the reason for it.
-        REQUIRE(bestMaxAbsDiff < Krate::DSP::TestUtils::kSampleTolerance);
+        // Clause 1, AS SPECIFIED. No fallback floor, no tripwire - see the banner.
+        REQUIRE(bestMaxAbsDiff > Krate::DSP::TestUtils::kSampleTolerance);
 
-        // Clause 2 - the MEASURED relative-RMS floor. This clause IS satisfiable
-        // as specified: it is a ratio, not an absolute sample bound.
+        // Clause 2 - the MEASURED relative-RMS floor.
         CHECK(bestRelRms > kSoftLimitRelRmsFloor);
 
         // FR-044's DIRECTION, which no symmetric metric above can assert: the ON
-        // arm must be the ATTENUATED one. See kSoftLimitRelRmsDropFloor - this is
-        // the assertion an inverted on/off mapping fails, and it fails by sign,
-        // not by margin.
-        CHECK(bestRelRmsDrop > kSoftLimitRelRmsDropFloor);
+        // arm must be the ATTENUATED one, measured where the SATURATOR and not the
+        // LIMITER decides the level (see kSoftLimitDirectionCeilingFrac and the
+        // banner's note on L4's sign flip).
+        REQUIRE(dirFound);
+        CHECK(dirRelRmsDrop > kSoftLimitRelRmsDropFloor);
     }
 }

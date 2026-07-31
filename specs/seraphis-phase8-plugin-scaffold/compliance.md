@@ -375,3 +375,105 @@ plugin, so leaving them would have kept the new gate red.
 | SC-016 (.sh half) | .ps1 canonical run green (391 files, 0/0, Seraphis covered). The .sh warning count is a PRE-EXISTING repo-wide script divergence (run-clang-tidy.sh lints plugins/*/tests, .ps1 does not; control: gradus 40 errors / 2103 warnings). Flagged as a separate tooling issue, out of this phase's scope; not introduced by Phase 8. |
 
 Locally-measurable gates are all green. Roadmap marked complete with an explicit pending-CI caveat.
+
+---
+
+## Addendum — 2026-07-31: SC-027 clause 1 is now MET; the inspection fallback is RETIRED
+
+**Trigger.** The phase-owner gain-staging ruling of 2026-07-31 fixed a level defect at its source in
+`ContinuousBody` (new **FR-033a**, excitation compensation — see
+`specs/seraphis-phase4-continuous-body/spec.md`). The shipped body divided its drive by FR-032's
+`Ĝ`, an all-contributors-in-phase upper bound, and therefore ran **30–40 dB under its documented
+`kTargetPeak`** under every excitation except a full-scale sine parked on a mode. Every Phase 8
+criterion stayed green throughout, because none of them measured level.
+
+### SC-027 / FR-044 — the disposition above is superseded
+
+The row recorded above ("ACCEPTED via the spec's own inspection-fallback") rested on clause 1's bound
+`maxAbsDiff > kSampleTolerance` (1e-4) being **unreachable**: the loudest configuration the Phase 8
+parameter surface could produce measured 1.46e-7. `param_flow_test.cpp` carried a deliberate tripwire,
+`REQUIRE(bestMaxAbsDiff < kSampleTolerance)`, whose stated purpose was to fail the day the bound became
+reachable and force the reduced form to be deleted.
+
+**It fired.** With FR-033a the same ladder measures **maxAbsDiff = 0.0270903**, i.e. 271× the bound.
+
+Actions taken, per the tripwire's own instruction:
+
+- `kSoftLimitMaxAbsDiffFloor` (5.0e-8) **deleted**; clause 1 is now
+  `REQUIRE(bestMaxAbsDiff > Krate::DSP::TestUtils::kSampleTolerance)`, as specified.
+- The tripwire **deleted**.
+- Clause 2's floor `kSoftLimitRelRmsFloor` re-measured and re-pinned 1.3e-6 → **1.2e-3**.
+- Clause 3's floor `kSoftLimitRelRmsDropFloor` re-measured and re-pinned 4.0e-7 → **5.0e-4**, and its
+  rung selection changed — see the sign flip below.
+
+Re-measured ladder (MSVC / windows-x64-release, 48 kHz / 512, engine and reverb seed 1, Phase 8 macro
+defaults; `(was)` is the pre-FR-033a `maxAbsDiff`):
+
+| rung | pre-out rms | peak | maxAbsDiff | relRmsDiff | relRmsDrop | (was) |
+|---|---|---|---|---|---|---|
+| L0 1 note, vel 0.8, gain ×1, poly 8, 2 s | 5.20e-3 | 1.80e-2 | 2.96e-7 | 6.04e-6 | +3.26e-6 | 1.05e-9 |
+| L1 6 notes, vel 1.0, gain ×2, poly 8, 2 s | 2.50e-2 | 1.23e-1 | 9.02e-5 | 2.58e-4 | +1.28e-4 | 1.82e-8 |
+| L2 16 notes, vel 1.0, gain ×2, poly 16, 2 s | 3.19e-2 | 1.76e-1 | 2.80e-4 | 4.11e-4 | +3.09e-4 | 9.59e-8 |
+| L3 16 notes, vel 1.0, gain ×2, poly 16, 4 s | 8.27e-2 | 4.46e-1 | 4.20e-3 | 2.43e-3 | +1.50e-3 | 1.25e-7 |
+| L4 16 notes, vel 1.0, gain ×2, poly 16, 16 s | 2.24e-1 | 8.91e-1 | **2.71e-2** | 1.13e-2 | **−1.89e-3** | 1.46e-7 |
+
+**L4's negative relRmsDrop is real and is not an inverted mapping.** Its pre-output peak is 0.891251 —
+*exactly* `TruePeakLimiter`'s ceiling — so on that rung the limiter decides the level: with the saturator
+ON the peaks it must catch are smaller, it applies **less** reduction, and the on-arm RMS comes out 0.19 %
+higher (0.224917 vs 0.224492). Clause 3's direction test therefore now runs on the loudest rung whose
+pre-output peak is still clear of the ceiling (`kSoftLimitDirectionCeilingFrac = 0.75`, selecting **L3**,
+peak 0.446, drop +1.50e-3). Clauses 1 and 2 keep the loudest rung outright — both are symmetric
+magnitudes that the limiter cannot sign-flip.
+
+**FR-044 is therefore verified by measurement, not by inspection.** The `plan §9 res. 7` fallback is spent.
+
+### SC-006 — re-checked, still green, and now non-vacuous at the top rung
+
+`Seraphis_ProcessorRespectsCeiling` passes unchanged. The bound clause used to have no discriminating
+power (Phase 7 measured the composed chain's worst case at peak 0.128337, 16.8 dB below the ceiling);
+with FR-033a the SC-027 L4 rung drives the pre-output stage to **peak 0.891251 = the ceiling exactly**,
+i.e. the limiter is now demonstrably the thing holding the output down. Clauses 2 and 3 (the positive
+and negative controls) are untouched and still pass.
+
+### SC-005 — unchanged and still green; SC-005a ADDED
+
+`Seraphis_HeldNoteIsNotSilent` passes against its measured `kNonSilencePeakFloor = 5.0e-4` with ~46 dB to
+spare now. **That is exactly the problem it had:** SC-005 is a *non-silence* criterion with a −66 dBFS
+floor, and it stayed green while the plugin rendered a single held note at **−60.36 dBFS** — inaudible in
+a mix. A new section, **SC-005a `Seraphis_HeldNoteLoudnessIsNominal`**, closes that class of bug with a
+two-sided window:
+
+- single note, velocity 127, master gain unity, registered-default polyphony 8, 8 s;
+- final output peak must land in **[−28, −12] dBFS**.
+
+Measured: **−59.66 dBFS before the fix** (fails the floor by 32 dB), **−20.33 dBFS after** (8 s).
+The ceiling has teeth too: one voice of eight-voice polyphony must leave room for the other seven, so a
+"fix" that simply cranked a gain until the floor passed trips it.
+
+The 8 s render length (SC-005 uses 4 s) is itself a measured consequence and is documented in the
+section: FR-033a's estimator needs ~8 s from a cold `prepare()` to reach the documented level
+(4 s → −29.35, 8 s → −20.33, 12 s → −19.13 dBFS). That ramp is recorded as a **known limitation** in the
+Phase 4 spec's FR-033a amendment and is **open for the phase owner**.
+
+### SC-019 clause 1 — snap-seam bound re-measured, discrimination unchanged
+
+`kSnapSeamFlushBound` was 5.0e-5, derived from a shipped-arm measurement of 1.16e-5 against a broken-arm
+(setTarget instead of snapTo) measurement of 2.8e-4 / 4.3e-4. Both arms scale with the level of the
+material the output stage is flushing, so both moved. Re-measured 2026-07-31 the same way the original
+was — by temporarily replacing `snapTo` with `setTarget` at `processor.cpp:374` and reverting:
+
+| arm | peak[0..] |
+|---|---|
+| `snapTo` (shipped) | 3.0e-4 L / 7.0e-5 R |
+| `setTarget` (BROKEN) | 7.22e-3 L / 1.138e-2 R |
+
+New bound **1.2e-3**: 4× above the shipped figure and 6× below the broken one — the same margins the
+original carried. The arms differ by 24× on L and 163× on R. `peak[0.5 s..]` is still exactly 0.0.
+
+### Suites re-run for this addendum
+
+| suite | verbatim summary |
+|---|---|
+| `seraphis_tests` | `All tests passed (1922 assertions in 8 test cases)` |
+| `dsp_systems_tests` | `All tests passed (6037277 assertions in 1208 test cases)` |
+| `dsp_effects_tests` | `All tests passed (98155 assertions in 477 test cases)` |
