@@ -1442,8 +1442,10 @@ public:
     }
 
     // =========================================================================
-    // Introspection (FR-007) - this list is EXHAUSTIVE. No success criterion
-    // may assert on a quantity absent from it, and nothing else is public.
+    // Introspection (FR-007, EXTENDED by Seraphis Phase 9's FR-072 parameter
+    // read-backs below) - the list from here to stateFinite() is EXHAUSTIVE. No
+    // success criterion may assert on a quantity absent from it, and nothing
+    // else is public.
     // =========================================================================
 
     /// @brief The material currently selected (the incoming one during a fade).
@@ -1535,6 +1537,60 @@ public:
     {
         return engineSampleCount_[static_cast<std::size_t>(e)];
     }
+
+    // =========================================================================
+    // Parameter read-backs (Seraphis Phase 9, FR-072)
+    //
+    // Each returns what its setter STORED - already non-finite-substituted and
+    // clamped by the setter (see the FR-009 range table at :115-165) - and never
+    // a smoother's ramp position. That distinction is load-bearing twice:
+    //   * getDrive() is the pushed USER drive and is deliberately distinct from
+    //     getDriveGain() above, which is the smoothed DERIVED engine gain;
+    //   * isResonatorBypass() is the REQUESTED state, stored immediately at
+    //     :1305, not the 10 ms `bypassPos_` ramp that follows it.
+    // The two booleans take the `is` prefix of the existing isCrossfading().
+    //
+    // @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    // @par Real-Time Safety: pure const member reads - allocation-free,
+    //      lock-free, exception-free.
+    // =========================================================================
+
+    /// @brief The stored resonance, [0, 1] (setter :1161).
+    [[nodiscard]] float getResonance() const noexcept { return resonance_; }
+
+    /// @brief The stored damping, [0, 1] (setter :1170).
+    [[nodiscard]] float getDamping() const noexcept { return damping_; }
+
+    /// @brief The stored key-tracking amount, [0, 1] (setter :1179).
+    [[nodiscard]] float getKeyTracking() const noexcept { return keyTracking_; }
+
+    /// @brief The stored USER drive, [0, 4] (setter :1200). NOT getDriveGain().
+    [[nodiscard]] float getDrive() const noexcept { return userDrive_; }
+
+    /// @brief The stored dry/processed mix, [0, 1] (setter :1209).
+    [[nodiscard]] float getMix() const noexcept { return mix_; }
+
+    /// @brief The stored decay-cloud blend, [0, 1] (setter :1219).
+    [[nodiscard]] float getCloudMix() const noexcept { return cloudMix_; }
+
+    /// @brief The stored decay-cloud RT60 in seconds, [0.1, 30] (setter :1230).
+    [[nodiscard]] float getCloudDecaySec() const noexcept { return cloudDecaySec_; }
+
+    /// @brief The stored decay-cloud size, [0, 1] (setter :1241).
+    [[nodiscard]] float getCloudSize() const noexcept { return cloudSize_; }
+
+    /// @brief The stored decay-cloud damping, [0, 1] (setter :1254).
+    [[nodiscard]] float getCloudDamping() const noexcept { return cloudDamping_; }
+
+    /// @brief The stored stereo width, [0, 1] (setter :1264).
+    [[nodiscard]] float getWidth() const noexcept { return width_; }
+
+    /// @brief Whether the input AGC (FR-034) is enabled; default true.
+    [[nodiscard]] bool isInputAgcEnabled() const noexcept { return agcEnabled_; }
+
+    /// @brief The REQUESTED resonator-bypass state (FR-063); default false.
+    ///        The 10 ms equal-power ramp toward it is a separate quantity.
+    [[nodiscard]] bool isResonatorBypass() const noexcept { return resonatorBypass_; }
 
     /// @brief Every engine, delay, smoother and follower state is finite.
     /// @note Checks the IEEE-754 exponent field by BIT PATTERN, never

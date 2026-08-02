@@ -45,13 +45,19 @@ using Catch::Approx;
 namespace {
 
 // -----------------------------------------------------------------------------
-// The stream layout (plan 3.4). Total 36 bytes, little-endian IBStreamer.
+// The stream layout. Under the Phase 9 v2 format (plan 5.1) a saved state is
+// 2532 bytes, of which Phase 8's scalar block is a STRICT 36-byte PREFIX. This
+// file asserts over that prefix only, little-endian IBStreamer:
 //
 //   0 int32 version | 4 float masterGain | 8 int32 polyphony |
 //  12 int32 softLimit | 16 dream | 20 bloom | 24 dissolve | 28 gravity |
 //  32 entropy
+//
+// Everything from byte 36 on -- seed, cloud, morph, life, body, atmosphere,
+// aether -- is unit/state_v2_test.cpp's subject, not this file's.
 // -----------------------------------------------------------------------------
-constexpr int32 kStateBytes = 36;
+constexpr int32 kStateBytes = 2532;  // plan 5.1: the WHOLE v2 stream
+constexpr int32 kV1StateBytes = 36;  // the strict v1 prefix of a v2 stream
 
 constexpr int32 kOffMasterGain = 4;
 constexpr int32 kOffPolyphony = 8;
@@ -141,8 +147,9 @@ void rewindStream(MemoryStream& s) { s.seek(0, IBStream::kIBSeekSet, nullptr); }
     return s;
 }
 
-// Decode a complete 36-byte state stream.
-[[nodiscard]] StatePayload decodeState(MemoryStream& s) {
+// Decode the 36-byte v1 PREFIX of a complete v2 state stream. The stream must
+// be a whole one (2532 bytes); only its first nine fields are read here.
+[[nodiscard]] StatePayload decodeV1Prefix(MemoryStream& s) {
     REQUIRE(s.getSize() == kStateBytes);
     rewindStream(s);
 
@@ -216,11 +223,11 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
 
         // Byte-level: version prefix and the gravity slot, by offset.
         CHECK(int32AtOffset(*s, 0) == Seraphis::kCurrentStateVersion);
-        CHECK(int32AtOffset(*s, 0) == 1);
+        CHECK(int32AtOffset(*s, 0) == 2);
         CHECK(floatAtOffset(*s, kOffGravity) == 0.5f);
 
         // ...and the whole payload, field by field.
-        checkPayload(decodeState(*s), StatePayload{});
+        checkPayload(decodeV1Prefix(*s), StatePayload{});
     }
 
     // -------------------------------------------------------------------------
@@ -239,7 +246,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
         // NON-VACUITY: A must carry the SEEDED values, not the defaults. This
         // is what stops a no-op setState()/constant getState() from passing the
         // byte-identity check below.
-        CHECK(int32AtOffset(*a, 0) == 1);
+        CHECK(int32AtOffset(*a, 0) == 2);
         CHECK(floatAtOffset(*a, kOffMasterGain) == seeded.masterGain);
         CHECK(int32AtOffset(*a, kOffPolyphony) == seeded.polyphony);
         CHECK(int32AtOffset(*a, kOffSoftLimit) == seeded.softLimit);
@@ -248,7 +255,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
         CHECK(floatAtOffset(*a, kOffDissolve) == seeded.dissolve);
         CHECK(floatAtOffset(*a, kOffGravity) == seeded.gravity);
         CHECK(floatAtOffset(*a, kOffEntropy) == seeded.entropy);
-        checkPayload(decodeState(*a), seeded);
+        checkPayload(decodeV1Prefix(*a), seeded);
 
         // A -> fresh processor -> B.
         Seraphis::Processor second;
@@ -259,7 +266,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
         REQUIRE(b->getSize() == a->getSize());
         REQUIRE(std::memcmp(a->getData(), b->getData(),
                             static_cast<std::size_t>(a->getSize())) == 0);
-        checkPayload(decodeState(*b), seeded);
+        checkPayload(decodeV1Prefix(*b), seeded);
     }
 
     // -------------------------------------------------------------------------
@@ -313,12 +320,14 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
             if (n >= kOffEntropy) {
                 expected.gravity = seeded.gravity;
             }
-            if (n >= kStateBytes) {
+            // entropy completes at byte 36 -- the END OF THE V1 PREFIX, not the
+            // end of the 2532-byte v2 stream.
+            if (n >= kV1StateBytes) {
                 expected.entropy = seeded.entropy;
             }
 
             StreamPtr after = captureState(proc);
-            checkPayload(decodeState(*after), expected);
+            checkPayload(decodeV1Prefix(*after), expected);
         }
     }
 
@@ -327,8 +336,8 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
     // -------------------------------------------------------------------------
     SECTION("A future state version is rejected and applies nothing") {
         StatePayload future = nonDefaultPayload();
-        future.version = Seraphis::kCurrentStateVersion + 1;  // == 2
-        REQUIRE(future.version == 2);
+        future.version = Seraphis::kCurrentStateVersion + 1;  // == 3
+        REQUIRE(future.version == 3);
 
         Seraphis::Processor proc;
         StreamPtr s = makeStateStream(future);
@@ -336,7 +345,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
 
         // Rejected means rejected: not one field of the payload was applied.
         StreamPtr after = captureState(proc);
-        checkPayload(decodeState(*after), StatePayload{});
+        checkPayload(decodeV1Prefix(*after), StatePayload{});
     }
 
     SECTION("A null stream is rejected") {
@@ -360,7 +369,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
         REQUIRE(proc.setState(seed.get()) == kResultOk);
 
         StreamPtr state = captureState(proc);
-        checkPayload(decodeState(*state), seeded);  // the stream really is non-default
+        checkPayload(decodeV1Prefix(*state), seeded);  // the stream really is non-default
         rewindStream(*state);
 
         Seraphis::Controller controller;
@@ -400,7 +409,8 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
 
     SECTION("Controller::setComponentState rejects a future state version") {
         StatePayload future = nonDefaultPayload();
-        future.version = Seraphis::kCurrentStateVersion + 1;
+        future.version = Seraphis::kCurrentStateVersion + 1;  // == 3
+        REQUIRE(future.version == 3);
 
         Seraphis::Controller controller;
         REQUIRE(controller.initialize(nullptr) == kResultOk);

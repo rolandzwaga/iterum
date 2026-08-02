@@ -69,7 +69,10 @@ constexpr int32 kSweepPolyphony[5] = {1, 5, 9, 12, 16};
 }
 
 // -----------------------------------------------------------------------------
-// State readback (plan 3.4 layout: 36 bytes, little-endian)
+// State readback. `readParams` reads only the 36-byte PREFIX of the Phase 9 v2
+// stream (plan 5.1) -- the nine scalar fields Phase 8 shipped -- and asserts
+// nothing about the stream's total length, so it is unaffected by the v2 fields
+// that follow byte 36. Little-endian:
 //   0 int32 version | 4 float masterGain | 8 int32 polyphony |
 //  12 int32 softLimit | 16 dream | 20 bloom | 24 dissolve | 28 gravity |
 //  32 entropy

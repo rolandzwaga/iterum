@@ -183,9 +183,15 @@ struct Drive {
 // -----------------------------------------------------------------------------
 // Hand-authored state streams (SC-019 clause 3)
 // -----------------------------------------------------------------------------
-// The layout is plan 3.4's fixed 36 bytes:
+// The layout is the fixed 36 bytes of state format VERSION 1 (plan 3.4), which
+// the Phase 9 v2 format keeps as a strict prefix (plan 5.1):
 //   0 int32 version | 4 float masterGain | 8 int32 polyphony | 12 int32 softLimit
 //  16 dream | 20 bloom | 24 dissolve | 28 gravity | 32 entropy
+//
+// The stream is labelled `kStateVersion1`, so it is an HONEST version-1 stream
+// and additionally exercises FR-093's v1 -> v2 migration. Labelling a 36-byte
+// body `kCurrentStateVersion` would make it a v2-labelled stream carrying v1
+// content, which survives only by EOF-safety and tests nothing it claims to.
 //
 // Authoring the bytes here rather than going through getState() is what lets the
 // corrupt-stream sub-clause write a polyphony value (0, 20) that no legal
@@ -208,7 +214,7 @@ using StreamPtr = std::unique_ptr<Steinberg::MemoryStream, StreamReleaser>;
         // pluginterfaces/base/fplatform.h:20), not a Steinberg-namespace
         // constant: qualifying it produces `Steinberg::0`.
         Steinberg::IBStreamer writer(s.get(), kLittleEndian);
-        writer.writeInt32(Seraphis::kCurrentStateVersion);
+        writer.writeInt32(Seraphis::kStateVersion1);
         writer.writeFloat(1.0f);       // masterGain - the registered default
         writer.writeInt32(polyphony);  // THE FIELD UNDER TEST, written RAW
         writer.writeInt32(1);          // softLimit on

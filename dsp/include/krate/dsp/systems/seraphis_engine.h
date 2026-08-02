@@ -84,6 +84,12 @@
 #include <cstdint>
 #include <cstring>
 #include <span>
+// FR-001's std::is_trivially_copyable_v guard. NOT optional and NOT
+// transitively guaranteed: neither this file's other stdlib headers nor
+// seraphis_voice.h's block (:48-74) includes it, and while MSVC and libstdc++
+// commonly drag it in through <array>/<algorithm>, libc++ need not - so a
+// toolchain that leaks it would go green while CI's did not.
+#include <type_traits>
 
 namespace Krate {
 namespace DSP {
@@ -95,6 +101,81 @@ struct SeraphisEngineConfig {
     std::size_t polyphony = 8;
     std::uint32_t seed = 1u;
 };
+
+/// @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+/// @par Real-Time Safety: plain data; copying is trivial and allocation-free.
+///
+/// FR-001. One field per VP-routed parameter of the Phase 9 surface (spec C-6).
+/// NO FIELD HERE MAY NAME A SeraphisMacroTarget (spec C-1/FR-055): those 27
+/// values reach the voices through SeraphisMacroMatrix::setTargetBase, and a
+/// second write path would double-apply them.
+///
+/// It is *not* SeraphisVoiceConfig (seraphis_voice.h:105-120), which is
+/// prepare-time and is not extended. Every default member initializer below is
+/// the SHIPPED voice default, so broadcasting a default-constructed instance
+/// into a freshly prepared pool is observably a no-op.
+struct SeraphisVoiceParams {
+    // -- HarmonicCloud (IDs 206, 209, 210) ---------------------------------
+    float cloudDriftSmoothness   = 0.5f;    // harmonic_cloud.h:2131
+    float cloudDecaySec          = 0.5f;    // seraphis_voice.h:298
+    float cloudEnvOffsetSpread   = 0.0f;    // harmonic_cloud.h:2135
+
+    // -- SpectralMorphEngine (IDs 401, 403, 404, 407) ----------------------
+    float morphBloom             = 0.0f;    // seraphis_voice.h:302
+    SpectralMorphEngine::TravelMode morphTravelMode =
+        SpectralMorphEngine::TravelMode::External;              // :139
+    float morphTravelRate        = SpectralMorphEngine::kMinTravelRate;  // :101, voice :303
+    double morphWaypointSeconds  = 2.0;     // SplineTrajectory::kDefaultInterval
+
+    // -- Spatial / life modulators (IDs 601, 602, 603) ---------------------
+    float spatialRateHz          = 0.1f;    // seraphis_voice.h:331
+    float spatialCoupling        = 0.0f;    // :332
+    float spatialGrowth          = 0.0f;    // :333
+
+    // -- Voice envelope (IDs 700, 701) -------------------------------------
+    SeraphisVoice::EnvelopeMode envMode = SeraphisVoice::EnvelopeMode::Standard;  // :341
+    float envGrowthDurationSec   = 10.0f;   // :364
+
+    // -- ContinuousBody (IDs 800, 801, 803-812) ----------------------------
+    ContinuousBody::BodyMaterial bodyMaterial =
+        ContinuousBody::BodyMaterial::Glass;                    // :306
+    float bodyResonance          = 0.7f;    // :307
+    float bodyKeyTracking        = 1.0f;    // :309
+    float bodyDrive              = 1.0f;    // :310
+    float bodyMix                = 1.0f;    // :311
+    float bodyCloudMix           = 0.25f;   // :313
+    float bodyCloudDecaySec      = 4.0f;    // :314
+    float bodyCloudSize          = 1.0f;    // :315
+    float bodyCloudDamping       = 0.3f;    // :316
+    float bodyWidth              = 1.0f;    // :317
+    bool  bodyInputAgc           = ContinuousBody::kDefaultAgcEnabled;       // :163 (true)
+    bool  bodyResonatorBypass    = ContinuousBody::kDefaultResonatorBypass;  // :164 (false)
+
+    // -- AtmosphereEngine (IDs 1002, 1003, 1005-1007, 1009-1016) -----------
+    float atmosDensity           = 4.0f;    // seraphis_voice.h:322
+    float atmosGrainSeconds      = 4.0f;    // :323
+    float atmosPanSpread         = 0.7f;    // :325
+    float atmosDecorrelation     = 0.5f;    // :326
+    float atmosFreezeMix         = 0.0f;    // :327
+    float atmosDriftSmoothness   = 0.7f;    // atmosphere_engine.h:843 (documented default)
+    float atmosDriftRangeSemis   = 2.0f;    // :850
+    float atmosJitter            = 0.5f;    // :798
+    float atmosPositionSeconds   = 1.0f;    // :805-806
+    float atmosPositionSpread    = 0.3f;    // :813-814
+    float atmosPitchSemitones    = 0.0f;    // :820
+    float atmosPitchSpread       = 0.15f;   // :828-829
+    GrainEnvelopeType atmosGrainEnvelope = GrainEnvelopeType::Hann;  // :952
+
+    /// FR-001. The spec's VP row count (C-6). A static_assert cannot count named
+    /// fields, so the guard is this compile-time constant plus the behavioural
+    /// sweep in seraphis_param_broadcast_test.cpp - NOT a sizeof assertion,
+    /// which is padding-dependent and would break on a legal ABI difference.
+    /// Any field added or removed without updating the C-6 table fails that test.
+    static constexpr std::size_t kFieldCount = 37;
+};
+
+static_assert(std::is_trivially_copyable_v<SeraphisVoiceParams>,
+              "FR-001: the broadcast POD is copied on the audio thread");
 
 namespace detail {
 /// @brief FR-072 fault-injection probe. DECLARED HERE, DEFINED ONLY BY A TEST TU.
@@ -134,8 +215,33 @@ public:
     static constexpr std::size_t kMaxBlockSamples = 2048;
     /// FR-050. Per-voice seed salt base; disjoint from every SeraphisVoice salt.
     static constexpr std::size_t kVoiceSaltBase = 0x9000;
-    /// FR-052. Voice-sum gain smoothing time.
-    static constexpr float kSumGainSmoothMs = 20.0f;
+    /// @brief FR-052. Voice-sum gain smoothing time.
+    ///
+    /// 100 ms, NOT the 20 ms of the master-gain family, and the difference is
+    /// structural rather than a taste call: `masterGain_` is advanced ONCE PER
+    /// OUTPUT SAMPLE by its owner, whereas this smoother is read once and HELD
+    /// for a whole control chunk (runPreRenderControlStep, :1054-1055) so that
+    /// the value is partition-invariant (FR-052, SC-014). A held value is a
+    /// STAIRCASE, and its first stair is `1 - e^(-64/tau_samples)` of the whole
+    /// step - 28.35 % at 20 ms.
+    ///
+    /// The largest legal step is polyphony 1 -> 2, i.e. `sumGainForPolyphony`
+    /// moving 1.0 -> 0.7071 (:1005-1007), so at 20 ms one sample transition
+    /// carried 8.3 % of the bus level - an audible click on a parameter no
+    /// criterion exempts. MEASURED, on Seraphis SC-005's own automation render of
+    /// ID 1 (max per-sample delta in a 20 ms window on the step, against the same
+    /// statistic 64 ms clear of any step, bound 1.5 x):
+    ///
+    ///   20 ms -> 2.651   100 ms -> 1.143   200 ms -> 1.143
+    ///   300 ms -> 1.144  500 ms -> 1.147
+    ///
+    /// 100 ms is the KNEE: from there on the statistic is the render's own floor
+    /// and is flat to four digits, i.e. the staircase has disappeared under it
+    /// and no further lengthening buys anything. Nothing about the delivery
+    /// shape changes - the value is still read once and held for the chunk, so
+    /// SC-014's partition invariance is untouched - and `prepare()` still SNAPS
+    /// (:329), so no test that sets polyphony before prepare sees a ramp at all.
+    static constexpr float kSumGainSmoothMs = 100.0f;
     /// FR-046. -30 dBFS long-release steal amnesty threshold.
     static constexpr float kAmnestyLevelThreshold = 0.0316f;
     /// FR-053. Shipped output tape-saturation amount.
@@ -566,6 +672,159 @@ public:
     void setOutputSaturation(float amount) noexcept {
         satL_.setSaturation(amount);
         satR_.setSaturation(amount);
+    }
+
+    /// @brief FR-072. The ONLY read-back for the output-saturation amount.
+    ///
+    /// A PURE CONST FORWARDER - it adds NO state. setOutputSaturation (above) is
+    /// the only writer of satL_/satR_ besides prepare()'s kOutputSaturation push
+    /// (:230-231), and TapeSaturator already ships the read-back: saturation_ is
+    /// written ONLY by setSaturation, as `std::clamp(amount, 0.0f, 1.0f)` BEFORE
+    /// the smoother target (tape_saturator.h:248-252), i.e. exactly "the amount
+    /// last pushed, not the saturator's ramp position". TapeSaturator::reset()
+    /// snaps the smoother to saturation_ and does not clear it (:180-199), so
+    /// SeraphisEngine::reset() cannot desynchronise the two either.
+    ///
+    /// A mirrored member would be a SECOND source of truth and two places that
+    /// must stay in step - which is the divergence this accessor exists to rule
+    /// out.
+    ///
+    /// @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    /// @par Real-Time Safety: a pure const member read - allocation-free,
+    ///      lock-free, exception-free.
+    [[nodiscard]] float getOutputSaturation() const noexcept {
+        return satL_.getSaturation();  // tape_saturator.h:283
+    }
+
+    // =========================================================================
+    // Phase 9 parameter surface (FR-001, FR-002, FR-005)
+    // =========================================================================
+
+    /// @brief FR-002 (spec Phase 9). Broadcast the run-time voice parameter set
+    ///        to EVERY slot.
+    ///
+    /// THE BOUND IS kMaxVoices AND NOT getPolyphony(), and that is load-bearing.
+    /// setPolyphony() force-idles an excess slot with voices_[i].noteOff() and
+    /// records orphanTail_ |= voiceBit(i) when !isFinished() (:339-348), and
+    /// processStereoBlock's loop bound is `v < kMaxVoices` unconditionally
+    /// (:437, :464-486). A getPolyphony() bound would leave an audibly-summed
+    /// orphan running on prepare-time defaults for its whole release - up to
+    /// 8000 ms at the shipped default (seraphis_voice.h:359) - and would leave a
+    /// slot the allocator hands out after a polyphony INCREASE unconfigured.
+    /// Same bound as setSeed (:355) and setAtmosphereFreeze (:557).
+    ///
+    /// Does NOT call setSpectralState / setSpectralStateCount: those are
+    /// configure-time gated and belong to applySpectralStates (FR-005).
+    ///
+    /// @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    /// @par Real-Time Safety: allocation-free, lock-free, exception-free.
+    ///      37 noexcept scalar setters x kMaxVoices; every one is idempotent.
+    void applyVoiceParams(const SeraphisVoiceParams& p) noexcept {
+        for (std::size_t v = 0; v < kMaxVoices; ++v) {
+            SeraphisVoice& voice = voices_[v];
+            // Cloud
+            voice.setCloudDriftSmoothness(p.cloudDriftSmoothness);   // FR-070 #1
+            voice.setDecayTimeSec(p.cloudDecaySec);                  // :650
+            voice.setEnvelopeOffsetSpread(p.cloudEnvOffsetSpread);   // FR-070 #2
+            // Morph
+            voice.setBloom(p.morphBloom);                            // :654
+            voice.setTravelMode(p.morphTravelMode);                  // :664
+            voice.setTravelRate(p.morphTravelRate);                  // :657
+            voice.setWaypointInterval(p.morphWaypointSeconds);       // FR-070 #5
+            // Spatial
+            voice.setSpatialRate(p.spatialRateHz);                   // :615
+            voice.setSpatialCoupling(p.spatialCoupling);             // :616
+            voice.setSpatialGrowth(p.spatialGrowth);                 // :617
+            // Envelope
+            voice.setEnvelopeMode(p.envMode);                        // :567
+            voice.setGrowthDurationSeconds(p.envGrowthDurationSec);  // :580
+            // Body
+            voice.setMaterial(p.bodyMaterial);                       // :673
+            voice.setResonance(p.bodyResonance);                     // :674
+            voice.setKeyTracking(p.bodyKeyTracking);                 // :676
+            voice.setDrive(p.bodyDrive);                             // :677
+            voice.setMix(p.bodyMix);                                 // :678
+            voice.setCloudMix(p.bodyCloudMix);                       // :679
+            voice.setCloudDecaySec(p.bodyCloudDecaySec);             // :680
+            voice.setCloudSize(p.bodyCloudSize);                     // :681
+            voice.setCloudDamping(p.bodyCloudDamping);               // :682
+            voice.setWidth(p.bodyWidth);                             // :683
+            voice.setBodyInputAgcEnabled(p.bodyInputAgc);            // FR-070 #12
+            voice.setBodyResonatorBypass(p.bodyResonatorBypass);     // FR-070 #13
+            // Atmosphere
+            voice.setDensity(p.atmosDensity);                        // :688
+            voice.setGrainSeconds(p.atmosGrainSeconds);              // :689
+            voice.setPanSpread(p.atmosPanSpread);                    // :691
+            voice.setDecorrelation(p.atmosDecorrelation);            // :692
+            voice.setFreezeMix(p.atmosFreezeMix);                    // :693
+            voice.setAtmosDriftSmoothness(p.atmosDriftSmoothness);   // FR-070 #3
+            voice.setAtmosDriftRangeSemitones(p.atmosDriftRangeSemis);// FR-070 #4
+            voice.setAtmosJitter(p.atmosJitter);                     // FR-070 #6
+            voice.setAtmosPositionSeconds(p.atmosPositionSeconds);   // FR-070 #7
+            voice.setAtmosPositionSpread(p.atmosPositionSpread);     // FR-070 #8
+            voice.setAtmosPitchSemitones(p.atmosPitchSemitones);     // FR-070 #9
+            voice.setAtmosPitchSpread(p.atmosPitchSpread);           // FR-070 #10
+            voice.setAtmosGrainEnvelope(p.atmosGrainEnvelope);       // FR-070 #11
+        }
+    }
+
+    /// @brief FR-005. Configure-time fan-out of the four spectral slots.
+    ///
+    /// ALL FOUR SLOTS ARE WRITTEN, not `count` of them. SpectralMorphEngine::
+    /// setState accepts any slot in [0, kMaxStates) irrespective of numStates_
+    /// (spectral_morph_engine.h:292-295) and stores it, so writing all four is
+    /// legal - and it is REQUIRED, because SC-003's rows for IDs 411/412 raise
+    /// kMorphStateCountId to 4 and then expect slots 2 and 3 to already carry
+    /// their content. `states` is always the Processor's 4-slot array (FR-041b).
+    ///
+    /// The per-voice gate (seraphis_voice.h:770-783) is the ONLY guard; this
+    /// function adds none and swallows no rejection - the caller reads
+    /// getRejectedConfigureTimeCallCount() (:784) across the pool to decide
+    /// whether to retry (FR-046 clause 3).
+    ///
+    /// kMaxVoices, not getPolyphony(): a slot the allocator hands out later must
+    /// already carry the states.
+    ///
+    /// `voiceMask` selects which slots are written; bit v selects voices_[v].
+    /// The default 0xFFFF is the whole pool, so the FR-005 contract is unchanged
+    /// for every caller that does not name a mask. It exists because the FR-046
+    /// RETRY must not re-push to voices that already accepted: on an accepting
+    /// voice SpectralMorphEngine::setState runs isValidSpectralState AND
+    /// buildSanitized - a full 64-entry std::log2 pass
+    /// (spectral_morph_engine.h:296-301, :537-543) - BEFORE the identity check at
+    /// :302-304 that would make it a no-op. A whole-pool retry therefore costs
+    /// 15 x 4 x 64 ~= 3840 std::log2 per block, every block, for as long as ONE
+    /// voice keeps rejecting - which is the whole of a sustained note plus its
+    /// release (up to 8000 ms, seraphis_voice.h:359).
+    ///
+    /// THE SAME ARITHMETIC BOUNDS THE SUCCESS PATH: a mask of 0xFFFF over a
+    /// quiescent pool is 16 x 4 = 64 buildSanitized calls = 4096 std::log2 plus
+    /// 64 isValidSpectralState scans plus 64 128-float array comparisons, in ONE
+    /// process() call. That is why the caller raises its pending / retry mask
+    /// only when a slot id actually moved or the engine was re-prepared.
+    ///
+    /// The mask is a DEFAULTED PARAMETER on this same symbol, not a second
+    /// overload, so no existing call site changes shape.
+    ///
+    /// @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    /// @par Real-Time Safety: allocation-free, lock-free, exception-free.
+    void applySpectralStates(const SpectralState* states, int count,
+                             std::uint16_t voiceMask = 0xFFFFu) noexcept {
+        if (states == nullptr) {
+            return;
+        }
+        for (std::size_t v = 0; v < kMaxVoices; ++v) {
+            // voiceBit() (:766) rather than a uint16_t shift: its std::uint32_t
+            // result keeps the whole comparison unsigned, which is what the
+            // zero-warning gate needs (MSVC C4389 / GCC -Wsign-compare).
+            if ((voiceMask & voiceBit(v)) == 0u) {
+                continue;
+            }
+            voices_[v].setSpectralStateCount(count);   // clamps [2,4] downstream (:319)
+            for (int slot = 0; slot < SpectralMorphEngine::kMaxStates; ++slot) {
+                voices_[v].setSpectralState(slot, states[static_cast<std::size_t>(slot)]);
+            }
+        }
     }
 
     // =========================================================================

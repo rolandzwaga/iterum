@@ -12,15 +12,112 @@
   <fonts>
     <font name="label-font" font-name="Arial" size="11"/>
   </fonts>
+  <!-- FR-100 / SC-015: one <control-tag> per REGISTERED parameter, all 91 of
+       them, named after the plugin_ids.h enumerator without the k / Id affixes.
+       The eight Phase 8 names are verbatim. Phase 9 adds 83 tags that NO <view>
+       binds - deliberately: the layout is Phase 11's, and a tag without a view
+       is exactly what lets Phase 11 add the view without touching this list. -->
   <control-tags>
+    <!-- Global (0-99) -->
     <control-tag name="MasterGain"    tag="0"/>
     <control-tag name="Polyphony"     tag="1"/>
     <control-tag name="SoftLimit"     tag="2"/>
+    <control-tag name="Seed"          tag="3"/>
+    <!-- Macros (100-199) -->
     <control-tag name="MacroDream"    tag="100"/>
     <control-tag name="MacroBloom"    tag="101"/>
     <control-tag name="MacroDissolve" tag="102"/>
     <control-tag name="MacroGravity"  tag="103"/>
     <control-tag name="MacroEntropy"  tag="104"/>
+    <!-- Harmonic Cloud (200-399) -->
+    <control-tag name="CloudRichness"        tag="200"/>
+    <control-tag name="CloudInharmonicity"   tag="201"/>
+    <control-tag name="CloudTilt"            tag="202"/>
+    <control-tag name="CloudMutation"        tag="203"/>
+    <control-tag name="CloudGravity"         tag="204"/>
+    <control-tag name="CloudDriftDepth"      tag="205"/>
+    <control-tag name="CloudDriftSmoothness" tag="206"/>
+    <control-tag name="CloudStereoSpread"    tag="207"/>
+    <control-tag name="CloudAttack"          tag="208"/>
+    <control-tag name="CloudDecay"           tag="209"/>
+    <control-tag name="CloudEnvOffsetSpread" tag="210"/>
+    <!-- Spectral Morph / Entropy (400-599) -->
+    <control-tag name="MorphEntropy"          tag="400"/>
+    <control-tag name="MorphBloom"            tag="401"/>
+    <control-tag name="MorphPosition"         tag="402"/>
+    <control-tag name="MorphTravelMode"       tag="403"/>
+    <control-tag name="MorphTravelRate"       tag="404"/>
+    <control-tag name="MorphSync"             tag="405"/>
+    <control-tag name="MorphSyncNote"         tag="406"/>
+    <control-tag name="MorphWaypointInterval" tag="407"/>
+    <control-tag name="MorphStateCount"       tag="408"/>
+    <control-tag name="MorphState0"           tag="409"/>
+    <control-tag name="MorphState1"           tag="410"/>
+    <control-tag name="MorphState2"           tag="411"/>
+    <control-tag name="MorphState3"           tag="412"/>
+    <!-- Life Modulators (600-699) -->
+    <control-tag name="LifeSpatialDepth"    tag="600"/>
+    <control-tag name="LifeSpatialRate"     tag="601"/>
+    <control-tag name="LifeSpatialCoupling" tag="602"/>
+    <control-tag name="LifeSpatialGrowth"   tag="603"/>
+    <control-tag name="LifeVoiceWidth"      tag="604"/>
+    <!-- Voice Envelope (700-799) -->
+    <control-tag name="EnvMode"           tag="700"/>
+    <control-tag name="EnvGrowthDuration" tag="701"/>
+    <control-tag name="EnvStage0Ms"       tag="702"/>
+    <control-tag name="EnvStage1Ms"       tag="703"/>
+    <control-tag name="EnvReleaseMs"      tag="704"/>
+    <!-- Continuous Body (800-999) -->
+    <control-tag name="BodyMaterial"        tag="800"/>
+    <control-tag name="BodyResonance"       tag="801"/>
+    <control-tag name="BodyDamping"         tag="802"/>
+    <control-tag name="BodyKeyTracking"     tag="803"/>
+    <control-tag name="BodyDrive"           tag="804"/>
+    <control-tag name="BodyMix"             tag="805"/>
+    <control-tag name="BodyCloudMix"        tag="806"/>
+    <control-tag name="BodyCloudDecay"      tag="807"/>
+    <control-tag name="BodyCloudSize"       tag="808"/>
+    <control-tag name="BodyCloudDamping"    tag="809"/>
+    <control-tag name="BodyWidth"           tag="810"/>
+    <control-tag name="BodyInputAgc"        tag="811"/>
+    <control-tag name="BodyResonatorBypass" tag="812"/>
+    <!-- Granular Atmosphere (1000-1199) -->
+    <control-tag name="AtmosLevel"           tag="1000"/>
+    <control-tag name="AtmosBlur"            tag="1001"/>
+    <control-tag name="AtmosDensity"         tag="1002"/>
+    <control-tag name="AtmosGrainSeconds"    tag="1003"/>
+    <control-tag name="AtmosDriftDepth"      tag="1004"/>
+    <control-tag name="AtmosPanSpread"       tag="1005"/>
+    <control-tag name="AtmosDecorrelation"   tag="1006"/>
+    <control-tag name="AtmosFreezeMix"       tag="1007"/>
+    <control-tag name="AtmosFreeze"          tag="1008"/>
+    <control-tag name="AtmosDriftSmoothness" tag="1009"/>
+    <control-tag name="AtmosDriftRange"      tag="1010"/>
+    <control-tag name="AtmosJitter"          tag="1011"/>
+    <control-tag name="AtmosPosition"        tag="1012"/>
+    <control-tag name="AtmosPositionSpread"  tag="1013"/>
+    <control-tag name="AtmosPitch"           tag="1014"/>
+    <control-tag name="AtmosPitchSpread"     tag="1015"/>
+    <control-tag name="AtmosGrainEnvelope"   tag="1016"/>
+    <!-- Aether Space (1200-1399) -->
+    <control-tag name="AetherMix"               tag="1200"/>
+    <control-tag name="AetherSize"              tag="1201"/>
+    <control-tag name="AetherDensity"           tag="1202"/>
+    <control-tag name="AetherDecay"             tag="1203"/>
+    <control-tag name="AetherFreeze"            tag="1204"/>
+    <control-tag name="AetherDimensionality"    tag="1205"/>
+    <control-tag name="AetherDamping"           tag="1206"/>
+    <control-tag name="AetherPreDelay"          tag="1207"/>
+    <control-tag name="AetherModDepth"          tag="1208"/>
+    <control-tag name="AetherModSmoothness"     tag="1209"/>
+    <control-tag name="AetherShimmerOctave"     tag="1210"/>
+    <control-tag name="AetherShimmerFifth"      tag="1211"/>
+    <control-tag name="AetherBloomSend"         tag="1212"/>
+    <control-tag name="AetherBloomDecay"        tag="1213"/>
+    <control-tag name="AetherSpectralDiffusion" tag="1214"/>
+    <control-tag name="AetherSizeBreathDepth"   tag="1215"/>
+    <control-tag name="AetherTideDepth"         tag="1216"/>
+    <control-tag name="AetherWidth"             tag="1217"/>
   </control-tags>
   <template name="editor" class="CViewContainer" size="420, 300"
             background-color="bg" background-color-draw-style="filled">

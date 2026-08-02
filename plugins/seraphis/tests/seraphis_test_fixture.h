@@ -26,6 +26,7 @@
 #include <pluginterfaces/vst/ivstaudioprocessor.h>
 #include <pluginterfaces/vst/ivstevents.h>
 #include <pluginterfaces/vst/ivstparameterchanges.h>
+#include <pluginterfaces/vst/ivstprocesscontext.h>
 
 #include <cstddef>
 #include <initializer_list>
@@ -217,6 +218,42 @@ struct ProcessorFixture {
     }
 
     // -------------------------------------------------------------------------
+    // Host transport (Phase 9, plan 7.0's "shared fixture change")
+    // -------------------------------------------------------------------------
+    // Phase 8 shipped `data_.processContext = nullptr` unconditionally, which
+    // makes FR-056's host-synced morph travel untestable: Processor::
+    // updateSyncedTravelRate only derives a rate when a ProcessContext carrying
+    // kTempoValid arrives, so with no context every SC-018 clause would measure
+    // the FALLBACK and clauses 1-4 could not be written at all.
+    //
+    // The fixture OWNS the context and attaches it from withOutputChannels().
+    // Until setTempo() is called the behaviour is byte-for-byte the Phase 8 one:
+    // useContext_ starts false, so processContext stays null - which is also
+    // exactly SC-018 clause 5's first arm.
+    void setTempo(double bpm, int sigNum, int sigDen, bool tempoValid, bool sigValid) noexcept {
+        context_ = Steinberg::Vst::ProcessContext{};
+        context_.tempo = bpm;
+        context_.timeSigNumerator = static_cast<Steinberg::int32>(sigNum);
+        context_.timeSigDenominator = static_cast<Steinberg::int32>(sigDen);
+
+        Steinberg::uint32 flags = 0;
+        if (tempoValid) {
+            flags |= static_cast<Steinberg::uint32>(Steinberg::Vst::ProcessContext::kTempoValid);
+        }
+        if (sigValid) {
+            flags |= static_cast<Steinberg::uint32>(Steinberg::Vst::ProcessContext::kTimeSigValid);
+        }
+        context_.state = flags;
+
+        useContext_ = true;
+    }
+
+    // Detach the context again: the next block sees processContext == nullptr,
+    // FR-056's stated fallback. Needed to test that a synced rate is not RETAINED
+    // when the host stops supplying a transport (SC-018 clause 5).
+    void clearProcessContext() noexcept { useContext_ = false; }
+
+    // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
     // `type` is a Steinberg::Vst::Event type constant (kNoteOnEvent /
@@ -282,7 +319,8 @@ struct ProcessorFixture {
         data_.outputParameterChanges = nullptr;
         data_.inputEvents = &events;
         data_.outputEvents = nullptr;
-        data_.processContext = nullptr;
+        // Phase 9: null until setTempo() is called, which is the Phase 8 shape.
+        data_.processContext = useContext_ ? &context_ : nullptr;
         return data_;
     }
 
@@ -402,6 +440,10 @@ private:
 
     Steinberg::Vst::AudioBusBuffers outBus_{};
     Steinberg::Vst::ProcessData data_{};
+
+    // Phase 9 transport hook - see setTempo() above.
+    Steinberg::Vst::ProcessContext context_{};
+    bool useContext_ = false;
 };
 
 }  // namespace SeraphisTest

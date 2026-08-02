@@ -77,15 +77,18 @@ Steinberg::Vst::ProcessSetup makeSetup(double sampleRate, Steinberg::int32 block
     return setup;
 }
 
-/// The 36-byte state stream of plan §3.4, carrying a NON-DEFAULT value in every
-/// one of the eight fields. Written by hand rather than through `getState()`:
-/// the claim under test is that the reported latency survives a `setState()`,
-/// so the stream must not depend on the processor under test having produced
-/// it. Leaves the stream rewound, ready to hand to `setState()`.
+/// The 36-byte state stream of format VERSION 1 (plan §3.4), which the Phase 9
+/// v2 format keeps as a strict prefix (plan §5.1), carrying a NON-DEFAULT value
+/// in every one of the eight fields. Written by hand rather than through
+/// `getState()`: the claim under test is that the reported latency survives a
+/// `setState()`, so the stream must not depend on the processor under test
+/// having produced it. Labelled `kStateVersion1` so it is an HONEST version-1
+/// stream and additionally exercises FR-093's v1 -> v2 migration. Leaves the
+/// stream rewound, ready to hand to `setState()`.
 void writeNonDefaultState(Steinberg::MemoryStream& stream) {
     {
         Steinberg::IBStreamer streamer(&stream, kLittleEndian);
-        streamer.writeInt32(Seraphis::kCurrentStateVersion);
+        streamer.writeInt32(Seraphis::kStateVersion1);
         streamer.writeFloat(1.5f);   // masterGain -- default 1.0
         streamer.writeInt32(4);      // polyphony  -- default 8
         streamer.writeInt32(0);      // softLimit  -- default on

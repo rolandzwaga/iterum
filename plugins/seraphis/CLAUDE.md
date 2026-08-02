@@ -21,14 +21,14 @@ Auto-loads when working under `plugins/seraphis/`. Root `CLAUDE.md` still applie
 
   | Range | Section | Phase |
   |---|---|---|
-  | 0–99 | Global (master gain, polyphony, soft limit) | 8 — shipped |
-  | 100–199 | Macros (Dream, Bloom, Dissolve, Gravity, Entropy) | 8 — shipped, inert |
-  | 200–399 | Harmonic Cloud | 9 |
-  | 400–599 | Spectral Morph / Entropy | 9 |
-  | 600–799 | Life Modulators | 9 |
-  | 800–999 | Continuous Body | 9 |
-  | 1000–1199 | Atmosphere | 9 |
-  | 1200–1399 | Aether | 9 |
+  | 0–99 | Global (master gain, polyphony, soft limit; `kSeedId` added in Phase 9) | 8 — shipped |
+  | 100–199 | Macros (Dream, Bloom, Dissolve, Gravity, Entropy) | 8 — shipped; wired, no longer inert, in 9 |
+  | 200–399 | Harmonic Cloud | 9 — shipped |
+  | 400–599 | Spectral Morph / Entropy | 9 — shipped |
+  | 600–799 | Life Modulators (600–699 orbit/width, 700–799 voice envelope — one pack, one band) | 9 — shipped |
+  | 800–999 | Continuous Body | 9 — shipped |
+  | 1000–1199 | Atmosphere | 9 — shipped |
+  | 1200–1399 | Aether | 9 — shipped |
   | 1400+ | Effects | 10 |
 
   Pipeline to add one: `plugin_ids.h → parameters/ → processor → controller → resources/editor.uidesc`.
@@ -58,20 +58,30 @@ editing the header.
 
 ## Decisions that outlive Phase 8
 
-### 1. MPE / note expression is a known **Phase 9** decision
+### 1. MPE / note expression — **DECIDED in Phase 9 (RQ-2, 2026-08-01): it ships, in Phase 13**
 
-Phase 8 ships **no `INoteExpressionController`** and declares no note-expression types. The event-input
-bus is the whole note surface, because the engine's note API is `noteOn(note, velocity)` /
-`noteOff(note)` with no per-note expression input at all — an implemented controller would have nothing
-to drive.
+Phase 8 posed this as Phase 9's call. **Phase 9 ruled**, and the ruling is neither "yes, here" nor "no":
+per-note expression **is wanted and will ship**, but in a **new named phase — Phase 13, Per-Note
+Expression** (`specs/Seraphis-roadmap.md` → Phase 13; `specs/seraphis-phase9-parameters/spec.md` →
+*Resolved Questions* RQ-2, FR-064, FR-058 clause 5). "Deferred, owner unknown" was explicitly not an
+available outcome.
 
-**The caveat that makes this a decision rather than an oversight:** adding an interface to an
-**already-released** controller FUID can invalidate host-cached class metadata. Hosts cache the interface
-set they discovered for a class UID; a class that suddenly answers `queryInterface` for
-`INoteExpressionController` may be seen inconsistently until the host's cache is cleared, and users do not
-clear plugin caches. So Phase 9 must make this call **knowingly**: either implement note expression before
-Seraphis ships to users, or accept that adding it later means a host-cache hazard (and possibly a new
-controller FUID). Do not discover this in Phase 9 — it is written here for that reason.
+**Why not Phase 9.** Phase 13 owns **both halves**, because neither works without the other: the DSP
+half — per-voice expression inputs on `SeraphisVoice` — is exactly the kind of `dsp/` change Phase 9's
+FR-071 froze, and the engine's note API is still `noteOn(note, velocity)` / `noteOff(note)` with no
+per-note expression input at all, so an `INoteExpressionController` implemented today would have
+nothing to drive.
+
+**Status through Phase 9:** still **no `INoteExpressionController`**, still no declared
+note-expression types (FR-064 is unconditional). The event-input bus is the whole note surface.
+
+**The controller-FUID host-cache hazard is ACCEPTED, not open.** Adding an interface to an
+already-released controller FUID can invalidate host-cached class metadata: hosts cache the interface
+set they discovered for a class UID, so a class that suddenly answers `queryInterface` for
+`INoteExpressionController` may be seen inconsistently until the host's cache is cleared — and users do
+not clear plugin caches. Phase 9 weighed that and accepted it rather than pre-emptively burning a
+second controller FUID. **Do not re-litigate this in Phase 13 as a fresh discovery, and do not
+regenerate `kControllerUID` over it.**
 
 ### 2. Preset categories are **additive-only**
 
@@ -80,7 +90,7 @@ renamed, replaced or "cleaned up" when the real category set lands.
 
 Phase 12 **EXTENDS** the list and **MUST NOT rename a shipped category.** A rename orphans every preset
 ever saved against the old name: the user's presets still carry the old string and no longer resolve into
-any category. This is the Membrum lesson (roadmap line 388) — Membrum's kit categories (`Acoustic`,
+any category. This is the Membrum lesson (roadmap line 405) — Membrum's kit categories (`Acoustic`,
 `Electronic`, `Percussive`, `Unnatural`) are fixed for exactly this reason.
 
 The category name is carried in **two** places and they must **always agree**:

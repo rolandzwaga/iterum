@@ -53,6 +53,7 @@
 #include <vector>
 
 using Krate::DSP::AetherReverb;
+using Krate::DSP::AtmosphereEngine;
 using Krate::DSP::Complex;
 using Krate::DSP::FFT;
 using Krate::DSP::ModCurve;
@@ -157,6 +158,46 @@ constexpr double kPartialSearchMaxHz = 6000.0;
 /// Upper edge of the band SC-009's Entropy primary (spectral flatness) is
 /// measured over; see spectralFlatnessOf().
 constexpr double kFlatnessMaxHz = 8000.0;
+
+/// ============================================================================
+/// ENTROPY'S FLATNESS IS A WELCH ESTIMATE OF THE PINNED TAIL, NOT A SINGLE
+/// PERIODOGRAM - AND THAT IS A VARIANCE REDUCTION, NOT A LOOSENED GATE.
+/// ============================================================================
+/// PORTED FROM PHASE 9 (plugins/seraphis/tests/integration/macro_wiring_test.cpp,
+/// SC-004 amendment A11 of 2026-08-01). Phase 9's compliance pass established
+/// that all four of its SC-004 measurement defects reproduce here, with NO
+/// plugin code in the path, and handed the finding back to this TU as the owner.
+/// This is one of the four fixes, ported unchanged in substance.
+///
+/// The window, the band and the transform are EXACTLY the pinned ones. What
+/// changes is only the number of draws averaged into the magnitude estimate:
+/// four half-length sub-windows spread across the same last second instead of
+/// one. The expectation is unmoved; the estimator's variance is divided by the
+/// number of segments.
+///
+/// It is here because the no-discontinuity clause was MEASURED, on a single
+/// periodogram, at essentially the bound. The series carries a per-step TREND
+/// that is only ~1.4x its step-to-step noise amplitude, and for a series whose
+/// step noise is that fraction of its step signal `worst/mean` is a property of
+/// the NOISE distribution (for 20 draws of |N(0,s)| its expectation is ~3), so
+/// the clause was a coin flip rather than a discontinuity test. There is no
+/// discontinuity to find: EntropyProcessor's four stage weights are continuous
+/// ramps (entropy_processor.h:66-69, :235-238) and the Entropy row spans
+/// entropy 0.20 -> 0.50, which crosses no stage floor except kStage3Lo = 0.50
+/// at the very last step, where stageWeight() is 0 by construction.
+///
+/// MEASURED on the Phase 9 arm, same render, same band, same window, four
+/// candidates:
+///   single periodogram (was)     rho = 0.968831   worst/mean = 3.00286  X
+///   mean of the [2,3)+[3,4) s    rho = 0.996104   worst/mean = 3.53526  X
+///   band edge 3 kHz instead      rho = 0.997403   worst/mean = 2.89313  (thin)
+///   WELCH, 4 segments (this)     rho = 0.997403   worst/mean = 1.81517  ok
+///   WELCH, 8 segments            rho = 0.998701   worst/mean = 2.80624
+/// Four segments is the minimum change that clears the bound with margin: it
+/// touches only the estimator, not the band (which the 3 kHz candidate would)
+/// and not the analysis segment (which the two-window mean would). NO GATE AND
+/// NO EFFECT-SIZE FLOOR MOVES WITH IT.
+constexpr std::size_t kFlatnessSegments = 4;
 /// The band SC-009's Gravity BodyDamping secondary is measured over.
 /// ContinuousBody's damping shapes the modal b3 term (continuous_body.h:1576),
 /// which is FREQUENCY-DEPENDENT: it damps the upper modes and leaves the
@@ -173,6 +214,14 @@ constexpr double kContinuityFactor = 3.0;
 /// The FR-019 stereo-spread base, held constant while Bloom's isolated
 /// VoiceWidth secondary is measured (plan §4.1.0).
 constexpr float kStereoSpreadBase = 0.35f;
+
+/// AetherReverb::kDecayMinSeconds, transcribed because that constant is private
+/// (aether_reverb.h:2735). It is the reference arm of Dream's wet-tail null test
+/// - the shortest decay the reverb will accept, so the arm's wet field is as
+/// close to absent as the shipped range allows. If the floor ever moves, this
+/// arm measures a longer reference tail and the null test weakens rather than
+/// breaks, which is why the value is cited here rather than assumed.
+constexpr float kAetherDecayFloorSec = 0.5f;
 
 // =============================================================================
 // Chain driver
@@ -391,6 +440,81 @@ void zeroAtmosphereLevel(SeraphisEngine& engine) {
     }
 }
 
+/// ============================================================================
+/// DISSOLVE'S PRIMARY MUTES THE ATMOSPHERE THROUGH DENSITY, NOT THROUGH LEVEL -
+/// AND THAT IS WHAT MAKES THE CRITERION MEASURABLE AT ALL.
+/// ============================================================================
+/// PORTED FROM PHASE 9 (macro_wiring_test.cpp:1451-1501, SC-004 amendment A11
+/// of 2026-08-01), which established the defect with no plugin code in the path
+/// and handed it back to this TU.
+///
+/// A LEVEL mute leaves the swept level in the full arm, so the differential is
+/// `E_full - E_muted = (level(d))^2 * E_A + 2 * level(d) * integral(S*A)` - i.e.
+/// a CROSS TERM between the atmosphere and everything else, which has no fixed
+/// sign and no fixed magnitude. MEASURED on the Phase 9 arm: at 5 s and 7 s per
+/// step, with nothing else changed, the fraction came out NEGATIVE over the
+/// bottom of the sweep (-0.0142 and -0.0497 at step 0) - an
+/// "atmosphere-band contribution" below zero is not a quantity that can be
+/// trended. At the pinned 4 s it scored rho = 0.998701 but
+/// `worst step / mean step = 3.48571` against the 3.0 no-discontinuity bound.
+///
+/// NO MACRO ROW WRITES AtmosDensity - the three atmosphere targets are
+/// AtmosLevel, AtmosBlur and AtmosDriftDepth (seraphis_macro_matrix.h:56-88) -
+/// and this hook runs AFTER macros.apply() on every slice, so the mute holds for
+/// the whole sweep. At AtmosphereEngine::kMinDensity = 0.1 grains/s the engine
+/// launches ONE grain per ten seconds, i.e. the reference arm is a near-silent
+/// atmosphere at EVERY step, and the differential is the atmosphere's WHOLE
+/// contribution at the swept level rather than a fixed slice of it. MEASURED on
+/// the Phase 9 arm at the pinned 4 s, same window, same band, same everything
+/// else: rho = 1, worst/mean = 2.95005, end-to-end 0.052595 -> 0.657805 (+0.605
+/// absolute against the >= 0.15 floor).
+///
+/// THAT THERE IS NO DISCONTINUITY IN THE MAPPING WAS ESTABLISHED SEPARATELY,
+/// before the metric was changed: the identical level-muted differential
+/// rendered at 8 s and 16 s per step is STRICTLY MONOTONE with rho = 1 and
+/// worst/mean = 1.9201 / 1.96039. Those lengths are not shipped because their
+/// end-to-end effect sizes (0.0489, 0.0595) are far under the >= 0.15 floor,
+/// which no construction may lower.
+///
+/// The LEVEL-muted arm is still rendered, and only for the blur secondary: with
+/// level a pure output gain (atmosphere_engine.h:946-948) the level differential
+/// is EXACTLY level(d) * A, a clean scaled copy of the atmosphere whose stereo
+/// statistics are scale-invariant. The density differential is
+/// A_dense - A_sparse, which is not, so the secondary keeps the arm it was
+/// measured on.
+///
+/// ============================================================================
+/// WHERE THIS PORT IS DIFFERENT IN KIND FROM PHASE 9's, MEASURED RATHER THAN
+/// ASSUMED - and why the arm is checked in anyway.
+/// ============================================================================
+/// Phase 9 needed the density mute because it drives this engine through the
+/// PARAMETER SURFACE, where AtmosLevel is a Dissolve macro TARGET: a base
+/// override cannot zero a swept target, so its level-muted arm removed only the
+/// constant 0.50 slice of level and left the cross term. THIS TU writes the
+/// voice directly, and zeroAtmosphereLevel() runs AFTER macros.apply() on every
+/// slice, so its level mute is already a TRUE mute and there is no cross term
+/// to remove.
+///
+/// MEASURED, this TU, 21 steps x 4 s: swapping the primary's reference arm from
+/// zeroAtmosphereLevel to muteAtmosphereDensity moved the series by NOTHING -
+/// 0.045637 ... 0.433948 both ways, identical to every printed digit. At
+/// kMinDensity = 0.1 grains/s no grain is launched inside a 4 s step at all, so
+/// the density-muted atmosphere output is silence, exactly as the level-muted
+/// one is. The two arms are the same measurement here; in Phase 9 they are not.
+///
+/// The arm is checked in regardless, for the reason the equality is fragile:
+/// it holds only while this TU's mute is total. If a future change makes
+/// zeroAtmosphereLevel partial the way Phase 9's is - a base override, a
+/// smoother that never reaches 0, a macro row added on AtmosDensity - the
+/// primary keeps measuring the atmosphere's WHOLE contribution instead of
+/// silently reverting to a cross-term-contaminated slice, and the two TUs keep
+/// measuring the same defined quantity.
+void muteAtmosphereDensity(SeraphisEngine& engine) {
+    for (std::size_t v = 0; v < engine.getPolyphony(); ++v) {
+        mutableVoice(engine, v).setDensity(AtmosphereEngine::kMinDensity);
+    }
+}
+
 void holdStereoSpreadAtBase(SeraphisEngine& engine) {
     for (std::size_t v = 0; v < engine.getPolyphony(); ++v) {
         mutableVoice(engine, v).setStereoSpread(kStereoSpreadBase);
@@ -473,6 +597,12 @@ struct StepInputs {
     bool withNoteOff = false;
     /// Where in the step the note-off lands, as a fraction of `seconds`.
     double noteOffAtFraction = 0.5;
+    /// Reverb decay for this arm, in seconds. `<= 0` leaves prepare()'s default
+    /// in place, which is what every arm but Dream's wet-tail REFERENCE uses.
+    /// NOTHING in renderChain touches decay - pushAether() writes mix, size,
+    /// width, the three sends and the two depths, and no more - so one call
+    /// after prepare() HOLDS for the whole render.
+    float reverbDecaySec = 0.0f;
     std::function<void(SeraphisEngine&)> preRender;
     std::function<void(SeraphisEngine&)> postApply;
     std::function<void(const SeraphisEngine&)> observe;
@@ -489,6 +619,9 @@ struct StepOutputs {
     std::unique_ptr<AetherReverb> reverb;
     if (in.composed) {
         reverb = makeReverb();
+        if (in.reverbDecaySec > 0.0f) {
+            reverb->setDecaySeconds(in.reverbDecaySec);
+        }
     }
 
     SeraphisMacroMatrix macros;
@@ -560,6 +693,53 @@ struct TailSpectrum {
     out.mag.resize(spectrum.size(), 0.0f);
     for (std::size_t b = 0; b < spectrum.size(); ++b) {
         out.mag[b] = spectrum[b].magnitude();
+    }
+    out.binHz = sampleRate / static_cast<double>(kFftSize);
+    out.valid = true;
+    return out;
+}
+
+/// A WELCH estimate of the same pinned tail - `segments` half-length
+/// sub-windows spread across the last second, magnitudes averaged. A single
+/// periodogram's per-bin value is a one-draw estimate; averaging K of them
+/// divides the estimator's variance by K without moving its expectation. See
+/// kFlatnessSegments for the measured candidates and the Phase 9 provenance.
+[[nodiscard]] TailSpectrum analyseTailWelch(const std::vector<float>& mono, double sampleRate,
+                                            std::size_t segments) {
+    TailSpectrum out;
+    const auto oneSecond = static_cast<std::size_t>(sampleRate);
+    const std::size_t span = std::min(mono.size(), std::min(oneSecond, kFftSize));
+    if (span < std::size_t{2048} || segments < 2) {
+        return out;
+    }
+    const std::size_t base = mono.size() - span;
+    const std::size_t segLen = span / 2;
+    const std::size_t hop = (span - segLen) / (segments - 1);
+
+    std::vector<float> window(segLen, 0.0f);
+    Krate::DSP::Window::generateBlackmanHarris(window.data(), segLen);
+
+    FFT fft;
+    fft.prepare(kFftSize);
+    REQUIRE(fft.isPrepared());
+    std::vector<Complex> spectrum(fft.numBins());
+    std::vector<float> frame(kFftSize, 0.0f);
+    out.mag.assign(fft.numBins(), 0.0f);
+
+    for (std::size_t s = 0; s < segments; ++s) {
+        std::fill(frame.begin(), frame.end(), 0.0f);
+        const std::size_t start = base + (s * hop);
+        for (std::size_t i = 0; i < segLen; ++i) {
+            frame[i] = mono[start + i] * window[i];
+        }
+        fft.forward(frame.data(), spectrum.data());
+        for (std::size_t b = 0; b < spectrum.size(); ++b) {
+            out.mag[b] += spectrum[b].magnitude();
+        }
+    }
+    const auto inv = 1.0f / static_cast<float>(segments);
+    for (float& m : out.mag) {
+        m *= inv;
     }
     out.binHz = sampleRate / static_cast<double>(kFftSize);
     out.valid = true;
@@ -1054,7 +1234,35 @@ struct DreamSeries {
         out.azimuthTv.push_back(azTv);
         out.morphEntropy.push_back(lastEntropy);
 
-        // Secondary: the reverb-send axis, on the composed chain with a note-off.
+        // Secondary: the reverb-send axis, on the composed chain with a
+        // note-off.
+        //
+        // ===================================================================
+        // MEASURED AS A NULL TEST AGAINST A SHORT-DECAY REFERENCE ARM, NOT AS
+        // PLAIN TAIL ENERGY - PORTED FROM PHASE 9 (macro_wiring_test.cpp:
+        // 1340-1379, SC-004 amendment A11 of 2026-08-01).
+        // ===================================================================
+        // AetherReverb::setMix is a CROSSFADE, not a send: the output is
+        // `dry*(1-m) + wet*m` (aether_reverb.h:2336). Dream's AetherMix row is
+        // base 0.35 amount +0.35 (seraphis_macro_matrix.h:217-222), so over the
+        // sweep the DRY field loses (1-m)^2 exactly as fast as the wet field
+        // gains m^2, and the voice's own long release keeps the dry field loud
+        // right through the measured window. MEASURED here as plain total tail
+        // energy, the series is therefore U-SHAPED and cannot reach
+        // |rho| >= 0.9 for a CORRECT implementation: this case scored
+        // rho = 0.802597, and Phase 9's own copy of the observable scored
+        // 0.809091 with the series falling 62 % over its first five steps WHILE
+        // the send was rising.
+        //
+        // THE FIX IS A NULL TEST, and it is exact rather than approximate. The
+        // same step is rendered a second time with the reverb's decay at its
+        // floor (kAetherDecayFloorSec = AetherReverb::kDecayMinSeconds =
+        // 0.5 s), which pushAether() never writes, so the push HOLDS. Both arms are the same binary, the
+        // same seed, the same note and the same crossfade position m, so their
+        // DRY fields are bit-identical and the per-sample difference is exactly
+        // `m * (wet_long - wet_short)` - a quantity containing NO dry field.
+        // MEASURED on the Phase 9 arm: 0.000131193 -> 0.137118 (a 1000x rise),
+        // rho = 0.972727 against the same >= 0.9 gate.
         StepInputs wet;
         wet.macro = SeraphisMacro::Dream;
         wet.value = value;
@@ -1062,8 +1270,17 @@ struct DreamSeries {
         wet.composed = true;
         wet.withNoteOff = true;
         const StepOutputs wetOut = runStep(wet);
-        const std::size_t total = wetOut.mono.size();
-        out.wetTail.push_back(energyOf(wetOut.mono, (total * 3) / 4, total));
+
+        StepInputs wetRef = wet;
+        wetRef.reverbDecaySec = kAetherDecayFloorSec;
+        const StepOutputs wetRefOut = runStep(wetRef);
+
+        const std::size_t refLen = std::min(wetOut.mono.size(), wetRefOut.mono.size());
+        std::vector<float> wetOnly(refLen, 0.0f);
+        for (std::size_t i = 0; i < refLen; ++i) {
+            wetOnly[i] = wetOut.mono[i] - wetRefOut.mono[i];
+        }
+        out.wetTail.push_back(energyOf(wetOnly, (refLen * 3) / 4, refLen));
     }
     return out;
 }
@@ -1138,11 +1355,21 @@ struct DissolveSeries {
         full.composed = true;
         const StepOutputs fullOut = runStep(full);
 
+        // THE PRIMARY'S REFERENCE ARM: the atmosphere muted through DENSITY.
+        // See muteAtmosphereDensity() for why a LEVEL mute cannot measure this.
+        StepInputs densityMuted = full;
+        densityMuted.postApply = muteAtmosphereDensity;
+        const StepOutputs densityMutedOut = runStep(densityMuted);
+
+        out.atmosFraction.push_back(
+            atmosphereFraction(fullOut.mono, densityMutedOut.mono, kSr));
+
+        // The LEVEL-muted arm, rendered for the blur secondary only (banner on
+        // muteAtmosphereDensity): the level differential is a clean scaled copy
+        // of the atmosphere, which is the arm the secondary was measured on.
         StepInputs muted = full;
         muted.postApply = zeroAtmosphereLevel;
         const StepOutputs mutedOut = runStep(muted);
-
-        out.atmosFraction.push_back(atmosphereFraction(fullOut.mono, mutedOut.mono, kSr));
 
         const auto twoHundredMs = static_cast<std::size_t>(0.2 * kSr);
         const auto oneSecond = static_cast<std::size_t>(kSr);
@@ -1175,12 +1402,32 @@ struct DissolveSeries {
             atmosOnlyL[i] = fullOut.left[i] - mutedOut.left[i];
             atmosOnlyR[i] = fullOut.right[i] - mutedOut.right[i];
         }
-        // 1 - |rho|, because the atmosphere already ships pan spread 0.7 and
-        // decorrelation 0.5 (seraphis_voice.h:304-305), so the base correlation
-        // is NEGATIVE (-0.328 measured) and it is the MAGNITUDE that blur
-        // collapses. Gating the signed value would score a decorrelating sweep
-        // as "increasing".
-        out.blurDecorrelation.push_back(1.0 - std::fabs(correlation(atmosOnlyL, atmosOnlyR)));
+        // THE STATISTIC IS THE M/S SIDE-ENERGY FRACTION, NOT `1 - |rho_LR|`,
+        // AND THE PREMISE THAT PICKED `1 - |rho|` WAS TESTED AND IS REFUTED.
+        // PORTED FROM PHASE 9 (macro_wiring_test.cpp:1569-1589, SC-004
+        // amendment A11 of 2026-08-01).
+        //
+        // This case chose `1 - |rho|` on the reasoning that "the atmosphere
+        // already ships pan spread 0.7 and decorrelation 0.5
+        // (seraphis_voice.h:304-305), so the base correlation is NEGATIVE and
+        // it is the MAGNITUDE that blur collapses". MEASURED over the sweep,
+        // blur does NOT collapse the magnitude: the SIGNED correlation starts
+        // at -0.20101 and runs MONOTONICALLY to -0.401331, i.e. the channels go
+        // further ANTI-PHASE - a WIDER image, which is what "progressive stereo
+        // decorrelation" (atmosphere_engine.h:2062-2066) means. `1 - |rho|`
+        // scores that swing at -0.944156 against a +0.9 gate, because
+        // |-0.4| > |-0.2|: the statistic reports a WIDENING image as a
+        // narrowing one, and this case fails on exactly that
+        // (rho = -0.8558441558 as measured by Phase 9's compliance pass).
+        //
+        // The side-energy fraction has no such blind spot - it is monotone in
+        // how much of the signal lives in the difference channel whatever the
+        // sign of rho - and it is the SAME helper Bloom's stereo-width
+        // secondary already uses in this file. MEASURED on the Phase 9 arm:
+        // 0.591072 -> 0.675788, rho = 0.961039. (This row is a SECONDARY, so
+        // only the trend gate applies to it; the no-discontinuity clause is
+        // stated over primaries. No gate moved.)
+        out.blurDecorrelation.push_back(sideEnergyFraction(atmosOnlyL, atmosOnlyR));
 
         StepInputs tail = full;
         tail.withNoteOff = true;
@@ -1378,7 +1625,11 @@ struct EntropySeries {
         cloudOnly.observe = nullptr;
         cloudOnly.postApply = openCloudPathForDetector;
         const StepOutputs cloudOnlyOut = runStep(cloudOnly);
-        const TailSpectrum cloudOnlySpectrum = analyseTail(cloudOnlyOut.mono, kSr);
+        // A WELCH estimate of the SAME pinned tail, SAME band, SAME transform -
+        // a variance reduction on the estimator and nothing else. See
+        // kFlatnessSegments.
+        const TailSpectrum cloudOnlySpectrum =
+            analyseTailWelch(cloudOnlyOut.mono, kSr, kFlatnessSegments);
         out.flatness.push_back(spectralFlatnessOf(cloudOnlySpectrum));
         out.driftCents.push_back(lastDrift);
 

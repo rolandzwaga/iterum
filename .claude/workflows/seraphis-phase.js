@@ -457,7 +457,7 @@ for (const group of dispatch.groups) {
   while (attempt < 4) {
     attempt++
     buildLog = await run(
-      `${CONTEXT}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n(retry-epoch 2: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
+      `${CONTEXT}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n(retry-epoch 3: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
       { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT },
     )
     if (!buildLog) throw new Error('Build agent died — aborting to avoid blind fixes')

@@ -13,6 +13,19 @@ add_executable(seraphis_tests
     integration/processor_audio_test.cpp
     integration/param_flow_test.cpp
 
+    # Seraphis Phase 9 (specs/seraphis-phase9-parameters): full parameter
+    # surface + v2 state. This list is ENUMERATED, not globbed - an unregistered
+    # TU silently drops out of the build and its cases never run.
+    unit/parameter_surface_test.cpp
+    unit/state_v2_test.cpp
+    unit/morph_sync_test.cpp
+    integration/param_reach_test.cpp
+    integration/param_cadence_test.cpp
+    integration/param_continuity_test.cpp
+    integration/macro_wiring_test.cpp
+    integration/param_character_test.cpp
+    integration/param_perf_test.cpp
+
     # SECOND compilation of every plugin .cpp (needed by the plugin-shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/controller/controller.cpp
@@ -65,6 +78,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/lifecycle_test.cpp
         integration/processor_audio_test.cpp
         integration/param_flow_test.cpp
+        # Seraphis Phase 9: SC-012 injects non-finite payloads in state_v2_test
+        # and SC-005's per-sample step statistic in param_continuity_test must
+        # not be reshaped by fast-math contraction. ONLY these two of the nine
+        # Phase 9 TUs are listed; the other seven must NOT be.
+        # integration/param_perf_test.cpp in particular must stay out:
+        # -fno-fast-math would move the figures its baselines are pinned to
+        # (same rule as dsp/tests/CMakeLists.txt:735-740).
+        integration/param_continuity_test.cpp
+        unit/state_v2_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

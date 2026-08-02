@@ -9,10 +9,13 @@
 // directly.
 // ==============================================================================
 
+#include "parameters/aether_params.h"
+
 #include <krate/dsp/effects/aether_reverb.h>
 #include <krate/dsp/systems/seraphis_engine.h>
 #include <krate/dsp/systems/seraphis_macro_matrix.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -100,6 +103,45 @@ inline void applyAetherTargets(Krate::DSP::AetherReverb& reverb,
     reverb.setBloomSend(t.bloomSend);                              // :2295
     reverb.setSizeBreathDepth(t.sizeBreathDepth);                  // :2320
     reverb.setDimensionalityTideDepth(t.dimensionalityTideDepth);  // :2328
+}
+
+/// @brief FR-049. Push the ten NON-macro reverb controls (spec C-6, route `AE`).
+///
+/// A FREE FUNCTION for the same stated reason as applyAetherTargets (:93): the
+/// reverb has no getters for these ten controls, so this is the only surface a
+/// test can drive directly with non-neutral values.
+///
+/// The eight MACRO-owned controls (IDs 1200, 1201, 1210, 1211, 1212, 1215, 1216,
+/// 1217) are applyAetherTargets' (:93-103); the two sets are DISJOINT BY
+/// CONSTRUCTION (spec FR-055), so the two functions never fight over a control.
+/// AetherReverb::setSeed (aether_reverb.h:2361) is NOT here either: it is
+/// ENG-routed and pushed from pushGlobalParams() alongside
+/// SeraphisEngine::setSeed (FR-045).
+///
+/// @par Real-Time Safety: noexcept and allocation-free. FOURTEEN of
+///      AetherReverb's eighteen setters funnel through applyControl (a clamp
+///      plus a smoother store, aether_reverb.h:2950-2958); of the four that do
+///      not, exactly TWO are reached here - setFreeze, a self-guarding latch
+///      (:2230-2237), and setModSmoothness, which loops drift_[j].setSmoothness
+///      over 8 channels (:2268-2273). The other two, setSizeBreathDepth (:2320)
+///      and setDimensionalityTideDepth (:2328), are MB-routed and belong to
+///      applyAetherTargets above (:101-102) - the two sets are disjoint, so the
+///      count here is two and not three. That is exactly why spec C-3 calls this
+///      ON CHANGE ONLY and not every slice.
+inline void applyAetherParams(Krate::DSP::AetherReverb& reverb,
+                              const AetherParams& p) noexcept {
+    constexpr auto kRelaxed = std::memory_order_relaxed;
+
+    reverb.setDensity(p.density.load(kRelaxed));                      // :2211  ID 1202
+    reverb.setDecaySeconds(p.decaySeconds.load(kRelaxed));            // :2214  ID 1203
+    reverb.setFreeze(p.freeze.load(kRelaxed));                        // :2230  ID 1204
+    reverb.setDimensionality(p.dimensionality.load(kRelaxed));        // :2239  ID 1205
+    reverb.setDamping(p.damping.load(kRelaxed));                      // :2244  ID 1206
+    reverb.setPreDelayMs(p.preDelayMs.load(kRelaxed));                // :2247  ID 1207
+    reverb.setModDepth(p.modDepth.load(kRelaxed));                    // :2254  ID 1208
+    reverb.setModSmoothness(p.modSmoothness.load(kRelaxed));          // :2268  ID 1209
+    reverb.setBloomDecay(p.bloomDecay.load(kRelaxed));                // :2301  ID 1213
+    reverb.setSpectralDiffusion(p.spectralDiffusion.load(kRelaxed));  // :2310  ID 1214
 }
 
 }  // namespace Seraphis

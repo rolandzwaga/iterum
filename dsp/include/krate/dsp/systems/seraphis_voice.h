@@ -693,6 +693,70 @@ public:
     void setFreezeMix(float mix) noexcept { atmos_.setFreezeMix(mix); }
 
     // =========================================================================
+    // Phase 9 parameter surface (FR-070) - thirteen FURTHER one-to-one
+    // forwarders, on the same "no added clamping" contract as the block above.
+    //
+    // Every owner below already substitutes a non-finite argument with its own
+    // documented default and clamps into its own range, so a second guard here
+    // would only make the two surfaces disagree about what was stored.
+    //
+    // @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    // @par Real-Time Safety: allocation-free, lock-free, exception-free - each
+    //      is a single noexcept scalar store on an owned sub-component.
+    // =========================================================================
+
+    // -- HarmonicCloud, Phase 9 additions (FR-070 #1, #2) --------------------
+    /// PREFIXED: the bare `setDriftSmoothness` would be ambiguous between
+    /// HarmonicCloud (harmonic_cloud.h:513) and AtmosphereEngine
+    /// (atmosphere_engine.h:844), both of which this facade reaches. Phase 7's
+    /// existing bare setDriftDepthCents / setDriftDepth are NOT renamed.
+    void setCloudDriftSmoothness(float s) noexcept { cloud_.setDriftSmoothness(s); }
+    void setEnvelopeOffsetSpread(float spread) noexcept {
+        cloud_.setEnvelopeOffsetSpread(spread);      // harmonic_cloud.h:580
+    }
+
+    // -- AtmosphereEngine drift (FR-070 #3, #4) ------------------------------
+    void setAtmosDriftSmoothness(float s) noexcept { atmos_.setDriftSmoothness(s); }   // :844
+    void setAtmosDriftRangeSemitones(float st) noexcept {
+        atmos_.setDriftRangeSemitones(st);           // :852
+    }
+
+    // -- SpectralMorphEngine spline shape (FR-070 #5) ------------------------
+    /// `double`, matching the owner's signature (spectral_morph_engine.h:385),
+    /// which rejects a non-finite argument itself (:386-388).
+    void setWaypointInterval(double seconds) noexcept { morph_.setWaypointInterval(seconds); }
+
+    // -- AtmosphereEngine placement / transposition (FR-070 #6-#11) ----------
+    /// All six already ship matching getters (:803, :811, :819, :826, :833,
+    /// :962), so FR-072 creates nothing for them.
+    void setAtmosJitter(float amount) noexcept { atmos_.setJitter(amount); }              // :800
+    void setAtmosPositionSeconds(float s) noexcept { atmos_.setPositionSeconds(s); }      // :807
+    void setAtmosPositionSpread(float sp) noexcept { atmos_.setPositionSpread(sp); }      // :815
+    void setAtmosPitchSemitones(float st) noexcept { atmos_.setPitchSemitones(st); }      // :822
+    void setAtmosPitchSpread(float sp) noexcept { atmos_.setPitchSpread(sp); }            // :830
+    /// A plain store over windows prepare() already generated (:954-961), which
+    /// is what makes it drivable from an automation lane at block rate.
+    void setAtmosGrainEnvelope(GrainEnvelopeType t) noexcept {
+        atmos_.setGrainEnvelope(t);                  // :959
+    }
+
+    // -- ContinuousBody character switches (FR-070 #12, #13) -----------------
+    /// FR-070 #12. Turning the AGC OFF makes the body a FIXED gain (the
+    /// excitation-comp seed, the estimator and rmsGain_ all switch off with it,
+    /// continuous_body.h:2901-2919, :3029-3046, :3683-3689). The resulting level
+    /// change is documented behaviour, not a defect.
+    void setBodyInputAgcEnabled(bool enabled) noexcept {
+        body_.setInputAgcEnabled(enabled);           // continuous_body.h:1276
+    }
+    /// FR-070 #13. body_.setResonatorBypass is SELF-GUARDING (:1302-1304) and
+    /// applies its own 10 ms equal-power ramp plus the mandatory waveguide
+    /// re-tune on un-bypass (:1311-1320). This forwarder MUST NOT add a second
+    /// guard.
+    void setBodyResonatorBypass(bool bypass) noexcept {
+        body_.setResonatorBypass(bypass);            // :1300
+    }
+
+    // =========================================================================
     // Configure-time-gated forwarders (FR-031)
     // =========================================================================
 
@@ -769,6 +833,19 @@ public:
     /// getGrowth (orbit_modulator.h:189-192) through SeraphisVoice's forwarders,
     /// and the four FR-019 spatial rows have no other reachable read-back.
     [[nodiscard]] const OrbitModulator& orbit() const noexcept { return orbit_; }
+
+    // =========================================================================
+    // Phase 9 read-back accessor (FR-072)
+    //
+    // @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    // @par Real-Time Safety: a pure const member read - allocation-free,
+    //      lock-free, exception-free.
+    // =========================================================================
+
+    /// SIXTH sub-component accessor. GrowthEnvelope::getDuration()
+    /// (growth_envelope.h:149) is the only read-back for the growth-duration
+    /// parameter and is unreachable without this.
+    [[nodiscard]] const GrowthEnvelope& growth() const noexcept { return growth_; }
 
 private:
     /// SC-003 positive control (b) - see the declaration above this class.

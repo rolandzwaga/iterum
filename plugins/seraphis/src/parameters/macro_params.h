@@ -1,12 +1,28 @@
 #pragma once
 
 // ==============================================================================
-// Seraphis - Macro Parameters (ID 100-199)   FR-041
+// Seraphis - Macro Parameters (ID 100-199)   FR-041, FR-050
 // ==============================================================================
-// INERT IN PHASE 8. No file in Phase 8 may read MacroParams and write it into
-// SeraphisMacroMatrix::setMacro / setMacros (seraphis_macro_matrix.h:554, :599).
-// The matrix is driven only by its own constructed defaults. This is verified as
-// a NEGATIVE CONTROL (SC-023) and is exactly what Phase 9 inverts.
+// LIVE SINCE PHASE 9. The Phase 8 banner here forbade any file from reading
+// MacroParams into SeraphisMacroMatrix::setMacro / setMacros
+// (seraphis_macro_matrix.h:554, :599) and the matrix ran on its own constructed
+// defaults; FR-050 inverts exactly that, and Phase 8's macros-are-inert negative
+// control in integration/processor_audio_test.cpp is deleted by FR-051 rather
+// than left asserting the opposite of shipped behaviour.
+//
+// THE ONE READER IS Processor::pushMacroSurfaces() (src/processor/processor.cpp,
+// FR-043), and it does NOT read these atomics directly: IDs 100-104 are class (b)
+// under FR-059, so the five values are taken from the processor's own macro
+// smoothers (macroSm_) through readSmoothedMacros() and handed to
+// SeraphisMacroMatrix::setMacros as one SeraphisMacroValues. Nothing else in the
+// plugin may push these five - a second writer would fight the change detector
+// (lastPushedMacros_) and double-apply the surface.
+//
+// The five knobs are route `processor`, NOT route `MB`: they are the matrix's
+// macro INPUTS, while the 27 per-target bases FR-003 overrides are a separate
+// push in the same function. The audible effect of these five is SC-004's
+// subject; SC-002 is the standing negative control that at the registered
+// defaults nothing about the render moved.
 // ==============================================================================
 
 #include "plugin_ids.h"

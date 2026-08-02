@@ -678,7 +678,70 @@ public:
         return out;
     }
 
+    // =========================================================================
+    // FR-003 / FR-004 (Phase 9, spec slug seraphis-phase9-parameters, plan §1.4)
+    //
+    // Per-target BASE OVERRIDES, so a deep parameter IS the origin the macros
+    // move from rather than a second, competing write path (spec C-1/FR-055).
+    //
+    // @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    // @par Real-Time Safety: allocation-free, lock-free, exception-free - each
+    //      of the three is a bounded scalar read/write over member storage.
+    // =========================================================================
+
+    /// @brief FR-003. Override the per-target `base` that evaluateAll() seeds
+    ///        from.
+    ///
+    /// Well-defined by construction: everyRowSharesOneBasePerTarget(kRows)
+    /// (below the class) already guarantees exactly one base per target, so a
+    /// PER-TARGET override cannot be ambiguous.
+    ///
+    /// A non-finite argument leaves the stored base UNCHANGED - checked with
+    /// this class's own bit-pattern helper isFiniteBits (:748), never
+    /// std::isnan, which -ffast-math folds away on the macOS leg.
+    ///
+    /// NO HEADROOM RESCALING is applied (spec C-1): the macro `amount` values
+    /// were sized against the shipped bases, so an override placed at the clamp
+    /// a macro travels toward consumes that macro's travel. That saturation is
+    /// accepted - rescaling would make the two surfaces MULTIPLY instead of
+    /// compose and would change shipped macro behaviour at the defaults.
+    void setTargetBase(SeraphisMacroTarget target, float base) noexcept {
+        const auto i = static_cast<std::size_t>(target);
+        if (i >= kNumTargets || !isFiniteBits(base)) {
+            return;
+        }
+        baseOverride_[i] = base;
+        hasOverride_[i] = true;
+    }
+
+    /// @brief FR-003. Restore every kRows literal verbatim.
+    void resetTargetBases() noexcept {
+        hasOverride_.fill(false);
+        baseOverride_.fill(0.0f);
+    }
+
+    /// @brief FR-003. The override if one was set, else the kRows literal.
+    [[nodiscard]] float getTargetBase(SeraphisMacroTarget target) const noexcept {
+        const auto i = static_cast<std::size_t>(target);
+        if (i >= kNumTargets) {
+            return 0.0f;
+        }
+        return hasOverride_[i] ? baseOverride_[i] : literalBaseFor(target);
+    }
+
 private:
+    /// The kRows base for `target`. everyTargetInFr061to065IsPresent (asserted
+    /// below the class) guarantees the scan always finds one, so the 0 fallback
+    /// is unreachable.
+    [[nodiscard]] static constexpr float literalBaseFor(SeraphisMacroTarget target) noexcept {
+        for (const SeraphisMacroRow& row : kRows) {
+            if (row.target == target) {
+                return row.base;
+            }
+        }
+        return 0.0f;
+    }
+
     /// -ffast-math folds std::isnan away on the macOS leg, so finiteness is a
     /// BIT-PATTERN question here - the same helper SeraphisVoice and
     /// SeraphisEngine carry.
@@ -722,7 +785,7 @@ private:
         for (const SeraphisMacroRow& row : kRows) {
             const auto i = static_cast<std::size_t>(row.target);
             if (!seeded[i]) {
-                value[i] = row.base;
+                value[i] = hasOverride_[i] ? baseOverride_[i] : row.base;   // FR-004
                 seeded[i] = true;
             }
             value[i] += contributionOf(row);
@@ -732,6 +795,15 @@ private:
 
     /// FR-060: the five knobs, already at their documented neutrals.
     SeraphisMacroValues values_{};
+
+    /// FR-003. The per-target base override, and whether one was ever set.
+    ///
+    /// SC-002 CLAUSE 4 FALLS OUT OF THE CONSTRUCTION: a default-constructed
+    /// matrix has hasOverride_ all false, so evaluateAll() evaluates the
+    /// identical expression it did in Phase 7 and apply() /
+    /// computeAetherTargets() are bit-identical at the shipped defaults.
+    std::array<float, kNumTargets> baseOverride_{};
+    std::array<bool, kNumTargets> hasOverride_{};
 };
 
 // =============================================================================

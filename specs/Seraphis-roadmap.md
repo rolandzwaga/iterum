@@ -2,7 +2,7 @@
 
 A phased, DSP-library-first plan for building Seraphis, the ethereal counterpart to Ruinae. Each phase is
 sized to become one speckit spec (`/speckit.specify`), with its own tests and evaluation criteria. Phases
-1–7 build and unit-test KrateDSP components; phases 8–12 assemble the plugin.
+1–7 build and unit-test KrateDSP components; phases 8–13 assemble the plugin.
 
 ## Core Identity (decided)
 
@@ -310,8 +310,21 @@ New components (Layer 3, `dsp/include/krate/dsp/systems/`):
   - **Gravity** — air↔stone density axis: partial count, body damping, reverb size, tilt darkening
   - **Entropy** — direct wire to Phase 3 `EntropyProcessor` + drift depths
 
-**Success criteria:** full-poly CPU budget: 16 voices, everything on, ≤ 25% of one core @ 48 kHz
-(sets per-voice budgets from phases 2/4/5 with headroom); voice-steal clicklessness; macro sweeps
+**Success criteria:** full-poly CPU budget: **8 voices**, everything on, ≤ 25% of one core @ 48 kHz
+(amended 2026-08-01 from "16 voices" by the phase owner's 2026-07-30 ruling — Phase 7's RQ-1, recorded
+in `specs/seraphis-phase7-voice-engine/spec.md:1390-1394`. The 25% ceiling itself is **unchanged**;
+only the voice count the gate is measured at moved, and relaxing the ceiling is never the lever.
+Measured at Phase 9's full-surface operating point, worst of six best-of-16 runs on
+windows-x64-release: **24.21% of one core at 8 voices** (2 582 570 ns/block) — the gated figure — and
+**47.36% at 16 voices** (5 052 111 ns/block), recorded by Phase 9's SC-009 as an explicitly
+**non-gating** number; both datasets are transcribed in
+`plugins/seraphis/tests/integration/param_perf_test.cpp` under BASELINE PROVENANCE. Polyphony
+**9…16 stays user-reachable** — the registered `kPolyphonyId` range remains 1…16, as the "8–16 voices"
+design decision above intends — and is deliberately **outside the budgeted scenario**: shrinking the
+registered maximum would be a parameter-range change at a shipped ID and is out of scope, and raising
+the gate to 16 voices by relaxing the 25% ceiling is forbidden. See
+`specs/seraphis-phase9-parameters/spec.md` → FR-057 clause 2, FR-058 and SC-009);
+sets per-voice budgets from phases 2/4/5 with headroom; voice-steal clicklessness; macro sweeps
 render-verified (each macro audibly moves the sound along its documented axis, no discontinuities);
 determinism harness (seeded engine renders are reproducible for golden tests — use
 `render_fingerprint.h` tolerances, never bit-exact goldens).
@@ -465,6 +478,20 @@ panels underneath. One signature visualization: the **cloud view** — live part
 MetersBlock pattern — no new queues). Custom views get the standard sub-controller treatment
 (vst-guide skill). No param-type swaps on registered IDs, ever.
 
+**Inherited from Phase 3 via Phase 9 (RQ-1, decided 2026-08-01).** Phase 11 owns the three
+`SpectralState` authoring mutators — `setPartial(index, ratio, amplitude)`, `blendStates(A, B, t)` and
+`tiltState(state, dB)` — which Phase 3's C-9 had assigned to Phase 9 by name. They land here because
+their **only** consumer is the per-partial editing surface, which is a UI deliverable; shipping them
+earlier would have shipped dead API. **Phase 3's attached criterion lands with them**: Phase 11 MUST
+carry a success criterion asserting that, over a table of adversarial inputs (out-of-range ratios,
+non-monotone ratios, amplitudes outside `[0,1]`, `numPartials` outside `[0,64]`, non-finite arguments
+built from bit patterns per the `-ffast-math` rule), each mutator leaves its `SpectralState` satisfying
+`isValidSpectralState` (`dsp/include/krate/dsp/processors/spectral_state.h`). Phase 11 likewise owns
+the per-partial engine surface those mutators exist to drive — `HarmonicCloud::setSpectralTarget`,
+`setPartialPosition` and `setPartialMask` — which Phase 9 deliberately left unregistered for the same
+reason: no per-partial control surface exists until this phase. See
+`specs/seraphis-phase9-parameters/spec.md` → *Resolved Questions* RQ-1 and FR-058 clause 4.
+
 ### Phase 12: Factory Presets & Release Readiness
 
 **Spec:** `seraphis-phase12-presets-release`
@@ -474,6 +501,29 @@ match, per Membrum lesson), installed to `C:\ProgramData\Krate Audio\Seraphis\`.
 harness: round-trip tests + an all-presets NoteOn-only render sweep asserting no silence, no
 runaway (infinite-ring test pattern from Membrum). Release gate via `release-readiness` flow:
 build → tests → pluginval strictness 5 → version.json/CHANGELOG.
+
+### Phase 13: Per-Note Expression (MPE / poly-aftertouch)
+
+**Spec:** `seraphis-phase13-note-expression`
+
+**This phase owns the former Open Question 5**, moved here — not struck — by Phase 9's RQ-2 ruling
+(2026-08-01): per-note expression **ships**, it is simply not Phase 9's. Both halves belong to this
+phase, because neither is useful without the other:
+
+1. the **DSP half** — per-voice expression inputs on `SeraphisVoice` (pressure, timbre, per-note
+   pitch). The engine's note API is `noteOn(note, velocity)` / `noteOff(note)` and carries no
+   per-note expression at all, so an implemented controller would have nothing to drive until these
+   exist.
+2. the **plugin half** — `INoteExpressionController` on the Seraphis controller plus the declared
+   note-expression type list, and the macro wiring that makes Bloom-per-note the first target.
+
+**The controller-FUID host-cache hazard is ACCEPTED**, and recorded here so it is not rediscovered
+later as a surprise: adding an interface to an already-released controller FUID can invalidate
+host-cached class metadata — a class that suddenly answers `queryInterface` for
+`INoteExpressionController` may be seen inconsistently until the host's cache is cleared, and users do
+not clear plugin caches. The ruling accepts that cost rather than pre-emptively burning a second
+controller FUID. See `specs/seraphis-phase9-parameters/spec.md` → *Resolved Questions* RQ-2, FR-064
+and FR-058 clause 5.
 
 ---
 
@@ -488,7 +538,7 @@ Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/ent
                       │                                                    │   Phase 8 (scaffold)
                       └─→ Phase 6 (aether) ────────────────────────────────┘        │
                                                                                     ▼
-                                                                Phase 9 → 10 → 11 → 12
+                                                           Phase 9 → 10 → 11 → 12 → 13
 ```
 
 Phases 2, 4, 5, 6 are independent of each other once Phase 1 lands — they can be specced/built in
@@ -511,7 +561,16 @@ sequential.
 ## Open Questions (resolve in the relevant spec, not before)
 
 1. Exact partial count (64 fixed vs 32/64/128 quality tiers) — Phase 2, driven by measured CPU.
-2. Spectral state authoring: factory-only or user-morphable/savable states — Phase 3/9.
+2. ~~Spectral state authoring: factory-only or user-morphable/savable states — Phase 3/9.~~
+   **STRUCK 2026-08-01 — RESOLVED BY PHASE 3.** `specs/seraphis-phase3-spectral-morph/spec.md:207-208`
+   and its C-9 settled it: `SpectralState` is assignable and serializable, nothing in the library
+   derives one, and a capture path was rejected outright. Phase 9 implements that answer — four
+   factory-state slots (IDs 408–412) with full per-slot serialization — and the authoring mutators
+   went to Phase 11 (RQ-1, see the Phase 11 entry).
 3. Aether FDN order (8×8 vs 16×16) and whether spectral diffusion is always-on — Phase 6.
 4. Voice count cap (8, 12, or 16) — Phase 7, after budgets are real.
-5. MPE / poly-aftertouch support (natural fit for Bloom-per-note) — Phase 8/9 scope call.
+5. MPE / poly-aftertouch support (natural fit for Bloom-per-note) — **MOVED 2026-08-01 to Phase 13
+   (Per-Note Expression)**, which owns both the `SeraphisVoice` per-voice expression inputs and
+   `INoteExpressionController`. Deliberately moved, not struck: the answer is "it ships, in a named
+   later phase" (Phase 9's RQ-2), and the controller-FUID host-cache hazard is accepted and recorded
+   in that entry.

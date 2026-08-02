@@ -200,3 +200,58 @@ TEST_CASE("Seraphis_EditorLifecycle", "[seraphis][controller][ui][lifecycle]") {
 
     controller.terminate();
 }
+
+// ==============================================================================
+// SC-016 (Phase 9) - the lifecycle stays clean at the ENLARGED surface
+// ==============================================================================
+// Phase 9 takes the registered surface from 8 parameters to 91 and adds a
+// <control-tags> entry for every one of them, while deliberately leaving the
+// eight-control placeholder template as it stands (spec "Scope" clause 8 and the
+// Phase 11 non-goal row). Those two facts are exactly what makes this a separate
+// criterion from the Phase 8 case above:
+//
+//   - VST3Editor::open() parses the WHOLE <control-tags> block, not just the
+//     tags a view happens to reference, so 83 unreferenced tags are 83 new
+//     UIDescription entries created and destroyed on every open/close cycle.
+//     The Phase 8 case cannot detect a defect there because it was written
+//     against a file with eight tags in it.
+//   - EditControllerEx1 now holds 91 Parameter objects whose lifetime spans the
+//     cycles; a dangling IDependent registration on any of them surfaces as a
+//     use-after-free in teardown, which is what the ASan/valgrind clauses of
+//     SC-016 are for.
+//
+// SC-016's clause (a) is the valgrind-nightly editor-lifecycle job and clause
+// (b) is a local -DENABLE_ASAN=ON Debug run. Both select on the [lifecycle] tag
+// (.github/workflows/valgrind-nightly.yml invokes each binary as
+// `"$BINDIR/$bin" '[lifecycle]'`), so the tag below is load-bearing for clause
+// (a) in exactly the way the banner at the top of this file records.
+//
+// THE PARAMETER-COUNT ASSERTION IS NOT A DUPLICATE of parameter_surface_test's.
+// There it is the subject; here it is the PRECONDITION - without it, a
+// regression that dropped the Phase 9 registrations would leave this case
+// exercising the Phase 8 surface and reporting a clean lifecycle for a surface
+// it never opened.
+TEST_CASE("Seraphis_EditorLifecycle_SurvivesFullSurface",
+          "[seraphis][controller][ui][lifecycle]") {
+    const std::string uidescPath = std::string(SERAPHIS_RESOURCES_DIR) + "/editor.uidesc";
+
+    Seraphis::Controller controller;
+    REQUIRE(controller.initialize(nullptr) == Steinberg::kResultOk);
+
+    // The precondition: the enlarged surface really is registered.
+    REQUIRE(controller.getParameterCount() == 91);
+
+    // SC-016: three headless open/close cycles, zero reports. The harness CHECKs
+    // attached() == kResultTrue and REQUIREs getFrame()->getNbViews() > 0 on
+    // every cycle (tests/test_helpers/editor_lifecycle_harness.h:102-105).
+    Krate::TestSupport::exerciseEditorLifecycle(controller, "editor", uidescPath,
+                                               /*cycles=*/3);
+
+    // The surface must survive the cycles intact: VST3Editor takes and releases
+    // references on the controller's parameters, and a teardown that released
+    // one too many would show up here as a shrunken count rather than as a
+    // crash on some later host action.
+    REQUIRE(controller.getParameterCount() == 91);
+
+    controller.terminate();
+}

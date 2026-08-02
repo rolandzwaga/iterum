@@ -357,6 +357,10 @@ add_executable(dsp_systems_tests
     unit/systems/seraphis_macro_test.cpp
     unit/systems/seraphis_nonfinite_test.cpp
     unit/systems/seraphis_perf_test.cpp
+    # Seraphis Phase 9 (specs/seraphis-phase9-parameters): the broadcast POD,
+    # applyVoiceParams / applySpectralStates, the macro base overrides, the new
+    # SeraphisVoice forwarders and ContinuousBody accessors.
+    unit/systems/seraphis_param_broadcast_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests

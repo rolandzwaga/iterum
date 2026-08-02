@@ -4,8 +4,14 @@
 
 #include "controller/controller.h"
 
+#include "parameters/aether_params.h"
+#include "parameters/atmosphere_params.h"
+#include "parameters/body_params.h"
+#include "parameters/cloud_params.h"
 #include "parameters/global_params.h"
+#include "parameters/life_mod_params.h"
 #include "parameters/macro_params.h"
+#include "parameters/morph_params.h"
 #include "plugin_ids.h"
 #include "preset/seraphis_preset_config.h"
 
@@ -31,9 +37,18 @@ tresult PLUGIN_API Controller::initialize(FUnknown* context) {
         return result;
     }
 
-    // Exactly eight parameters (FR-048 freezes their types).
-    registerGlobalParams(parameters);
-    registerMacroParams(parameters);
+    // FR-060 / SC-001. The whole Phase 9 surface, in BAND ORDER - the same order
+    // processParameterChanges' range ladder walks and getState writes, so the
+    // three parallel lists (register / format / setComponentState) never drift.
+    // 4 + 5 + 11 + 13 + 10 + 13 + 17 + 18 = 91 (FR-048 freezes their types).
+    registerGlobalParams(parameters);      // 0, 1, 2, 3
+    registerMacroParams(parameters);       // 100-104
+    registerCloudParams(parameters);       // 200-210
+    registerMorphParams(parameters);       // 400-412
+    registerLifeModParams(parameters);     // 600-604, 700-704
+    registerBodyParams(parameters);        // 800-812
+    registerAtmosphereParams(parameters);  // 1000-1016
+    registerAetherParams(parameters);      // 1200-1217
 
     // FR-050. NO UpdateChecker (FR-052).
     presetManager_ = std::make_unique<Krate::Plugins::PresetManager>(
@@ -66,9 +81,23 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* state) {
         setParamNormalized(id, value);
     };
 
-    // Order MUST match Processor::getState.
-    loadGlobalParamsToController(streamer, setParam);
-    loadMacroParamsToController(streamer, setParam);
+    // Order MUST match Processor::getState EXACTLY (plan 5.1's write order). The
+    // seed is its own trio positioned AFTER [macro] (FR-091a, global_params.h:
+    // 259-271), and loadMorphParamsToController consumes - and discards - the
+    // four 541-byte payloads, without which the following [life]/[body]/[atmos]/
+    // [aether] blocks (55 parameters) would be read 2164 bytes off (plan 2.3.0).
+    // Every loader is EOF-safe, so a 36-byte version-1 stream stops after
+    // [macro] and leaves the remaining 83 parameters at their registered
+    // defaults (FR-093).
+    loadGlobalParamsToController(streamer, setParam);      // 0, 1, 2
+    loadMacroParamsToController(streamer, setParam);       // 100-104
+    loadGlobalSeedToController(streamer, setParam);        // 3
+    loadCloudParamsToController(streamer, setParam);       // 200-210
+    loadMorphParamsToController(streamer, setParam);       // 400-412 + payloads
+    loadLifeModParamsToController(streamer, setParam);     // 600-604, 700-704
+    loadBodyParamsToController(streamer, setParam);        // 800-812
+    loadAtmosphereParamsToController(streamer, setParam);  // 1000-1016
+    loadAetherParamsToController(streamer, setParam);      // 1200-1217
 
     return kResultOk;
 }
@@ -76,13 +105,35 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* state) {
 tresult PLUGIN_API Controller::getParamStringByValue(
     Vst::ParamID id, Vst::ParamValue valueNormalized, Vst::String128 string) {
 
+    // FR-061. Band order again, and NO formatter claims a dropdown ID: every
+    // `L` parameter is a StringListParameter and formats itself through the
+    // fall-through below, out of the SINGLE dropdown_mappings.h label table it
+    // was registered from.
     if (formatGlobalParam(id, valueNormalized, string) == kResultOk) {
         return kResultOk;
     }
     if (formatMacroParam(id, valueNormalized, string) == kResultOk) {
         return kResultOk;
     }
-    // Falls through so the StringListParameter (Polyphony) formats itself.
+    if (formatCloudParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    if (formatMorphParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    if (formatLifeModParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    if (formatBodyParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    if (formatAtmosphereParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    if (formatAetherParam(id, valueNormalized, string) == kResultOk) {
+        return kResultOk;
+    }
+    // Falls through so every StringListParameter formats itself.
     return EditControllerEx1::getParamStringByValue(id, valueNormalized, string);
 }
 

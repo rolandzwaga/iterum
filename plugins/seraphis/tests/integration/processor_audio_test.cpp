@@ -1,7 +1,7 @@
 // ==============================================================================
 // Seraphis - End-to-end processor audio tests (T023)
 // ==============================================================================
-// TEST_CASE("Seraphis_ProcessorRendersHeldNote") carries four criteria, each in
+// TEST_CASE("Seraphis_ProcessorRendersHeldNote") carries three criteria, each in
 // its own SECTION:
 //
 //   SC-005  a held note renders NON-SILENT, all-finite audio through the full
@@ -17,14 +17,22 @@
 //           master gain 2.0 a processor that dropped FR-024 step 5 entirely
 //           satisfies it. Clauses 2 (positive control) and 3 (negative control,
 //           with a MANDATORY non-vacuity assertion) are what give it teeth.
-//   SC-023  the five macro parameters are INERT. This is the Phase 9 NEGATIVE
-//           CONTROL - see the section's own banner.
 //   SC-024  the eight Aether targets are actually pushed, exercised through
 //           Seraphis::applyAetherTargets() DIRECTLY with non-neutral values.
 //
+// PHASE 9 / FR-051 DELETED A FOURTH SECTION, and this note is the record so the
+// deletion is not later mistaken for an oversight. It was Phase 8's SC-023
+// negative control - the section asserting that the five macro IDs reach
+// nothing, which is exactly the behaviour FR-050 inverts. Its own banner said
+// "Do not delete it ... rewrite it to assert that the two renders DIFFER";
+// FR-051 supersedes that instruction, because SC-004
+// (integration/macro_wiring_test.cpp) already asserts the differ-case with a
+// Spearman-rho gate over a 21-step sweep, and an inverted fingerprintsMatch
+// would be the weaker duplicate.
+//
 // EVERY assertion lives inside a SECTION, deliberately. Catch2 re-runs the whole
 // TEST_CASE body per section, so a render placed at case scope would be repeated
-// once per section - four extra 4 s, 16-voice renders for no coverage.
+// once per section - three extra 4 s, 16-voice renders for no coverage.
 //
 // A SECOND, SEPARATE TEST_CASE lives at the bottom of this file:
 //
@@ -838,44 +846,6 @@ TEST_CASE("Seraphis_ProcessorRendersHeldNote", "[seraphis][integration]") {
                 Krate::DSP::TestUtils::kSampleTolerance);
         REQUIRE(maxAbsDiff(processorRender.left, withoutStep5.left) >
                 Krate::DSP::TestUtils::kSampleTolerance);
-    }
-
-    // --------------------------------------------------------------------------
-    // SC-023 - the five macro parameters are INERT (FR-041).
-    //
-    // *** PHASE 9 MUST INVERT THIS TEST. ***
-    //
-    // Phase 8 registers the macros and stores them in MacroParams, but NOTHING
-    // reads them into SeraphisMacroMatrix::setMacro/setMacros - the matrix runs
-    // on its own constructed defaults. That is deliberate, and this section is
-    // the negative control that proves it rather than assuming it. When Phase 9
-    // wires the five IDs into the matrix, this section becomes FALSE and must be
-    // rewritten to assert that the two renders DIFFER. Do not delete it: an
-    // inverted control is what will show the Phase 9 wiring actually landed.
-    // --------------------------------------------------------------------------
-    SECTION("Seraphis_MacroParametersAreInert") {
-        Drive base;
-        base.pitches = std::span<const Steinberg::int16>(kSixteenNoteChord);
-        base.velocity = kHostVelocity100;
-        base.masterGainNorm = kMasterGainNormUnity;
-        base.polyphonyNorm = kPolyphonyNorm16;
-        base.numBlocks = kFourSecondBlocks;
-        base.automateMacros = true;
-
-        Drive allZero = base;
-        allZero.macroNorm = 0.0;  // NB: also moves Gravity off its 0.5 default
-        Drive allOne = base;
-        allOne.macroNorm = 1.0;
-
-        const Render zeros = renderThroughProcessor(allZero);
-        const Render ones = renderThroughProcessor(allOne);
-
-        // Non-vacuity: the comparison must not be between two silences.
-        REQUIRE(rmsOf(zeros.left) > 1.0e-4);
-        REQUIRE(rmsOf(zeros.right) > 1.0e-4);
-
-        REQUIRE(fingerprintsMatch(zeros.left, ones.left));
-        REQUIRE(fingerprintsMatch(zeros.right, ones.right));
     }
 
     // --------------------------------------------------------------------------
