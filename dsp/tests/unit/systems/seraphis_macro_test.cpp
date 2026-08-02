@@ -1021,6 +1021,11 @@ struct PartialFit {
     return (total > 0.0) ? (side / total) : 0.0;
 }
 
+/// Pearson correlation of the two channels. Used ONLY by the Dissolve blur
+/// secondary, whose arm is an anti-phase differential the side-energy fraction
+/// reads backwards; the banner at that call site records the measurement, and
+/// the one in sweepBloom() records why the stereo row there uses the other
+/// statistic.
 [[nodiscard]] double correlation(const std::vector<float>& a, const std::vector<float>& b) {
     const std::size_t n = std::min(a.size(), b.size());
     if (n < 2) {
@@ -1100,20 +1105,127 @@ struct PartialFit {
     return (denom > 0.0) ? (sri / denom) : 0.0;
 }
 
-/// SC-009's no-discontinuity clause: no consecutive step change may exceed
-/// `kContinuityFactor` times the mean step change.
+/// ============================================================================
+/// SC-009's NO-DISCONTINUITY CLAUSE BOUNDS A STEP'S DEPARTURE FROM ITS
+/// NEIGHBOURS, NOT THE STEP ITSELF. BOUNDING THE STEP ITSELF CANNOT TELL A JUMP
+/// FROM CONVEXITY, AND THAT IS MEASURED HERE RATHER THAN ARGUED.
+/// ============================================================================
+/// PHASE 7 TEST-QUALITY FIX, ruled by the phase owner on 2026-08-02 and recorded
+/// as item 2 of "Before the commit gate can open - phase-owner decisions
+/// required" in specs/seraphis-phase9-parameters/compliance.md. It is NOT one of
+/// the four Phase 9 estimator fixes ported into this TU on the same date (see
+/// the banners at kFlatnessSegments, muteAtmosphereDensity, isolateBodyDamping
+/// and the Dissolve blur row): all four of those are green, and this defect
+/// SURVIVED them - the density-mute port was a measured no-op for this series.
+///
+/// THE DEFECT. `max|dy| <= kContinuityFactor * mean|dy|` is a statement about
+/// the STEP-SIZE DISTRIBUTION, and a smooth series whose step size TRENDS - any
+/// convex or concave sweep sampled on a uniform macro grid - carries a large
+/// step at one end for reasons that have nothing to do with continuity. MEASURED
+/// on the Dissolve primary (21 steps x 4 s; the series is transcribed verbatim
+/// into SeraphisEngine_MacroSweepContinuityMetric below, so these numbers are
+/// re-derived by the suite rather than trusted): the series is smooth and
+/// STRICTLY MONOTONE, Spearman rho = 1 exactly, yet it scored
+/// worst 0.0787760 / mean 0.0194156 = 4.05737 against the 3.0 bound. There is no
+/// step in it. It is convex, and `worst/mean` was reading the convexity.
+///
+/// THE FIX, AND WHAT DID NOT MOVE. kContinuityFactor stays 3.0 and still
+/// multiplies the SAME reference - the mean step change - so the doc sentence
+/// this clause always carried is still literally true of the constant. NO NEW
+/// BOUND CONSTANT IS INTRODUCED, and there is nothing here to tune. Only the
+/// quantity being bounded changes: from the step itself to the step's DEPARTURE
+/// from the mean of its two neighbouring steps (from the single available
+/// neighbour at each end). For a step sequence that is locally linear in the
+/// step index - i.e. for every smooth sweep, convex or concave - that departure
+/// vanishes by construction; for a genuine jump it IS the jump.
+///
+/// MEASURED, every continuity-gated series in this TU, old statistic -> new:
+///   Dream primary, deviation      1.35573 -> 0.07790
+///   Bloom primary, centroid       2.42212 -> 0.19050
+///   Dissolve primary, atmos frac  4.05737 -> 2.29986   <- the failing row
+///   Gravity primary, band ratio   1.63211 -> 0.88122
+///   Entropy primary, 21 x 4 s     2.56872 -> 1.51242
+///   Entropy primary, 5 x 3 s prob 1.34240 -> 0.81043   <- the always-on case
+/// and on closed-form shapes: a linear ramp 1.0 -> 0 exactly, i^2 1.95 -> 0.10,
+/// i^3 2.8525 -> 0.285, 1.12^i 2.39069 -> 0.25615.
+///
+/// THE NEGATIVE CONTROL - A JUMP STILL FAILS, and the case below RUNS it instead
+/// of asserting it in prose. Injecting one jump J at step 10 of the MEASURED
+/// Dissolve series, every other value untouched:
+///   J = 3.0 x mean step -> 2.52703  passes
+///   J = 3.5 x mean step -> 2.89879  passes
+///   J = 4.0 x mean step -> 3.25507  FAILS
+/// with the exact rejection threshold at J = 0.0706708 = 3.6399 x mean step. On
+/// a uniform ramp of baseline step b over 21 points the closed forms are: the
+/// old clause rejects J > 2.36 b, this one rejects J > 3.53 b.
+///
+/// THAT 1.5x IS A REAL COST AND IT IS STATED, NOT HIDDEN. Bounding the departure
+/// rather than the step gives up sensitivity to an isolated jump by exactly that
+/// factor, because the departure drops the baseline step the jump rides on while
+/// the reference still carries it. What it buys is total blindness to the trend
+/// in step size, which is the entire defect. THE TWO ALTERNATIVES THE RULING
+/// NAMED WERE BOTH MEASURED AND ARE WORSE, not merely different:
+///   - LOG-DOMAIN STEP RATIOS (|ln(y_i / y_i-1)|) are not defined on two of the
+///     six series. The Gravity primary is a dB ratio running -23.6785 to
+///     -68.9356 (no logarithm of a negative), and the Dream primary ends at
+///     8.62984e-4 Hz, where the log step explodes: MEASURED worst/mean =
+///     16.0072, i.e. the log domain turns the one row whose deviation falls in a
+///     near-perfect straight line (new statistic 0.0779) into the worst failure
+///     in the file.
+///   - A LOCAL (WINDOWED) MEAN as the reference has no admissible radius. Taking
+///     the step OUT of its own window (leave-one-out) makes the bound a contest
+///     against 2-4 noisy neighbours, and it FAILS the currently-green Entropy
+///     primary at every radius that keeps the Dissolve row green: MEASURED
+///     Entropy 3.29680 at r = 2, 4.66270 at r = 3, 3.08908 at r = 4; at r = 5 it
+///     finally clears (2.87355) but Dissolve has gone back over (3.35237).
+///     Leaving the step IN its own window caps the ratio at the window length w,
+///     so w must exceed kContinuityFactor for the clause to be able to fail at
+///     all (w >= 5), and every admissible w is LESS sensitive to a jump than the
+///     departure form: w = 5 rejects only J > 5 b against 3.53 b here.
+[[nodiscard]] double continuityDeparture(const std::vector<double>& y) {
+    if (y.size() < 3) {
+        return 0.0;
+    }
+    std::vector<double> step(y.size() - 1, 0.0);
+    for (std::size_t i = 1; i < y.size(); ++i) {
+        step[i - 1] = std::fabs(y[i] - y[i - 1]);
+    }
+    double worst = 0.0;
+    for (std::size_t i = 0; i < step.size(); ++i) {
+        double neighbours = 0.0;
+        if (i == std::size_t{0}) {
+            neighbours = step[1];
+        } else if ((i + 1) == step.size()) {
+            neighbours = step[i - 1];
+        } else {
+            neighbours = 0.5 * (step[i - 1] + step[i + 1]);
+        }
+        worst = std::max(worst, std::fabs(step[i] - neighbours));
+    }
+    return worst;
+}
+
+/// The reference `kContinuityFactor` multiplies: the mean step change, unchanged
+/// from the clause this file shipped with.
+[[nodiscard]] double meanStepChange(const std::vector<double>& y) {
+    if (y.size() < 2) {
+        return 0.0;
+    }
+    double sum = 0.0;
+    for (std::size_t i = 1; i < y.size(); ++i) {
+        sum += std::fabs(y[i] - y[i - 1]);
+    }
+    return sum / static_cast<double>(y.size() - 1);
+}
+
+/// SC-009's no-discontinuity clause: no step may depart from its neighbouring
+/// steps by more than `kContinuityFactor` times the mean step change.
 [[nodiscard]] bool withinContinuityBound(const std::vector<double>& y) {
     if (y.size() < 3) {
         return true;
     }
-    double sum = 0.0;
-    double worst = 0.0;
-    for (std::size_t i = 1; i < y.size(); ++i) {
-        const double d = std::fabs(y[i] - y[i - 1]);
-        sum += d;
-        worst = std::max(worst, d);
-    }
-    const double mean = sum / static_cast<double>(y.size() - 1);
+    const double worst = continuityDeparture(y);
+    const double mean = meanStepChange(y);
     if (!(mean > 0.0)) {
         return !(worst > 0.0);
     }
@@ -1170,7 +1282,12 @@ void requireFullPartialSupport(const char* label, const std::vector<double>& cou
 }
 
 void requireContinuity(const char* label, const std::vector<double>& series) {
-    INFO(label << ": continuity, " << series.size() << " steps\n  series: " << seriesText(series));
+    const double mean = meanStepChange(series);
+    const double worst = continuityDeparture(series);
+    INFO(label << ": continuity, " << series.size() << " steps, worst departure " << worst
+               << " / mean step " << mean << " = " << ((mean > 0.0) ? (worst / mean) : 0.0)
+               << " against a bound of " << kContinuityFactor << "\n  series: "
+               << seriesText(series));
     REQUIRE(withinContinuityBound(series));
 }
 
@@ -1291,7 +1408,6 @@ struct BloomSeries {
     std::vector<double> interHarmonic;
     std::vector<double> widthPct;
     std::vector<double> sideEnergy;
-    std::vector<double> correlation;
 };
 
 [[nodiscard]] BloomSeries sweepBloom(std::size_t steps, double seconds) {
@@ -1330,8 +1446,42 @@ struct BloomSeries {
         };
         const StepOutputs isolatedOut = runStep(isolated);
         out.widthPct.push_back(lastWidth);
+        // THE STEREO OBSERVABLE ON THIS ARM IS THE M/S SIDE-ENERGY FRACTION, AND
+        // THE L/R-CORRELATION ROW THAT USED TO SIT BESIDE IT IS GONE BECAUSE IT
+        // ASSERTED THE SAME CLAIM WITH A STATISTIC THAT CANNOT CARRY IT HERE.
+        // PHASE 7 TEST-QUALITY FIX, ruled by the phase owner on 2026-08-02
+        // (item 2 of "phase-owner decisions",
+        // specs/seraphis-phase9-parameters/compliance.md). It is the SAME
+        // substitution the Dissolve blur secondary already carries below, for
+        // the same reason and with the same helper.
+        //
+        // Both rows were computed on THIS render - the isolated-VoiceWidth arm,
+        // orbit pinned and stereo spread held at its FR-019 base - and both
+        // asserted one directional claim: the image WIDENS as Bloom rises.
+        // MEASURED over the 21-step x 4 s sweep on that arm:
+        //   M/S side-energy fraction  0.0129345 -> 0.0245504, rho = +0.914286
+        //   L/R correlation           0.975521  -> 0.958550,  rho = -0.855844
+        //
+        // WHY THE CORRELATION REVERSES AND THE SIDE FRACTION DOES NOT, in the
+        // algebra rather than by assertion. For channel powers P_L, P_R and
+        // cross term C, the side fraction is `1/2 - C/(P_L + P_R)` while
+        // Pearson's rho is `C / sqrt(P_L * P_R)`: the two agree exactly only
+        // while P_L == P_R, because one normalises the cross term by the
+        // ARITHMETIC mean of the channel powers and the other by their GEOMETRIC
+        // mean. VoiceWidth is an M/S re-matrix, so it moves the channel powers
+        // as well as the cross term, and rho is blind to precisely that part of
+        // the move. MEASURED consequence: over the last six steps the
+        // correlation gives back 22.02 % of its swing (min 0.953758 at step 14,
+        // back to 0.958550) where the side fraction gives back 7.18 % (peak
+        // 0.0254486 at step 15, back to 0.0245504) - and on a total correlation
+        // swing of just 1.74 % of its own value that is the whole difference
+        // between +0.914286 and -0.855844 against a 0.9 gate.
+        //
+        // NO GATE MOVED and the claim is not weaker: the surviving row is a
+        // 1.90x end-to-end rise on the arm that isolates VoiceWidth alone, which
+        // is the observable's whole purpose (without this arm CloudStereoSpread
+        // carries the stereo secondary and a broken VoiceWidth row passes).
         out.sideEnergy.push_back(sideEnergyFraction(isolatedOut.left, isolatedOut.right));
-        out.correlation.push_back(correlation(isolatedOut.left, isolatedOut.right));
     }
     return out;
 }
@@ -1402,32 +1552,61 @@ struct DissolveSeries {
             atmosOnlyL[i] = fullOut.left[i] - mutedOut.left[i];
             atmosOnlyR[i] = fullOut.right[i] - mutedOut.right[i];
         }
-        // THE STATISTIC IS THE M/S SIDE-ENERGY FRACTION, NOT `1 - |rho_LR|`,
-        // AND THE PREMISE THAT PICKED `1 - |rho|` WAS TESTED AND IS REFUTED.
-        // PORTED FROM PHASE 9 (macro_wiring_test.cpp:1569-1589, SC-004
-        // amendment A11 of 2026-08-01).
+        // ====================================================================
+        // THE STATISTIC IS `1 - |rho_LR|`, AND PHASE 9's A11 SWAP TO THE
+        // SIDE-ENERGY FRACTION DOES NOT PORT TO THIS ROW. MEASURED, BOTH WAYS,
+        // ON THIS TU's ARM.
+        // ====================================================================
+        // FOUND AND FIXED 2026-08-02, IN THE SAME PASS AS THE TWO ROWS THE
+        // PHASE OWNER RULED ON BUT **NOT AMONG THEM** - flagged as such in this
+        // banner on purpose. This row was invisible to that ruling for a
+        // mechanical reason: Catch2 abandons a SECTION at its first REQUIRE
+        // failure, the Dissolve continuity failure sat three assertions ahead of
+        // this one, and so this assertion had NEVER RUN. Fixing the continuity
+        // clause is what exposed it. If the phase owner disagrees with the
+        // reading below, this is the row to reverse.
         //
-        // This case chose `1 - |rho|` on the reasoning that "the atmosphere
-        // already ships pan spread 0.7 and decorrelation 0.5
-        // (seraphis_voice.h:304-305), so the base correlation is NEGATIVE and
-        // it is the MAGNITUDE that blur collapses". MEASURED over the sweep,
-        // blur does NOT collapse the magnitude: the SIGNED correlation starts
-        // at -0.20101 and runs MONOTONICALLY to -0.401331, i.e. the channels go
-        // further ANTI-PHASE - a WIDER image, which is what "progressive stereo
-        // decorrelation" (atmosphere_engine.h:2062-2066) means. `1 - |rho|`
-        // scores that swing at -0.944156 against a +0.9 gate, because
-        // |-0.4| > |-0.2|: the statistic reports a WIDENING image as a
-        // narrowing one, and this case fails on exactly that
-        // (rho = -0.8558441558 as measured by Phase 9's compliance pass).
+        // THE A11 SWAP WAS RIGHT ON PHASE 9's ARM AND IS WRONG ON THIS ONE, for
+        // the reason this file already documents one screen up
+        // (muteAtmosphereDensity's "WHERE THIS PORT IS DIFFERENT IN KIND"
+        // banner): Phase 9 drives the engine through the PARAMETER SURFACE,
+        // where its level mute is partial and its `full - muted` differential
+        // keeps a cross term; THIS TU writes the voice directly after
+        // macros.apply() on every slice, so its differential is the atmosphere
+        // and nothing else. The two arms are not the same signal, and the
+        // stereo statistic that suits one does not suit the other.
         //
-        // The side-energy fraction has no such blind spot - it is monotone in
-        // how much of the signal lives in the difference channel whatever the
-        // sign of rho - and it is the SAME helper Bloom's stereo-width
-        // secondary already uses in this file. MEASURED on the Phase 9 arm:
-        // 0.591072 -> 0.675788, rho = 0.961039. (This row is a SECONDARY, so
-        // only the trend gate applies to it; the no-discontinuity clause is
-        // stated over primaries. No gate moved.)
-        out.blurDecorrelation.push_back(sideEnergyFraction(atmosOnlyL, atmosOnlyR));
+        // MEASURED HERE, 21 steps x 4 s, both statistics off the SAME renders:
+        //   signed rho_LR   -0.574786 -> -0.321489   (|rho| falls monotonically)
+        //   1 - |rho_LR|     0.425214 ->  0.678511   Spearman +0.998701  ok
+        //   M/S side energy  0.768809 ->  0.651181   Spearman -0.996104  X
+        //
+        // WHY THE SIDE FRACTION INVERTS HERE, in the algebra rather than by
+        // assertion. side/(side+mid) = 1/2 - C/(P_L + P_R): it is monotone in
+        // the SIGNED cross term, not in its magnitude. This differential starts
+        // already strongly ANTI-PHASE (rho = -0.5748, side fraction 0.7688,
+        // because the atmosphere ships pan spread 0.7 and decorrelation 0.5,
+        // seraphis_voice.h:304-305), and blur drives the two channels toward
+        // INDEPENDENCE - rho -> 0 - which is what "The draw is PER BIN PER
+        // CHANNEL from the one blurRng_ stream, which is what makes blur produce
+        // progressive stereo decorrelation" (atmosphere_engine.h:2062-2066)
+        // literally says. Moving from rho = -0.57 toward 0 LOWERS the side
+        // fraction from 0.77 toward 0.5, so the side fraction reports
+        // progressive decorrelation as a narrowing image. Phase 9's contaminated
+        // differential starts near rho = -0.18 and moves AWAY from zero, which
+        // is the mirror case and is why the swap was correct there.
+        //
+        // `1 - |rho|` has the complementary blind spot - it cannot tell
+        // anti-phase from in-phase - and that is exactly why Bloom's isolated
+        // VoiceWidth secondary above uses the side fraction instead: an M/S
+        // width re-matrix moves the channel POWERS, which rho normalises away.
+        // Each row uses the statistic whose blind spot its arm does not sit in,
+        // and both banners record the measurement that decides it.
+        //
+        // NO GATE MOVED: this row is a SECONDARY, so only the +0.9 trend gate
+        // applies (the no-discontinuity clause is stated over primaries), and
+        // the direction claim is FR-063's unchanged "blur ^ -> decorrelation ^".
+        out.blurDecorrelation.push_back(1.0 - std::fabs(correlation(atmosOnlyL, atmosOnlyR)));
 
         StepInputs tail = full;
         tail.withNoteOff = true;
@@ -2258,6 +2437,131 @@ TEST_CASE("SeraphisEngine_MacroSweepsMoveTheirAxis") {
 }
 
 // =============================================================================
+// SC-009 - the no-discontinuity clause's own negative control
+// =============================================================================
+//
+// The statistic that gates every primary above, exercised on DATA rather than
+// asserted in prose. It renders nothing and runs in microseconds, and it is
+// deliberately NOT "[.slow]": a future edit that quietly stops rejecting jumps
+// - or that re-introduces the convexity sensitivity fixed on 2026-08-02 - fails
+// in the DEFAULT dsp_systems_tests run, not only in the hidden grid.
+//
+// The ruling, the derivation and the full before/after table are on
+// continuityDeparture(); the numbers below are that table, machine-checked.
+
+TEST_CASE("SeraphisEngine_MacroSweepContinuityMetric") {
+    // The MEASURED Dissolve primary - 21 steps x 4 s, transcribed verbatim from
+    // the run this fix was ruled on. Smooth, strictly monotone, CONVEX, and with
+    // no step anywhere in it.
+    const std::vector<double> convex = {
+        0.045637, 0.055937, 0.0659104, 0.0744552, 0.0829797, 0.0832357, 0.0917021,
+        0.100247, 0.109685, 0.12016,   0.134929,  0.157639,  0.169194,  0.201804,
+        0.241729, 0.320505, 0.348826,  0.40389,   0.41446,   0.427939,  0.433948};
+    const double mean = meanStepChange(convex);
+
+    SECTION("the convex sweep the old statistic rejected is smooth and passes") {
+        REQUIRE(spearmanAgainstIndex(convex) == Approx(1.0));
+
+        // THE OLD STATISTIC, recomputed here so the defect is a measurement and
+        // not a memory: the largest single step, against the same reference.
+        double worstStep = 0.0;
+        for (std::size_t i = 1; i < convex.size(); ++i) {
+            worstStep = std::max(worstStep, std::fabs(convex[i] - convex[i - 1]));
+        }
+        INFO("old statistic: worst step " << worstStep << " / mean step " << mean << " = "
+                                          << (worstStep / mean));
+        REQUIRE((worstStep / mean) == Approx(4.057366).epsilon(1.0e-6));
+        REQUIRE(worstStep > (kContinuityFactor * mean));  // i.e. it FAILED
+
+        // The new one, on the identical series.
+        INFO("new statistic: worst departure " << continuityDeparture(convex) << " / mean step "
+                                               << mean << " = "
+                                               << (continuityDeparture(convex) / mean));
+        REQUIRE((continuityDeparture(convex) / mean) == Approx(2.299858).epsilon(1.0e-6));
+        REQUIRE(withinContinuityBound(convex));
+    }
+
+    SECTION("an injected step in that same series still fails") {
+        // One jump at index 10; every other value untouched, so the ONLY thing
+        // that changed between this series and the one above is a discontinuity.
+        const auto withJump = [&convex, mean](double jumpInMeanSteps) {
+            std::vector<double> y = convex;
+            for (std::size_t i = 10; i < y.size(); ++i) {
+                y[i] += jumpInMeanSteps * mean;
+            }
+            return y;
+        };
+
+        // The ratio is the clause's OWN quantity, so the denominator is the mean
+        // step of the series being judged - which the jump itself raises by
+        // J/(n-1). The jump size J is quoted in units of the UNJUMPED series'
+        // mean step, which is what makes the three rows comparable.
+        const auto ratioOf = [](const std::vector<double>& y) {
+            return continuityDeparture(y) / meanStepChange(y);
+        };
+
+        const std::vector<double> small = withJump(3.0);
+        INFO("J = 3.0 mean steps -> " << ratioOf(small));
+        REQUIRE(ratioOf(small) == Approx(2.527026).epsilon(1.0e-6));
+        REQUIRE(withinContinuityBound(small));
+
+        const std::vector<double> marginal = withJump(3.5);
+        INFO("J = 3.5 mean steps -> " << ratioOf(marginal));
+        REQUIRE(ratioOf(marginal) == Approx(2.898792).epsilon(1.0e-6));
+        REQUIRE(withinContinuityBound(marginal));
+
+        const std::vector<double> jump = withJump(4.0);
+        INFO("J = 4.0 mean steps -> " << ratioOf(jump));
+        REQUIRE(ratioOf(jump) == Approx(3.255067).epsilon(1.0e-6));
+        REQUIRE_FALSE(withinContinuityBound(jump));
+    }
+
+    SECTION("closed forms: smooth shapes score ~0, a jump on a flat ramp fails") {
+        constexpr std::size_t kPoints = 21;
+        const auto ramp = [](double jump) {
+            std::vector<double> y(kPoints, 0.0);
+            for (std::size_t i = 0; i < kPoints; ++i) {
+                y[i] = static_cast<double>(i) + ((i >= std::size_t{10}) ? jump : 0.0);
+            }
+            return y;
+        };
+
+        // A uniform ramp has NO departure at all - the statistic is exactly zero,
+        // where the old one scored 1.0.
+        REQUIRE(continuityDeparture(ramp(0.0)) == Approx(0.0).margin(1.0e-12));
+        REQUIRE(withinContinuityBound(ramp(0.0)));
+
+        // Baseline step b = 1. Closed form: this clause rejects J > 3.53 b.
+        REQUIRE(continuityDeparture(ramp(3.0)) / meanStepChange(ramp(3.0)) ==
+                Approx(2.608696).epsilon(1.0e-6));
+        REQUIRE(withinContinuityBound(ramp(3.0)));
+        REQUIRE(continuityDeparture(ramp(4.0)) / meanStepChange(ramp(4.0)) ==
+                Approx(3.333333).epsilon(1.0e-6));
+        REQUIRE_FALSE(withinContinuityBound(ramp(4.0)));
+
+        // Curvature alone never trips it: quadratic, cubic and geometric growth
+        // all sit an order of magnitude under the bound.
+        std::vector<double> quadratic(kPoints, 0.0);
+        std::vector<double> cubic(kPoints, 0.0);
+        std::vector<double> geometric(kPoints, 0.0);
+        for (std::size_t i = 0; i < kPoints; ++i) {
+            const auto x = static_cast<double>(i);
+            quadratic[i] = x * x;
+            cubic[i] = x * x * x;
+            geometric[i] = std::pow(1.12, x);
+        }
+        REQUIRE(continuityDeparture(quadratic) / meanStepChange(quadratic) ==
+                Approx(0.1).epsilon(1.0e-6));
+        REQUIRE(continuityDeparture(cubic) / meanStepChange(cubic) == Approx(0.285).epsilon(1.0e-6));
+        REQUIRE(continuityDeparture(geometric) / meanStepChange(geometric) ==
+                Approx(0.256146).epsilon(1.0e-5));
+        REQUIRE(withinContinuityBound(quadratic));
+        REQUIRE(withinContinuityBound(cubic));
+        REQUIRE(withinContinuityBound(geometric));
+    }
+}
+
+// =============================================================================
 // SC-009 - the full 5 x 21 x 4 s grid
 // =============================================================================
 
@@ -2296,8 +2600,11 @@ TEST_CASE("SeraphisEngine_MacroSweepsMoveTheirAxis_Full", "[.slow]") {
         // CloudStereoSpread carries the whole stereo secondary and a completely
         // broken VoiceWidth row passes.
         requireTrend("Bloom secondary (voice width at a pinned orbit phase)", series.widthPct, +1);
+        // The single stereo-image row on the isolated arm. It carries the
+        // directional claim the L/R-correlation row used to duplicate; see the
+        // banner in sweepBloom() for the measured evidence that the correlation
+        // statistic cannot carry it.
         requireTrend("Bloom secondary (M/S side energy)", series.sideEnergy, +1);
-        requireTrend("Bloom secondary (L/R correlation)", series.correlation, -1);
     }
 
     SECTION("FR-063 Dissolve - atmosphere arrives") {

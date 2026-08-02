@@ -342,22 +342,57 @@ None of these is fixable by re-measuring or by a threshold edit, and no agent to
    **ceiling-derived** at `floor(25 % ÷ 1.15) = 2 318 840` and now GATES. **The two levers the
    static_asserts name — the shipped voice count and Phase 9's own push cost — were NOT pulled, and the
    25 % ceiling was not touched.**
-2. **Phase 7's own `[.slow]` macro-sweep case — two rows still red, and they are NOT Phase 9's.**
-   Phase 9's SC-004 is green; the four conditioning fixes were ported to
-   `dsp/tests/unit/systems/seraphis_macro_test.cpp`'s `SeraphisEngine_MacroSweepsMoveTheirAxis_Full`
-   ([.slow], hidden from the default run) on 2026-08-02, taking it from 3 failed assertions to 2
-   (assertions 175 → 177). **Dream is fixed.** The two survivors are not among the four ported defects,
-   and the earlier claim in this file that "the four fixes port to that TU unchanged" is corrected in
-   the *Closed since the previous pass* section above:
-   - **Dissolve continuity, worst/mean 4.06.** The density-mute port is a measured NO-OP in that TU
-     (series identical to every digit) because its level mute is already total; the failure is convexity
-     of the fraction series, not a step.
-   - **Bloom's L/R-correlation secondary, ρ = −0.8558441558.** That TU isolates `VoiceWidth` alone via
-     `holdStereoSpreadAtBase`, which Phase 9 structurally cannot do, so it measures a ~2 % swing that
-     reverses over the last six steps — while the **M/S side-energy row on the same arm passes**.
-   Admissible remedies are Phase 7's to choose. **Not admissible, and not taken here:** lowering
-   `kSpearmanGate`, raising `kContinuityFactor`, deleting a row, or tagging the case out. The default
-   `dsp_systems_tests` run is unaffected: `All tests passed (6042437 assertions in 1217 test cases)`.
+2. ~~**Phase 7's own `[.slow]` macro-sweep case — two rows still red, and they are NOT Phase 9's.**~~
+   **CLOSED 2026-08-02 by phase-owner ruling.** Both survivors were **defective observables**, and both
+   were redesigned in `dsp/tests/unit/systems/seraphis_macro_test.cpp`. The case now passes in full:
+   `SeraphisEngine_MacroSweepsMoveTheirAxis_Full` → `All tests passed (180 assertions in 1 test case)`.
+   **`kSpearmanGate` (0.9), `kContinuityFactor` (3.0) and every effect-size floor are untouched, no row
+   was tagged out, and no new bound constant was introduced.** The two rulings — and a third defect they
+   uncovered:
+   - **Dissolve continuity, worst/mean 4.06 → 2.30.** The failure was convexity, not a step: the series
+     is smooth and strictly monotone (ρ = 1 exactly), and `max|Δy| ≤ k · mean|Δy|` is a statement about
+     the step-size *distribution*, so any convex sweep on a uniform macro grid trips it. The clause now
+     bounds each step's **departure from the mean of its two neighbouring steps** against the same
+     reference (mean step) and the same `kContinuityFactor = 3.0`; that departure vanishes identically
+     for a locally-linear step sequence and *is* the jump for a discontinuity. Measured on all six
+     continuity-gated series, old → new: Dream 1.35573 → 0.07790, Bloom 2.42212 → 0.19050, Dissolve
+     4.05737 → **2.29986**, Gravity 1.63211 → 0.88122, Entropy (21 × 4 s) 2.56872 → 1.51242, Entropy
+     probe (5 × 3 s) 1.34240 → 0.81043. **Negative control, run by the suite** (new always-on case
+     `SeraphisEngine_MacroSweepContinuityMetric`): injecting a single jump into the *measured* Dissolve
+     series still fails — J = 3.0 mean steps → 2.52703 passes, J = 3.5 → 2.89879 passes, J = 4.0 →
+     **3.25507 FAILS**, rejection threshold J = 3.6399 mean steps. Cost stated, not hidden: on a uniform
+     ramp the old clause rejected J > 2.36 b and this one rejects J > 3.53 b — a 1.5× loss of
+     jump-sensitivity bought for total blindness to the trend in step size. The two alternatives were
+     measured and are worse: log-domain step ratios are undefined for the Gravity primary (a dB ratio,
+     −23.7 → −68.9) and blow up on Dream (worst/mean 16.0072 as it approaches 0); a leave-one-out local
+     mean fails the green Entropy primary at every radius that keeps Dissolve green (r = 2 → 3.29680,
+     r = 3 → 4.66270, r = 4 → 3.08908; r = 5 clears Entropy at 2.87355 but re-fails Dissolve at 3.35237).
+   - **Bloom's L/R-correlation secondary, ρ = −0.8558441558 → row replaced by the M/S side-energy
+     fraction** (the same helper, the same isolated-`VoiceWidth` render, the same directional claim —
+     the image widens as Bloom rises), which measures ρ = +0.914286 on 0.0129345 → 0.0245504 (1.90×
+     end-to-end). This is the identical substitution Phase 9's A11 already made for the Dissolve blur
+     secondary. Mechanism, in the algebra: the side fraction normalises the cross term by the
+     *arithmetic* mean of the channel powers and Pearson's ρ by their *geometric* mean, so ρ is blind to
+     the channel-power imbalance an M/S width re-matrix creates; measured, the correlation gives back
+     22.02 % of its swing over the last six steps against the side fraction's 7.18 %, and on a total
+     correlation swing of 1.74 % of its own value that is the whole difference between +0.914 and −0.856.
+   - ⚠️ **A THIRD defect was exposed by the first fix and is NOT one the phase owner ruled on.** Catch2
+     abandons a `SECTION` at its first `REQUIRE` failure, and the Dissolve continuity failure sat three
+     assertions ahead of the **blur-induced-decorrelation secondary** — so that assertion had *never run*
+     in this TU (which is also why the count moves 177 → 180, not 177 → 176). Once reached it failed at
+     ρ = −0.996104. **Root cause: Phase 9's A11 statistic swap — side-energy fraction in place of
+     `1 − |ρ_LR|` — does not port to this row**, for the same "different in kind" reason this file already
+     records for the level/density mute: Phase 9's `full − muted` differential keeps a cross term, this
+     TU's *is* the atmosphere. Measured here off the same renders: signed ρ_LR runs −0.574786 → −0.321489
+     (|ρ| falls monotonically = progressive decorrelation), `1 − |ρ_LR|` runs 0.425214 → 0.678511 with
+     **Spearman +0.998701**, while the side-energy fraction runs 0.768809 → 0.651181 with **−0.996104**.
+     The algebra: `side/(side+mid) = ½ − C/(P_L+P_R)` is monotone in the *signed* cross term, and this
+     differential starts strongly anti-phase (ρ = −0.57, side 0.77) and moves toward independence, so the
+     side fraction reports decorrelation as narrowing. The row was returned to `1 − |ρ_LR|`; each of the
+     two stereo rows in the TU now uses the statistic whose blind spot its arm does not sit in, with the
+     deciding measurement in a banner at each site. **No gate moved and the FR-063 direction is
+     unchanged. This one is offered for phase-owner confirmation, not claimed as ruled.**
+   The default `dsp_systems_tests` run remains green.
 3. **SC-016(a) and SC-021 — other-OS legs.** Both need CI evidence, not local evidence: the
    valgrind-nightly Linux lane for SC-016(a), and the macOS + Linux build legs for SC-021's
    "zero warnings on all three OS legs". Neither can be closed from this Windows machine.
