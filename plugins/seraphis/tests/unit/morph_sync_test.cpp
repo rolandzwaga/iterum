@@ -202,9 +202,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
         fx->setTempo(120.0, 4, 4, /*tempoValid*/ true, /*sigValid*/ true);
 
         const std::size_t before = fx->proc->applyVoiceParamsCallCountForTest();
-        renderOneBlock(*fx, {{Seraphis::kMorphTravelRateId, kFreeRateNormMin},
-                             {Seraphis::kMorphSyncId, 1.0},
-                             {Seraphis::kMorphSyncNoteId, kNote1Bar}});
+        renderOneBlock(*fx, {{.id = Seraphis::kMorphTravelRateId, .normalized = kFreeRateNormMin},
+                             {.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                             {.id = Seraphis::kMorphSyncNoteId, .normalized = kNote1Bar}});
 
         REQUIRE(travelRateOfVoice0(*fx) == Catch::Approx(0.5).margin(kRateMargin));
         requireEveryVoiceAt(*fx, 0.5);
@@ -228,9 +228,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
         fx->setTempo(200.0, 4, 4, true, true);
 
         const std::size_t before = fx->proc->applyVoiceParamsCallCountForTest();
-        renderOneBlock(*fx, {{Seraphis::kMorphTravelRateId, kFreeRateNormMin},
-                             {Seraphis::kMorphSyncId, 1.0},
-                             {Seraphis::kMorphSyncNoteId, kNote1_16}});
+        renderOneBlock(*fx, {{.id = Seraphis::kMorphTravelRateId, .normalized = kFreeRateNormMin},
+                             {.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                             {.id = Seraphis::kMorphSyncNoteId, .normalized = kNote1_16}});
 
         // The unclamped derivation is far above the ceiling, so this asserts the
         // clamp and not an accidental coincidence.
@@ -257,9 +257,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
         REQUIRE(expected < static_cast<double>(Morph::kMaxTravelRate));
 
         const std::size_t before = fx->proc->applyVoiceParamsCallCountForTest();
-        renderOneBlock(*fx, {{Seraphis::kMorphTravelRateId, kFreeRateNormMin},
-                             {Seraphis::kMorphSyncId, 1.0},
-                             {Seraphis::kMorphSyncNoteId, kNote8Bars}});
+        renderOneBlock(*fx, {{.id = Seraphis::kMorphTravelRateId, .normalized = kFreeRateNormMin},
+                             {.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                             {.id = Seraphis::kMorphSyncNoteId, .normalized = kNote8Bars}});
 
         REQUIRE(travelRateOfVoice0(*fx) == Catch::Approx(expected).margin(kRateMargin));
         REQUIRE(travelRateOfVoice0(*fx) == Catch::Approx(1.0416667e-2).margin(kRateMargin));
@@ -284,9 +284,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
         fx->setTempo(120.0, 6, 8, /*tempoValid*/ true, /*sigValid*/ true);
 
         const std::size_t before = fx->proc->applyVoiceParamsCallCountForTest();
-        renderOneBlock(*fx, {{Seraphis::kMorphTravelRateId, kFreeRateNormMin},
-                             {Seraphis::kMorphSyncId, 1.0},
-                             {Seraphis::kMorphSyncNoteId, kNote1Bar}});
+        renderOneBlock(*fx, {{.id = Seraphis::kMorphTravelRateId, .normalized = kFreeRateNormMin},
+                             {.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                             {.id = Seraphis::kMorphSyncNoteId, .normalized = kNote1Bar}});
 
         const double sixEight = 120.0 / (60.0 * 3.0);  // 0.6666667
         REQUIRE(travelRateOfVoice0(*fx) == Catch::Approx(sixEight).margin(kRateMargin));
@@ -315,9 +315,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
 
         // First establish a DERIVED rate, so the assertion below can tell
         // "fell back" from "never synced in the first place".
-        renderOneBlock(*fx, {{Seraphis::kMorphTravelRateId, kFreeRateNormMax},
-                             {Seraphis::kMorphSyncId, 1.0},
-                             {Seraphis::kMorphSyncNoteId, kNote1Bar}});
+        renderOneBlock(*fx, {{.id = Seraphis::kMorphTravelRateId, .normalized = kFreeRateNormMax},
+                             {.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                             {.id = Seraphis::kMorphSyncNoteId, .normalized = kNote1Bar}});
         REQUIRE(travelRateOfVoice0(*fx) == Catch::Approx(0.5).margin(kRateMargin));
 
         // Host stops supplying a transport. Sync stays ON.
@@ -344,9 +344,9 @@ TEST_CASE("Seraphis_MorphSync_DerivesAndFallsBack", "[seraphis][morph][sync]") {
         fx->setTempo(120.0, 4, 4, /*tempoValid*/ false, /*sigValid*/ true);
 
         const std::size_t before = fx->proc->applyVoiceParamsCallCountForTest();
-        const std::size_t blocks = blocksFor(4.0);
+        const std::size_t numBlocks = blocksFor(4.0);
         fx->renderBlocks(
-            blocks, kBlockSamples,
+            numBlocks, kBlockSamples,
             [&](std::size_t b, Krate::Test::EventList&, SeraphisTest::ParameterChanges& pc) {
                 if (b != 0) {
                     return;

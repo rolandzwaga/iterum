@@ -18,12 +18,13 @@ namespace Seraphis {
 /// post-release). Shared by processor and controller; neither includes the
 /// other, so the constants live here.
 ///
-/// Both versions are NAMED so the FR-093 migration path is expressed against
-/// symbols and never against bare literals. A version-1 stream is a STRICT
-/// BYTE PREFIX of a version-2 stream (spec C-8), which is what lets the
-/// EOF-safe loader chain migrate with no version-aware branch.
+/// Every version is NAMED so the FR-093 / FR-031 migration path is expressed
+/// against symbols and never against bare literals. Each older stream is a
+/// STRICT BYTE PREFIX of the next (Phase 9 spec C-8, Phase 10 spec C-8), which
+/// is what lets the EOF-safe loader chain migrate with no version-aware branch.
 constexpr Steinberg::int32 kStateVersion1       = 1;  ///< Phase 8's 36-byte layout.
-constexpr Steinberg::int32 kCurrentStateVersion = 2;  ///< Phase 9 (spec C-8), 2532 bytes.
+constexpr Steinberg::int32 kStateVersion2       = 2;  ///< Phase 9 (spec C-8), 2532 bytes.
+constexpr Steinberg::int32 kCurrentStateVersion = 3;  ///< Phase 10: + the 16 effects fields.
 
 /// FR-011. Freshly generated (v4 GUID), never reused, never changed
 /// post-release. Processor component ID - the audio processing component
@@ -179,6 +180,24 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
     kAetherSizeBreathDepthId   = 1215,
     kAetherTideDepthId         = 1216,
     kAetherWidthId             = 1217,
+
+    // --- Effects (1400-1499) --- 16 IDs (Phase 10)
+    kFxSaturationId            = 1400,
+    kFxDelayMixId              = 1410,
+    kFxDelayTimeId             = 1411,
+    kFxDelaySpreadId           = 1412,
+    kFxDelaySpreadDirectionId  = 1413,
+    kFxDelayFeedbackId         = 1414,
+    kFxDelayTiltId             = 1415,
+    kFxDelayDiffusionId        = 1416,
+    kFxDelayWidthId            = 1417,
+    kFxDelaySyncId             = 1418,
+    kFxDelaySyncNoteId         = 1419,
+    kFxSpectralFreezeId        = 1430,
+    kFxWidthId                 = 1440,
+    kFxWanderDepthId           = 1441,
+    kFxWanderRateId            = 1442,
+    kFxAzimuthDepthId          = 1443,
 };
 
 /// FR-013 / FR-048 / spec C-9. REGISTERED TYPES ARE FROZEN FOR THE LIFE OF THE
@@ -195,9 +214,9 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
 ///       (plugins/shared/src/ui/parameter_helpers.h:47)
 ///   T = stepped toggle, a plain Vst::Parameter with stepCount = 1
 ///
-/// All 91 registered IDs, grouped by type (73 R + 12 L + 6 T = 91):
+/// All 107 registered IDs, grouped by type (85 R + 14 L + 8 T = 107):
 ///
-///   R (73):
+///   R (85):
 ///     0                                   kMasterGainId
 ///     100-104                             kMacroDreamId .. kMacroEntropyId
 ///     200-210                             kCloudRichnessId .. kCloudEnvOffsetSpreadId
@@ -212,8 +231,12 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
 ///                                         kAtmosDriftSmoothnessId .. kAtmosPitchSpreadId
 ///     1200-1203, 1205-1217                kAetherMixId .. kAetherDecayId,
 ///                                         kAetherDimensionalityId .. kAetherWidthId
+///     1400                                kFxSaturationId
+///     1410-1412, 1414-1417                kFxDelayMixId .. kFxDelaySpreadId,
+///                                         kFxDelayFeedbackId .. kFxDelayWidthId
+///     1440-1443                           kFxWidthId .. kFxAzimuthDepthId
 ///
-///   L (12) - one label table each in parameters/dropdown_mappings.h:
+///   L (14) - one label table each in parameters/dropdown_mappings.h:
 ///     1     kPolyphonyId          (Phase 8 - SHIPPED, type already frozen)
 ///     3     kSeedId               (Phase 9, new)
 ///     403   kMorphTravelModeId    (Phase 9, new)
@@ -226,18 +249,22 @@ enum ParameterIDs : Steinberg::Vst::ParamID {
 ///     700   kEnvModeId            (Phase 9, new)
 ///     800   kBodyMaterialId       (Phase 9, new)
 ///     1016  kAtmosGrainEnvelopeId (Phase 9, new)
+///     1413  kFxDelaySpreadDirectionId (Phase 10, new)
+///     1419  kFxDelaySyncNoteId        (Phase 10, new)
 ///   NOTE: plan section 2.1(e) enumerates TEN new `L` IDs and omits 700. C-6's
 ///   table types kEnvModeId as `L` (Standard / Growth) and plan section 2.2 gives it
 ///   its own `kEnvelopeModeLabels` table, so the new-`L` count is ELEVEN and 700
 ///   is registered as a StringListParameter. The list above is the record.
 ///
-///   T (6) - stepped toggles, stepCount = 1:
+///   T (8) - stepped toggles, stepCount = 1:
 ///     2     kSoftLimitId           (Phase 8 - SHIPPED, type already frozen)
 ///     405   kMorphSyncId           (Phase 9, new)
 ///     811   kBodyInputAgcId        (Phase 9, new)
 ///     812   kBodyResonatorBypassId (Phase 9, new)
 ///     1008  kAtmosFreezeId         (Phase 9, new)
 ///     1204  kAetherFreezeId        (Phase 9, new)
+///     1418  kFxDelaySyncId         (Phase 10, new)
+///     1430  kFxSpectralFreezeId    (Phase 10, new)
 
 /// Range-dispatch bounds used by processParameterChanges (FR-011, FR-042).
 /// A ladder of upper bounds, so the dispatch stays `if (id < X)` and never
@@ -250,6 +277,7 @@ constexpr Steinberg::Vst::ParamID kLifeModParamRangeEnd =  800;  // 600-799: lif
 constexpr Steinberg::Vst::ParamID kBodyParamRangeEnd    = 1000;  // IDs < 1000 -> body pack
 constexpr Steinberg::Vst::ParamID kAtmosParamRangeEnd   = 1200;  // IDs < 1200 -> atmosphere pack
 constexpr Steinberg::Vst::ParamID kAetherParamRangeEnd  = 1400;  // IDs < 1400 -> aether pack
+constexpr Steinberg::Vst::ParamID kEffectsParamRangeEnd = 1500;  // IDs < 1500 -> effects pack
 
 // --- Immediate compile-time gates for the ID map -----------------------------
 
@@ -259,7 +287,8 @@ static_assert(kGlobalParamRangeEnd < kMacroParamRangeEnd &&
                   kMorphParamRangeEnd < kLifeModParamRangeEnd &&
                   kLifeModParamRangeEnd < kBodyParamRangeEnd &&
                   kBodyParamRangeEnd < kAtmosParamRangeEnd &&
-                  kAtmosParamRangeEnd < kAetherParamRangeEnd,
+                  kAtmosParamRangeEnd < kAetherParamRangeEnd &&
+                  kAetherParamRangeEnd < kEffectsParamRangeEnd,
               "FR-011: the range-dispatch ladder must be strictly increasing, or "
               "processParameterChanges routes an ID to the wrong pack");
 
@@ -282,7 +311,11 @@ static_assert(kLifeSpatialDepthId >= kMorphParamRangeEnd &&
                   kAetherWidthId < kAetherParamRangeEnd,
               "spec C-5: life / body / atmosphere / aether IDs must lie inside their bands");
 
-static_assert(kStateVersion1 < kCurrentStateVersion,
-              "FR-012: the current state version must be newer than version 1");
+static_assert(kFxSaturationId >= kAetherParamRangeEnd &&
+                  kFxAzimuthDepthId < kEffectsParamRangeEnd,
+              "spec C-6: effects IDs must lie inside the 1400+ band");
+
+static_assert(kStateVersion1 < kStateVersion2 && kStateVersion2 < kCurrentStateVersion,
+              "FR-012 / FR-031: the state version chain must be strictly increasing");
 
 }  // namespace Seraphis

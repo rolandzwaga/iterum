@@ -12,8 +12,9 @@
 //           811 are re-measured)
 //
 // THIS TU ALSO CARRIES, as the plan §7.0 map states:
-//   - kContinuityMechanism[], the full class-(a)/(b) classification of all 85
-//     in-scope IDs from plan §3.5.3
+//   - kContinuityMechanism[], the full class-(a)/(b) classification of all 101
+//     in-scope IDs - the 85 of Phase 9 plan §3.5.3 plus the 16 Phase 10 effects
+//     IDs ruled by specs/seraphis-phase10-effects/spec.md FR-038b
 //   - the FR-059a probe definition
 //
 // COMPILE FLAGS: this TU IS listed under "-fno-fast-math
@@ -63,7 +64,7 @@
 // WHY THE POSITIVE CONTROLS ARE A SECOND TEST_CASE, NOT TWO SECTIONs OF THE FIRST
 // ==============================================================================
 // Catch2 re-runs a TEST_CASE's whole body once per leaf SECTION. Two SECTIONs
-// inside the 91-render sweep would render the entire parameter surface three
+// inside the 107-render sweep would render the entire parameter surface three
 // times. The controls therefore live in their own TEST_CASE, where they ARE two
 // explicitly named SECTIONs, and the sweep runs once.
 //
@@ -127,7 +128,7 @@ using Fixture = SeraphisTest::ProcessorFixture;
 // =============================================================================
 // kContinuityMechanism[] - plan §3.5.3, checked in
 // =============================================================================
-// ONE ROW PER IN-SCOPE ID (85: 91 registered, less kSeedId and the five CFG
+// ONE ROW PER IN-SCOPE ID (101: 107 registered, less kSeedId and the five CFG
 // IDs), each carrying a MANDATORY file:line citation for the mechanism that
 // makes that ID continuous. Rows that share an identical citation in the plan's
 // grouped table still get one row each here - the array is per-ID.
@@ -154,10 +155,10 @@ struct ContinuityRow {
         Structural
     };
 
-    ParamID id;
-    Class cls;
-    Evidence why;
-    const char* citation;  // file:line, MANDATORY
+    ParamID id = 0;
+    Class cls = Class::ComponentInternal;
+    Evidence why = Evidence::Structural;
+    const char* citation = nullptr;  // file:line, MANDATORY
     /// FR-059(b) clause 2's PER-ID COLUMN - the second of the two forms that
     /// clause allows ("a single value shared by all class-(b) IDs OR a per-ID
     /// column of kContinuityMechanism[]"). SC-005's measurement forced the second
@@ -205,14 +206,34 @@ constexpr const char* kAetherApplyControlCitation =
     "1204 is EXCLUDED from this group on purpose: setFreeze (:2230) does not "
     "call applyControl and carries its own Ramp row";
 
+/// Shared citation for the three PLUGIN-OWNED Phase 10 class-(b) rows (1410,
+/// 1441, 1443). Unlike every Phase 9 class-(b) row, these three have no
+/// component member to point at in EITHER class: the send return gain and the
+/// two wander depth multipliers are quantities the plugin itself owns, so the
+/// citation names the ruling that mandates the processor-side smoother and the
+/// constant it runs at. Both halves are file:line and both are checkable today.
+constexpr const char* kFxPluginOwnedCitation =
+    "PLUGIN-OWNED - no component smoother exists in EITHER direction, so this "
+    "row may not be class (a) (the table's one-directional remedy rule at "
+    ":135-140 forbids an uncited class-(a) claim). "
+    "specs/seraphis-phase10-effects/spec.md:1143-1151 (FR-038b clause 2) rules "
+    "these three ProcessorSmoothed at kParamSmoothMs = 20 ms "
+    "(plugins/seraphis/src/processor/processor.h:119), delivered on the "
+    "engine's absolute 64-sample control-chunk grid exactly as Phase 9's nine "
+    "are. For 1410 that smoother IS the FR-008/FR-009 return-gain ramp - one "
+    "smoother, not two (spec.md:1148-1151). PENDING: the processor members "
+    "land with the send and wander stages (tasks.md T013 / T017); this row "
+    "states the REQUIRED mechanism, and the citation becomes a processor.h "
+    "line once the member exists";
+
 constexpr ContinuityRow kContinuityMechanism[] = {
     // --- Global (0-2); kSeedId (3) is EXEMPT from clauses 1-3 ----------------
-    {Seraphis::kMasterGainId, kA, Why::Smoother,
-     "plugins/seraphis/src/processor/processor.cpp:509 (masterGain_.configure at "
+    {.id = Seraphis::kMasterGainId, .cls = kA, .why = Why::Smoother,
+     .citation="plugins/seraphis/src/processor/processor.cpp:509 (masterGain_.configure at "
      "kMasterGainSmoothMs = 20 ms) + :1108 (advanced ONCE PER OUTPUT SAMPLE inside "
      "renderSlice)"},
-    {Seraphis::kPolyphonyId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_engine.h:455 - setPolyphony's only "
+    {.id = Seraphis::kPolyphonyId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_engine.h:455 - setPolyphony's only "
      "level move is sumGain_.setTarget(sumGainForPolyphony(n)) into the "
      "kSumGainSmoothMs smoother (:219-244). That constant is 100 ms, NOT the "
      "20 ms of the master-gain family, and the difference is what makes this row "
@@ -223,132 +244,132 @@ constexpr ContinuityRow kContinuityMechanism[] = {
      "measured on this very render at 2.651 x against the 1.5 x bound. The "
      "shrink loop at :445-454 is voices_[i].noteOff() ONLY - a musical release, "
      "not a retirement, so the orphan keeps rendering its release envelope"},
-    {Seraphis::kSoftLimitId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/processors/tape_saturator.h:248-252 - setOutputSaturation "
+    {.id = Seraphis::kSoftLimitId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/processors/tape_saturator.h:248-252 - setOutputSaturation "
      "(seraphis_engine.h:647) forwards to TapeSaturator::setSaturation, whose "
      "post-prepare branch targets saturationSmoother_ rather than snapping. The "
      "prepare-time kDefaultSmoothingMs residual is a prepare artefact, recorded at "
      "plugins/seraphis/src/processor/processor.cpp:486-500"},
 
     // --- Macros (100-104) - CLASS (b) ----------------------------------------
-    {Seraphis::kMacroDreamId, kB, Why::Smoother, kMacroCitation, kDepthSmoothMs},
-    {Seraphis::kMacroBloomId, kB, Why::Smoother, kMacroCitation, kDepthSmoothMs},
-    {Seraphis::kMacroDissolveId, kB, Why::Smoother, kMacroCitation, kDepthSmoothMs},
-    {Seraphis::kMacroGravityId, kB, Why::Smoother, kMacroCitation, kDepthSmoothMs},
-    {Seraphis::kMacroEntropyId, kB, Why::Smoother, kMacroCitation, kDepthSmoothMs},
+    {.id = Seraphis::kMacroDreamId, .cls = kB, .why = Why::Smoother, .citation = kMacroCitation, .smoothMs = kDepthSmoothMs},
+    {.id = Seraphis::kMacroBloomId, .cls = kB, .why = Why::Smoother, .citation = kMacroCitation, .smoothMs = kDepthSmoothMs},
+    {.id = Seraphis::kMacroDissolveId, .cls = kB, .why = Why::Smoother, .citation = kMacroCitation, .smoothMs = kDepthSmoothMs},
+    {.id = Seraphis::kMacroGravityId, .cls = kB, .why = Why::Smoother, .citation = kMacroCitation, .smoothMs = kDepthSmoothMs},
+    {.id = Seraphis::kMacroEntropyId, .cls = kB, .why = Why::Smoother, .citation = kMacroCitation, .smoothMs = kDepthSmoothMs},
 
     // --- Harmonic Cloud (200-210) --------------------------------------------
-    {Seraphis::kCloudRichnessId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
+    {.id = Seraphis::kCloudRichnessId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
      "smoother, kAmpSmoothTimeSec = 0.002f"},
-    {Seraphis::kCloudInharmonicityId, kA, Why::PhaseContinuous,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:191 (kMaxInharmonicity) - a "
+    {.id = Seraphis::kCloudInharmonicityId, .cls = kA, .why = Why::PhaseContinuous,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:191 (kMaxInharmonicity) - a "
      "partial FREQUENCY control; the oscillator bank is phase-continuous, so a "
      "ratio step is not a sample discontinuity"},
-    {Seraphis::kCloudTiltId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
+    {.id = Seraphis::kCloudTiltId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
      "smoother, kAmpSmoothTimeSec = 0.002f"},
-    {Seraphis::kCloudMutationId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
+    {.id = Seraphis::kCloudMutationId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - kernel-amplitude "
      "smoother, kAmpSmoothTimeSec = 0.002f"},
-    {Seraphis::kCloudGravityId, kA, Why::PhaseContinuous,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:480-484 - the gravity clamp; "
+    {.id = Seraphis::kCloudGravityId, .cls = kA, .why = Why::PhaseContinuous,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:480-484 - the gravity clamp; "
      "a partial FREQUENCY control on a phase-continuous bank"},
-    {Seraphis::kCloudDriftDepthId, kA, Why::PhaseContinuous,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:214 (kMaxDriftCents) - a "
+    {.id = Seraphis::kCloudDriftDepthId, .cls = kA, .why = Why::PhaseContinuous,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:214 (kMaxDriftCents) - a "
      "partial FREQUENCY control on a phase-continuous bank"},
-    {Seraphis::kCloudDriftSmoothnessId, kA, Why::CoefficientOnly,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:511-516 - setDriftSmoothness "
+    {.id = Seraphis::kCloudDriftSmoothnessId, .cls = kA, .why = Why::CoefficientOnly,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:511-516 - setDriftSmoothness "
      "rewrites the detune AR(1) coefficients only and leaves the walk value "
      "untouched"},
-    {Seraphis::kCloudStereoSpreadId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - the per-partial pan "
+    {.id = Seraphis::kCloudStereoSpreadId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:164 - the per-partial pan "
      "gains ride the same kernel-amplitude smoother"},
-    {Seraphis::kCloudAttackId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - an envelope TIME; "
+    {.id = Seraphis::kCloudAttackId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - an envelope TIME; "
      "\"no stage transition steps the value\", the envelope continues from where "
      "it stands"},
-    {Seraphis::kCloudDecayId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - an envelope TIME; "
+    {.id = Seraphis::kCloudDecayId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - an envelope TIME; "
      "the envelope value continues from where it stands"},
-    {Seraphis::kCloudEnvOffsetSpreadId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - a per-partial "
+    {.id = Seraphis::kCloudEnvOffsetSpreadId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/harmonic_cloud.h:1605-1616 - a per-partial "
      "envelope-offset SPREAD, i.e. a time; the envelope value is never re-written"},
 
     // --- Spectral Morph (400-407); 408-412 are the EXEMPT CFG IDs ------------
-    {Seraphis::kMorphEntropyId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:133 "
+    {.id = Seraphis::kMorphEntropyId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:133 "
      "(kMaxAmpDeltaPerChunk = 0.025f) + :174-187 - the entropy amp/cents smoothers "
      "and the per-chunk amplitude bound"},
-    {Seraphis::kMorphBloomId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:133 + :174-187 - the "
+    {.id = Seraphis::kMorphBloomId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:133 + :174-187 - the "
      "same per-chunk amplitude bound covers the bloom fraction"},
-    {Seraphis::kMorphPositionId, kA, Why::Ramp,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:701-725 - advanceTravel "
+    {.id = Seraphis::kMorphPositionId, .cls = kA, .why = Why::Ramp,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:701-725 - advanceTravel "
      "slew-limits the position by travelRate_ * (numStates_ - 1) * dt"},
-    {Seraphis::kMorphTravelModeId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:345 (setTravelMode) - "
+    {.id = Seraphis::kMorphTravelModeId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:345 (setTravelMode) - "
      "rate-domain; no value step"},
-    {Seraphis::kMorphTravelRateId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:358 (setTravelRate) - "
+    {.id = Seraphis::kMorphTravelRateId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:358 (setTravelRate) - "
      "rate-domain; no value step"},
-    {Seraphis::kMorphSyncId, kA, Why::Structural,
-     "processor-local: it only re-derives ID 404's pushed rate - "
+    {.id = Seraphis::kMorphSyncId, .cls = kA, .why = Why::Structural,
+     .citation="processor-local: it only re-derives ID 404's pushed rate - "
      "plugins/seraphis/src/processor/processor.cpp:1528 "
      "(Processor::updateSyncedTravelRate)"},
-    {Seraphis::kMorphSyncNoteId, kA, Why::Structural,
-     "processor-local: it only re-derives ID 404's pushed rate - "
+    {.id = Seraphis::kMorphSyncNoteId, .cls = kA, .why = Why::Structural,
+     .citation="processor-local: it only re-derives ID 404's pushed rate - "
      "plugins/seraphis/src/processor/processor.cpp:1528 "
      "(Processor::updateSyncedTravelRate)"},
-    {Seraphis::kMorphWaypointIntervalId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/spectral_morph_engine.h:385 "
+    {.id = Seraphis::kMorphWaypointIntervalId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/spectral_morph_engine.h:385 "
      "(setWaypointInterval) - rate-domain; the spline's existing waypoints are not "
      "re-drawn"},
 
     // --- Life Modulators (600-604) -------------------------------------------
-    {Seraphis::kLifeSpatialDepthId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:378-379 - the orbit output "
+    {.id = Seraphis::kLifeSpatialDepthId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:378-379 - the orbit output "
      "reaches the audio path ONLY through gainLSm_/gainRSm_, configured at "
      "kSpatialSmoothMs = 20 ms (:160) and advanced per OUTPUT SAMPLE (:1133-1134)"},
-    {Seraphis::kLifeSpatialRateId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
+    {.id = Seraphis::kLifeSpatialRateId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
      "gainLSm_/gainRSm_ path"},
-    {Seraphis::kLifeSpatialCouplingId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
+    {.id = Seraphis::kLifeSpatialCouplingId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
      "gainLSm_/gainRSm_ path"},
-    {Seraphis::kLifeSpatialGrowthId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
+    {.id = Seraphis::kLifeSpatialGrowthId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:378-379, :1124-1134 - same "
      "gainLSm_/gainRSm_ path"},
-    {Seraphis::kLifeVoiceWidthId, kA, Why::Smoother,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:1130 (ms_.setWidth(widthPct_)) "
+    {.id = Seraphis::kLifeVoiceWidthId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:1130 (ms_.setWidth(widthPct_)) "
      "-> dsp/include/krate/dsp/processors/midside_processor.h:135 "
      "(widthSmoother_.setTarget) + :188 (advanced per sample)"},
 
     // --- Voice envelope (700-704) --------------------------------------------
-    {Seraphis::kEnvModeId, kA, Why::Structural,
-     "dsp/include/krate/dsp/systems/seraphis_voice.h:567-578 - setEnvelopeMode "
+    {.id = Seraphis::kEnvModeId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/systems/seraphis_voice.h:567-578 - setEnvelopeMode "
      "rewrites stage TIMES and preserves the shadow; it never re-writes the "
      "envelope value"},
-    {Seraphis::kEnvGrowthDurationId, kA, Why::Structural,
-     "dsp/include/krate/dsp/processors/growth_envelope.h:145 (setDuration) - a "
+    {.id = Seraphis::kEnvGrowthDurationId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/processors/growth_envelope.h:145 (setDuration) - a "
      "duration; the rise continues from where it stands"},
-    {Seraphis::kEnvStage0MsId, kA, Why::Structural,
-     "dsp/include/krate/dsp/processors/multi_stage_envelope.h:150 (setStageTime) - "
+    {.id = Seraphis::kEnvStage0MsId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/processors/multi_stage_envelope.h:150 (setStageTime) - "
      "a duration; the increment is recomputed and the current value is never "
      "re-written"},
-    {Seraphis::kEnvStage1MsId, kA, Why::Structural,
-     "dsp/include/krate/dsp/processors/multi_stage_envelope.h:150 (setStageTime) - "
+    {.id = Seraphis::kEnvStage1MsId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/processors/multi_stage_envelope.h:150 (setStageTime) - "
      "a duration; the current value is never re-written"},
-    {Seraphis::kEnvReleaseMsId, kA, Why::Structural,
-     "dsp/include/krate/dsp/processors/multi_stage_envelope.h:206 (setReleaseTime) "
+    {.id = Seraphis::kEnvReleaseMsId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/processors/multi_stage_envelope.h:206 (setReleaseTime) "
      "- a duration; the current value is never re-written"},
 
     // --- Continuous Body (800-812) -------------------------------------------
-    {Seraphis::kBodyMaterialId, kA, Why::Ramp,
-     "dsp/include/krate/dsp/systems/continuous_body.h:1122-1157 - setMaterial "
+    {.id = Seraphis::kBodyMaterialId, .cls = kA, .why = Why::Ramp,
+     .citation="dsp/include/krate/dsp/systems/continuous_body.h:1122-1157 - setMaterial "
      "self-guards on m == material_ and CROSSFADES"},
-    {Seraphis::kBodyResonanceId, kB, Why::Smoother,
-     "resonance_ is stored RAW (dsp/include/krate/dsp/systems/continuous_body.h:"
+    {.id = Seraphis::kBodyResonanceId, .cls = kB, .why = Why::Smoother,
+     .citation="resonance_ is stored RAW (dsp/include/krate/dsp/systems/continuous_body.h:"
      "1161-1168, member :4262) and read directly at the control step - it is absent "
      "from the smoother list at :4276-4286. Processor-side: resonanceSm_ at "
      "kParamSmoothMs, the ONE class-(b) VP row. THE SMOOTHER IS RETAINED BUT IS "
@@ -358,15 +379,15 @@ constexpr ContinuityRow kContinuityMechanism[] = {
      "and the one gain path (engineDriveFor -> slot.driveLog10) rides the 50 ms "
      "kDriveSmoothMs smoother. MEASURED on this render: 1.044 x smoothed and "
      "1.045 x with FR-059a's probe SNAPPING it - which is why positive control "
-     "(b) is taken on ID 1215, not on this row", kBodySmoothMs},
-    {Seraphis::kBodyDampingId, kB, Why::Smoother,
-     "damping_ is stored RAW (dsp/include/krate/dsp/systems/continuous_body.h:"
+     "(b) is taken on ID 1215, not on this row", .smoothMs=kBodySmoothMs},
+    {.id = Seraphis::kBodyDampingId, .cls = kB, .why = Why::Smoother,
+     .citation="damping_ is stored RAW (dsp/include/krate/dsp/systems/continuous_body.h:"
      "1170-1177, member :4263) and is likewise absent from :4276-4286. MB-routed, "
      "so the settling push is setTargetBase. Processor-side: bodyDampingSm_ (also "
-     "measured flat at 1.167 x both smoothed and snapped)", kBodySmoothMs},
-    {Seraphis::kBodyKeyTrackingId, kA, Why::Smoother, kBodySmootherCitation},
-    {Seraphis::kBodyDriveId, kA, Why::Smoother,
-     "TWO consumers, both cited. (i) engineDriveFor() -> slot.driveLog10.setTarget, "
+     "measured flat at 1.167 x both smoothed and snapped)", .smoothMs=kBodySmoothMs},
+    {.id = Seraphis::kBodyKeyTrackingId, .cls = kA, .why = Why::Smoother, .citation = kBodySmootherCitation},
+    {.id = Seraphis::kBodyDriveId, .cls = kA, .why = Why::Smoother,
+     .citation="TWO consumers, both cited. (i) engineDriveFor() -> slot.driveLog10.setTarget, "
      "the 50 ms kDriveSmoothMs log-domain smoother "
      "(dsp/include/krate/dsp/systems/continuous_body.h:169, :1740). (ii) "
      "cloudDriveGain() (:3297) = rmsGain_ * userDrive_, UNSMOOTHED, applied per "
@@ -374,85 +395,85 @@ constexpr ContinuityRow kContinuityMechanism[] = {
      "EXACTLY 0 while no bypass is engaged (:3406-3411, :3459-3461), i.e. at ID "
      "812's registered default. Consumer (ii) is what the kBodyResonatorBypassId = "
      "on edge combination measures"},
-    {Seraphis::kBodyMixId, kA, Why::Smoother, kBodySmootherCitation},
-    {Seraphis::kBodyCloudMixId, kA, Why::Smoother, kBodySmootherCitation},
-    {Seraphis::kBodyCloudDecayId, kA, Why::Smoother,
-     "the derived feedback gain rides fbLSmoother_/fbRSmoother_ "
+    {.id = Seraphis::kBodyMixId, .cls = kA, .why = Why::Smoother, .citation = kBodySmootherCitation},
+    {.id = Seraphis::kBodyCloudMixId, .cls = kA, .why = Why::Smoother, .citation = kBodySmootherCitation},
+    {.id = Seraphis::kBodyCloudDecayId, .cls = kA, .why = Why::Smoother,
+     .citation="the derived feedback gain rides fbLSmoother_/fbRSmoother_ "
      "(dsp/include/krate/dsp/systems/continuous_body.h:4285-4286, targets "
      ":1806-1807); setCloudDecaySec is :1230"},
-    {Seraphis::kBodyCloudSizeId, kA, Why::Smoother, kBodySmootherCitation},
-    {Seraphis::kBodyCloudDampingId, kA, Why::Smoother,
-     "cloudDampLog2Smoother_ (dsp/include/krate/dsp/systems/continuous_body.h:4282, "
+    {.id = Seraphis::kBodyCloudSizeId, .cls = kA, .why = Why::Smoother, .citation = kBodySmootherCitation},
+    {.id = Seraphis::kBodyCloudDampingId, .cls = kA, .why = Why::Smoother,
+     .citation="cloudDampLog2Smoother_ (dsp/include/krate/dsp/systems/continuous_body.h:4282, "
      "target :1815); setCloudDamping is :1254"},
-    {Seraphis::kBodyWidthId, kA, Why::Smoother, kBodySmootherCitation},
-    {Seraphis::kBodyInputAgcId, kA, Why::Smoother,
-     "\"Absorbed by the drive smoother, so toggling is clickless\" "
+    {.id = Seraphis::kBodyWidthId, .cls = kA, .why = Why::Smoother, .citation = kBodySmootherCitation},
+    {.id = Seraphis::kBodyInputAgcId, .cls = kA, .why = Why::Smoother,
+     .citation="\"Absorbed by the drive smoother, so toggling is clickless\" "
      "(dsp/include/krate/dsp/systems/continuous_body.h:1274-1276) - THAT CITATION "
      "COVERS THE ENGINE PATH ONLY. agcEnabled_ selects rmsGain_ (member :4291), "
      "which feeds the same two consumers as ID 804: the driveLog10 smoother AND the "
      "unsmoothed cloudDriveGain() (:3297). Measured under the "
      "kBodyResonatorBypassId = on edge combination for that reason"},
-    {Seraphis::kBodyResonatorBypassId, kA, Why::Ramp,
-     "dsp/include/krate/dsp/systems/continuous_body.h:1300-1322 - its own 10 ms "
+    {.id = Seraphis::kBodyResonatorBypassId, .cls = kA, .why = Why::Ramp,
+     .citation="dsp/include/krate/dsp/systems/continuous_body.h:1300-1322 - its own 10 ms "
      "equal-power ramp at the control step, plus the documented un-bypass "
      "waveguide re-tune"},
 
     // --- Granular Atmosphere (1000-1016) -------------------------------------
-    {Seraphis::kAtmosLevelId, kA, Why::Smoother,
-     "levelSmoother_ - dsp/include/krate/dsp/systems/atmosphere_engine.h:509 "
+    {.id = Seraphis::kAtmosLevelId, .cls = kA, .why = Why::Smoother,
+     .citation="levelSmoother_ - dsp/include/krate/dsp/systems/atmosphere_engine.h:509 "
      "(configure), :948 (target), :2233 (advanced per sample)"},
-    {Seraphis::kAtmosBlurId, kA, Why::Smoother,
-     "blurSmoother_ - dsp/include/krate/dsp/systems/atmosphere_engine.h:510 "
+    {.id = Seraphis::kAtmosBlurId, .cls = kA, .why = Why::Smoother,
+     .citation="blurSmoother_ - dsp/include/krate/dsp/systems/atmosphere_engine.h:510 "
      "(configure), :876 (target), :2045-2046 (advanced once per STFT hop)"},
-    {Seraphis::kAtmosDensityId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosGrainSecondsId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosDriftDepthId, kA, Why::PhaseContinuous,
-     "driftLanes_.depth is live over the whole bank "
+    {.id = Seraphis::kAtmosDensityId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosGrainSecondsId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosDriftDepthId, .cls = kA, .why = Why::PhaseContinuous,
+     .citation="driftLanes_.depth is live over the whole bank "
      "(dsp/include/krate/dsp/systems/atmosphere_engine.h:838, :1338, :1378) but it "
      "scales a PITCH; the grain oscillators are phase-continuous"},
-    {Seraphis::kAtmosPanSpreadId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosDecorrelationId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosFreezeMixId, kA, Why::Ramp,
-     "freezeMixRamp_.setTarget(...), a LinearRamp - "
+    {.id = Seraphis::kAtmosPanSpreadId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosDecorrelationId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosFreezeMixId, .cls = kA, .why = Why::Ramp,
+     .citation="freezeMixRamp_.setTarget(...), a LinearRamp - "
      "dsp/include/krate/dsp/systems/atmosphere_engine.h:884"},
-    {Seraphis::kAtmosFreezeId, kA, Why::Ramp,
-     "engine-level latch; the release path is a one-hop fade arm - "
+    {.id = Seraphis::kAtmosFreezeId, .cls = kA, .why = Why::Ramp,
+     .citation="engine-level latch; the release path is a one-hop fade arm - "
      "dsp/include/krate/dsp/systems/seraphis_engine.h:632-643"},
-    {Seraphis::kAtmosDriftSmoothnessId, kA, Why::CoefficientOnly,
-     "dsp/include/krate/dsp/systems/atmosphere_engine.h:844-847 - "
+    {.id = Seraphis::kAtmosDriftSmoothnessId, .cls = kA, .why = Why::CoefficientOnly,
+     .citation="dsp/include/krate/dsp/systems/atmosphere_engine.h:844-847 - "
      "updateDriftCoefficients() only; the walk value is untouched"},
-    {Seraphis::kAtmosDriftRangeId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosJitterId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosPositionId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosPositionSpreadId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosPitchId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosPitchSpreadId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
-    {Seraphis::kAtmosGrainEnvelopeId, kA, Why::SnapshotAtBirth, kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosDriftRangeId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosJitterId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosPositionId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosPositionSpreadId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosPitchId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosPitchSpreadId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
+    {.id = Seraphis::kAtmosGrainEnvelopeId, .cls = kA, .why = Why::SnapshotAtBirth, .citation = kAtmosBirthCitation},
 
     // --- Aether Space (1200-1217) --------------------------------------------
-    {Seraphis::kAetherMixId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherSizeId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherDensityId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherDecayId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherFreezeId, kA, Why::Ramp,
-     "dsp/include/krate/dsp/effects/aether_reverb.h:2230-2236 - setFreeze is a "
+    {.id = Seraphis::kAetherMixId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherSizeId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherDensityId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherDecayId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherFreezeId, .cls = kA, .why = Why::Ramp,
+     .citation="dsp/include/krate/dsp/effects/aether_reverb.h:2230-2236 - setFreeze is a "
      "SELF-GUARDING latch onto the kFreezeLatchMs = 50 ms freezeRamp_ (:1388, "
      ":1928). It does NOT call applyControl"},
-    {Seraphis::kAetherDimensionalityId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherDampingId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherPreDelayId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherModDepthId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherModSmoothnessId, kA, Why::CoefficientOnly,
-     "dsp/include/krate/dsp/effects/aether_reverb.h:2268-2273 - forwards to "
+    {.id = Seraphis::kAetherDimensionalityId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherDampingId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherPreDelayId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherModDepthId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherModSmoothnessId, .cls = kA, .why = Why::CoefficientOnly,
+     .citation="dsp/include/krate/dsp/effects/aether_reverb.h:2268-2273 - forwards to "
      "BrownianDrift::setSmoothness on 8 channels; it rewrites tau and leaves the "
      "walk value untouched"},
-    {Seraphis::kAetherShimmerOctaveId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherShimmerFifthId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherBloomSendId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherBloomDecayId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherSpectralDiffusionId, kA, Why::Smoother, kAetherApplyControlCitation},
-    {Seraphis::kAetherSizeBreathDepthId, kB, Why::Smoother,
-     "sizeBreathDepth_ is a DIRECT unsmoothed member store "
+    {.id = Seraphis::kAetherShimmerOctaveId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherShimmerFifthId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherBloomSendId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherBloomDecayId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherSpectralDiffusionId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+    {.id = Seraphis::kAetherSizeBreathDepthId, .cls = kB, .why = Why::Smoother,
+     .citation="sizeBreathDepth_ is a DIRECT unsmoothed member store "
      "(dsp/include/krate/dsp/effects/aether_reverb.h:2318-2322) scaling a live "
      "[-1,+1] modulator added to Size BEFORE the S(v) mapping - a depth step is a "
      "delay-length step. MB-routed. Processor-side: breathDepthSm_ at "
@@ -460,23 +481,88 @@ constexpr ContinuityRow kContinuityMechanism[] = {
      "component's own smoothing time for the quantity this depth modulates. THE "
      "ONE ROW SC-005 MEASURED A SURVIVING STEP ON: 1.817 x at 20 ms, 1.126 x at "
      "300 ms, and identical at 500 ms - the knee, not a fitted number. It is "
-     "therefore also positive control (b)'s subject", kDepthSmoothMs},
-    {Seraphis::kAetherTideDepthId, kB, Why::Smoother,
-     "tideDepth_ is a DIRECT unsmoothed member store "
+     "therefore also positive control (b)'s subject", .smoothMs=kDepthSmoothMs},
+    {.id = Seraphis::kAetherTideDepthId, .cls = kB, .why = Why::Smoother,
+     .citation="tideDepth_ is a DIRECT unsmoothed member store "
      "(dsp/include/krate/dsp/effects/aether_reverb.h:2326-2330) scaling a live "
      "[-1,+1] modulator added to Dimensionality before the [0,1] clamp. MB-routed. "
      "Processor-side: tideDepthSm_, on kAetherDepthSmoothMs with its sibling "
      "1215 (Dimensionality is a coefficient, not a read length, so this row "
-     "measures 1.091 x at every time constant tried)", kDepthSmoothMs},
-    {Seraphis::kAetherWidthId, kA, Why::Smoother, kAetherApplyControlCitation},
+     "measures 1.091 x at every time constant tried)", .smoothMs=kDepthSmoothMs},
+    {.id = Seraphis::kAetherWidthId, .cls = kA, .why = Why::Smoother, .citation = kAetherApplyControlCitation},
+
+    // --- Integrated Effects (1400-1443) - Phase 10, spec FR-038b -------------
+    // 13 class (a) + 3 class (b). NO effects ID is exempt: the exemption exists
+    // for kSeedId and the five CFG IDs, whose bound is unsatisfiable by
+    // construction, and no Phase 10 ID is in that position.
+    {.id = Seraphis::kFxSaturationId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/systems/seraphis_engine.h:670-676 "
+     "(setOutputSaturation) forwards to TapeSaturator::setSaturation "
+     "(dsp/include/krate/dsp/processors/tape_saturator.h:248-253), whose "
+     "post-prepare branch targets saturationSmoother_ rather than snapping. "
+     "That smoother is configured at kDefaultSmoothingMs = 5 ms (:88, :160) and "
+     "read per OUTPUT SAMPLE at :355. Same mechanism as ID 2, which shares the "
+     "one writer FR-021/D-2 rules the saturation amount has"},
+    {.id = Seraphis::kFxDelayMixId, .cls = kB, .why = Why::Smoother, .citation = kFxPluginOwnedCitation, .smoothMs = kBodySmoothMs},
+    {.id = Seraphis::kFxDelayTimeId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:426-428 (setBaseDelayMs -> "
+     "baseDelaySmoother_.setTarget at :427), read once per spectral frame at "
+     ":646"},
+    {.id = Seraphis::kFxDelaySpreadId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:433-435 (setSpreadMs -> "
+     "spreadSmoother_.setTarget at :434), read at :647"},
+    {.id = Seraphis::kFxDelaySpreadDirectionId, .cls = kA, .why = Why::Structural,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:439-441 - "
+     "setSpreadDirection is a PLAIN ASSIGNMENT and the enum is read ONLY inside "
+     "calculateBinDelayMs' switch (:587-597), so the change re-maps per-bin "
+     "delay OFFSETS; continuity comes from the interpolated per-bin reads and "
+     "the FFT overlap-add. NO SMOOTHER EXISTS AND NONE IS CITED"},
+    {.id = Seraphis::kFxDelayFeedbackId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:461-463 (setFeedback -> "
+     "feedbackSmoother_.setTarget at :462), read at :648"},
+    {.id = Seraphis::kFxDelayTiltId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:469-471 (setFeedbackTilt "
+     "-> tiltSmoother_.setTarget at :470), read at :649"},
+    {.id = Seraphis::kFxDelayDiffusionId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:490-492 (setDiffusion -> "
+     "diffusionSmoother_.setTarget at :491), read at :650"},
+    {.id = Seraphis::kFxDelayWidthId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:513-515 (setStereoWidth -> "
+     "stereoWidthSmoother_.setTarget at :514)"},
+    {.id = Seraphis::kFxDelaySyncId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:524-527 - setTimeMode is a "
+     "plain assignment, but the mode is consumed inside process(), which pushes "
+     "the synced time through the SAME baseDelaySmoother_.setTarget(syncedMs) "
+     "(:322-336) that ID 1411 uses, read at :646"},
+    {.id = Seraphis::kFxDelaySyncNoteId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:532-535 - setNoteValue is "
+     "a plain assignment; same path as 1418 (:330, :336, :646)"},
+    {.id = Seraphis::kFxSpectralFreezeId, .cls = kA, .why = Why::Ramp,
+     .citation="dsp/include/krate/dsp/effects/spectral_delay.h:479-481 - "
+     "setFreezeEnabled is a plain assignment, but engagement CROSSFADES over "
+     "kFreezeCrossfadeTimeMs = 75 ms (:906); the per-frame increment is derived "
+     "at :210-212 and applied at :692-696. Smoother is the WRONG evidence here "
+     "- there is no OnePoleSmoother on this path"},
+    {.id = Seraphis::kFxWidthId, .cls = kA, .why = Why::Smoother,
+     .citation="dsp/include/krate/dsp/processors/midside_processor.h:133-136 (setWidth -> "
+     "widthSmoother_.setTarget at :135), advanced per SAMPLE inside process "
+     "(:183-188). FR-010a: the smoother does not advance while the wander stage "
+     "is skipped, which is why the skip itself is a stage-level decision and not "
+     "a parameter one"},
+    {.id = Seraphis::kFxWanderDepthId, .cls = kB, .why = Why::Smoother, .citation = kFxPluginOwnedCitation, .smoothMs = kBodySmoothMs},
+    {.id = Seraphis::kFxWanderRateId, .cls = kA, .why = Why::CoefficientOnly,
+     .citation="dsp/include/krate/dsp/processors/brownian_drift.h:152-155 - "
+     "BrownianDrift::setSmoothness clamps and calls updateCoefficients(); it "
+     "retunes the walk's correlation time and never steps the walk's output"},
+    {.id = Seraphis::kFxAzimuthDepthId, .cls = kB, .why = Why::Smoother, .citation = kFxPluginOwnedCitation, .smoothMs = kBodySmoothMs},
 };
 
 /// The row count is an ASSERTION, not a claim in prose. An earlier revision of
 /// the plan said "85 rows" over a table that enumerated 83 - IDs 1 and 2 had no
 /// row, no class and no evidence, and ID 1 is the most plausible discontinuity
 /// in the set.
-static_assert(std::size(kContinuityMechanism) == 85,
-              "SC-005: 91 registered, less kSeedId and the five CFG IDs");
+static_assert(std::size(kContinuityMechanism) == 101,
+              "SC-005: 107 registered, less kSeedId and the five CFG IDs");
 
 /// Exempt from clauses 1-3; clause 4 still applies to all six.
 ///  - kSeedId: setSeed is documented configuration-time on BOTH consumers and
@@ -490,16 +576,20 @@ constexpr ParamID kExemptIds[] = {
     Seraphis::kMorphState1Id, Seraphis::kMorphState2Id,     Seraphis::kMorphState3Id,
 };
 
-/// Plan §3.5.3: "Class (b) is exactly nine IDs."
+/// Phase 9 plan §3.5.3: "Class (b) is exactly nine IDs." Phase 10's FR-038b
+/// clause 2 adds three more - 1410, 1441, 1443, the plugin-owned quantities
+/// with no component smoother in either direction.
 constexpr ParamID kClassBIds[] = {
     Seraphis::kMacroDreamId,        Seraphis::kMacroBloomId,
     Seraphis::kMacroDissolveId,     Seraphis::kMacroGravityId,
     Seraphis::kMacroEntropyId,      Seraphis::kBodyResonanceId,
     Seraphis::kBodyDampingId,       Seraphis::kAetherSizeBreathDepthId,
-    Seraphis::kAetherTideDepthId,
+    Seraphis::kAetherTideDepthId,   Seraphis::kFxDelayMixId,
+    Seraphis::kFxWanderDepthId,     Seraphis::kFxAzimuthDepthId,
 };
-static_assert(std::size(kClassBIds) == 9,
-              "plan 3.5.3: class (b) is EXACTLY nine IDs, all of plain span D = 1.0");
+static_assert(std::size(kClassBIds) == 12,
+              "plan 3.5.3's nine, of plain span D = 1.0, plus FR-038b clause 2's "
+              "three: kFxDelayMixId, kFxWanderDepthId, kFxAzimuthDepthId");
 
 // =============================================================================
 // Render geometry (see the banner)
@@ -548,12 +638,7 @@ constexpr Steinberg::int16 kTestNote = 60;  // C4, held for the whole render
 }
 
 [[nodiscard]] bool allFinite(const std::vector<float>& x) noexcept {
-    for (const float v : x) {
-        if (!isFiniteBits(v)) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(x, [](float v) { return isFiniteBits(v); });
 }
 
 /// max |x[i] - x[i-1]| over [first, first + count), in double so the statistic
@@ -566,9 +651,7 @@ constexpr Steinberg::int16 kTestNote = 60;  // C4, held for the whole render
     for (std::size_t i = begin; i < end; ++i) {
         const double d = static_cast<double>(x[i]) - static_cast<double>(x[i - 1u]);
         const double a = (d < 0.0) ? -d : d;
-        if (a > worst) {
-            worst = a;
-        }
+        worst = std::max(a, worst);
     }
     return worst;
 }
@@ -655,7 +738,7 @@ struct Stats {
 
         const double tl = maxPerSampleDelta(r.left, t0, kWindowSamples);
         const double tr = maxPerSampleDelta(r.right, t0, kWindowSamples);
-        s.maxTest = std::max(s.maxTest, std::max(tl, tr));
+        s.maxTest = std::max({s.maxTest, tl, tr});
 
         const double ql = maxPerSampleDelta(r.left, q0, kWindowSamples);
         const double qr = maxPerSampleDelta(r.right, q0, kWindowSamples);
@@ -679,7 +762,7 @@ void checkContinuity(const Render& r, const std::string& label, bool inScope) {
     REQUIRE(r.left.size() == kTotalSamples);
     REQUIRE(r.right.size() == kTotalSamples);
 
-    // Clause 4 - ALL 91 IDs, no exemptions.
+    // Clause 4 - ALL 107 IDs, no exemptions.
     CHECK(allFinite(r.left));
     CHECK(allFinite(r.right));
 
@@ -709,7 +792,7 @@ TEST_CASE("Seraphis_ContinuityMechanism_CoversEveryInScopeId",
 
     std::set<ParamID> registered;
     const int32 count = controller.getParameterCount();
-    REQUIRE(count == 91);
+    REQUIRE(count == 107);
     for (int32 i = 0; i < count; ++i) {
         Steinberg::Vst::ParameterInfo info{};
         REQUIRE(controller.getParameterInfo(i, info) == Steinberg::kResultOk);
@@ -750,7 +833,7 @@ TEST_CASE("Seraphis_ContinuityMechanism_CoversEveryInScopeId",
     }
     CHECK(table == expected);
 
-    // --- class (b) is EXACTLY the nine IDs plan 3.5.3 names ------------------
+    // --- class (b) is EXACTLY the twelve IDs kClassBIds names ----------------
     std::set<ParamID> classB;
     for (const ContinuityRow& row : kContinuityMechanism) {
         if (row.cls == ContinuityRow::Class::ProcessorSmoothed) {
@@ -777,7 +860,8 @@ TEST_CASE("Seraphis_ContinuityMechanism_CoversEveryInScopeId",
     }
     // And the split itself, so a silent collapse back to one constant fails here
     // rather than at the next SC-005 run: the two aether depths and the five
-    // macros carry the LONGER number, the two body coefficients the shorter.
+    // macros carry the LONGER number; the two body coefficients and Phase 10's
+    // three plugin-owned rows (FR-038b clause 2) the shorter.
     CHECK(kDepthSmoothMs > kBodySmoothMs);
     for (const ContinuityRow& row : kContinuityMechanism) {
         if (row.id == Seraphis::kAetherSizeBreathDepthId
@@ -787,7 +871,9 @@ TEST_CASE("Seraphis_ContinuityMechanism_CoversEveryInScopeId",
             INFO("ID " << row.id << " must carry the aether-depth time constant");
             CHECK(row.smoothMs == kDepthSmoothMs);
         }
-        if (row.id == Seraphis::kBodyResonanceId || row.id == Seraphis::kBodyDampingId) {
+        if (row.id == Seraphis::kBodyResonanceId || row.id == Seraphis::kBodyDampingId
+            || row.id == Seraphis::kFxDelayMixId || row.id == Seraphis::kFxWanderDepthId
+            || row.id == Seraphis::kFxAzimuthDepthId) {
             INFO("ID " << row.id << " must carry the body time constant");
             CHECK(row.smoothMs == kBodySmoothMs);
         }
@@ -808,7 +894,7 @@ TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][contin
     Seraphis::Controller controller;
     REQUIRE(controller.initialize(nullptr) == Steinberg::kResultOk);
     const int32 count = controller.getParameterCount();
-    REQUIRE(count == 91);
+    REQUIRE(count == 107);
 
     std::vector<ParamID> registered;
     registered.reserve(static_cast<std::size_t>(count));
@@ -833,7 +919,7 @@ TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][contin
     // because it is what drives the grain STREAM against that grain length.
     {
         const Render r = renderAutomation(Seraphis::kAtmosDensityId,
-                                          {{Seraphis::kAtmosGrainSecondsId, 1.0}}, false);
+                                          {{.id = Seraphis::kAtmosGrainSecondsId, .normalized = 1.0}}, false);
         checkContinuity(r, "edge: kAtmosGrainSecondsId = 30 s, automating 1002", true);
     }
 
@@ -843,7 +929,9 @@ TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][contin
     {
         const Render r = renderAutomation(
             Seraphis::kAetherMixId,
-            {{Seraphis::kAetherDecayId, 1.0}, {Seraphis::kAetherFreezeId, 1.0}}, false);
+            {{.id = Seraphis::kAetherDecayId, .normalized = 1.0},
+             {.id = Seraphis::kAetherFreezeId, .normalized = 1.0}},
+            false);
         checkContinuity(r, "edge: kAetherDecayId = 60 s + freeze on, automating 1200", true);
     }
 
@@ -857,7 +945,7 @@ TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][contin
     // every class-(b) ID, to the same absolute 64-sample grid.
     for (const ParamID id : {Seraphis::kBodyDriveId, Seraphis::kBodyInputAgcId}) {
         const Render r =
-            renderAutomation(id, {{Seraphis::kBodyResonatorBypassId, 1.0}}, false);
+            renderAutomation(id, {{.id = Seraphis::kBodyResonatorBypassId, .normalized = 1.0}}, false);
         checkContinuity(r,
                         "edge: kBodyResonatorBypassId = on, automating "
                             + std::to_string(id),

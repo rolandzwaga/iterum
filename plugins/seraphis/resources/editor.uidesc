@@ -12,11 +12,12 @@
   <fonts>
     <font name="label-font" font-name="Arial" size="11"/>
   </fonts>
-  <!-- FR-100 / SC-015: one <control-tag> per REGISTERED parameter, all 91 of
+  <!-- FR-100 / SC-015: one <control-tag> per REGISTERED parameter, all 107 of
        them, named after the plugin_ids.h enumerator without the k / Id affixes.
-       The eight Phase 8 names are verbatim. Phase 9 adds 83 tags that NO <view>
-       binds - deliberately: the layout is Phase 11's, and a tag without a view
-       is exactly what lets Phase 11 add the view without touching this list. -->
+       The eight Phase 8 names are verbatim. Phase 9 adds 83 tags and Phase 10
+       adds 16 that NO <view> binds - deliberately: the layout is Phase 11's
+       (FR-036), and a tag without a view is exactly what lets Phase 11 add the
+       view without touching this list. -->
   <control-tags>
     <!-- Global (0-99) -->
     <control-tag name="MasterGain"    tag="0"/>
@@ -118,6 +119,23 @@
     <control-tag name="AetherSizeBreathDepth"   tag="1215"/>
     <control-tag name="AetherTideDepth"         tag="1216"/>
     <control-tag name="AetherWidth"             tag="1217"/>
+    <!-- Effects (1400+) -->
+    <control-tag name="FxSaturation"      tag="1400"/>
+    <control-tag name="FxDelayMix"        tag="1410"/>
+    <control-tag name="FxDelayTime"       tag="1411"/>
+    <control-tag name="FxDelaySpread"     tag="1412"/>
+    <control-tag name="FxDelaySpreadDir"  tag="1413"/>
+    <control-tag name="FxDelayFeedback"   tag="1414"/>
+    <control-tag name="FxDelayTilt"       tag="1415"/>
+    <control-tag name="FxDelayDiffusion"  tag="1416"/>
+    <control-tag name="FxDelayWidth"      tag="1417"/>
+    <control-tag name="FxDelaySync"       tag="1418"/>
+    <control-tag name="FxDelaySyncNote"   tag="1419"/>
+    <control-tag name="FxSpectralFreeze"  tag="1430"/>
+    <control-tag name="FxStereoWidth"     tag="1440"/>
+    <control-tag name="FxWanderDepth"     tag="1441"/>
+    <control-tag name="FxWanderRate"      tag="1442"/>
+    <control-tag name="FxAzimuthDepth"    tag="1443"/>
   </control-tags>
   <template name="editor" class="CViewContainer" size="420, 300"
             background-color="bg" background-color-draw-style="filled">

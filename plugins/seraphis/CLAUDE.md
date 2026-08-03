@@ -29,7 +29,7 @@ Auto-loads when working under `plugins/seraphis/`. Root `CLAUDE.md` still applie
   | 800–999 | Continuous Body | 9 — shipped |
   | 1000–1199 | Atmosphere | 9 — shipped |
   | 1200–1399 | Aether | 9 — shipped |
-  | 1400+ | Effects | 10 |
+  | 1400+ | Effects | 10 — shipped |
 
   Pipeline to add one: `plugin_ids.h → parameters/ → processor → controller → resources/editor.uidesc`.
   State version lives in `plugin_ids.h` (`kCurrentStateVersion`), shared by processor and controller with

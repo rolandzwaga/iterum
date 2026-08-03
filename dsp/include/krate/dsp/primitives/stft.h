@@ -324,9 +324,22 @@ public:
     /// @param output Destination buffer
     /// @param numSamples Number of samples to extract
     /// @pre numSamples <= samplesAvailable()
+    /// @pre numSamples <= 2 * fftSize() (the accumulator's physical size)
     /// @note Real-time safe, noexcept
     void pullSamples(float* output, size_t numSamples) noexcept {
-        if (output == nullptr || numSamples > samplesReady_) return;
+        // The capacity term is not redundant with samplesReady_: synthesize()
+        // accumulates every frame at offset 0 and only ever ADDS hopSize to
+        // samplesReady_, so a caller that synthesizes several frames without
+        // pulling between them can drive samplesReady_ past outputBuffer_.size().
+        // Honouring such a pull would read past the end and - via the "zero the
+        // freed portion" fill below - write BEFORE the buffer, i.e. corrupt the
+        // heap. Pull one hop per synthesize (see the class docs) and this is
+        // unreachable; the guard exists so that getting it wrong is inert rather
+        // than undefined.
+        if (output == nullptr || numSamples > samplesReady_
+            || numSamples > outputBuffer_.size()) {
+            return;
+        }
 
         // Copy samples to output
         std::copy(outputBuffer_.begin(),

@@ -5,6 +5,97 @@ All notable changes to Seraphis will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-03
+
+The last stage of the global bus. 0.2.0 exposed the engine; this release puts the four effects the
+roadmap names — spectral freeze, spectral delay, tape-like saturation and stereo wandering — behind the
+voices and the space engine, and **fixes the order they run in** so it is a decision on record rather
+than an accident of where each call landed. Sixteen new parameters, IDs 1400–1443. No DSP algorithm
+changed and no new DSP class was written: every stage is composed from components that already shipped.
+At the defaults the whole stage is bypassed, so a 0.3.0 render sounds exactly like a 0.2.0 one.
+
+### Added
+
+- **A spectral delay, as a parallel send** — Delay time to 2 seconds, per-bin spread up to another
+  2 seconds in three directions (low→high, high→low, centre→out), feedback, a feedback *tilt* that makes
+  highs or lows ring longer than the rest, diffusion, stereo width, and a return mix. It is a **send**,
+  not an inline blend: the bus is tapped, delayed fully wet, and summed back. That is deliberate — the
+  component's own dry/wet blends a current-block dry against a wet that is a full FFT frame late, which
+  would put a comb filter across the whole instrument. Blending outside it avoids that entirely.
+- **The send is block-size invariant** — It runs behind a fixed-size accumulator, so its contribution
+  does not move when the host changes buffer size or when incoming MIDI splits a block. Fed directly, the
+  underlying component lands its output stream a hop earlier or later depending on how many analysis
+  frames happened to be ready, which would be a permanent half-frame offset of the whole effect rather
+  than a start-up transient.
+- **Tempo-synced delay time** — Ten note divisions from 1/64 triplet to 1/8 triplet, defaulting to 1/16.
+  The labels name the periods the delay **actually produces**, which is not what the component's own
+  documentation claimed; the values were read back out of the note-division table rather than copied from
+  the comment.
+- **Spectral freeze** — Captures the spectrum passing through the send at the moment you engage it and
+  holds it, crossfading in over 75 ms with a slow phase drift underneath so it settles into a texture
+  instead of a static resonance. It is a different control from the Aether freeze at ID 1204, and the two
+  are independent.
+- **Stereo wandering** — A mid/side width control from mono to 200 %, plus two independent Brownian
+  drifts that move the width and the stereo azimuth on their own, with a shared rate and separate depths.
+  Both depths default to 0, so the field only moves when you ask it to.
+- **Tape saturation is now a control** — The output saturator has been in the chain since 0.1.0 at a fixed
+  amount; it is now a parameter, defaulting to exactly the value it has always run at. Only the *amount*
+  is exposed. Drive stays a compile-time 0 dB, which is what keeps the "gentle ceiling, not distortion"
+  property structural rather than a matter of where you leave the knob.
+- **The chain order is on record** — voices → Aether → master gain → spectral-delay send → stereo
+  wandering → tape saturator → true-peak limiter → voice-bloom lifecycle. Every Phase 10 stage that
+  changes level lands **before** the output stage, never after it: a multiply behind the limiter makes the
+  ceiling unsatisfiable by construction. The order is asserted by a test, not by this paragraph.
+- **The delay is reproducible** — The spectral delay seeds its randomness from the global seed control
+  rather than from its own address, so the same seed and the same notes give the same render. As prepared,
+  the component seeds itself from a pointer value, which is different on every run.
+
+### Changed
+
+- **Project state is version 3** — A version-1 or version-2 stream is a strict byte prefix of a
+  version-3 one, so **projects and presets saved with 0.1.0 or 0.2.0 load unchanged**; the sixteen
+  effects parameters come back at their registered defaults, which is the bypassed configuration.
+- **Feedback is pre-compensated against the tilt** — The registered feedback maximum is 0.95, but the
+  underlying per-bin loop multiplies feedback by a tilt factor that reaches 2.0, and clamps the product at
+  1.2 rather than at the registered range. Left alone, feedback 0.95 with full positive tilt gives 243 of
+  513 bins a loop gain above 1 and those bins sustain forever. The value pushed to the component is
+  compensated so the worst per-bin gain is the registered feedback, at every tilt setting.
+- **Reported latency is unchanged at 1024 samples** — The send's own FFT latency is not added to it. The
+  send *is* a delay, so its ~21 ms is absorbed into its delay time; reporting it would charge every user
+  21 ms of latency for an effect most of them have switched off, and reporting it conditionally would mean
+  the plugin changed its latency mid-performance.
+
+### Performance
+
+- **Nothing at the defaults.** When the send is neither active nor draining, the processor does not copy
+  into the accumulator, does not call the spectral delay, and does not touch its buffers; the wander stage
+  is skipped the same way. The effects stage is gated at **≤ 0.10 % of one core** in that state.
+- Fully active — every one of the sixteen at its most expensive setting — the stage is gated at
+  **≤ 2.5 % of one core** at 48 kHz / 512-sample blocks, sized so that the composed everything-on chain
+  still fits under the **25 % at 8 voices** budget the roadmap sets. Engaging the send re-initialises the
+  delay lines; that block is bounded and measured rather than assumed, as is a seed change.
+- All four figures are enforced by the test suite under a single cold measurement protocol, not asserted
+  here.
+
+### Known limitations
+
+- **The effects ship inert.** Delay mix, wander depth and azimuth depth all default to 0 and saturation
+  defaults to the value that was already running, so nothing changes until you move something. This is a
+  deliberate deviation from the roadmap's "nothing is ever static" principle for these sixteen
+  parameters: it is what lets the release prove it changed no existing sound.
+- **The macros do not reach the effects.** Dream, Bloom, Dissolve, Gravity and Entropy move the engine,
+  not this stage. Routing a macro axis into the delay send or the wander is new routing rather than
+  wiring, and it would put a second writer on parameters the host also automates — it belongs with the
+  phase that owns the performance surface (Phase 11), and the shipped patches that use it with Phase 12.
+- The frequency shifter named in the roadmap's reuse inventory does **not** ship. It stays available to a
+  later phase.
+- Tape saturation exposes amount only. Drive is not user-facing and there is no plan for it to be.
+- The editor is still the 0.1.0 placeholder. The sixteen new parameters are host-automatable and carry
+  control tags, but have no on-screen controls — the interface is Phase 11.
+- Spectral states are still chosen from the factory set; per-partial editing is Phase 11.
+- No MPE or per-note expression. It ships in Phase 13.
+- No factory presets ship.
+
 ## [0.2.0] - 2026-08-01
 
 The instrument becomes playable. 0.1.0 shipped the engine behind three global controls and five macros

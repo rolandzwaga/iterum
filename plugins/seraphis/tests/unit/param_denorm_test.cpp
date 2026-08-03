@@ -22,6 +22,8 @@
 // ==============================================================================
 
 #include "controller/controller.h"
+#include "parameters/dropdown_mappings.h"
+#include "parameters/effects_params.h"
 #include "plugin_ids.h"
 #include "processor/processor.h"
 #include "seraphis_test_fixture.h"
@@ -37,8 +39,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace Steinberg;
 using Catch::Approx;
@@ -123,7 +127,7 @@ using StreamPtr = std::unique_ptr<MemoryStream, StreamReleaser>;
 [[nodiscard]] std::string toStdString(Vst::String128 text) {
     char ascii[128] = {};
     UString(text, 128).toAscii(ascii, 128);
-    return std::string(ascii);
+    return {static_cast<const char*>(ascii)};
 }
 
 }  // namespace
@@ -336,5 +340,290 @@ TEST_CASE("Seraphis_ParamDenormRoundTrip", "[seraphis][params]") {
         CHECK(static_cast<int>(std::round(0.75 * 15.0)) == 11);
 
         REQUIRE(controller.terminate() == kResultOk);
+    }
+}
+
+// =============================================================================
+// Phase 10 - the sixteen effects IDs (spec C-6 -> SC-001)
+// =============================================================================
+// This case is the surface gate for the 1400+ band: the registered COUNT, the
+// frozen per-row TYPE and step count, the registered DEFAULTS, the
+// normalized<->plain round trip, and the two dropdown label tables asserted
+// element by element.
+//
+// The label clause is not decoration. `kSyncNoteLabels` (dropdown_mappings.h:135)
+// is an eight-entry table in a DIFFERENT order serving ID 406, and
+// `spectral_delay.h:529-531`'s own doc comment names a mapping the component does
+// not produce (plan D-1), so a permuted or aspirational ID-1419 table is the most
+// likely error in this band and nothing else in the suite would catch it.
+// =============================================================================
+namespace {
+
+enum class FxKind : std::uint8_t { R, L, T };  ///< plugin_ids.h's frozen-type legend (:184-240)
+
+/// One checked-in row per registered effects parameter. `minPlain`/`maxPlain` are
+/// the C-6 plain range the normalized default is derived from; they are pinned
+/// against the pack's own range constants in the self-check below, so a range
+/// constant that moves fails here rather than silently re-scaling a user's patch.
+struct FxRow {
+    Vst::ParamID id;
+    FxKind kind;
+    double minPlain;
+    double maxPlain;
+    double defaultNormalized;
+    int stepCount;
+};
+
+constexpr FxRow kEffectsSurface[16] = {
+    {.id = Seraphis::kFxSaturationId,           .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.15,          .stepCount = 0},
+    {.id = Seraphis::kFxDelayMixId,             .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.0,           .stepCount = 0},
+    {.id = Seraphis::kFxDelayTimeId,            .kind = FxKind::R,  .minPlain = 0.0, .maxPlain = 2000.0,    .defaultNormalized = 0.125,         .stepCount = 0},
+    {.id = Seraphis::kFxDelaySpreadId,          .kind = FxKind::R,  .minPlain = 0.0, .maxPlain = 2000.0,    .defaultNormalized = 0.0,           .stepCount = 0},
+    {.id = Seraphis::kFxDelaySpreadDirectionId, .kind = FxKind::L,  .minPlain = 0.0,    .maxPlain = 2.0,    .defaultNormalized = 0.0,           .stepCount = 2},
+    {.id = Seraphis::kFxDelayFeedbackId,        .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 0.95,   .defaultNormalized = 0.35 / 0.95,   .stepCount = 0},
+    {.id = Seraphis::kFxDelayTiltId,            .kind = FxKind::R, .minPlain = -1.0,    .maxPlain = 1.0,    .defaultNormalized = 0.5,           .stepCount = 0},
+    {.id = Seraphis::kFxDelayDiffusionId,       .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.30,          .stepCount = 0},
+    {.id = Seraphis::kFxDelayWidthId,           .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.50,          .stepCount = 0},
+    {.id = Seraphis::kFxDelaySyncId,            .kind = FxKind::T,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.0,           .stepCount = 1},
+    {.id = Seraphis::kFxDelaySyncNoteId,        .kind = FxKind::L,  .minPlain = 0.0,    .maxPlain = 9.0,    .defaultNormalized = 7.0 / 9.0,     .stepCount = 9},
+    {.id = Seraphis::kFxSpectralFreezeId,       .kind = FxKind::T,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.0,           .stepCount = 1},
+    {.id = Seraphis::kFxWidthId,                .kind = FxKind::R,  .minPlain = 0.0,  .maxPlain = 200.0,    .defaultNormalized = 0.5,           .stepCount = 0},
+    {.id = Seraphis::kFxWanderDepthId,          .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.0,           .stepCount = 0},
+    {.id = Seraphis::kFxWanderRateId,           .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.50,          .stepCount = 0},
+    {.id = Seraphis::kFxAzimuthDepthId,         .kind = FxKind::R,  .minPlain = 0.0,    .maxPlain = 1.0,    .defaultNormalized = 0.0,           .stepCount = 0},
+};
+
+constexpr std::size_t kEffectsRowCount = sizeof(kEffectsSurface) / sizeof(kEffectsSurface[0]);
+static_assert(kEffectsRowCount == 16, "spec C-6 registers exactly 16 effects parameters");
+
+/// The label tables, transcribed HERE as literals rather than read back out of
+/// the header under test. The arrow is a universal-character-name for the same
+/// reason dropdown_mappings.h:238-243 gives: one char16_t code unit on every
+/// compiler, independent of the source file's assumed encoding.
+const char16_t* const kExpectedSpreadDirLabels[3] = {
+    u"Low \u2192 High", u"High \u2192 Low", u"Center \u2192 Out"};
+
+const char16_t* const kExpectedSyncNoteLabels[10] = {
+    u"1/64T", u"1/64", u"1/64D", u"1/32T", u"1/32",
+    u"1/32D", u"1/16T", u"1/16", u"1/16D", u"1/8T"};
+
+/// Widen a VST3 TChar run to std::u16string. A static_cast per code unit rather
+/// than a reinterpret_cast of the pointer, so the helper is correct whether
+/// Steinberg::Vst::TChar resolves to char16_t or to a 16-bit integer type.
+[[nodiscard]] std::u16string toU16(const Vst::TChar* text) {
+    std::u16string out;
+    for (std::size_t i = 0; text[i] != 0; ++i) {
+        out.push_back(static_cast<char16_t>(text[i]));
+    }
+    return out;
+}
+
+/// The normalized value the pack's own constants say a row's default is. Used
+/// ONLY as a consistency self-check against the literal table above - a table
+/// that is merely the formula re-evaluated would assert nothing about either.
+[[nodiscard]] double fxNormalized(double plain, double lo, double hi) {
+    return (plain - lo) / (hi - lo);
+}
+
+}  // namespace
+
+TEST_CASE("Seraphis effects parameters denormalize", "[seraphis][params][effects]") {
+
+    // -------------------------------------------------------------------------
+    // 0. Self-check: the checked-in table agrees with the shipped constants.
+    // -------------------------------------------------------------------------
+    SECTION("The checked-in table agrees with effects_params.h's own constants") {
+        // Ranges (FR-015: each constant is transcribed once, in the pack).
+        CHECK(kEffectsSurface[2].minPlain == Approx(Seraphis::kFxDelayTimeMinMs));
+        CHECK(kEffectsSurface[2].maxPlain == Approx(Seraphis::kFxDelayTimeMaxMs));
+        CHECK(kEffectsSurface[3].minPlain == Approx(Seraphis::kFxDelaySpreadMinMs));
+        CHECK(kEffectsSurface[3].maxPlain == Approx(Seraphis::kFxDelaySpreadMaxMs));
+        CHECK(kEffectsSurface[4].maxPlain ==
+              Approx(static_cast<double>(Seraphis::kSpreadDirectionCount) - 1.0));
+        CHECK(kEffectsSurface[5].maxPlain == Approx(Seraphis::kFxDelayFeedbackMax));
+        CHECK(kEffectsSurface[6].minPlain == Approx(Seraphis::kFxDelayTiltMin));
+        CHECK(kEffectsSurface[6].maxPlain == Approx(Seraphis::kFxDelayTiltMax));
+        CHECK(kEffectsSurface[10].maxPlain ==
+              Approx(static_cast<double>(Seraphis::kFxDelaySyncNoteLabels.size()) - 1.0));
+        CHECK(kEffectsSurface[12].minPlain == Approx(Seraphis::kFxWidthMinPercent));
+        CHECK(kEffectsSurface[12].maxPlain == Approx(Seraphis::kFxWidthMaxPercent));
+
+        // Defaults, recomputed from the pack's constants through each row's range.
+        const double expected[kEffectsRowCount] = {
+            static_cast<double>(Seraphis::kFxSaturationDefault),
+            static_cast<double>(Seraphis::kFxDelayMixDefault),
+            fxNormalized(Seraphis::kFxDelayTimeDefault,
+                         Seraphis::kFxDelayTimeMinMs, Seraphis::kFxDelayTimeMaxMs),
+            fxNormalized(Seraphis::kFxDelaySpreadDefault,
+                         Seraphis::kFxDelaySpreadMinMs, Seraphis::kFxDelaySpreadMaxMs),
+            static_cast<double>(Seraphis::kFxDelaySpreadDirectionDefault) /
+                (static_cast<double>(Seraphis::kSpreadDirectionCount) - 1.0),
+            static_cast<double>(Seraphis::kFxDelayFeedbackDefault) /
+                static_cast<double>(Seraphis::kFxDelayFeedbackMax),
+            fxNormalized(Seraphis::kFxDelayTiltDefault,
+                         Seraphis::kFxDelayTiltMin, Seraphis::kFxDelayTiltMax),
+            static_cast<double>(Seraphis::kFxDelayDiffusionDefault),
+            static_cast<double>(Seraphis::kFxDelayWidthDefault),
+            Seraphis::kFxDelaySyncDefault ? 1.0 : 0.0,
+            static_cast<double>(Seraphis::kFxDelaySyncNoteDefault) /
+                (static_cast<double>(Seraphis::kFxDelaySyncNoteLabels.size()) - 1.0),
+            Seraphis::kFxSpectralFreezeDefault ? 1.0 : 0.0,
+            fxNormalized(Seraphis::kFxWidthDefault,
+                         Seraphis::kFxWidthMinPercent, Seraphis::kFxWidthMaxPercent),
+            static_cast<double>(Seraphis::kFxWanderDepthDefault),
+            static_cast<double>(Seraphis::kFxWanderRateDefault),
+            static_cast<double>(Seraphis::kFxAzimuthDepthDefault),
+        };
+        for (std::size_t i = 0; i < kEffectsRowCount; ++i) {
+            INFO("row " << i << ", id " << kEffectsSurface[i].id);
+            CHECK(kEffectsSurface[i].defaultNormalized ==
+                  Approx(expected[i]).margin(1.0e-6));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 1-2. The surface count, and every row's frozen type / step count / default.
+    // -------------------------------------------------------------------------
+    SECTION("The registered surface is 107 rows and every effects row matches C-6") {
+        Seraphis::Controller controller;
+        REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+        REQUIRE(controller.getParameterCount() == 107);
+
+        for (const FxRow& row : kEffectsSurface) {
+            INFO("id " << row.id);
+            Vst::Parameter* param = controller.getParameterObject(row.id);
+            REQUIRE(param != nullptr);
+
+            const Vst::ParameterInfo& info = param->getInfo();
+            CHECK(info.id == row.id);
+            CHECK(info.stepCount == row.stepCount);
+            CHECK(info.defaultNormalizedValue ==
+                  Approx(row.defaultNormalized).margin(1.0e-6));
+            CHECK((info.flags & Vst::ParameterInfo::kCanAutomate) != 0);
+
+            // FR-048 / plugin_ids.h:184-240 freeze the TYPE per row: only the two
+            // `L` rows are StringListParameters. Swapping a registered VST3
+            // parameter's type at the same ID breaks editor load in hosts that
+            // cache parameter metadata, so it is pinned rather than inferred.
+            auto* list = dynamic_cast<Vst::StringListParameter*>(param);
+            if (row.kind == FxKind::L) {
+                CHECK(list != nullptr);
+            } else {
+                CHECK(list == nullptr);
+            }
+        }
+
+        REQUIRE(controller.terminate() == kResultOk);
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. normalized -> plain -> normalized is the identity.
+    // -------------------------------------------------------------------------
+    // The `R` and `T` rows are plain Vst::Parameters, whose toPlain/toNormalized
+    // ARE the identity (vstparameters.cpp:112-121), so the five-point sweep must
+    // return each point exactly.
+    //
+    // The two `L` rows are StringListParameters and DO quantize: toPlain is
+    // FromNormalized(v, stepCount) == min(stepCount, int32(v * (stepCount + 1)))
+    // (vstparameters.cpp:318-323), a TRUNCATION over stepCount + 1 buckets. The
+    // round trip is therefore an identity exactly at the canonical step values
+    // v = k / stepCount that toNormalized() produces and that a host sends for a
+    // list parameter - and NOT at an arbitrary 0.25, where it would fail a
+    // CORRECT implementation. This is the same distinction the polyphony section
+    // above documents at length; asserting the sweep on a dropdown would pin a
+    // false claim.
+    SECTION("Every effects row round-trips normalized -> plain -> normalized") {
+        Seraphis::Controller controller;
+        REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+        for (const FxRow& row : kEffectsSurface) {
+            Vst::Parameter* param = controller.getParameterObject(row.id);
+            REQUIRE(param != nullptr);
+
+            if (row.kind == FxKind::L) {
+                for (int k = 0; k <= row.stepCount; ++k) {
+                    INFO("id " << row.id << ", step index " << k);
+                    const double n =
+                        static_cast<double>(k) / static_cast<double>(row.stepCount);
+                    CHECK(static_cast<int>(param->toPlain(n)) == k);
+                    CHECK(param->toNormalized(param->toPlain(n)) ==
+                          Approx(n).margin(1.0e-6));
+                }
+            } else {
+                for (const double n : kSweep) {
+                    INFO("id " << row.id << ", normalized " << n);
+                    CHECK(param->toNormalized(param->toPlain(n)) ==
+                          Approx(n).margin(1.0e-6));
+                }
+            }
+        }
+
+        REQUIRE(controller.terminate() == kResultOk);
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Every dropdown index displays a distinct, non-empty string.
+    // -------------------------------------------------------------------------
+    SECTION("Every dropdown index of 1413 and 1419 displays a distinct string") {
+        Seraphis::Controller controller;
+        REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+        const Vst::ParamID dropdownIds[2] = {Seraphis::kFxDelaySpreadDirectionId,
+                                             Seraphis::kFxDelaySyncNoteId};
+        const int entryCounts[2] = {3, 10};
+
+        for (std::size_t d = 0; d < 2u; ++d) {
+            const int steps = entryCounts[d] - 1;
+            std::vector<std::u16string> seen;
+            for (int k = 0; k < entryCounts[d]; ++k) {
+                INFO("id " << dropdownIds[d] << ", index " << k);
+                const double n = static_cast<double>(k) / static_cast<double>(steps);
+
+                Vst::String128 text = {};
+                REQUIRE(controller.getParamStringByValue(dropdownIds[d], n, text) ==
+                        kResultOk);
+
+                const std::u16string shown = toU16(text);
+                CHECK(!shown.empty());
+                CHECK(std::find(seen.begin(), seen.end(), shown) == seen.end());
+
+                // ...and it is the label the registered table holds at that index,
+                // so the displayed string cannot drift from the registered list.
+                const char16_t* const expected =
+                    (d == 0) ? kExpectedSpreadDirLabels[k] : kExpectedSyncNoteLabels[k];
+                CHECK(shown == std::u16string(expected));
+
+                seen.push_back(shown);
+            }
+        }
+
+        REQUIRE(controller.terminate() == kResultOk);
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. The two label tables, element by element, IN ORDER.
+    // -------------------------------------------------------------------------
+    SECTION("The effects label tables are the shipped strings, in order") {
+        REQUIRE(Seraphis::kFxSpreadDirectionLabels.size() == 3u);
+        for (std::size_t i = 0; i < 3u; ++i) {
+            INFO("kFxSpreadDirectionLabels index " << i);
+            CHECK(toU16(Seraphis::kFxSpreadDirectionLabels[i]) ==
+                  std::u16string(kExpectedSpreadDirLabels[i]));
+        }
+
+        REQUIRE(Seraphis::kFxDelaySyncNoteLabels.size() == 10u);
+        for (std::size_t i = 0; i < 10u; ++i) {
+            INFO("kFxDelaySyncNoteLabels index " << i);
+            CHECK(toU16(Seraphis::kFxDelaySyncNoteLabels[i]) ==
+                  std::u16string(kExpectedSyncNoteLabels[i]));
+        }
+
+        // ID 1419's registered default index names "1/16" - the plan D-1 ruling,
+        // pinned here as well as in dropdown_mappings.h's compile-time gate, so a
+        // permuted table cannot quietly move which period the default selects.
+        REQUIRE(Seraphis::kFxDelaySyncNoteDefaultIndex == 7);
+        CHECK(toU16(Seraphis::kFxDelaySyncNoteLabels[static_cast<std::size_t>(
+                  Seraphis::kFxDelaySyncNoteDefaultIndex)]) == std::u16string(u"1/16"));
     }
 }

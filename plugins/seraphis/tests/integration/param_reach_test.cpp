@@ -209,8 +209,9 @@ void pushParams(Fixture& fx, const std::vector<ParamPoint>& points) {
 
 /// Render `blocks` blocks, delivering `points` and (optionally) a note-on on the
 /// FIRST block. Output is appended to fx.capturedL / fx.capturedR.
-void render(Fixture& fx, const std::vector<ParamPoint>& points, int pitch, std::size_t blocks) {
-    fx.renderBlocks(blocks, kBlockSamples,
+void render(Fixture& fx, const std::vector<ParamPoint>& points, int pitch,
+            std::size_t numBlocks) {
+    fx.renderBlocks(numBlocks, kBlockSamples,
                     [&](std::size_t b, Krate::Test::EventList&, SeraphisTest::ParameterChanges& pc) {
                         if (b != 0) {
                             return;
@@ -239,8 +240,8 @@ void render(Fixture& fx, const std::vector<ParamPoint>& points, int pitch, std::
 /// burst - an impulse as far as a reverb whose shortest T60 is 0.5 s is
 /// concerned.
 void renderImpulse(Fixture& fx, const std::vector<ParamPoint>& points, int pitch,
-                   std::size_t blocks, Steinberg::int32 noteOffOffset = 64) {
-    fx.renderBlocks(blocks, kBlockSamples,
+                   std::size_t numBlocks, Steinberg::int32 noteOffOffset = 64) {
+    fx.renderBlocks(numBlocks, kBlockSamples,
                     [&](std::size_t b, Krate::Test::EventList&, SeraphisTest::ParameterChanges& pc) {
                         if (b != 0) {
                             return;
@@ -259,9 +260,9 @@ void renderImpulse(Fixture& fx, const std::vector<ParamPoint>& points, int pitch
 /// and the release all pinned to their 1 ms C-6 floor (spec `:620-622`), so the
 /// voice is silent within ~2 ms of the note-off.
 [[nodiscard]] std::vector<ParamPoint> impulseEnvelopePoints() {
-    return {{Seraphis::kEnvStage0MsId, 0.0},
-            {Seraphis::kEnvStage1MsId, 0.0},
-            {Seraphis::kEnvReleaseMsId, 0.0}};
+    return {{.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+            {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+            {.id = Seraphis::kEnvReleaseMsId, .normalized = 0.0}};
 }
 
 /// `base` followed by `extra` - the AE rows all build "envelope floor + mix +
@@ -278,9 +279,7 @@ void renderImpulse(Fixture& fx, const std::vector<ParamPoint>& points, int pitch
 // =============================================================================
 
 [[nodiscard]] double rms(const std::vector<float>& x, std::size_t from, std::size_t to) {
-    if (to > x.size()) {
-        to = x.size();
-    }
+    to = std::min(to, x.size());
     if (from >= to) {
         return 0.0;
     }
@@ -560,89 +559,89 @@ float readAtmosGrainEnvelope(const Voice& v) {
     using namespace Seraphis;
     return {
         // -- Harmonic Cloud (3) ----------------------------------------------
-        {kCloudDriftSmoothnessId, "206 cloud drift smoothness", 1.0, linPlain(1.0, 0.0, 1.0),
-         readCloudDriftSmoothness},
-        {kCloudDecayId, "209 cloud decay", 1.0, logPlain(1.0, kCloudDecayMin, kCloudDecayMax),
-         readCloudDecay},
-        {kCloudEnvOffsetSpreadId, "210 cloud env offset spread", 1.0, linPlain(1.0, 0.0, 1.0),
-         readCloudEnvOffsetSpread},
+        {.id = kCloudDriftSmoothnessId, .name = "206 cloud drift smoothness", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readCloudDriftSmoothness},
+        {.id = kCloudDecayId, .name = "209 cloud decay", .normalized = 1.0, .expected = logPlain(1.0, kCloudDecayMin, kCloudDecayMax),
+         .read=readCloudDecay},
+        {.id = kCloudEnvOffsetSpreadId, .name = "210 cloud env offset spread", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readCloudEnvOffsetSpread},
 
         // -- Spectral Morph (4) ----------------------------------------------
-        {kMorphBloomId, "401 morph bloom", 1.0, linPlain(1.0, kMorphBloomMin, kMorphBloomMax),
-         readMorphBloom},
-        {kMorphTravelModeId, "403 morph travel mode", dropdownNorm(1, 2), 1.0f,
-         readMorphTravelMode},
-        {kMorphTravelRateId, "404 morph travel rate (sync OFF, its own default)", 1.0,
-         logPlain(1.0, kMorphTravelRateMin, kMorphTravelRateMax), readMorphTravelRate},
-        {kMorphWaypointIntervalId, "407 morph waypoint interval", 1.0,
-         logPlain(1.0, kMorphWaypointMin, kMorphWaypointMax), readMorphWaypoint},
+        {.id = kMorphBloomId, .name = "401 morph bloom", .normalized = 1.0, .expected = linPlain(1.0, kMorphBloomMin, kMorphBloomMax),
+         .read=readMorphBloom},
+        {.id = kMorphTravelModeId, .name = "403 morph travel mode", .normalized = dropdownNorm(1, 2), .expected = 1.0f,
+         .read=readMorphTravelMode},
+        {.id = kMorphTravelRateId, .name = "404 morph travel rate (sync OFF, its own default)", .normalized = 1.0,
+         .expected=logPlain(1.0, kMorphTravelRateMin, kMorphTravelRateMax), .read=readMorphTravelRate},
+        {.id = kMorphWaypointIntervalId, .name = "407 morph waypoint interval", .normalized = 1.0,
+         .expected=logPlain(1.0, kMorphWaypointMin, kMorphWaypointMax), .read=readMorphWaypoint},
 
         // -- Life modulators (3) ---------------------------------------------
-        {kLifeSpatialRateId, "601 spatial rate", 1.0,
-         logPlain(1.0, kLifeSpatialRateMin, kLifeSpatialRateMax), readSpatialRate},
-        {kLifeSpatialCouplingId, "602 spatial coupling", 1.0, linPlain(1.0, 0.0, 1.0),
-         readSpatialCoupling},
-        {kLifeSpatialGrowthId, "603 spatial growth", 1.0,
-         linPlain(1.0, kLifeGrowthMin, kLifeGrowthMax), readSpatialGrowth},
+        {.id = kLifeSpatialRateId, .name = "601 spatial rate", .normalized = 1.0,
+         .expected=logPlain(1.0, kLifeSpatialRateMin, kLifeSpatialRateMax), .read=readSpatialRate},
+        {.id = kLifeSpatialCouplingId, .name = "602 spatial coupling", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readSpatialCoupling},
+        {.id = kLifeSpatialGrowthId, .name = "603 spatial growth", .normalized = 1.0,
+         .expected=linPlain(1.0, kLifeGrowthMin, kLifeGrowthMax), .read=readSpatialGrowth},
 
         // -- Voice envelope (2) ----------------------------------------------
-        {kEnvModeId, "700 envelope mode", dropdownNorm(1, 2), 1.0f, readEnvMode},
-        {kEnvGrowthDurationId, "701 growth duration", 1.0,
-         logPlain(1.0, kEnvGrowthDurationMin, kEnvGrowthDurationMax), readGrowthDuration},
+        {.id = kEnvModeId, .name = "700 envelope mode", .normalized = dropdownNorm(1, 2), .expected = 1.0f, .read = readEnvMode},
+        {.id = kEnvGrowthDurationId, .name = "701 growth duration", .normalized = 1.0,
+         .expected=logPlain(1.0, kEnvGrowthDurationMin, kEnvGrowthDurationMax), .read=readGrowthDuration},
 
         // -- Continuous body (12) --------------------------------------------
-        {kBodyMaterialId, "800 body material", dropdownNorm(4, 5), 4.0f, readBodyMaterial},
+        {.id = kBodyMaterialId, .name = "800 body material", .normalized = dropdownNorm(4, 5), .expected = 4.0f, .read = readBodyMaterial},
         // CLASS (b): 4 blocks, then EXACT (plan §7.4).
-        {kBodyResonanceId, "801 body resonance", 1.0,
-         linPlain(1.0, kBodyResonanceMin, kBodyResonanceMax), readBodyResonance, kClassBBlocks},
-        {kBodyKeyTrackingId, "803 body key tracking", 0.0,
-         linPlain(0.0, kBodyKeyTrackingMin, kBodyKeyTrackingMax), readBodyKeyTracking},
-        {kBodyDriveId, "804 body drive", 1.0, linPlain(1.0, kBodyDriveMin, kBodyDriveMax),
-         readBodyDrive},
-        {kBodyMixId, "805 body mix", 0.0, linPlain(0.0, kBodyMixMin, kBodyMixMax), readBodyMix},
-        {kBodyCloudMixId, "806 body cloud mix", 1.0,
-         linPlain(1.0, kBodyCloudMixMin, kBodyCloudMixMax), readBodyCloudMix},
-        {kBodyCloudDecayId, "807 body cloud decay", 1.0,
-         logPlain(1.0, kBodyCloudDecayMin, kBodyCloudDecayMax), readBodyCloudDecay},
-        {kBodyCloudSizeId, "808 body cloud size", 0.0,
-         linPlain(0.0, kBodyCloudSizeMin, kBodyCloudSizeMax), readBodyCloudSize},
-        {kBodyCloudDampingId, "809 body cloud damping", 1.0,
-         linPlain(1.0, kBodyCloudDampingMin, kBodyCloudDampingMax), readBodyCloudDamping},
-        {kBodyWidthId, "810 body width", 0.0, linPlain(0.0, kBodyWidthMin, kBodyWidthMax),
-         readBodyWidth},
+        {.id = kBodyResonanceId, .name = "801 body resonance", .normalized = 1.0,
+         .expected=linPlain(1.0, kBodyResonanceMin, kBodyResonanceMax), .read=readBodyResonance, .blocks=kClassBBlocks},
+        {.id = kBodyKeyTrackingId, .name = "803 body key tracking", .normalized = 0.0,
+         .expected=linPlain(0.0, kBodyKeyTrackingMin, kBodyKeyTrackingMax), .read=readBodyKeyTracking},
+        {.id = kBodyDriveId, .name = "804 body drive", .normalized = 1.0, .expected = linPlain(1.0, kBodyDriveMin, kBodyDriveMax),
+         .read=readBodyDrive},
+        {.id = kBodyMixId, .name = "805 body mix", .normalized = 0.0, .expected = linPlain(0.0, kBodyMixMin, kBodyMixMax), .read = readBodyMix},
+        {.id = kBodyCloudMixId, .name = "806 body cloud mix", .normalized = 1.0,
+         .expected=linPlain(1.0, kBodyCloudMixMin, kBodyCloudMixMax), .read=readBodyCloudMix},
+        {.id = kBodyCloudDecayId, .name = "807 body cloud decay", .normalized = 1.0,
+         .expected=logPlain(1.0, kBodyCloudDecayMin, kBodyCloudDecayMax), .read=readBodyCloudDecay},
+        {.id = kBodyCloudSizeId, .name = "808 body cloud size", .normalized = 0.0,
+         .expected=linPlain(0.0, kBodyCloudSizeMin, kBodyCloudSizeMax), .read=readBodyCloudSize},
+        {.id = kBodyCloudDampingId, .name = "809 body cloud damping", .normalized = 1.0,
+         .expected=linPlain(1.0, kBodyCloudDampingMin, kBodyCloudDampingMax), .read=readBodyCloudDamping},
+        {.id = kBodyWidthId, .name = "810 body width", .normalized = 0.0, .expected = linPlain(0.0, kBodyWidthMin, kBodyWidthMax),
+         .read=readBodyWidth},
         // Boolean, exact. NO level assertion: FR-070 #12 records that turning the
         // AGC off is a documented level change, not a defect.
-        {kBodyInputAgcId, "811 body input AGC", 0.0, 0.0f, readBodyInputAgc},
+        {.id = kBodyInputAgcId, .name = "811 body input AGC", .normalized = 0.0, .expected = 0.0f, .read = readBodyInputAgc},
         // The accessor returns the REQUESTED state, not the 10 ms ramp position.
-        {kBodyResonatorBypassId, "812 body resonator bypass", 1.0, 1.0f,
-         readBodyResonatorBypass},
+        {.id = kBodyResonatorBypassId, .name = "812 body resonator bypass", .normalized = 1.0, .expected = 1.0f,
+         .read=readBodyResonatorBypass},
 
         // -- Granular atmosphere (13) ----------------------------------------
-        {kAtmosDensityId, "1002 atmos density", 1.0,
-         logPlain(1.0, kAtmosDensityMin, kAtmosDensityMax), readAtmosDensity},
-        {kAtmosGrainSecondsId, "1003 atmos grain seconds", 1.0,
-         logPlain(1.0, kAtmosGrainSecondsMin, kAtmosGrainSecondsMax), readAtmosGrainSeconds},
-        {kAtmosPanSpreadId, "1005 atmos pan spread", 0.0, linPlain(0.0, 0.0, 1.0),
-         readAtmosPanSpread},
-        {kAtmosDecorrelationId, "1006 atmos decorrelation", 1.0, linPlain(1.0, 0.0, 1.0),
-         readAtmosDecorrelation},
-        {kAtmosFreezeMixId, "1007 atmos freeze mix", 1.0, linPlain(1.0, 0.0, 1.0),
-         readAtmosFreezeMix},
-        {kAtmosDriftSmoothnessId, "1009 atmos drift smoothness", 0.0, linPlain(0.0, 0.0, 1.0),
-         readAtmosDriftSmoothness},
-        {kAtmosDriftRangeId, "1010 atmos drift range", 1.0,
-         linPlain(1.0, kAtmosDriftRangeMin, kAtmosDriftRangeMax), readAtmosDriftRange},
-        {kAtmosJitterId, "1011 atmos jitter", 1.0, linPlain(1.0, 0.0, 1.0), readAtmosJitter},
-        {kAtmosPositionId, "1012 atmos position", 1.0,
-         linPlain(1.0, kAtmosPositionMin, kAtmosPositionMax), readAtmosPosition},
-        {kAtmosPositionSpreadId, "1013 atmos position spread", 1.0, linPlain(1.0, 0.0, 1.0),
-         readAtmosPositionSpread},
-        {kAtmosPitchId, "1014 atmos pitch", 1.0, linPlain(1.0, kAtmosPitchMin, kAtmosPitchMax),
-         readAtmosPitch},
-        {kAtmosPitchSpreadId, "1015 atmos pitch spread", 1.0, linPlain(1.0, 0.0, 1.0),
-         readAtmosPitchSpread},
-        {kAtmosGrainEnvelopeId, "1016 atmos grain envelope", dropdownNorm(3, 6), 3.0f,
-         readAtmosGrainEnvelope},
+        {.id = kAtmosDensityId, .name = "1002 atmos density", .normalized = 1.0,
+         .expected=logPlain(1.0, kAtmosDensityMin, kAtmosDensityMax), .read=readAtmosDensity},
+        {.id = kAtmosGrainSecondsId, .name = "1003 atmos grain seconds", .normalized = 1.0,
+         .expected=logPlain(1.0, kAtmosGrainSecondsMin, kAtmosGrainSecondsMax), .read=readAtmosGrainSeconds},
+        {.id = kAtmosPanSpreadId, .name = "1005 atmos pan spread", .normalized = 0.0, .expected = linPlain(0.0, 0.0, 1.0),
+         .read=readAtmosPanSpread},
+        {.id = kAtmosDecorrelationId, .name = "1006 atmos decorrelation", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readAtmosDecorrelation},
+        {.id = kAtmosFreezeMixId, .name = "1007 atmos freeze mix", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readAtmosFreezeMix},
+        {.id = kAtmosDriftSmoothnessId, .name = "1009 atmos drift smoothness", .normalized = 0.0, .expected = linPlain(0.0, 0.0, 1.0),
+         .read=readAtmosDriftSmoothness},
+        {.id = kAtmosDriftRangeId, .name = "1010 atmos drift range", .normalized = 1.0,
+         .expected=linPlain(1.0, kAtmosDriftRangeMin, kAtmosDriftRangeMax), .read=readAtmosDriftRange},
+        {.id = kAtmosJitterId, .name = "1011 atmos jitter", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0), .read = readAtmosJitter},
+        {.id = kAtmosPositionId, .name = "1012 atmos position", .normalized = 1.0,
+         .expected=linPlain(1.0, kAtmosPositionMin, kAtmosPositionMax), .read=readAtmosPosition},
+        {.id = kAtmosPositionSpreadId, .name = "1013 atmos position spread", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readAtmosPositionSpread},
+        {.id = kAtmosPitchId, .name = "1014 atmos pitch", .normalized = 1.0, .expected = linPlain(1.0, kAtmosPitchMin, kAtmosPitchMax),
+         .read=readAtmosPitch},
+        {.id = kAtmosPitchSpreadId, .name = "1015 atmos pitch spread", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .read=readAtmosPitchSpread},
+        {.id = kAtmosGrainEnvelopeId, .name = "1016 atmos grain envelope", .normalized = dropdownNorm(3, 6), .expected = 3.0f,
+         .read=readAtmosGrainEnvelope},
     };
 }
 
@@ -688,60 +687,60 @@ float readAtmosDriftDepth(const Voice& v) { return v.atmos().getDriftDepth(); }
 [[nodiscard]] std::vector<MacroBaseRow> makeMbVoiceRows() {
     using namespace Seraphis;
     return {
-        {kCloudRichnessId, "200 cloud richness", 1.0, linPlain(1.0, 0.0, 1.0),
-         Target::CloudRichness, readCloudRichness},
-        {kCloudInharmonicityId, "201 cloud inharmonicity", 1.0,
-         linPlain(1.0, kCloudInharmonicityMin, kCloudInharmonicityMax),
-         Target::CloudInharmonicity, readCloudInharmonicity},
-        {kCloudTiltId, "202 cloud tilt", 1.0, linPlain(1.0, kCloudTiltMin, kCloudTiltMax),
-         Target::CloudSpectralTiltDb, readCloudTilt},
-        {kCloudMutationId, "203 cloud mutation", 1.0, linPlain(1.0, 0.0, 1.0),
-         Target::CloudMutation, readCloudMutation},
-        {kCloudGravityId, "204 cloud gravity", 1.0,
-         linPlain(1.0, kCloudGravityMin, kCloudGravityMax), Target::CloudSpectralGravity,
-         readCloudGravity},
-        {kCloudDriftDepthId, "205 cloud drift depth", 1.0,
-         linPlain(1.0, kCloudDriftDepthMin, kCloudDriftDepthMax), Target::CloudDriftDepthCents,
-         readCloudDriftDepth},
-        {kCloudStereoSpreadId, "207 cloud stereo spread", 1.0, linPlain(1.0, 0.0, 1.0),
-         Target::CloudStereoSpread, readCloudStereoSpread},
-        {kCloudAttackId, "208 cloud attack", 1.0, logPlain(1.0, kCloudAttackMin, kCloudAttackMax),
-         Target::CloudAttackTimeSec, readCloudAttack},
+        {.id = kCloudRichnessId, .name = "200 cloud richness", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .target=Target::CloudRichness, .read=readCloudRichness},
+        {.id = kCloudInharmonicityId, .name = "201 cloud inharmonicity", .normalized = 1.0,
+         .expected=linPlain(1.0, kCloudInharmonicityMin, kCloudInharmonicityMax),
+         .target=Target::CloudInharmonicity, .read=readCloudInharmonicity},
+        {.id = kCloudTiltId, .name = "202 cloud tilt", .normalized = 1.0, .expected = linPlain(1.0, kCloudTiltMin, kCloudTiltMax),
+         .target=Target::CloudSpectralTiltDb, .read=readCloudTilt},
+        {.id = kCloudMutationId, .name = "203 cloud mutation", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .target=Target::CloudMutation, .read=readCloudMutation},
+        {.id = kCloudGravityId, .name = "204 cloud gravity", .normalized = 1.0,
+         .expected=linPlain(1.0, kCloudGravityMin, kCloudGravityMax), .target=Target::CloudSpectralGravity,
+         .read=readCloudGravity},
+        {.id = kCloudDriftDepthId, .name = "205 cloud drift depth", .normalized = 1.0,
+         .expected=linPlain(1.0, kCloudDriftDepthMin, kCloudDriftDepthMax), .target=Target::CloudDriftDepthCents,
+         .read=readCloudDriftDepth},
+        {.id = kCloudStereoSpreadId, .name = "207 cloud stereo spread", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .target=Target::CloudStereoSpread, .read=readCloudStereoSpread},
+        {.id = kCloudAttackId, .name = "208 cloud attack", .normalized = 1.0, .expected = logPlain(1.0, kCloudAttackMin, kCloudAttackMax),
+         .target=Target::CloudAttackTimeSec, .read=readCloudAttack},
 
-        {kMorphEntropyId, "400 morph entropy", 1.0, linPlain(1.0, 0.0, 1.0), Target::MorphEntropy,
-         readMorphEntropy},
+        {.id = kMorphEntropyId, .name = "400 morph entropy", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0), .target = Target::MorphEntropy,
+         .read=readMorphEntropy},
         // 402 is the carve-out row; see the dedicated section.
-        {kMorphPositionId, "402 morph position (carve-out)", 1.0,
-         linPlain(1.0, kMorphPositionMin, kMorphPositionMax), Target::MorphTargetPosition,
-         nullptr},
+        {.id = kMorphPositionId, .name = "402 morph position (carve-out)", .normalized = 1.0,
+         .expected=linPlain(1.0, kMorphPositionMin, kMorphPositionMax), .target=Target::MorphTargetPosition,
+         .read=nullptr},
 
-        {kLifeSpatialDepthId, "600 spatial depth", 1.0, linPlain(1.0, 0.0, 1.0),
-         Target::SpatialDepth, readSpatialDepth},
-        {kLifeVoiceWidthId, "604 voice width", 1.0,
-         linPlain(1.0, kLifeVoiceWidthMin, kLifeVoiceWidthMax), Target::VoiceWidth,
-         readVoiceWidth},
+        {.id = kLifeSpatialDepthId, .name = "600 spatial depth", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .target=Target::SpatialDepth, .read=readSpatialDepth},
+        {.id = kLifeVoiceWidthId, .name = "604 voice width", .normalized = 1.0,
+         .expected=linPlain(1.0, kLifeVoiceWidthMin, kLifeVoiceWidthMax), .target=Target::VoiceWidth,
+         .read=readVoiceWidth},
 
-        {kEnvStage0MsId, "702 env stage 0 ms", 0.0,
-         logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), Target::EnvStage0Ms,
-         readEnvStage0},
-        {kEnvStage1MsId, "703 env stage 1 ms", 0.0,
-         logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), Target::EnvStage1Ms,
-         readEnvStage1},
-        {kEnvReleaseMsId, "704 env release ms", 0.0,
-         logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), Target::EnvReleaseMs,
-         readEnvRelease},
+        {.id = kEnvStage0MsId, .name = "702 env stage 0 ms", .normalized = 0.0,
+         .expected=logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), .target=Target::EnvStage0Ms,
+         .read=readEnvStage0},
+        {.id = kEnvStage1MsId, .name = "703 env stage 1 ms", .normalized = 0.0,
+         .expected=logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), .target=Target::EnvStage1Ms,
+         .read=readEnvStage1},
+        {.id = kEnvReleaseMsId, .name = "704 env release ms", .normalized = 0.0,
+         .expected=logPlain(0.0, kEnvStageTimeMinMs, kEnvStageTimeMaxMs), .target=Target::EnvReleaseMs,
+         .read=readEnvRelease},
 
         // CLASS (b): 4 blocks, then EXACT (plan §7.4).
-        {kBodyDampingId, "802 body damping", 1.0,
-         linPlain(1.0, kBodyDampingMin, kBodyDampingMax), Target::BodyDamping, readBodyDamping,
-         kClassBBlocks},
+        {.id = kBodyDampingId, .name = "802 body damping", .normalized = 1.0,
+         .expected=linPlain(1.0, kBodyDampingMin, kBodyDampingMax), .target=Target::BodyDamping, .read=readBodyDamping,
+         .blocks=kClassBBlocks},
 
-        {kAtmosLevelId, "1000 atmos level", 1.0, linPlain(1.0, kAtmosLevelMin, kAtmosLevelMax),
-         Target::AtmosLevel, readAtmosLevel},
-        {kAtmosBlurId, "1001 atmos blur", 1.0, linPlain(1.0, 0.0, 1.0), Target::AtmosBlur,
-         readAtmosBlur},
-        {kAtmosDriftDepthId, "1004 atmos drift depth", 1.0, linPlain(1.0, 0.0, 1.0),
-         Target::AtmosDriftDepth, readAtmosDriftDepth},
+        {.id = kAtmosLevelId, .name = "1000 atmos level", .normalized = 1.0, .expected = linPlain(1.0, kAtmosLevelMin, kAtmosLevelMax),
+         .target=Target::AtmosLevel, .read=readAtmosLevel},
+        {.id = kAtmosBlurId, .name = "1001 atmos blur", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0), .target = Target::AtmosBlur,
+         .read=readAtmosBlur},
+        {.id = kAtmosDriftDepthId, .name = "1004 atmos drift depth", .normalized = 1.0, .expected = linPlain(1.0, 0.0, 1.0),
+         .target=Target::AtmosDriftDepth, .read=readAtmosDriftDepth},
     };
 }
 
@@ -768,7 +767,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         for (const VoiceRow& row : makeVpRows()) {
             INFO("VP row " << row.name);
             auto fx = makeRig();
-            render(*fx, {{row.id, row.normalized}}, -1, row.blocks);
+            render(*fx, {{.id = row.id, .normalized = row.normalized}}, -1, row.blocks);
 
             Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
             REQUIRE(engine != nullptr);
@@ -790,7 +789,9 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             }
             INFO("MB-voice row " << row.name);
             auto fx = makeRig();
-            render(*fx, {{Seraphis::kPolyphonyId, kPolyphony16Norm}, {row.id, row.normalized}},
+            render(*fx,
+                   {{.id = Seraphis::kPolyphonyId, .normalized = kPolyphony16Norm},
+                    {.id = row.id, .normalized = row.normalized}},
                    -1, row.blocks);
 
             Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
@@ -816,7 +817,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
     SECTION("ENG - 3 kSeedId") {
         auto fx = makeRig();
         constexpr int kSeedRow = 7;
-        render(*fx, {{Seraphis::kSeedId, dropdownNorm(kSeedRow, 16)}}, -1, 1);
+        render(*fx, {{.id = Seraphis::kSeedId, .normalized = dropdownNorm(kSeedRow, 16)}}, -1, 1);
 
         Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
         REQUIRE(engine != nullptr);
@@ -826,7 +827,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
 
     SECTION("ENG - 1008 kAtmosFreezeId") {
         auto fx = makeRig();
-        render(*fx, {{Seraphis::kAtmosFreezeId, 1.0}}, -1, 1);
+        render(*fx, {{.id = Seraphis::kAtmosFreezeId, .normalized = 1.0}}, -1, 1);
 
         Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
         REQUIRE(engine != nullptr);
@@ -836,7 +837,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
 
     SECTION("ENG - 1 kPolyphonyId (Phase 8, named by the criterion)") {
         auto fx = makeRig();
-        render(*fx, {{Seraphis::kPolyphonyId, kPolyphony16Norm}}, -1, 1);
+        render(*fx, {{.id = Seraphis::kPolyphonyId, .normalized = kPolyphony16Norm}}, -1, 1);
 
         Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
         REQUIRE(engine != nullptr);
@@ -859,10 +860,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             (1.0 - Seraphis::kMorphPositionMin)
             / (Seraphis::kMorphPositionMax - Seraphis::kMorphPositionMin);
         const std::vector<ParamPoint> points = {
-            {Seraphis::kPolyphonyId, kPolyphony16Norm},
-            {Seraphis::kMorphTravelRateId, 1.0},                 // kMaxTravelRate
-            {Seraphis::kMorphTravelModeId, dropdownNorm(0, 2)},  // External
-            {Seraphis::kMorphPositionId, positionNorm}};
+            {.id = Seraphis::kPolyphonyId, .normalized = kPolyphony16Norm},
+            {.id = Seraphis::kMorphTravelRateId, .normalized = 1.0},                 // kMaxTravelRate
+            {.id = Seraphis::kMorphTravelModeId, .normalized = dropdownNorm(0, 2)},  // External
+            {.id = Seraphis::kMorphPositionId, .normalized = positionNorm}};
 
         // SIXTEEN notes, not one, and that is REQUIRED by the row's own
         // "for every i < kMaxVoices" wording rather than a convenience.
@@ -920,7 +921,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
     SECTION("CFG - 408 kMorphStateCountId") {
         auto fx = makeRig();
         // Step 1-2: push while quiescent, one block, and assert acceptance.
-        render(*fx, {{Seraphis::kMorphStateCountId, dropdownNorm(2, 3)}}, -1, 1);  // count 4
+        render(*fx, {{.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)}}, -1, 1);  // count 4
 
         Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
         REQUIRE(engine != nullptr);
@@ -969,33 +970,33 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         // settled.
         const double positionSpan = Seraphis::kMorphPositionMax - Seraphis::kMorphPositionMin;
         const std::vector<SlotRow> rows = {
-            {Seraphis::kMorphState0Id, "409 morph slot 0", 4, 0, {}, 1.0},
-            {Seraphis::kMorphState1Id,
-             "410 morph slot 1",
-             4,
-             3,
-             {{Seraphis::kMorphTravelRateId, 1.0},
-              {Seraphis::kMorphTravelModeId, dropdownNorm(0, 2)},
-              {Seraphis::kMorphPositionId, (1.0 - Seraphis::kMorphPositionMin) / positionSpan}},
-             2.0},
-            {Seraphis::kMorphState2Id,
-             "411 morph slot 2",
-             4,
-             0,
-             {{Seraphis::kMorphStateCountId, dropdownNorm(2, 3)},
-              {Seraphis::kMorphTravelRateId, 1.0},
-              {Seraphis::kMorphTravelModeId, dropdownNorm(0, 2)},
-              {Seraphis::kMorphPositionId, (2.0 - Seraphis::kMorphPositionMin) / positionSpan}},
-             1.7},
-            {Seraphis::kMorphState3Id,
-             "412 morph slot 3",
-             4,
-             0,
-             {{Seraphis::kMorphStateCountId, dropdownNorm(2, 3)},
-              {Seraphis::kMorphTravelRateId, 1.0},
-              {Seraphis::kMorphTravelModeId, dropdownNorm(0, 2)},
-              {Seraphis::kMorphPositionId, (3.0 - Seraphis::kMorphPositionMin) / positionSpan}},
-             2.0},
+            {.id = Seraphis::kMorphState0Id, .name = "409 morph slot 0", .stateIndex = 4, .defaultIndex = 0, .preconditions = {}, .seconds = 1.0},
+            {.id = Seraphis::kMorphState1Id,
+             .name="410 morph slot 1",
+             .stateIndex=4,
+             .defaultIndex=3,
+             .preconditions = {{.id = Seraphis::kMorphTravelRateId, .normalized = 1.0},
+              {.id = Seraphis::kMorphTravelModeId, .normalized = dropdownNorm(0, 2)},
+              {.id = Seraphis::kMorphPositionId, .normalized = (1.0 - Seraphis::kMorphPositionMin) / positionSpan}},
+             .seconds=2.0},
+            {.id = Seraphis::kMorphState2Id,
+             .name="411 morph slot 2",
+             .stateIndex=4,
+             .defaultIndex=0,
+             .preconditions = {{.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)},
+              {.id = Seraphis::kMorphTravelRateId, .normalized = 1.0},
+              {.id = Seraphis::kMorphTravelModeId, .normalized = dropdownNorm(0, 2)},
+              {.id = Seraphis::kMorphPositionId, .normalized = (2.0 - Seraphis::kMorphPositionMin) / positionSpan}},
+             .seconds=1.7},
+            {.id = Seraphis::kMorphState3Id,
+             .name="412 morph slot 3",
+             .stateIndex=4,
+             .defaultIndex=0,
+             .preconditions = {{.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)},
+              {.id = Seraphis::kMorphTravelRateId, .normalized = 1.0},
+              {.id = Seraphis::kMorphTravelModeId, .normalized = dropdownNorm(0, 2)},
+              {.id = Seraphis::kMorphPositionId, .normalized = (3.0 - Seraphis::kMorphPositionMin) / positionSpan}},
+             .seconds=2.0},
         };
 
         for (const SlotRow& row : rows) {
@@ -1008,7 +1009,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
                 auto fx = makeRig();
 
                 std::vector<ParamPoint> points = row.preconditions;
-                points.push_back({row.id, dropdownNorm(stateIndex, 5)});
+                points.push_back({.id = row.id, .normalized = dropdownNorm(stateIndex, 5)});
 
                 // Step 1-2: quiescent push, one block, acceptance.
                 render(*fx, points, -1, 1);
@@ -1073,8 +1074,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             // Free rate pinned to kMaxTravelRate so the synced rate CANNOT
             // coincide with it: at 120 BPM, "1 Bar" = 4 beats -> 120/(60*4) = 0.5.
             renderOneWithContext(*fx,
-                                 {{Seraphis::kMorphTravelRateId, 1.0},
-                                  {Seraphis::kMorphSyncId, 1.0}},
+                                 {{.id = Seraphis::kMorphTravelRateId, .normalized = 1.0},
+                                  {.id = Seraphis::kMorphSyncId, .normalized = 1.0}},
                                  ctx);
 
             Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
@@ -1086,7 +1087,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             }
 
             // And turning sync back OFF restores ID 404's own value.
-            renderOneWithContext(*fx, {{Seraphis::kMorphSyncId, 0.0}}, ctx);
+            renderOneWithContext(*fx, {{.id = Seraphis::kMorphSyncId, .normalized = 0.0}}, ctx);
             const float freeRate = logPlain(1.0, Seraphis::kMorphTravelRateMin,
                                             Seraphis::kMorphTravelRateMax);
             for (std::size_t i = 0; i < kMaxVoices; ++i) {
@@ -1107,8 +1108,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             // 120 / (60 * 16) = 0.125 j/s. The two are far apart, so the row
             // cannot pass on a stale value.
             renderOneWithContext(*fx,
-                                 {{Seraphis::kMorphSyncId, 1.0},
-                                  {Seraphis::kMorphSyncNoteId, dropdownNorm(6, 8)}},
+                                 {{.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                                  {.id = Seraphis::kMorphSyncNoteId, .normalized = dropdownNorm(6, 8)}},
                                  ctx);
 
             Krate::DSP::SeraphisEngine* engine = fx->proc->engineForTest();
@@ -1119,7 +1120,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
                         == Catch::Approx(0.125f).margin(1.0e-5));
             }
 
-            renderOneWithContext(*fx, {{Seraphis::kMorphSyncNoteId, dropdownNorm(2, 8)}}, ctx);
+            renderOneWithContext(*fx, {{.id = Seraphis::kMorphSyncNoteId, .normalized = dropdownNorm(2, 8)}}, ctx);
             for (std::size_t i = 0; i < kMaxVoices; ++i) {
                 INFO("voice " << i);
                 REQUIRE(engine->getVoice(i).morph().getTravelRate()
@@ -1148,10 +1149,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [&](bool softLimitOn) {
             auto fx = makeRig();
             const std::vector<ParamPoint> points = {
-                {Seraphis::kMasterGainId, 0.5},  // 0-1 normalized -> 0-2 gain; 0.5 == unity
-                {Seraphis::kSoftLimitId, softLimitOn ? 1.0 : 0.0},
-                {Seraphis::kEnvStage0MsId, 0.0},  // the 1 ms C-6 floor
-                {Seraphis::kEnvStage1MsId, 0.0},
+                {.id = Seraphis::kMasterGainId, .normalized = 0.5},  // 0-1 normalized -> 0-2 gain; 0.5 == unity
+                {.id = Seraphis::kSoftLimitId, .normalized = softLimitOn ? 1.0 : 0.0},
+                {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},  // the 1 ms C-6 floor
+                {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
             };
             fx->renderBlocks(
                 blocksFor(2.0), kBlockSamples,
@@ -1208,8 +1209,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             auto fx = makeRig();
             renderImpulse(*fx,
                           withPoints(impulseEnvelopePoints(),
-                                     {{Seraphis::kAetherMixId, 1.0},  // dry muted: wet only
-                                      {Seraphis::kAetherDensityId, norm}}),
+                                     {{.id = Seraphis::kAetherMixId, .normalized = 1.0},  // dry muted: wet only
+                                      {.id = Seraphis::kAetherDensityId, .normalized = norm}}),
                           kTestNote, blocksFor(0.5));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             return echoDensity(fx->capturedL, static_cast<std::size_t>(0.25 * kSampleRate));
@@ -1245,8 +1246,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             auto fx = makeRig();
             renderImpulse(*fx,
                           withPoints(impulseEnvelopePoints(),
-                                     {{Seraphis::kAetherMixId, 1.0},
-                                      {Seraphis::kAetherDecayId, norm}}),
+                                     {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                                      {.id = Seraphis::kAetherDecayId, .normalized = norm}}),
                           kTestNote, blocksFor(4.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             const auto second = static_cast<std::size_t>(kSampleRate);
@@ -1267,8 +1268,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             auto fx = makeRig();
             renderImpulse(*fx,
                           withPoints(impulseEnvelopePoints(),
-                                     {{Seraphis::kAetherMixId, 1.0},
-                                      {Seraphis::kAetherFreezeId, frozen ? 1.0 : 0.0}}),
+                                     {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                                      {.id = Seraphis::kAetherFreezeId, .normalized = frozen ? 1.0 : 0.0}}),
                           kTestNote, blocksFor(6.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             const auto second = static_cast<std::size_t>(kSampleRate);
@@ -1289,8 +1290,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         // a render long enough for dimSm_ to settle (>= 5 x kDimSmoothingMs).
         auto fx = makeRig();
         render(*fx,
-               {{Seraphis::kAetherTideDepthId, 0.0},
-                {Seraphis::kAetherDimensionalityId, 0.75}},
+               {{.id = Seraphis::kAetherTideDepthId, .normalized = 0.0},
+                {.id = Seraphis::kAetherDimensionalityId, .normalized = 0.75}},
                kTestNote, blocksFor(1.0));
         REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
 
@@ -1304,10 +1305,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [&](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherDampingId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherDampingId, .normalized = norm}},
                    kTestNote, blocksFor(2.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             const std::vector<float>& out = fx->capturedL;
@@ -1336,8 +1337,8 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             auto fx = makeRig();
             renderImpulse(*fx,
                           withPoints(impulseEnvelopePoints(),
-                                     {{Seraphis::kAetherMixId, 1.0},  // dry muted
-                                      {Seraphis::kAetherPreDelayId, norm}}),
+                                     {{.id = Seraphis::kAetherMixId, .normalized = 1.0},  // dry muted
+                                      {.id = Seraphis::kAetherPreDelayId, .normalized = norm}}),
                           kTestNote, blocksFor(0.6));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             return onsetIndex(fx->capturedL, 0.02);
@@ -1355,10 +1356,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto capture = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherModDepthId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherModDepthId, .normalized = norm}},
                    kTestNote, blocksFor(4.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             return fx->capturedL;
@@ -1373,11 +1374,11 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto capture = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kAetherBloomSendId, 1.0},  // drive the resonators
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherBloomDecayId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kAetherBloomSendId, .normalized = 1.0},  // drive the resonators
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherBloomDecayId, .normalized = norm}},
                    kTestNote, blocksFor(2.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             // Secondary: the resonators really were claimed.
@@ -1394,10 +1395,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherSpectralDiffusionId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherSpectralDiffusionId, .normalized = norm}},
                    kTestNote, blocksFor(2.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             const auto second = static_cast<std::size_t>(kSampleRate);
@@ -1426,9 +1427,9 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto capture = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherMixId, norm}},
+                   {{.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherMixId, .normalized = norm}},
                    kTestNote, blocksFor(2.0));
             REQUIRE(fx->proc->macroMatrixForTest().getTargetBase(Target::AetherMix)
                     == Catch::Approx(static_cast<float>(norm)).margin(1.0e-6));
@@ -1449,7 +1450,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [](double norm) {
             auto fx = makeRig();
             // >= 1.5 s: 5 x kSizeSmoothingMs = 300 ms.
-            render(*fx, {{Seraphis::kAetherSizeId, norm}}, kTestNote, blocksFor(1.5));
+            render(*fx, {{.id = Seraphis::kAetherSizeId, .normalized = norm}}, kTestNote, blocksFor(1.5));
             REQUIRE(fx->proc->macroMatrixForTest().getTargetBase(Target::AetherSize)
                     == Catch::Approx(static_cast<float>(norm)).margin(1.0e-6));
             return static_cast<double>(fx->proc->reverbForTest()->getModalDensityPerHz());
@@ -1469,10 +1470,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             double ratio;  // 2 f0 for the octave send, 1.5 f0 for the fifth
         };
         const std::vector<ShimmerRow> rows = {
-            {Seraphis::kAetherShimmerOctaveId, "1210 shimmer octave",
-             Target::AetherShimmerOctaveSend, 2.0},
-            {Seraphis::kAetherShimmerFifthId, "1211 shimmer fifth",
-             Target::AetherShimmerFifthSend, 1.5},
+            {.id = Seraphis::kAetherShimmerOctaveId, .name = "1210 shimmer octave",
+             .target=Target::AetherShimmerOctaveSend, .ratio=2.0},
+            {.id = Seraphis::kAetherShimmerFifthId, .name = "1211 shimmer fifth",
+             .target=Target::AetherShimmerFifthSend, .ratio=1.5},
         };
 
         constexpr std::size_t kFftSize = 32768;
@@ -1483,10 +1484,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             auto measure = [&](double norm) {
                 auto fx = makeRig();
                 render(*fx,
-                       {{Seraphis::kAetherMixId, 1.0},
-                        {Seraphis::kEnvStage0MsId, 0.0},
-                        {Seraphis::kEnvStage1MsId, 0.0},
-                        {row.id, norm}},
+                       {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                        {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                        {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                        {.id = row.id, .normalized = norm}},
                        kTestNote, blocksFor(4.0));
                 REQUIRE(fx->proc->macroMatrixForTest().getTargetBase(row.target)
                         == Catch::Approx(static_cast<float>(norm)).margin(1.0e-6));
@@ -1555,14 +1556,14 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [&](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherSizeBreathDepthId, 0.0},
-                    {Seraphis::kAetherTideDepthId, 0.0},
-                    {Seraphis::kAetherModDepthId, 0.0},
-                    {Seraphis::kAetherDampingId, 0.0},
-                    {Seraphis::kAetherBloomSendId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherSizeBreathDepthId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherTideDepthId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherModDepthId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherDampingId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherBloomSendId, .normalized = norm}},
                    kTestNote, blocksFor(4.0));
             REQUIRE(fx->proc->macroMatrixForTest().getTargetBase(Target::AetherBloomSend)
                     == Catch::Approx(static_cast<float>(norm)).margin(1.0e-6));
@@ -1598,7 +1599,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
             }
             REQUIRE(target > 0.0);
             REQUIRE(rest > 0.0);
-            return PartialSplit{toDb(target), toDb(rest)};
+            return PartialSplit{.targetDb = toDb(target), .restDb = toDb(rest)};
         };
         const PartialSplit none = measure(0.0);
         const PartialSplit full = measure(1.0);
@@ -1612,10 +1613,10 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
         auto measure = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherWidthId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherWidthId, .normalized = norm}},
                    kTestNote, blocksFor(2.0));
             REQUIRE(fx->proc->macroMatrixForTest().getTargetBase(Target::AetherWidth)
                     == Catch::Approx(static_cast<float>(norm)).margin(1.0e-6));
@@ -1643,11 +1644,11 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp_LongWindow", "[.slow]") {
         auto capture = [](double norm) {
             auto fx = makeRig();
             render(*fx,
-                   {{Seraphis::kAetherMixId, 1.0},
-                    {Seraphis::kEnvStage0MsId, 0.0},
-                    {Seraphis::kEnvStage1MsId, 0.0},
-                    {Seraphis::kAetherModDepthId, 1.0},  // the modulator must be audible
-                    {Seraphis::kAetherModSmoothnessId, norm}},
+                   {{.id = Seraphis::kAetherMixId, .normalized = 1.0},
+                    {.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                    {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                    {.id = Seraphis::kAetherModDepthId, .normalized = 1.0},  // the modulator must be audible
+                    {.id = Seraphis::kAetherModSmoothnessId, .normalized = norm}},
                    kTestNote, blocksFor(20.0));
             REQUIRE(fx->proc->applyAetherParamsCallCountForTest() >= 1u);
             return fx->capturedL;

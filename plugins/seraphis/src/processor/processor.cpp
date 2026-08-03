@@ -22,9 +22,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>  // Phase 10 FR-041 clause 1: the effects-stage scoped timer
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>  // std::cmp_greater (C++20 mixed-sign integer comparison)
 
 namespace Seraphis {
 
@@ -126,9 +128,10 @@ void dispatchEvent(Krate::DSP::SeraphisEngine& engine, const Vst::Event& event) 
 //   MB    -> SeraphisMacroMatrix::setTargetBase     (27 IDs)
 //   AE    -> applyAetherParams                      (10 IDs)
 //   CFG   -> configure-time spectral slots          ( 5 IDs)
-//   ENG   -> a direct SeraphisEngine setter         ( 4 IDs, own trackers)
+//   ENG   -> a direct SeraphisEngine setter         ( 5 IDs, own trackers)
+//   FX    -> pushEffectsParams() / the send stage   (15 IDs, own trackers)
 //   Local -> consumed inside the processor          ( 8 IDs)
-enum class Route : std::uint8_t { VP, MB, AE, CFG, ENG, Local };
+enum class Route : std::uint8_t { VP, MB, AE, CFG, ENG, FX, Local };
 
 [[nodiscard]] constexpr Route routeOf(Vst::ParamID id) noexcept {
     switch (id) {
@@ -243,6 +246,33 @@ enum class Route : std::uint8_t { VP, MB, AE, CFG, ENG, Local };
         case kAetherBloomDecayId:
         case kAetherSpectralDiffusionId:
             return Route::AE;
+
+        // --- Effects (1400-1443) --------------------------------------------
+        // ID 1400 is ENG and is listed EXPLICITLY, not left to the default arm.
+        // Its target is a SeraphisEngine setter, so C-6's Route column says ENG;
+        // the default below returns Route::Local, which would classify it wrongly
+        // the moment anything distinguishes the two. Today markDirty()'s ENG and
+        // Local arms share one `break;`, so the mistake would be invisible - which
+        // is exactly why the case is written now rather than when it starts to
+        // matter.
+        case kFxSaturationId:
+            return Route::ENG;
+        case kFxDelayMixId:
+        case kFxDelayTimeId:
+        case kFxDelaySpreadId:
+        case kFxDelaySpreadDirectionId:
+        case kFxDelayFeedbackId:
+        case kFxDelayTiltId:
+        case kFxDelayDiffusionId:
+        case kFxDelayWidthId:
+        case kFxDelaySyncId:
+        case kFxDelaySyncNoteId:
+        case kFxSpectralFreezeId:
+        case kFxWidthId:
+        case kFxWanderDepthId:
+        case kFxWanderRateId:
+        case kFxAzimuthDepthId:
+            return Route::FX;
 
         // --- Processor-local: 0, 100-104, 405, 406 --------------------------
         default:
@@ -515,15 +545,9 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
     //    re-arm sumGain_ (seraphis_engine.h:349) on every host prepare.
     lastPushedPolyphony_ = engine_->getPolyphony();
     lastPushedSoftLimit_ = globalParams_.softLimit.load(std::memory_order_relaxed);
-    // FR-045. The soft-limit VALUE is seeded above (step 4's direct push below is
-    // what installs it), but its FR-041a cadence counter has not moved, and a
-    // re-prepare really did re-initialise the saturator. Invalidating the flag
-    // makes the first process() after every prepare push exactly once and count
-    // it - which is the cadence SC-007's ENG clause asserts.
-    lastPushedSoftLimitValid_ = false;
 
-    // KNOWN RESIDUAL (plan §8.3), recorded rather than hidden: when softLimit is
-    // false at prepare, this push RAMPS instead of snapping. SeraphisEngine::
+    // KNOWN RESIDUAL (plan §8.3), recorded rather than hidden: when the composed
+    // amount below is 0, this push RAMPS instead of snapping. SeraphisEngine::
     // prepare() sets satL_/satR_.setSaturation(kOutputSaturation) BEFORE
     // satL_.prepare() precisely so the saturator's smoothers are snapped
     // (seraphis_engine.h:225-231); this setter necessarily runs AFTER prepare()
@@ -533,16 +557,186 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
     // (tape_saturator.h:248-252). Effect: the first kDefaultSmoothingMs = 5.0f
     // of the render carries a decaying <= 0.15 tanh/linear blend that should
     // have been 0. Removing it requires threading outputSaturation through
-    // SeraphisEngineConfig - a dsp/ change Phase 8's scope forbids.
-    // DEFERRED TO PHASE 9; not silently accepted.
-    engine_->setOutputSaturation(
-        lastPushedSoftLimit_ ? Krate::DSP::SeraphisEngine::kOutputSaturation : 0.0f);
+    // SeraphisEngineConfig - a dsp/ change the phase scope forbids.
+    //
+    // PHASE 10 D-2 / FR-021: WRITER 1 OF THE SINGLE WRITER, in the SAME COMPOSED
+    // FORM pushEffectsParams() uses - ID 2 (kSoftLimitId) is the GATE, ID 1400
+    // (kFxSaturationId) is the AMOUNT that gate passes. Pushing the literal
+    // kOutputSaturation here instead would install 0.15 on a prepare whose
+    // ID 1400 says 0.8, and the render would only converge on the first
+    // process(). At the C-6 defaults the two forms are bit-identical: soft is
+    // true and kFxSaturationDefault IS SeraphisEngine::kOutputSaturation
+    // (effects_params.h:104).
+    const float saturationAmount =
+        lastPushedSoftLimit_ ? effectsParams_.saturation.load(std::memory_order_relaxed)
+                             : 0.0f;
+    engine_->setOutputSaturation(saturationAmount);
+    // FR-045's shape: the VALUE is seeded, the CADENCE COUNTER is not. A
+    // re-prepare really did re-initialise the saturator, so leaving the validity
+    // flag false makes the first process() after every prepare push exactly once
+    // and count it once - the cadence engSoftLimitPushCountForTest() (and
+    // SC-007's ENG clause) is asserted against.
+    lastPushedSaturation_ = saturationAmount;
+    lastPushedSaturationValid_ = false;
 
     // 5. FR-028: scratch sized ONCE, to the constant - never to the host block.
     dryL_.assign(bound, 0.0f);
     dryR_.assign(bound, 0.0f);
     wetL_.assign(bound, 0.0f);
     wetR_.assign(bound, 0.0f);
+
+    // 5b. Phase 10 FR-041 clause 6 / FR-028. The pre-output-stage tap takes the
+    //     SAME constant bound - deliberately NOT setup.maxSamplesPerBlock. A host
+    //     block larger than 2048 is legal (the slice loop's own cap at :832 is the
+    //     branch it enters), and the tap then holds the FIRST 2048 samples of the
+    //     block with preOutTapTruncated_ raised, so a criterion that measured half
+    //     a render fails loudly instead of silently.
+    preOutTapL_.assign(bound, 0.0f);
+    preOutTapR_.assign(bound, 0.0f);
+    preOutTapCursor_ = 0;
+    preOutTapSize_ = 0;
+    preOutTapTruncated_ = false;
+
+    // 5c. Phase 10 C-1 STEP 4 - THE SEND. The three setters run BEFORE
+    //     prepare(), and THAT ORDER IS LOAD-BEARING, not stylistic: prepare()
+    //     ends in snapParameters() (spectral_delay.h:206, :550), whereas a
+    //     post-prepare setDryWetMix() only sets a smoother TARGET (:500-503)
+    //     which is advanced exactly ONCE PER process() CALL (:373, :389) despite
+    //     being configured with a per-sample 50 ms coefficient (:184-194). Pushed
+    //     after prepare it would therefore creep from kDefaultDryWet = 0.5f
+    //     (:109) toward 1.0 by ~0.04 % of the remaining distance per call - tens
+    //     of seconds of un-aligned CURRENT-BLOCK dry leaking into the bus, which
+    //     is the exact comb C-2 exists to prevent (FR-004). Pushed before,
+    //     prepare()'s own setTarget (:202) plus snapParameters() snap it to 1.0.
+    //     This is the same hazard seraphis_engine.h:331-333 already records for
+    //     the saturator.
+    spectralDelay_.setFFTSize(Krate::DSP::SpectralDelay::kDefaultFFTSize);  // :408
+    spectralDelay_.setDryWetMix(1.0f);                                      // :500
+    spectralDelay_.setSpreadCurve(Krate::DSP::SpreadCurve::Logarithmic);    // :448
+    spectralDelay_.prepare(sampleRate_, bound);                             // :131
+
+    // 5d. FR-027. THE SEND IS NOT DETERMINISTIC AS PREPARED: its RNG is seeded
+    //     from reinterpret_cast<uintptr_t>(this) ^ sampleRate
+    //     (spectral_delay.h:223-224), i.e. from an ASLR-dependent address, and
+    //     reset() re-draws 2 x numBins stereo phases from it (:279-284). The
+    //     shipped kSeedValues table is the ONLY seed source, exactly as it is for
+    //     engine_/reverb_.
+    //
+    //     seedRng THEN reset, which is the order the header itself documents
+    //     (:295-296). The reason is NOT that the reverse order leaves stale
+    //     ASLR-seeded phases - it does not, seedRng() re-draws them itself
+    //     (:297-304) - it is that reset() then re-draws them AGAIN from the
+    //     freshly seeded stream, making the post-prepare state a pure function of
+    //     the seed. One order, stated once, so pushEffectsParams()' seed-change
+    //     burst can be literally the same two calls.
+    const std::size_t fxSeedIndex =
+        clampSeedIndex(globalParams_.seedIndex.load(std::memory_order_relaxed));
+    spectralDelay_.seedRng(kSeedValues[fxSeedIndex]);  // :297
+    spectralDelay_.reset();                            // :242
+    lastPushedFxSeedIndex_ = static_cast<int>(fxSeedIndex);
+
+    // 5e. The send accumulator (C-2 clause 5, plan section 3.1). assign(), NEVER
+    //     resize(): the FIFOs must start ZEROED, because the output side is read
+    //     one whole chunk ahead of the first chunk the component ever produces
+    //     and resize() would leave whatever the previous prepare left behind in
+    //     the low indices of a grown vector.
+    fxInL_.assign(kFxFifoCapacity, 0.0f);
+    fxInR_.assign(kFxFifoCapacity, 0.0f);
+    fxOutL_.assign(kFxFifoCapacity, 0.0f);
+    fxOutR_.assign(kFxFifoCapacity, 0.0f);
+    fxChunkL_.assign(kFxSendChunkSamples, 0.0f);
+    fxChunkR_.assign(kFxSendChunkSamples, 0.0f);
+
+    // FR-009a's window, in samples at THIS rate - hence a member and not a
+    // constant. std::llround, not a truncating cast: the window is a wall-clock
+    // quantity and 2000 ms at 44 100 Hz is 88 200 exactly only in real
+    // arithmetic.
+    fxSendDrainSamples_ = static_cast<std::int64_t>(
+        std::llround(static_cast<double>(kFxSendDrainMs) * 0.001 * sampleRate_));
+
+    fxSendState_ = FxSendState::Bypassed;
+    fxBypassedSamples_ = 0;
+    fxLiveSamplesSinceEngage_ = 0;
+    fxDrainRemaining_ = 0;
+    fxResetDue_ = false;
+    fxFifoClearDue_ = false;
+    // DELIBERATELY ABOVE kFxSendDrainFloor. A drain that has not yet run a chunk
+    // must never take the energy exit, which would annihilate the tail FR-008 and
+    // FR-009a exist to preserve.
+    fxDrainPeak_ = 1.0f;
+    fxEffectiveReturnGain_ = 0.0f;
+    fxSendRuns_ = false;
+
+    // THE one establishing point of the section 3.1 invariant - shared verbatim
+    // with setActive(false) and the single deferred mid-render site.
+    clearFifos();
+
+    // 5f. Phase 10 C-1 STEP 5 - the wander (FR-006, FR-011, FR-024, FR-024a).
+    //
+    //     The two drift SOURCES advance on EVERY block whatever the bypass
+    //     state (FR-011), so a re-engaged wander continues a walk that was
+    //     conceptually running instead of restarting one - on the absolute
+    //     64-sample control grid from inside runWanderStage() while the stage
+    //     runs, and by the whole call from the pre-slice block while it does not.
+    //
+    //     setMean(0.0f) is pushed EXPLICITLY (brownian_drift.h:165): the wander
+    //     is a BIPOLAR excursion around identity, and a non-zero mean would bias
+    //     the stereo image permanently rather than let it wander back.
+    //
+    //     The two seeds are the ONE shipped kSeedValues entry XORed with TWO
+    //     DISTINCT salts (C-5 / FR-024a clause 3). Identical salts would make
+    //     width and azimuth walk in lockstep off one stream, which reads as a
+    //     single moving object rather than as two independent ones.
+    widthDrift_.prepare(sampleRate_);    // brownian_drift.h:121
+    azimuthDrift_.prepare(sampleRate_);
+    widthDrift_.setMean(0.0f);           // :165
+    azimuthDrift_.setMean(0.0f);
+    widthDrift_.setSeed(kSeedValues[fxSeedIndex] ^ kFxWidthDriftSalt);      // :145
+    azimuthDrift_.setSeed(kSeedValues[fxSeedIndex] ^ kFxAzimuthDriftSalt);
+    widthDrift_.reset();                 // :133
+    azimuthDrift_.reset();
+
+    //     The GLOBAL width stage. setWidth() BEFORE reset(), because reset()
+    //     SNAPS the width smoother onto width_ (midside_processor.h:114-120) -
+    //     the same "setters run before the snap" rule C-2 clause 1 states for
+    //     the send and seraphis_engine.h:331-333 records for the saturator. The
+    //     other four smoothers reset() snaps (mid gain, side gain, both solos)
+    //     are Seraphis-untouched, so those snaps are no-ops.
+    globalMs_.prepare(static_cast<float>(sampleRate_), kMaxBlockSamples);  // :96
+    globalMs_.setWidth(effectsParams_.width.load(std::memory_order_relaxed));  // :133
+    globalMs_.reset();                                                     // :114
+
+    //     C-5's azimuth pan pair, at kParamSmoothMs and SNAPPED to unity. They
+    //     are NOT in classBSmoothers() - runWanderStage()'s per-sample
+    //     .process() is their sole advance - so the snap here is what makes
+    //     wanderAtIdentity() true from the very first block at the C-6 defaults,
+    //     which is in turn what keeps SC-002's skip bit-exact.
+    azimuthGainLSm_.configure(kParamSmoothMs, static_cast<float>(sampleRate_));
+    azimuthGainRSm_.configure(kParamSmoothMs, static_cast<float>(sampleRate_));
+    azimuthGainLSm_.snapTo(1.0f);
+    azimuthGainRSm_.snapTo(1.0f);
+
+    //     FR-010a's disengage window: THREE TIME CONSTANTS of the SLOWER of the
+    //     two smoothers the stage owns - MidSideProcessor's own
+    //     kDefaultSmoothingMs (10 ms, midside_processor.h:73), which prepare()
+    //     above configured, and kParamSmoothMs (20 ms) on the azimuth pair and
+    //     on the two depth smoothers. Three constants is 95 % of the step for a
+    //     one-pole, and the smoothers' own isComplete() closes the remainder -
+    //     this countdown exists only because MidSideProcessor has no equivalent
+    //     query and the Non-goals forbid adding one.
+    {
+        const double slowestMs =
+            std::max(static_cast<double>(Krate::DSP::MidSideProcessor::kDefaultSmoothingMs),
+                     static_cast<double>(kParamSmoothMs));
+        fxWanderSettleSamples_ =
+            static_cast<std::int64_t>(std::llround(slowestMs * 3.0 * 0.001 * sampleRate_));
+    }
+    fxWanderSettleRemaining_ = 0;
+    fxWanderRuns_ = false;
+    fxWanderRunsEffective_ = false;
+    fxWanderWasActive_ = false;
+    fxWidthBase_ = effectsParams_.width.load(std::memory_order_relaxed);
+    wanderControlUpdates_ = 0;
 
     // 6. Master-gain smoother, then arm the FR-024a clause 3 first-block snap.
     masterGain_.configure(kMasterGainSmoothMs, static_cast<float>(sampleRate_));
@@ -576,6 +770,20 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
         for (Krate::DSP::OnePoleSmoother& s : macroSm_) {     // IDs 100-104
             s.configure(kAetherDepthSmoothMs, sr);
         }
+
+        // Phase 10 FR-038b clause 2's THREE. Configured HERE, beside Phase 9's
+        // nine, for the same stated reason: the set cannot drift apart and a
+        // sample-rate change re-derives every coefficient. ID 1410 takes
+        // kFxReturnRampMs, which IS kParamSmoothMs by construction (the
+        // static_assert beside it in processor.h) - FR-038b clause 2 gives ID
+        // 1410 ONE smoother, not a class-(b) smoother plus a second private
+        // engage ramp that would fight it.
+        fxReturnGainSm_.configure(kFxReturnRampMs, sr);   // ID 1410
+        fxWanderDepthSm_.configure(kParamSmoothMs, sr);   // ID 1441
+        fxAzimuthDepthSm_.configure(kParamSmoothMs, sr);  // ID 1443
+        // The send is Bypassed at prepare, so its return gain starts at silence
+        // and the first engage RAMPS from 0 rather than stepping in at target.
+        fxReturnGainSm_.snapTo(0.0f);
     }
     controlPhase_ = 0;
 
@@ -613,6 +821,135 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
             // reverb's tail - aether_reverb.h:1971 - and keeps the object.
             (*reverb_).reset();
         }
+
+        // Phase 10 FR-035. The send is the third tail on this bus and it is the
+        // longest-lived of the three: at kFxDelayFeedbackMax the per-bin
+        // recursion decays over seconds, and its accumulator would additionally
+        // hold up to one whole chunk of the pre-deactivation render. Clearing the
+        // component WITHOUT clearing the FIFOs would leave that chunk to be
+        // played out on re-activation, so the two go together - and the state
+        // re-initialisation goes with them, because a send left "Draining" across
+        // a deactivation would resume draining audio that no longer exists.
+        //
+        // spectralDelay_ is a VALUE member, so unlike engine_/reverb_ there is no
+        // null check to make here.
+        //
+        // seedRng THEN reset - the SAME two calls, in the SAME order, that
+        // setupProcessing() step 5d (:631-634) and pushEffectsParams()' seed burst
+        // (:1619-1624) make, and the order the header itself documents (:295-296).
+        // reset() ALONE would not restore the post-prepare state: it does not
+        // rewind the RNG, it CONSUMES the next 2 x numBins draws to re-randomize
+        // the stereo phase walk (:279-284) off a stream the pre-deactivation
+        // render has already advanced by a further 2 x numBins per frame
+        // (:704-708). Those phases reach the output at any stereo width above
+        // 0.001 (:864-870) - and the C-6 default is 0.5 - so a send re-activated
+        // after reset() alone would decorrelate with DIFFERENT phases than a fresh
+        // prepare, which is precisely the "same state a fresh setupProcessing()
+        // would leave" that FR-035 requires. Re-seeding first makes the
+        // re-activated state a pure function of the seed again.
+        //
+        // spectralDelayResets_ is deliberately NOT incremented: FR-041 clause 2
+        // counts the FR-008 idle-reset and the seed-change burst, both of which are
+        // audio-thread events a cadence test observes across a render. A
+        // deactivation is neither.
+        const std::size_t fxDeactivateSeedIndex =
+            clampSeedIndex(globalParams_.seedIndex.load(std::memory_order_relaxed));
+        spectralDelay_.seedRng(kSeedValues[fxDeactivateSeedIndex]);  // :297
+        spectralDelay_.reset();  // spectral_delay.h:242 - allocation-free
+        lastPushedFxSeedIndex_ = static_cast<int>(fxDeactivateSeedIndex);
+
+        // ...and the SEVEN PARAMETER SMOOTHERS, which reset() likewise does not
+        // touch (it clears the STFT, the accumulator and the per-bin delay lines,
+        // :242-291, and nothing else). They are the second half of the same FR-035
+        // defect: every registered row reaches the component as a smoother TARGET
+        // only (:425-512), advanced ONCE PER SPECTRAL FRAME (:691-696) off a
+        // per-sample 50 ms coefficient (:184-194) - a ~5.1 s time constant at the
+        // 1024-point default - so the pre-deactivation render leaves them part-way
+        // along a ramp that a fresh setupProcessing() has never started.
+        //
+        // The state a fresh setupProcessing() DOES leave is the one prepare()'s own
+        // setTarget-then-snapParameters() pair produces (:197-206), and at that
+        // moment the only rows anything has pushed are the three C-2/C-7 pre-prepare
+        // ones. Every registered row is therefore snapped to the component's
+        // CONSTRUCTION default (:936-944: 250 ms, 0 spread, 0 feedback, 0 tilt,
+        // 0 diffusion, 0 width) with dry/wet at the 1.0 FR-004 pushes before
+        // prepare - which is exactly what the seven calls below reinstate.
+        //
+        // These are deliberately the CTOR defaults and NOT the registered values: a
+        // snap to the registered set would leave the send running parameters a
+        // freshly prepared one is still ramping toward, i.e. a DIFFERENT state, and
+        // FR-035's contract is equality with the prepare, not an improvement on it.
+        // (The prepare-time ramp-in itself is pre-existing Phase 10 behaviour that
+        // SC-019's 22 s settle window and SC-008's click bound are both calibrated
+        // against; changing it is not this path's business.)
+        spectralDelay_.setBaseDelayMs(Krate::DSP::SpectralDelay::kDefaultDelayMs);  // :425
+        spectralDelay_.setSpreadMs(0.0f);                                           // :432
+        spectralDelay_.setFeedback(0.0f);                                           // :460
+        spectralDelay_.setFeedbackTilt(0.0f);                                       // :468
+        spectralDelay_.setDiffusion(0.0f);                                          // :489
+        spectralDelay_.setStereoWidth(0.0f);                                        // :512
+        // The seventh smoother. Its target is ALREADY 1.0 (FR-004 pushes it before
+        // prepare and no parameter can reach it, C-2 clause 1), so this is a
+        // restatement rather than a correction - written out so the list covers all
+        // seven and a future push cannot silently leave one behind.
+        spectralDelay_.setDryWetMix(1.0f);  // :500
+        spectralDelay_.snapParameters();    // :595 - the setTarget/snap pair, as prepare()
+
+        // ...and therefore the trackers, or the next process() would see "nothing
+        // changed" against the pre-deactivation values and leave every target at the
+        // ctor default just installed. Raising the first-push flag makes that call
+        // deliver the WHOLE registered set - targets only, exactly as the first
+        // process() after a prepare does.
+        lastPushedFxValid_ = false;
+        clearFifos();            // plan section 3.1 - restores the one-chunk pre-fill
+        fxSendState_ = FxSendState::Bypassed;
+        fxBypassedSamples_ = 0;
+        fxLiveSamplesSinceEngage_ = 0;
+        fxDrainRemaining_ = 0;
+        fxResetDue_ = false;
+        fxFifoClearDue_ = false;
+        fxDrainPeak_ = 1.0f;  // above kFxSendDrainFloor - see setupProcessing()
+        fxEffectiveReturnGain_ = 0.0f;
+        fxSendRuns_ = false;
+        // FR-035's RETURN-GAIN RAMP clause. snapTo, not setTarget: a deactivated
+        // send holds nothing, so re-activation must RAMP UP from silence rather
+        // than resume mid-ramp at whatever gain the pre-deactivation render had
+        // reached. Pairing it with fxEffectiveReturnGain_ = 0.0f keeps the
+        // smoother and the value setParamSmootherTargets() will re-target it to
+        // consistent across the deactivated window.
+        fxReturnGainSm_.snapTo(0.0f);
+
+        // FR-011's two drift sources. They advance every block regardless of
+        // bypass, so they are genuinely running state and a deactivation must
+        // clear them like any other (brownian_drift.h:133). Their SEEDS are not
+        // re-pushed here: setupProcessing() owns that, and re-activation without
+        // a re-prepare must not silently re-phase a deterministic walk.
+        widthDrift_.reset();
+        azimuthDrift_.reset();
+
+        // FR-035's WANDER clause. The width smoother and the azimuth pair are
+        // running state exactly as the drifts are, and a deactivated bus holds
+        // nothing - so both SNAP back to identity rather than resuming a ramp
+        // from wherever the pre-deactivation render left them. The latch state
+        // goes with them: a stage left "effective" across a deactivation would
+        // run its disengage tail against audio that no longer exists, and
+        // fxWanderWasActive_ left true would skip FR-010a's ENGAGE snap on the
+        // first re-activated block that engages.
+        //
+        // IDENTITY, not the current ID-1440 atomic: a deactivated stage renders
+        // nothing, so the state it must be restored to is the one the FR-010
+        // skip leaves the bus in - unity width, unity gains. FR-010a's ENGAGE
+        // arm makes the same choice for the same reason, and the plan's FR-035
+        // row asserts exactly `globalMs_.getWidth() == kDefaultWidth`.
+        globalMs_.setWidth(Krate::DSP::MidSideProcessor::kDefaultWidth);
+        globalMs_.reset();  // midside_processor.h:114 - snaps every smoother
+        azimuthGainLSm_.snapTo(1.0f);
+        azimuthGainRSm_.snapTo(1.0f);
+        fxWanderSettleRemaining_ = 0;
+        fxWanderRuns_ = false;
+        fxWanderRunsEffective_ = false;
+        fxWanderWasActive_ = false;
+        wanderControlUpdates_ = 0;
     }
     return AudioEffect::setActive(state);
 }
@@ -701,6 +1038,156 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     updateSyncedTravelRate(data.processContext);   // FR-056; may dirty the VP generation
     pushAetherParamsIfDirty();                     // FR-044: the 10 AE values
     pushSpectralStatesIfPending();                 // FR-046: the 5 CFG values
+
+    // Phase 10 FR-030. ONE BlockContext per process() CALL - never per slice -
+    // built from the SAME tempo sample point Phase 9 already uses
+    // (updateSyncedTravelRate above), with Phase 9's THREE-PART guard verbatim in
+    // shape. Relying on SpectralDelay's own fallback is NOT sufficient: it fires
+    // only on `tempo <= 0.0` (spectral_delay.h:325-327), and a host may leave a
+    // STALE POSITIVE tempo in ProcessContext while kTempoValid is clear - which
+    // would sync the send to a tempo the transport no longer has.
+    //
+    // Designated initializers, in declaration order (block_context.h:62-80): a
+    // narrowing brace-init is a hard error on the Clang legs, and the two time-
+    // signature fields are deliberately left at their defaults because nothing
+    // the send does reads them.
+    {
+        const Vst::ProcessContext* pc = data.processContext;
+        const bool tempoOk = pc != nullptr
+                             && (pc->state & Vst::ProcessContext::kTempoValid) != 0
+                             && pc->tempo > 0.0;
+        fxBlockCtx_ = Krate::DSP::BlockContext{
+            .sampleRate = sampleRate_,
+            .blockSize = total,
+            // 120.0 is BlockContext's own documented default (block_context.h:69),
+            // i.e. the standalone-scenario tempo, not a number invented here.
+            .tempoBPM = tempoOk ? pc->tempo : 120.0,
+            .isPlaying =
+                pc != nullptr && (pc->state & Vst::ProcessContext::kPlaying) != 0};
+    }
+
+    // Phase 10 FR-012 / plan section 3.3. The send's three-state machine, ONCE
+    // PER process() CALL and never per slice - `++bypassPredicateEvals_` exactly
+    // once, which SC-018 clause (c) asserts against the CALL count over a render
+    // whose blocks carry several MIDI slices. It runs BEFORE pushEffectsParams()
+    // because it composes fxEffectiveReturnGain_ (FR-023a lifts the return gain
+    // while the freeze is engaged) and raises the FR-008 reset request that
+    // runSendStage() consumes, and BEFORE setParamSmootherTargets() below, which
+    // targets that composed value rather than the raw ID 1410 atomic.
+    //
+    // It takes the WHOLE CALL's sample count: every counter it advances is a
+    // wall-clock quantity, so advancing them per slice would make the bypass
+    // age, the drain countdown and the freeze priming window depend on how the
+    // host and the MIDI-slice loop happened to partition the block.
+    updateEffectsBypassState(total);
+
+    pushEffectsParams();                           // Phase 10 D-2 / FR-021
+
+    // Phase 10 FR-011. The two wander sources advance on EVERY block REGARDLESS
+    // of any bypass state (C-3's final clause), so re-engaging the stage does not
+    // restart a walk that was conceptually running - a restart would read as the
+    // stereo image jumping rather than as one object that kept moving. This is
+    // the counter SC-018 clause (b) compares against the block count under BOTH
+    // bypass states, which is why the increment sits here and not inside
+    // runWanderStage() - and it is incremented UNCONDITIONALLY, before the
+    // predicate below decides WHERE this block's advance happens.
+    ++widthDriftBlocks_;
+
+    // Phase 10 FR-010 / FR-010a / FR-012. The wander's bypass predicate, hoisted
+    // ONCE PER process() CALL beside the send's, and in TWO PARTS.
+    //
+    // Part 1 is FR-010's EXACT predicate on the RAW atomics. Exactness is the
+    // whole point of FR-024a's plugin-side depth multiply: a depth pushed
+    // through BrownianDrift::setDepth() would sit behind that component's 150 ms
+    // kDriftOutputSmoothMs output smoother (brownian_drift.h:103, :159) and this
+    // test could not be taken on the block the host wrote the value - which
+    // SC-002 requires, because at the C-6 defaults the skip must be BIT-exact.
+    //
+    // Part 2 is FR-010a's DISENGAGE arm. The raw predicate goes false the
+    // instant a host writes kFxWanderDepthId = 0, but globalMs_'s width smoother
+    // still holds the last modulated width (it advances ONLY inside process(),
+    // midside_processor.h:186-192), the azimuth pair still holds its last
+    // non-unity gains and the depth smoothers are still mid-ramp. Skipping
+    // applies EXACT identity, so an unlatched skip would step the stereo image
+    // in one sample - reintroducing at the disengage edge exactly the lag
+    // FR-024a rejects BrownianDrift::setDepth() over.
+    //
+    // ORDER IS NORMATIVE: arm/decrement the countdown BEFORE wanderAtIdentity()
+    // reads it, so the first non-raw block still sees a positive remainder and
+    // keeps the stage running.
+    {
+        constexpr auto kRelaxed = std::memory_order_relaxed;
+        fxWidthBase_ = effectsParams_.width.load(kRelaxed);
+        // The raw predicate: the stage runs unless ALL THREE controls sit at
+        // identity. Spelled as the disjunction of the three "not at identity"
+        // tests (De Morgan of that sentence) so clang-tidy's
+        // readability-simplify-boolean-expr has nothing to say about it.
+        fxWanderRuns_ = fxWidthBase_ != Krate::DSP::MidSideProcessor::kDefaultWidth
+                        || effectsParams_.wanderDepth.load(kRelaxed) != 0.0f
+                        || effectsParams_.azimuthDepth.load(kRelaxed) != 0.0f;
+        if (fxWanderRuns_) {
+            fxWanderSettleRemaining_ = fxWanderSettleSamples_;
+        } else {
+            fxWanderSettleRemaining_ -= static_cast<std::int64_t>(total);
+        }
+        fxWanderRunsEffective_ = fxWanderRuns_ || !wanderAtIdentity();
+    }
+
+    // FR-011's ADVANCE, and WHERE it happens is what makes the wander block-size
+    // invariant (SC-017) rather than a staircase whose step is the host's block
+    // length.
+    //
+    // BrownianDrift::processBlock advances the walk to the END of whatever it is
+    // given BEFORE any audio is rendered, and getCurrentValue() (:212) is a pure
+    // read - so a single processBlock(total) here would make every control chunk
+    // in the block read the value at the BLOCK BOUNDARY. At 512-sample blocks
+    // that is a ~10.7 ms staircase and at 2048 a ~43 ms one, and the two produce
+    // measurably different width and azimuth trajectories from the same render -
+    // which SC-017 compares at kSampleTolerance = 1e-4 with the wander engaged.
+    //
+    // So while the stage RUNS the advance is moved inside it, onto the ABSOLUTE
+    // 64-sample control grid: exactly one processBlock(64) per grid boundary, in
+    // EVERY partition, so the value at grid boundary k is a pure function of k.
+    // While the stage is SKIPPED nothing else would advance the walks at all, so
+    // the whole block is advanced here - FR-011's requirement, and the reason a
+    // re-engaged wander continues rather than restarts.
+    //
+    // BrownianDrift::processBlock is a ~32-sample-decimated AR(1)
+    // (brownian_drift.h:105, :194), so its cost is a small fraction of a block
+    // even when nothing consumes its value.
+    //
+    // effectsStageBypassed_ is FR-040 capability 1 and is false on every shipping
+    // path, but it has to appear in this predicate: with the stage removed from
+    // renderSlice() entirely, nothing inside it advances the walks either, and
+    // FR-011 would then hold on the shipping path and quietly not under the
+    // probe - which is the one configuration SC-002 and SC-012 measure against.
+    if (!fxWanderRunsEffective_ || effectsStageBypassed_) {
+        widthDrift_.processBlock(total);  // brownian_drift.h:194
+        azimuthDrift_.processBlock(total);
+    }
+
+    // FR-024's control-grid witness covers ONE process() call, exactly as the
+    // pre-output tap does, so a case can assert "32 evaluations over this
+    // 2048-sample block" rather than an accumulation across the render.
+    wanderControlUpdates_ = 0;
+
+    // Phase 10 FR-041 clauses 1 and 6. ONCE PER process() CALL, and that is
+    // load-bearing for BOTH members it touches:
+    //   - effectsStageProcessCalls_ is SC-012/SC-013's DIVISOR, and their budgets
+    //     are PER BLOCK. renderSlice() runs once per SLICE - the loop below
+    //     subdivides on every MIDI event, on the 2048 cap and, while any
+    //     class-(b) smoother is unsettled, on the absolute 64-sample grid - so
+    //     incrementing there would under-report the per-block cost by up to 8x
+    //     and make SC-013's 2.5 % budget structurally unable to fail.
+    //   - the tap cursor restarts per CALL, so preOutputTapLForTest() always
+    //     describes the block just rendered rather than an accumulation, and the
+    //     truncation flag is decided from the WHOLE block's length before any
+    //     slice has been taken from it.
+    preOutTapCursor_ = 0;
+    preOutTapSize_ = 0;
+    preOutTapTruncated_ = total > kMaxBlockSamples;
+    ++effectsStageProcessCalls_;
+
     // FR-059(b) (plan 3.5.4). THE TARGETS ARE SET ONCE PER process() CALL, HERE,
     // BEFORE the slice loop - never from inside advanceParamSmoothers(). The
     // hoist is valid for exactly the stated reason the master-gain target hoist
@@ -903,6 +1390,12 @@ tresult PLUGIN_API Processor::setState(IBStream* state) {
     // every unread field at its registered default and returns false, which is
     // not an error here - a version-1 stream stops after [macro] and a truncated
     // preset loads as far as it goes (FR-093).
+    //
+    // THAT IS WHY THERE IS NO VERSION-AWARE BRANCH (Phase 10 C-8/FR-033). A v1 or
+    // v2 stream simply runs out before the block that was appended after it, and
+    // every field of that block keeps its registered default - which by C-7 is the
+    // behaviour the older stream already had. `version` is read above only to
+    // refuse a FUTURE version, never to select a layout.
     loadGlobalParams(globalParams_, streamer);   // [global]  12 B
     loadMacroParams(macroParams_, streamer);     // [macro]   20 B
     // ---- end of a version-1 stream: 36 B, a STRICT PREFIX of v2 ----
@@ -914,6 +1407,8 @@ tresult PLUGIN_API Processor::setState(IBStream* state) {
     loadBodyParams(bodyParams_, streamer);       // [body]    52 B
     loadAtmosphereParams(atmosParams_, streamer);// [atmos]   68 B
     loadAetherParams(aetherParams_, streamer);   // [aether]  72 B
+    // ---- end of a version-2 stream: 2532 B, a STRICT PREFIX of v3 ----
+    loadEffectsParams(effectsParams_, streamer); // [effects] 64 B (v3, LAST)
 
     // Plan 3.7 step 3: publish, then advance the cursor. The store is the ONLY
     // thing that makes the buffer visible to the audio thread, and it happens
@@ -930,9 +1425,13 @@ tresult PLUGIN_API Processor::setState(IBStream* state) {
     return kResultOk;
 }
 
-// FR-090 / FR-094. Stream layout is FIXED (spec C-8, plan 5.1): little-endian,
-// 2532 bytes = the version int32 + 73 floats + 18 int32 + four 541-byte
-// SpectralState payloads, in the block order below.
+// FR-090 / FR-094. Stream layout is FIXED (Phase 10 spec C-8): little-endian,
+// 2596 bytes = the version int32 + 85 floats + 22 int32 + four 541-byte
+// SpectralState payloads, in the block order below. Phase 9's v2 layout was
+// 2532 bytes (73 floats + 18 int32); the [effects] block of 12 floats + 4 int32
+// is APPENDED LAST, which is what keeps a v2 stream a strict byte prefix of a v3
+// one from offset 4 on and lets the EOF-safe loader chain migrate with no
+// version-aware branch.
 //
 // IT NEVER READS spectralSlots_. That array is audio-thread-owned (plan 3.7's
 // ownership table) and a message-thread read of it would be a data race whose
@@ -976,6 +1475,8 @@ tresult PLUGIN_API Processor::getState(IBStream* state) {
     saveBodyParams(bodyParams_, streamer);       // [body]     52 B
     saveAtmosphereParams(atmosParams_, streamer);// [atmos]    68 B
     saveAetherParams(aetherParams_, streamer);   // [aether]   72 B
+    // ---- v3's ONE addition, and it is LAST (C-8's strict-prefix property) ----
+    saveEffectsParams(effectsParams_, streamer); // [effects]  64 B
 
     return kResultOk;
 }
@@ -1043,6 +1544,12 @@ void Processor::processParameterChanges(Vst::IParameterChanges* changes) noexcep
         } else if (id < kAetherParamRangeEnd) {
             handleAetherParamChange(aetherParams_, id, value);
             markDirty(id);
+        } else if (id < kEffectsParamRangeEnd) {
+            // FR-018. ONE MORE RUNG on the range ladder, never a 107-case switch.
+            // handleEffectsParamChange ignores any ID inside 1400-1499 that C-6
+            // does not name, so the reserved tail of the band costs one compare.
+            handleEffectsParamChange(effectsParams_, id, value);
+            markDirty(id);
         }
         // else: an ID outside every shipped range - ignored.
     }
@@ -1051,8 +1558,8 @@ void Processor::processParameterChanges(Vst::IParameterChanges* changes) noexcep
 // FR-024a clauses 1-2. Called ONLY from process(), which has already
 // established that engine_ is non-null and that the processor is prepared.
 //
-// Both pushes are ON CHANGE ONLY. Re-calling setPolyphony() unconditionally is
-// wrong twice over: it re-arms the voice-sum smoother (sumGain_.setTarget(...),
+// Every push here is ON CHANGE ONLY. Re-calling setPolyphony() unconditionally
+// is wrong twice over: it re-arms the voice-sum smoother (sumGain_.setTarget(...),
 // seraphis_engine.h:349) every block, and setVoiceCount walks the allocator's
 // excess-slot loop (:339-348) for nothing.
 //
@@ -1070,8 +1577,8 @@ void Processor::processParameterChanges(Vst::IParameterChanges* changes) noexcep
 // only from the audio thread and read only from the test thread once the render
 // has completed; no atomic is needed.
 //
-// @par Real-Time Safety: allocation-free, lock-free, exception-free. Both
-//      atomics are read relaxed; both engine setters are noexcept and
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Every
+//      atomic is read relaxed; every engine setter is noexcept and
 //      allocation-free (setPolyphony is documented allocation-free at
 //      seraphis_engine.h:319-321 because prepare() prepares all kMaxVoices
 //      slots).
@@ -1087,14 +1594,12 @@ void Processor::pushGlobalParams() noexcept {
         ++setPolyphonyCalls_;
     }
 
-    const bool soft = globalParams_.softLimit.load(std::memory_order_relaxed);
-    if (!lastPushedSoftLimitValid_ || soft != lastPushedSoftLimit_) {  // ON CHANGE ONLY
-        engine_->setOutputSaturation(soft ? Krate::DSP::SeraphisEngine::kOutputSaturation
-                                          : 0.0f);  // :566, :142
-        lastPushedSoftLimit_ = soft;
-        lastPushedSoftLimitValid_ = true;
-        ++engSoftLimitPushes_;
-    }
+    // NO setOutputSaturation BLOCK HERE. Phase 10 D-2 / FR-021 moved it to
+    // pushEffectsParams(), which is now the SOLE writer on that setter: two
+    // independent on-change trackers driving one setter is last-writer-wins with
+    // no convergence, so toggling ID 2 off->on after setting ID 1400 to 0.8 used
+    // to revert the engine to 0.15f until ID 1400 next moved. kSoftLimitId keeps
+    // its shipped meaning as the GATE, read there.
 
     // FR-045, the two Phase 9 ENG values. BOTH are on-change only, and that is not
     // an optimisation: SeraphisEngine::setSeed re-derives all sixteen voice seeds
@@ -1121,6 +1626,215 @@ void Processor::pushGlobalParams() noexcept {
         lastPushedFreezeValid_ = true;
         ++engFreezePushes_;
     }
+}
+
+// Phase 10 D-2 / FR-021 (plan 2.5.4). THE SINGLE WRITER on
+// SeraphisEngine::setOutputSaturation on the audio thread. Called ONCE per
+// process() call from the pre-slice block, never per slice - the hoist is valid
+// for the same stated reason every other pre-slice push is hoisted:
+// processParameterChanges() ran at the top of process() and took the LAST point
+// of every queue, so neither atomic can change within a process() call.
+//
+// The pushed quantity is COMPOSED: kSoftLimitId (ID 2) keeps its shipped meaning
+// as a GATE - off means no output saturation at all - and kFxSaturationId
+// (ID 1400) supplies the amount that gate passes. Change detection is on the
+// COMPOSED value, not on the two inputs separately: detecting on the gate as
+// well would re-push kOutputSaturation the moment ID 2 was toggled off and on,
+// silently discarding ID 1400's amount.
+//
+// engSoftLimitPushes_ is the EXISTING Phase 9 counter, incremented from here, so
+// no Phase 9 cadence assertion moves.
+//
+// EVERYTHING BELOW STEP 1 IS FR-022 / FR-025 / FR-026 / FR-027, and every one of
+// them is ON CHANGE ONLY against its own tracker, each push counted in
+// effectsPushes_ (FR-041 clause 3). Re-pushing an unchanged value is not free:
+// every SpectralDelay setter re-targets a parameter smoother the component
+// advances once per chunk, and the seed burst below redraws ~2052 RNG values.
+//
+// IDs 1410, 1440, 1441 and 1443 are DELIBERATELY ABSENT. 1410, 1441 and 1443 are
+// the three class-(b) smoothers (FR-038b clause 2) whose targets are set in
+// setParamSmootherTargets(), and 1440 is pushed inside the wander stage on the
+// 64-sample control grid. ID 1430 IS here (step 7), but as the COMPOSED
+// `freezeReady` of plan D-5 rather than as a blind push of its atomic.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Every read
+//      is a relaxed atomic load; every write is a component setter that stores a
+//      scalar and re-targets a smoother. The ONE unbounded-looking step is the
+//      seed burst, which is bounded by construction (2 x numBins) and is the
+//      second burst site SC-011 gates.
+void Processor::pushEffectsParams() noexcept {
+    // ---- 1. ID 1400 - the composed single writer (D-2 / FR-021) -------------
+    const bool soft = globalParams_.softLimit.load(std::memory_order_relaxed);
+    const float amount =
+        soft ? effectsParams_.saturation.load(std::memory_order_relaxed) : 0.0f;
+    if (!lastPushedSaturationValid_ || amount != lastPushedSaturation_) {  // ON CHANGE ONLY
+        engine_->setOutputSaturation(amount);  // seraphis_engine.h:672
+        lastPushedSaturation_ = amount;
+        lastPushedSaturationValid_ = true;
+        ++engSoftLimitPushes_;
+    }
+
+    // ---- 2. The seed (FR-026, FR-027) --------------------------------------
+    // The send's OWN tracker, not lastPushedSeedIndex_: setupProcessing() already
+    // ran this burst once, so the first process() after a prepare must not repeat
+    // it - and the engine/reverb tracker is invalidated on a Reprepared scope
+    // while this one is not.
+    //
+    // seedRng THEN reset, the order the header documents (:295-296) and the same
+    // two calls setupProcessing() makes, so the post-seed state is a pure function
+    // of the seed rather than of ASLR (:223-224, :279-284).
+    //
+    // THE FIFOs ARE NOT CLEARED HERE. fxFifoClearDue_ defers that to the top of
+    // runSendStage(), before any partial chunk-loop state is live: clearing them
+    // from inside the loop would zero fxChunkFill_ and then subtract 512 from a
+    // std::size_t, wrapping to ~2^64 and hanging the audio thread (plan R-13).
+    const auto fxSeedIndex =
+        static_cast<int>(clampSeedIndex(globalParams_.seedIndex.load(std::memory_order_relaxed)));
+    if (fxSeedIndex != lastPushedFxSeedIndex_) {  // ON CHANGE ONLY
+        const std::uint32_t seed = kSeedValues[static_cast<std::size_t>(fxSeedIndex)];
+        spectralDelay_.seedRng(seed);  // spectral_delay.h:297
+        spectralDelay_.reset();        // :242
+        ++spectralDelayResets_;        // FR-041 clause 2
+        fxFifoClearDue_ = true;
+
+        // TWO DISTINCT SALTS (C-5 / FR-024a clause 3). Identical salts would make
+        // width and azimuth walk in lockstep off one stream, which reads as a
+        // single moving object rather than as two independent ones.
+        widthDrift_.setSeed(seed ^ kFxWidthDriftSalt);  // brownian_drift.h:145
+        widthDrift_.reset();                            // :133
+        azimuthDrift_.setSeed(seed ^ kFxAzimuthDriftSalt);
+        azimuthDrift_.reset();
+
+        lastPushedFxSeedIndex_ = fxSeedIndex;
+        ++effectsPushes_;
+    }
+
+    // The first push after every prepare delivers the WHOLE registered set: the
+    // component still holds its own construction defaults at this point, which
+    // are not the C-6 ones (see the tracker banner in processor.h).
+    const bool first = !lastPushedFxValid_;
+
+    // ---- 3. IDs 1411, 1412, 1416, 1417 -------------------------------------
+    const float delayTimeMs = effectsParams_.delayTimeMs.load(std::memory_order_relaxed);
+    if (first || delayTimeMs != lastPushedFxDelayTimeMs_) {
+        spectralDelay_.setBaseDelayMs(delayTimeMs);  // spectral_delay.h:425
+        lastPushedFxDelayTimeMs_ = delayTimeMs;
+        ++effectsPushes_;
+    }
+
+    const float spreadMs = effectsParams_.delaySpreadMs.load(std::memory_order_relaxed);
+    if (first || spreadMs != lastPushedFxSpreadMs_) {
+        spectralDelay_.setSpreadMs(spreadMs);  // :432
+        lastPushedFxSpreadMs_ = spreadMs;
+        ++effectsPushes_;
+    }
+
+    const float diffusion = effectsParams_.delayDiffusion.load(std::memory_order_relaxed);
+    if (first || diffusion != lastPushedFxDiffusion_) {
+        spectralDelay_.setDiffusion(diffusion);  // :489
+        lastPushedFxDiffusion_ = diffusion;
+        ++effectsPushes_;
+    }
+
+    const float stereoWidth = effectsParams_.delayWidth.load(std::memory_order_relaxed);
+    if (first || stereoWidth != lastPushedFxStereoWidth_) {
+        spectralDelay_.setStereoWidth(stereoWidth);  // :512
+        lastPushedFxStereoWidth_ = stereoWidth;
+        ++effectsPushes_;
+    }
+
+    // ---- 4. IDs 1414 + 1415 TOGETHER (FR-016a) ------------------------------
+    // The compensated feedback is a function of BOTH, so it is recomputed and
+    // re-pushed whenever EITHER moves. A build that recomputed only on a feedback
+    // change would leave the uncompensated value installed when the tilt alone
+    // moved - and at feedback 0.95 with tilt +1 that puts 243 of 513 bins above
+    // unity loop gain, where tanh(delayedMag * binFeedback) (:751-767) has a
+    // stable non-zero fixed point and the bins sustain forever.
+    //
+    // The divisor is the NAMED helper in effects_params.h - never an inline
+    // literal here - because SC-005 clause 1's 513-bin sweep evaluates the same
+    // expression from another translation unit.
+    const float feedback = effectsParams_.delayFeedback.load(std::memory_order_relaxed);
+    const float tilt = effectsParams_.delayTilt.load(std::memory_order_relaxed);
+    const bool tiltMoved = first || tilt != lastPushedFxTilt_;
+    if (tiltMoved || feedback != lastPushedFxFeedback_) {
+        spectralDelay_.setFeedback(Seraphis::tiltCompensatedFeedback(feedback, tilt));  // :460
+        lastPushedFxFeedback_ = feedback;
+        ++effectsPushes_;
+    }
+    if (tiltMoved) {
+        spectralDelay_.setFeedbackTilt(tilt);  // :468 - pushed UNCHANGED
+        lastPushedFxTilt_ = tilt;
+        ++effectsPushes_;
+    }
+
+    // ---- 5. IDs 1418 + 1419 -------------------------------------------------
+    const bool sync = effectsParams_.delaySync.load(std::memory_order_relaxed);
+    if (first || sync != lastPushedFxSync_) {
+        spectralDelay_.setTimeMode(sync ? 1 : 0);  // :524
+        lastPushedFxSync_ = sync;
+        ++effectsPushes_;
+    }
+
+    const int syncNote = effectsParams_.delaySyncNote.load(std::memory_order_relaxed);
+    if (first || syncNote != lastPushedFxSyncNote_) {
+        spectralDelay_.setNoteValue(syncNote);  // :532 - clamps to [0, 9] itself
+        lastPushedFxSyncNote_ = syncNote;
+        ++effectsPushes_;
+    }
+
+    // ---- 6. ID 1413 ---------------------------------------------------------
+    const int spreadDirection = effectsParams_.spreadDirection.load(std::memory_order_relaxed);
+    if (first || spreadDirection != lastPushedFxSpreadDirection_) {
+        // toSpreadDirection() clamps before the static_cast, which is what keeps a
+        // corrupt state blob out of an out-of-range enum (dropdown_mappings.h:344).
+        spectralDelay_.setSpreadDirection(toSpreadDirection(spreadDirection));  // :439
+        lastPushedFxSpreadDirection_ = spreadDirection;
+        ++effectsPushes_;
+    }
+
+    // ---- 7. ID 1430 - the PRIMED freeze push (FR-023a, plan D-5) ------------
+    // WHY THIS IS NOT A BLIND PUSH OF THE ATOMIC. processSpectralFrame captures
+    // on the first frame where `freezing && !wasFrozen_` (spectral_delay.h:
+    // 677-688), reading the STFT's CURRENT analysis frame. From the C-6 defaults
+    // the send has been bypassed since prepare (FR-023a's whole subject), so at
+    // the instant of a freeze-FORCED engage that frame is prepare-time zeros or a
+    // stale, fully-drained tail: capturing it gives a SILENT frozen spectrum, and
+    // "engaging 1430 alone is audible" - the point of FR-023a - fails for an
+    // implementation that follows it literally.
+    //
+    // So the engage waits until the send has consumed kFxFreezePrimeSamples of
+    // LIVE bus (2 x kDefaultFFTSize = four hops = two analyses on wholly-live
+    // frames = 42.7 ms at 48 kHz, far inside SC-007's 200 ms measurement point).
+    // updateEffectsBypassState() ran earlier in THIS call (:946), so both the
+    // state and the counter are this block's.
+    //
+    // FREEZE-OFF IS NEVER DEFERRED: freezeReady falls in the same block freezeOn
+    // does, because it is a conjunction with it. And the tracker holds the
+    // COMPOSED value, so the deferred engage pushes exactly once.
+    const bool freezeOn = effectsParams_.spectralFreeze.load(std::memory_order_relaxed);
+    const bool freezeReady = freezeOn && (fxSendState_ == FxSendState::Active)
+                             && fxLiveSamplesSinceEngage_ >= kFxFreezePrimeSamples;
+    if (first || freezeReady != lastPushedFxFreezeReady_) {  // ON CHANGE ONLY
+        spectralDelay_.setFreezeEnabled(freezeReady);  // spectral_delay.h:479
+        lastPushedFxFreezeReady_ = freezeReady;
+        ++effectsPushes_;
+    }
+
+    // ---- 8. ID 1442 - ONE value, BOTH drifts (FR-025) -----------------------
+    // The two differ ONLY by seed salt, so they never move in lockstep. A build
+    // that pushed one drift only is invisible in audio - the other simply wanders
+    // at its prepared kDefaultSmoothness - which is why FR-041 gives this its own
+    // assertion rather than trusting the render.
+    const float wanderRate = effectsParams_.wanderRate.load(std::memory_order_relaxed);
+    if (first || wanderRate != lastPushedFxWanderRate_) {
+        widthDrift_.setSmoothness(wanderRate);  // brownian_drift.h:152
+        azimuthDrift_.setSmoothness(wanderRate);
+        lastPushedFxWanderRate_ = wanderRate;
+        ++effectsPushes_;
+    }
+
+    lastPushedFxValid_ = true;
 }
 
 // FR-024 steps 2-6, in the order tests/test_helpers/seraphis_chain.h:190-259
@@ -1165,9 +1879,85 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
         wetR_[s] *= g;
     }
 
+    // 4c. Phase 10, C-1 STEPS 4 AND 5, plus FR-041 clause 6's pre-output tap -
+    //     all inside ONE scoped timer (FR-041 clause 1).
+    //
+    //     THE TAP COPY IS DELIBERATELY INSIDE THE TIMED REGION. Hiding it would
+    //     not make it free: it would charge it to SC-014's whole-render full-poly
+    //     gate, which has the least headroom of any budget in this phase (4.09
+    //     percentage points), instead of to SC-012/SC-013, which are the criteria
+    //     sized to pay for this phase's per-block cost. That relationship is
+    //     UNCHANGED by the instrumentation gate below: the gate is on for every
+    //     measured figure (ProcessorFixture::prepare() sets it), so the tap is
+    //     still paid for out of the scoped timer and never out of the ceiling.
+    //
+    //     CONSTITUTION II - THE GATE. `effectsStageInstrumented_` is FALSE on
+    //     every shipping path, so the shipped plugin executes NO clock read and
+    //     NO tap copy here; it pays one always-false branch per slice. The gate
+    //     is not optional politeness: this function runs ONCE PER SLICE and the
+    //     slice loop subdivides on the absolute 64-sample control grid whenever a
+    //     class-(b) smoother is unsettled (:1298-1301), so unconditional
+    //     instrumentation put up to 64 std::chrono::steady_clock::now() calls -
+    //     a system call on every platform this plugin targets - plus 32 full-bus
+    //     copies into a single 2048-sample host callback of the SHIPPED build,
+    //     during any parameter ramp. Constitution II forbids system calls on the
+    //     audio thread outright.
+    //
+    //     Real-time safety (FR-029), when the gate IS on: two clock reads, one
+    //     add, one buffer copy. No allocation, no lock, no throw, no file I/O -
+    //     preOutTapL_/preOutTapR_ were sized once in setupProcessing() and are
+    //     indexed through .data().
+    {
+        const bool instrumented = effectsStageInstrumented_;
+        std::chrono::steady_clock::time_point stageStart{};
+        if (instrumented) {
+            stageStart = std::chrono::steady_clock::now();
+        }
+
+        if (!effectsStageBypassed_) {                     // FR-040 capability 1
+            // FR-007's EXACT prohibition. While the send is neither active nor
+            // draining the stage is NOT CALLED: no SpectralDelay::process, no
+            // copy of the bus into fxIn*, no read or write of any send buffer.
+            // This is the only reason the C-6 default configuration costs
+            // nothing, and sendChunkCountForTest() is its CI-gated observation.
+            if (fxSendRuns_) {
+                runSendStage(wetL_.data(), wetR_.data(), n);  // C-1 step 4
+            }
+            if (!effectsStageAfterOutput_) {              // FR-040 capability 2
+                runWanderStage(wetL_.data(), wetR_.data(), n);  // C-1 step 5
+            }
+        }
+
+        // The bus AS THE OUTPUT STAGE WILL SEE IT. The guard is what makes the
+        // truncation flag honest rather than an out-of-bounds write: a host block
+        // larger than 2048 arrives as several slices and only the ones that still
+        // fit are taped.
+        if (instrumented && preOutTapCursor_ + n <= preOutTapL_.size()) {
+            std::copy_n(wetL_.data(), n, preOutTapL_.data() + preOutTapCursor_);
+            std::copy_n(wetR_.data(), n, preOutTapR_.data() + preOutTapCursor_);
+            preOutTapCursor_ += n;
+            preOutTapSize_ = preOutTapCursor_;
+        }
+
+        if (instrumented) {
+            const std::chrono::steady_clock::time_point stageEnd =
+                std::chrono::steady_clock::now();
+            effectsStageNs_ +=
+                std::chrono::duration<double, std::nano>(stageEnd - stageStart).count();
+        }
+    }
+
     // 5. Output stage IN PLACE on the reverb return: tape saturator -> true-peak
     //    limiter. ALWAYS LAST.
     engine_->processOutputStage(wetL_.data(), wetR_.data(), n);  // engine.h:512
+
+    // FR-040 capability 2, TEST PATHS ONLY. SC-003(a)'s positive control needs
+    // the deliberately-wrong order - step 5 AFTER step 6 - to provably FAIL the
+    // ceiling clause, which is what makes the shipped order's pass non-vacuous.
+    // effectsStageAfterOutput_ is false on every shipping path.
+    if (effectsStageAfterOutput_) {
+        runWanderStage(wetL_.data(), wetR_.data(), n);
+    }
 
     std::copy_n(wetL_.data(), n, outL);
     std::copy_n(wetR_.data(), n, outR);
@@ -1198,6 +1988,482 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
 }
 
 // ==============================================================================
+// Phase 10 - C-1 STEP 4: the fixed-size send accumulator (spec C-2, plan 3.1)
+// ==============================================================================
+// WHY THE ACCUMULATOR EXISTS. SpectralDelay::process is NOT partition-invariant.
+// STFT::canAnalyze() requires samplesAvailable_ >= fftSize_ (stft.h:134-137),
+// each analyze() consumes hopSize_ (:171), each synthesize() marks
+// samplesReady_ += hopSize_ (:311), and process() pulls
+// toPull = min(numSamples, availableL, availableR) (spectral_delay.h:366) while
+// writing dryBuffer * dryMix - SILENCE at 100 % wet - into everything it cannot
+// supply (:383-386). At fftSize 1024 / hop 512 a single 2048-sample call has
+// three analyses ready and lands wet-stream sample 0 at output index 0; the SAME
+// audio as four 512-blocks lands it at index 512. That is a PERMANENT one-hop
+// offset of the whole send, not a start-up transient - and the Seraphis chain is
+// documented block-size invariant. Hence: the component is called with a
+// CONSTANT kFxSendChunkSamples, never with a slice length (FR-003a).
+//
+// THE INVARIANT, PROVED - not merely asserted. Let inLen be fxChunkFill_ and
+// outLen be fxOutFill_ after a slice. clearFifos() establishes inLen = 0,
+// outLen = 512 (the one-chunk pre-fill) and RE-establishes exactly that at every
+// clear. One slice of n samples gives inLen' = inLen + n, k = floor(inLen'/512)
+// chunks, inLen'' = inLen' - 512k, outLen'' = outLen + 512k - n. Substituting
+// outLen = 512 - inLen:
+//
+//     outLen'' = 512 - inLen - n + 512k = 512 - inLen''
+//
+// so fxChunkFill_ + fxOutFill_ == kFxSendChunkSamples at EVERY slice boundary,
+// inLen'' < 512 => outLen'' > 0, and the output FIFO can never underflow. The
+// pipeline delay is therefore exactly 512 samples IN EVERY PARTITION - the
+// property SC-017 tests, and the reason FR-005 keeps it out of the reported
+// latency (it is a delay's own delay, absorbed into the delay time).
+//
+// The two assertions below GUARD that proof rather than restate it.
+// fxChunkFill_ and fxOutFill_ are std::size_t, so a violated invariant is not a
+// glitch but a wrap to ~2^64 that silently invalidates every later occupancy
+// test and walks stale ring content into the bus. They cost nothing in Release
+// and turn any future edit that breaks the proof into an immediate Debug
+// failure. The path is reachable in the SHIPPING configuration - the 64-sample
+// sub-slice subdivision runs for the whole of every engage/bypass ramp - so this
+// is not a theoretical hazard.
+//
+// CAPACITY. Peak input occupancy before the chunk loop is
+// 511 + kMaxBlockSamples = 2559; peak output occupancy before the mix loop is
+// 512 + 2048 = 2560. kFxFifoCapacity = 4096 is a power of two, so the ring index
+// is a mask and never a modulo.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Every
+//      buffer was sized once in setupProcessing() and is indexed through
+//      .data() / operator[], never .at() (which throws).
+void Processor::runSendStage(float* busL, float* busR, std::size_t n) noexcept {
+    constexpr std::size_t kMask = kFxFifoCapacity - 1u;
+
+    // ---- clear -------------------------------------------------------------
+    // AT THE TOP, and NEVER inside the chunk loop. Inside the loop the guard
+    // `fxChunkFill_ >= kFxSendChunkSamples` has ALREADY passed, so a clear that
+    // zeroes fxChunkFill_ is immediately followed by `-= 512` on a std::size_t,
+    // which wraps to ~2^64, keeps the loop condition true forever and calls
+    // SpectralDelay::process() without bound on the audio thread - a hard hang,
+    // not a glitch (plan R-13).
+    //
+    // This is also FR-008's deferred reset's SINGLE firing point (plan D-3):
+    // `fxChunkFill_ + n >= kFxSendChunkSamples` is exactly "the next fill-chunk
+    // boundary", which is the only grid there is - while bypassed the input FIFO
+    // is not written at all, so no second, free-running counter could describe
+    // the same thing.
+    if (fxFifoClearDue_ || (fxResetDue_ && fxChunkFill_ + n >= kFxSendChunkSamples)) {
+        if (fxResetDue_) {
+            spectralDelay_.reset();  // spectral_delay.h:242 - allocation-free
+            ++spectralDelayResets_;  // FR-041 clause 2
+            fxResetDue_ = false;
+        }
+        clearFifos();
+        fxFifoClearDue_ = false;
+    }
+
+    // ---- push --------------------------------------------------------------
+    // FR-009a: while DRAINING the send is fed SILENCE, not the live bus. That is
+    // what bounds a bypass excursion's cost by ENERGY rather than by wall clock -
+    // the component's own per-bin feedback decays the tail, and the drain's
+    // energy exit ends the window as soon as it has.
+    const bool live = (fxSendState_ == FxSendState::Active);
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::size_t w = (fxInWrite_ + i) & kMask;
+        fxInL_[w] = live ? busL[i] : 0.0f;
+        fxInR_[w] = live ? busR[i] : 0.0f;
+    }
+    fxInWrite_ += n;
+    fxChunkFill_ += n;
+
+    // ---- run ---------------------------------------------------------------
+    while (fxChunkFill_ >= kFxSendChunkSamples) {
+        for (std::size_t i = 0; i < kFxSendChunkSamples; ++i) {
+            const std::size_t r = (fxInRead_ + i) & kMask;
+            fxChunkL_[i] = fxInL_[r];
+            fxChunkR_[i] = fxInR_[r];
+        }
+        fxInRead_ += kFxSendChunkSamples;
+        fxChunkFill_ -= kFxSendChunkSamples;
+
+        // THE CONSTANT-LENGTH CALL. Never `n`.
+        spectralDelay_.process(fxChunkL_.data(), fxChunkR_.data(), kFxSendChunkSamples,
+                               fxBlockCtx_);  // spectral_delay.h:315
+        ++sendChunks_;                        // FR-041 clause 7 / FR-007
+
+        // FR-009a's energy measurement, taken on what the send PRODUCED. Read
+        // only by the Draining arm of updateEffectsBypassState().
+        float peak = 0.0f;
+        for (std::size_t i = 0; i < kFxSendChunkSamples; ++i) {
+            peak = std::max({peak, std::fabs(fxChunkL_[i]), std::fabs(fxChunkR_[i])});
+        }
+        fxDrainPeak_ = peak;
+
+        for (std::size_t i = 0; i < kFxSendChunkSamples; ++i) {
+            const std::size_t w = (fxOutWrite_ + i) & kMask;
+            fxOutL_[w] = fxChunkL_[i];
+            fxOutR_[w] = fxChunkR_[i];
+        }
+        fxOutWrite_ += kFxSendChunkSamples;
+        fxOutFill_ += kFxSendChunkSamples;
+    }
+
+    // ---- mix ---------------------------------------------------------------
+    assert(fxOutFill_ >= n && "plan 3.1: the output FIFO cannot underflow");
+
+    // READ, NEVER .process()-ed. fxReturnGainSm_ is in classBSmoothers(), so
+    // advanceParamSmoothers() already advanced it by n immediately before
+    // renderSlice() was entered. A second per-sample advance would move it 2n
+    // per n rendered while the send runs and n while it does not - halving
+    // kFxReturnRampMs AND making the ramp rate state-dependent. See the
+    // invariant banner beside the declaration in processor.h.
+    //
+    // FR-040 capability 3 (SC-008's positive control (b)): the probe snaps the
+    // ramp to its target so the deliberately un-ramped engage can be shown to
+    // click. It is false on every shipping path.
+    if (effectsReturnRampSnap_) {
+        fxReturnGainSm_.snapToTarget();  // smoother.h:257
+    }
+    const float g = fxReturnGainSm_.getCurrentValue();  // smoother.h:191
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::size_t r = (fxOutRead_ + i) & kMask;
+        busL[i] += fxOutL_[r] * g;
+        busR[i] += fxOutR_[r] * g;
+    }
+    fxOutRead_ += n;
+    fxOutFill_ -= n;
+
+    assert(fxChunkFill_ + fxOutFill_ == kFxSendChunkSamples
+           && "plan 3.1: inLen + outLen is invariant at every slice boundary");
+}
+
+// ==============================================================================
+// Phase 10 - C-1 STEP 5: stereo wandering (spec C-5, plan 3.4)
+// ==============================================================================
+// It takes the POST-MASTER-GAIN bus and works IN PLACE on it, ALWAYS BEFORE the
+// output stage - a width or azimuth change applied after the limiter re-inflates
+// peaks above the ceiling. Its two BrownianDrift sources are prepared in
+// setupProcessing() 5f and advanced on the ABSOLUTE 64-sample control grid
+// below while this stage runs - and by process()' pre-slice block while it does
+// not, because FR-011 requires them to advance regardless of any bypass state
+// while SC-017 requires the value the controls are computed from to depend on
+// the absolute sample position and not on the host's block length.
+//
+// THE SKIP IS MANDATORY, NOT AN OPTIMISATION. Running MidSideProcessor at width
+// 100 % is an ALGEBRAIC identity - mid = (L+R)*0.5, side = (L-R)*0.5
+// (midside_processor.h:200-201), reconstructed as mid +/- side (:225-226) - but
+// NOT an IEEE-754 bit identity: each of those operations rounds, so e.g.
+// L = 1.0f, R = 2^-30 reconstructs R_out = 0.0f. SC-002 asserts
+// max |a - b| == 0.0f over a 10 s render at the C-6 defaults, and an implementer
+// who trusts the algebra and leaves the stage running fails it.
+//
+// THE BODY IS INTERLEAVED WITH THE AUDIO, AND IT MUST BE (plan R-14). An earlier
+// revision ran the whole control loop first and called globalMs_.process(l, r,
+// l, r, n) plus the azimuth multiply once AFTERWARDS. That shape delivers
+// NOTHING: MidSideProcessor::setWidth() only stores width_ and calls
+// widthSmoother_.setTarget() (midside_processor.h:133-136) and
+// OnePoleSmoother::setTarget() only stores a target (primitives/smoother.h:170),
+// so every iteration but the last is overwritten before a single sample is
+// touched - and the net control grid becomes one update per SLICE (up to
+// kMaxBlockSamples = 2048, i.e. ~43 ms at 48 kHz in the steady wander state),
+// not 64 samples. C-5's and FR-024's "at most once per 64-sample control chunk,
+// on the same absolute grid the engine and the reverb already use" would have
+// been a claim the code did not deliver.
+//
+// PER-SAMPLE TRANSCENDENTALS ARE FORBIDDEN (C-5, FR-024): the cos/sin pair is
+// evaluated ONCE PER CONTROL CHUNK and the two products are SMOOTHER TARGETS,
+// which is what turns 2048 cos/sin pairs per block into 32.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Fixed-size
+//      arithmetic over the caller's buffers; the only calls are into components
+//      prepared in setupProcessing().
+void Processor::runWanderStage(float* busL, float* busR, std::size_t n) noexcept {
+    // FR-010's skip, taken on fxWanderRunsEffective_ and NOT on the raw
+    // fxWanderRuns_ - the raw predicate only arms and re-arms the disengage
+    // latch (plan 3.4).
+    if (!fxWanderRunsEffective_) {
+        fxWanderWasActive_ = false;
+        return;
+    }
+    if (n == 0) {
+        return;
+    }
+
+    // FR-010a's ENGAGE arm. globalMs_'s width smoother does NOT advance while
+    // the stage is skipped (it advances only inside process(),
+    // midside_processor.h:186-192), so on re-engage it would otherwise start
+    // ramping from whatever width the LAST engaged span left in it - a value
+    // with no relation to what the bus has been carrying since.
+    //
+    // WHAT IT SNAPS TO IS IDENTITY, and that is the load-bearing half. While the
+    // stage was skipped the bus was passing through untouched, i.e. width 100 %
+    // and unity gains; snapping to the NEW target instead would step the image
+    // by the whole width change in one sample - which is precisely what FR-010a
+    // and SC-008 forbid, and it would additionally defeat ID 1440's declared
+    // continuity mechanism (FR-038b classifies 1440 as `Smoother`, the
+    // component's own widthSmoother_). Snapped to identity, the first setWidth()
+    // below ramps in over MidSideProcessor::kDefaultSmoothingMs = 10 ms and the
+    // azimuth pair over kParamSmoothMs = kFxReturnRampMs = 20 ms.
+    if (!fxWanderWasActive_) {
+        globalMs_.setWidth(Krate::DSP::MidSideProcessor::kDefaultWidth);  // :133
+        globalMs_.reset();                                                // :114
+        azimuthGainLSm_.snapTo(1.0f);
+        azimuthGainRSm_.snapTo(1.0f);
+    }
+
+    // The ABSOLUTE 64-sample control grid. controlPhase_ is incremented AFTER
+    // renderSlice() returns, so controlPhase_ + off is the correct absolute
+    // position of sample `off` inside this slice - the same grid the class-(b)
+    // sub-slice clamp aligns to, so a control chunk never straddles a slice
+    // boundary in the un-settled state.
+    std::size_t off = 0;
+    while (off < n) {
+        const auto phase =
+            static_cast<std::size_t>((controlPhase_ + off) % kWanderControlChunkSamples);
+        const std::size_t chunkLen =
+            std::min(kWanderControlChunkSamples - phase, n - off);
+
+        // FR-011 + SC-017. ON A GRID BOUNDARY, and only there, both walks step by
+        // exactly ONE control chunk. This is the whole of the block-size
+        // invariance argument: the advance lands at absolute sample 64k in EVERY
+        // partition, so the value the width and azimuth targets are computed from
+        // at grid boundary k is a pure function of k - identical whether the host
+        // delivered the render as 1-sample calls or as 2048-sample ones. The
+        // pre-slice block advances the walks instead while the stage is skipped
+        // (see the banner there); the two paths are mutually exclusive, so no
+        // sample is ever advanced twice.
+        if (phase == 0) {
+            widthDrift_.processBlock(kWanderControlChunkSamples);   // brownian_drift.h:194
+            azimuthDrift_.processBlock(kWanderControlChunkSamples);
+        }
+
+        // --- width -----------------------------------------------------------
+        // getCurrentValue() is a pure read (brownian_drift.h:212), so between
+        // grid boundaries it returns the value the boundary above established -
+        // no cache is needed for that, and none is kept. The depth smoother is in
+        // classBSmoothers(), advanced by advanceParamSmoothers() for this
+        // sub-slice immediately before renderSlice() was entered, so it too is
+        // READ and never advanced here.
+        const float driftW = widthDrift_.getCurrentValue();          // [-1, +1]
+        const float depthW = fxWanderDepthSm_.getCurrentValue();     // ID 1441
+        const float width = std::clamp(fxWidthBase_ + depthW * driftW * kWanderWidthSpanPercent,
+                                       Krate::DSP::MidSideProcessor::kMinWidth,
+                                       Krate::DSP::MidSideProcessor::kMaxWidth);
+        globalMs_.setWidth(width);  // midside_processor.h:133 - a TARGET
+
+        // --- azimuth ---------------------------------------------------------
+        const float driftA = azimuthDrift_.getCurrentValue();
+        const float depthA = fxAzimuthDepthSm_.getCurrentValue();    // ID 1443
+        const float position = std::clamp(0.5f + 0.5f * depthA * driftA, 0.0f, 1.0f);
+        float gainL = 1.0f;
+        float gainR = 1.0f;
+        Krate::DSP::equalPowerGains(position, gainL, gainR);  // crossfade_utils.h:50
+        // Plan D-4. equalPowerGains is a CROSSFADE law: across ONE stereo bus the
+        // constant quantity is gL^2 + gR^2, so the raw pair drops the whole bus
+        // -3.01 dB the instant kFxAzimuthDepthId leaves 0. With the compensation
+        // gL^2 + gR^2 = 2 at every position and centre is unity per channel.
+        azimuthGainLSm_.setTarget(gainL * kFxAzimuthCentreComp);
+        azimuthGainRSm_.setTarget(gainR * kFxAzimuthCentreComp);
+
+        // --- THIS sub-chunk's audio, before the next control update -----------
+        globalMs_.process(busL + off, busR + off, busL + off, busR + off,
+                          chunkLen);  // IN PLACE, midside_processor.h:181
+        for (std::size_t i = off; i < off + chunkLen; ++i) {
+            // These two are NOT in classBSmoothers(), so .process() here is
+            // their sole advance and the "never advance a class-(b) smoother
+            // twice" invariant is untouched.
+            busL[i] *= azimuthGainLSm_.process();  // smoother.h:197
+            busR[i] *= azimuthGainRSm_.process();
+        }
+
+        // FR-024's witness, written AFTER the audio it was applied to - which is
+        // what makes it evidence of the INTERLEAVING and not merely of the
+        // control loop's trip count (plan R-14).
+        if (wanderControlUpdates_ < kWanderControlLogCapacity) {
+            wanderAzimuthTargetL_[wanderControlUpdates_] = azimuthGainLSm_.getTarget();
+            wanderAzimuthTargetR_[wanderControlUpdates_] = azimuthGainRSm_.getTarget();
+            wanderChunkLengths_[wanderControlUpdates_] = static_cast<std::uint16_t>(chunkLen);
+        }
+        ++wanderControlUpdates_;
+
+        off += chunkLen;
+    }
+
+    fxWanderWasActive_ = true;
+}
+
+// FR-010a's DISENGAGE arm (plan 3.4). Every clause is an EXACT comparison except
+// the azimuth pair's, and that exception is measured rather than chosen - see
+// kFxAzimuthIdentityEps in processor.h.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free.
+bool Processor::wanderAtIdentity() const noexcept {
+    // The countdown stands in for the one smoother that cannot be queried:
+    // MidSideProcessor exposes getWidth() (the TARGET, :236) and no view of its
+    // internal widthSmoother_'s progress, and the Non-goals forbid adding one.
+    if (fxWanderSettleRemaining_ > 0) {
+        return false;
+    }
+    if (globalMs_.getWidth() != Krate::DSP::MidSideProcessor::kDefaultWidth) {  // :236, :67
+        return false;
+    }
+    // Both depth smoothers must have REACHED exactly zero, not merely be near
+    // it: the width target is fxWidthBase_ + depthW * ... , so a residual depth
+    // keeps the pushed width off kDefaultWidth and the clause above would in any
+    // case still be false.
+    if (!fxWanderDepthSm_.isComplete() || fxWanderDepthSm_.getCurrentValue() != 0.0f) {
+        return false;
+    }
+    if (!fxAzimuthDepthSm_.isComplete() || fxAzimuthDepthSm_.getCurrentValue() != 0.0f) {
+        return false;
+    }
+    if (!azimuthGainLSm_.isComplete() || !azimuthGainRSm_.isComplete()) {  // smoother.h:232
+        return false;
+    }
+    return std::fabs(azimuthGainLSm_.getCurrentValue() - 1.0f) <= kFxAzimuthIdentityEps
+           && std::fabs(azimuthGainRSm_.getCurrentValue() - 1.0f) <= kFxAzimuthIdentityEps;
+}
+
+// ==============================================================================
+// Phase 10 - plan section 3.3: the send's three-state machine
+// ==============================================================================
+// FR-007, FR-008, FR-009, FR-009a and FR-023a in one place, evaluated ONCE per
+// process() call (FR-012). Nothing here touches audio; it decides whether the
+// send runs at all, at what return gain, and whether the next fill-chunk
+// boundary must reset the component.
+//
+// WHY THE RESET IS CONDITIONAL (FR-008). SpectralDelay::reset() clears wasFrozen_
+// and freezeCrossfade_ (spectral_delay.h:276-277) and the frozen spectrum buffers
+// (:256-257) along with all 4 x 513 per-bin DelayLines (:259-273), and
+// re-randomizes 2 x numBins phases (:279-284). An UNCONDITIONAL reset would
+// annihilate the tail and any captured freeze on EVERY automation curve that
+// merely touches zero - and FR-007's predicate is exact `== 0.0f`, so a bipolar
+// LFO crosses it twice per cycle.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Two relaxed
+//      atomic loads and integer arithmetic.
+void Processor::updateEffectsBypassState(std::size_t blockSamples) noexcept {
+    ++bypassPredicateEvals_;  // FR-041 clause 5 - EXACTLY ONCE PER CALL
+
+    // FR-007's predicate is an EXACT comparison against 0.0f, deliberately: the
+    // whole point of the bypass is that the shipped default configuration costs
+    // nothing, and an epsilon would leave a band of "almost off" settings paying
+    // for a send nobody can hear.
+    const float mix = effectsParams_.delayMix.load(std::memory_order_relaxed);
+    const bool freezeOn = effectsParams_.spectralFreeze.load(std::memory_order_relaxed);
+
+    // FR-023a. The freeze FORCES the send active even at mix 0, and lifts the
+    // return gain to kFxFreezeMinReturnGain, so engaging it is audible rather
+    // than a silent no-op the user cannot distinguish from a broken control.
+    const bool wantActive = (mix != 0.0f) || freezeOn;
+    fxEffectiveReturnGain_ = freezeOn ? std::max(mix, kFxFreezeMinReturnGain) : mix;
+
+    const auto blockU64 = static_cast<std::uint64_t>(blockSamples);
+    const auto blockI64 = static_cast<std::int64_t>(blockSamples);
+    // Spelled as an expression rather than as the UINT64_MAX macro so the
+    // saturation bound is a typed constant on every leg.
+    constexpr std::uint64_t kU64Max = ~std::uint64_t{0};
+
+    switch (fxSendState_) {
+        case FxSendState::Bypassed:
+            if (wantActive) {
+                // FR-008: reset iff (a) the send has been bypassed for LONGER
+                // than the whole drain window - i.e. whatever it still holds is
+                // stale by construction - AND (b) the engage was not
+                // freeze-forced, because a freeze engage must capture the live
+                // spectrum rather than a freshly-emptied one.
+                // std::cmp_greater, not a cast: the two counters are a uint64
+                // and an int64, and a cast to silence the mixed-sign compare is
+                // exactly what modernize-use-integer-sign-comparison rejects.
+                // The saturating counter can reach UINT64_MAX (see the else
+                // arm), which no int64 can represent, so the comparison has to
+                // be done in the value domain rather than by converting either
+                // side.
+                fxResetDue_ = std::cmp_greater(fxBypassedSamples_, fxSendDrainSamples_) && !freezeOn;
+                fxSendState_ = FxSendState::Active;
+                fxLiveSamplesSinceEngage_ = 0;
+            } else {
+                // Saturating, never wrapping. At 192 kHz a uint64 covers ~3
+                // million years, so the guard is belt-and-braces - but the
+                // comparison above is an ORDERING on this counter, and a wrap
+                // would invert it.
+                if (fxBypassedSamples_ > kU64Max - blockU64) {
+                    fxBypassedSamples_ = kU64Max;
+                } else {
+                    fxBypassedSamples_ += blockU64;
+                }
+            }
+            break;
+
+        case FxSendState::Active:
+            if (!wantActive) {
+                fxSendState_ = FxSendState::Draining;
+                fxDrainRemaining_ = fxSendDrainSamples_;
+                // RE-ARMED ABOVE THE FLOOR, and this is not cosmetic: a send
+                // engaged and re-bypassed inside a single chunk period runs no
+                // chunk at all, so without the re-arm the energy exit below
+                // would read a STALE sub-floor value from a PREVIOUS drain and
+                // terminate the new drain on its very first block - exactly the
+                // tail annihilation FR-008/FR-009a exist to prevent. The value
+                // 1.0f is arbitrary except that it must exceed the floor; the
+                // first chunk of the new drain overwrites it with a real
+                // measurement.
+                fxDrainPeak_ = 1.0f;
+            } else {
+                if (fxLiveSamplesSinceEngage_ > kU64Max - blockU64) {
+                    fxLiveSamplesSinceEngage_ = kU64Max;
+                } else {
+                    fxLiveSamplesSinceEngage_ += blockU64;
+                }
+            }
+            break;
+
+        case FxSendState::Draining:
+            if (wantActive) {
+                fxSendState_ = FxSendState::Active;
+                fxLiveSamplesSinceEngage_ = 0;
+            } else if (fxDrainRemaining_ <= 0 || fxDrainPeak_ < kFxSendDrainFloor) {
+                fxSendState_ = FxSendState::Bypassed;
+                fxBypassedSamples_ = 0;
+            } else {
+                fxDrainRemaining_ -= blockI64;
+            }
+            break;
+    }
+
+    fxSendRuns_ = (fxSendState_ != FxSendState::Bypassed);
+}
+
+// Plan section 3.1. THE ONE DEFINITION of the accumulator's start state, so the
+// invariant has exactly one establishing point rather than three transcriptions
+// that can drift. Three call sites: setupProcessing(), setActive(false), and the
+// single deferred mid-render site at the top of runSendStage().
+//
+// THE OUTPUT COUNTERS ARE NOT ZEROED, and that is the whole point of writing this
+// out once. The output FIFO is PRE-FILLED with one chunk of silence: the send
+// reads its return one chunk AHEAD of the first chunk the component will ever
+// produce, which is what makes the accumulator's pipeline delay a FIXED 512
+// samples in every partition. Zeroing fxOutFill_ instead would make the first
+// read of `fxOutFill_ - n` wrap a std::size_t (plan R-13) and would break the
+// section 3.1 invariant outright.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. The four
+//      vectors were sized once in setupProcessing().
+void Processor::clearFifos() noexcept {
+    std::fill(fxInL_.begin(), fxInL_.end(), 0.0f);
+    std::fill(fxInR_.begin(), fxInR_.end(), 0.0f);
+    std::fill(fxOutL_.begin(), fxOutL_.end(), 0.0f);
+    std::fill(fxOutR_.begin(), fxOutR_.end(), 0.0f);
+
+    fxInWrite_ = 0;
+    fxInRead_ = 0;
+    fxChunkFill_ = 0;
+
+    fxOutRead_ = 0;
+    fxOutWrite_ = kFxSendChunkSamples;  // THE ONE-CHUNK PRE-FILL
+    fxOutFill_ = kFxSendChunkSamples;
+}
+
+// ==============================================================================
 // Phase 9 - routing (plan 3.2)
 // ==============================================================================
 
@@ -1223,8 +2489,17 @@ void Processor::markDirty(Vst::ParamID id) noexcept {
         case Route::CFG:
             refreshSpectralSlotFromFactory(id);
             break;
-        case Route::ENG:   // pushGlobalParams()' own trackers own these
-        case Route::Local: // consumed inside the processor (master gain, macros, sync pair)
+        // FR-019. `FX` BUMPS NO GENERATION COUNTER - neither voiceParamGeneration_
+        // nor aetherParamGeneration_. The effects surface reaches the DSP through
+        // pushEffectsParams()' own on-change trackers, once per process() call, so
+        // a bump would only force an unrelated 37-setter x 16-voice or ten-control
+        // reverb fan-out. It shares ENG's and Local's empty body deliberately: the
+        // three are written as ONE branch because bugprone-branch-clone (correctly)
+        // treats three consecutive `break;`s as a copy-paste smell, and the reason
+        // each one is empty is recorded here rather than in three identical arms.
+        case Route::FX:
+        case Route::ENG:    // pushGlobalParams()' own trackers own these
+        case Route::Local:  // consumed inside the processor (master gain, macros, sync pair)
             break;
     }
 }
@@ -1631,7 +2906,13 @@ void Processor::pushAllSurfaces(SurfaceInvalidation scope) noexcept {
     lastPushedBaseValid_ = false;   // forces all 27 setTargetBase pushes
     lastPushedMacros_ = Krate::DSP::SeraphisMacroValues{};
     lastPushedMacrosValid_ = false;
-    lastPushedSoftLimitValid_ = false;
+    // FR-034. Every effects push tracker is invalidated here, so a setState()
+    // that arrives AFTER setupProcessing() re-pushes the whole effects surface
+    // rather than leaving the DSP on the prepare-time values: the composed
+    // saturation tracker, and the eleven SpectralDelay/drift trackers behind the
+    // one shared first-call flag (T014's ten, plus T016's composed freeze).
+    lastPushedSaturationValid_ = false;
+    lastPushedFxValid_ = false;
     lastPushedFreezeValid_ = false;
     lastSyncedTravelRate_ = -1.0f;
     // A PRESET LOAD SNAPS; it does not ramp. SC-023 clause 4 asserts every
@@ -1718,19 +2999,26 @@ std::size_t Processor::pickStagingBuffer() noexcept {
 // FR-059 clause (b) - the class-(b) smoother machinery (plan 3.5)
 // ==============================================================================
 
-// The NINE class-(b) smoothers, in the order plan 3.5.3 lists the IDs:
-// 801, 802, 1215, 1216, then the five macro knobs 100-104.
+// The TWELVE class-(b) smoothers: Phase 9's nine in the order plan 3.5.3 lists
+// the IDs - 801, 802, 1215, 1216, then the five macro knobs 100-104 - followed
+// by Phase 10's three, IDs 1410, 1441 and 1443 (FR-038b clause 2).
+//
+// EVERY member of this array is READ with getCurrentValue() and NEVER
+// .process()-ed: advanceParamSmoothers() advances all of them by the sub-slice's
+// own sample count, so a second per-sample advance anywhere would double the
+// rate. The invariant, and the masterGain_ precedent that shows the shipped code
+// already respects it, are written out beside the declarations in processor.h.
 //
 // @par Real-Time Safety: allocation-free, lock-free, exception-free. A
-//      fixed-size array of nine pointers, returned BY VALUE - see the banner on
-//      the declaration for why the type is pinned.
-std::array<Krate::DSP::OnePoleSmoother*, 9> Processor::classBSmoothers() noexcept {
+//      fixed-size array of twelve pointers, returned BY VALUE - see the banner
+//      on the declaration for why the type is pinned.
+std::array<Krate::DSP::OnePoleSmoother*, 12> Processor::classBSmoothers() noexcept {
     return {{&resonanceSm_, &bodyDampingSm_, &breathDepthSm_, &tideDepthSm_,
              macroSm_.data(), &macroSm_[1], &macroSm_[2], &macroSm_[3],
-             &macroSm_[4]}};
+             &macroSm_[4], &fxReturnGainSm_, &fxWanderDepthSm_, &fxAzimuthDepthSm_}};
 }
 
-// Nine setTarget() calls (smoother.h:170) from the already-clamped atomics. The
+// Twelve setTarget() calls (smoother.h:170) from the already-clamped atomics. The
 // packs denormalize and clamp on the way in, so no clamp is repeated here.
 //
 // IT DOES NOT CONSUME snapParamSmoothers_. That flag is consumed by
@@ -1751,6 +3039,18 @@ void Processor::setParamSmootherTargets() noexcept {
     macroSm_[2].setTarget(macroParams_.dissolve.load(kRelaxed));  // ID 102
     macroSm_[3].setTarget(macroParams_.gravity.load(kRelaxed));   // ID 103
     macroSm_[4].setTarget(macroParams_.entropy.load(kRelaxed));   // ID 104
+
+    // Phase 10, FR-038b clause 2. ID 1410 takes the COMPOSED value
+    // updateEffectsBypassState() computed for this process() call, NOT the raw
+    // kFxDelayMixId atomic: FR-023a lifts the return gain to
+    // kFxFreezeMinReturnGain while the freeze is engaged, and FR-008/FR-009's
+    // engage/bypass ramp IS this smoother travelling to that composed value.
+    // Targeting the raw atomic instead would make a freeze at mix 0 silent.
+    // The state machine runs earlier in the same pre-slice block, so the value
+    // read here is this call's, never the previous call's.
+    fxReturnGainSm_.setTarget(fxEffectiveReturnGain_);                        // ID 1410
+    fxWanderDepthSm_.setTarget(effectsParams_.wanderDepth.load(kRelaxed));    // ID 1441
+    fxAzimuthDepthSm_.setTarget(effectsParams_.azimuthDepth.load(kRelaxed));  // ID 1443
 }
 
 // Advanced by the SUB-SLICE's own sample count, so the ramp is wall-clock
@@ -1810,10 +3110,16 @@ bool Processor::targetClassBUnsettled(Krate::DSP::SeraphisMacroTarget target) co
 // Drives the 64-sample SUBDIVISION only. When every class-(b) smoother is
 // settled this is false, the slice loop keeps Phase 8's exact structure, and the
 // mechanism costs nothing.
+// Phase 10 D-6 states the COST of the three new members, and it is WANTED: for
+// the ~20 ms after any 1410 / 1441 / 1443 automation point, and for the whole of
+// every send engage/bypass ramp, blocks now render as 64-sample sub-slices. That
+// is exactly what delivers the ramp on the absolute grid rather than in one step
+// per host block.
 bool Processor::anyClassBSmootherUnsettled() const noexcept {
     return !resonanceSm_.isComplete() || !bodyDampingSm_.isComplete()
            || !breathDepthSm_.isComplete() || !tideDepthSm_.isComplete()
-           || anyMacroSmootherUnsettled();
+           || anyMacroSmootherUnsettled() || !fxReturnGainSm_.isComplete()
+           || !fxWanderDepthSm_.isComplete() || !fxAzimuthDepthSm_.isComplete();
 }
 
 }  // namespace Seraphis

@@ -15,7 +15,7 @@
 // (gradus, iterum, ruinae), each in its own namespace; a fourth in
 // `namespace Seraphis` collides with none.
 //
-// Eight tables:
+// Ten tables:
 //   kSeedLabels / kSeedValues                                       ID 3
 //   kTravelModeLabels                                               ID 403
 //   kSyncNoteLabels / kSyncNoteBeats / kSyncNoteIsBarDenominated    ID 406 + FR-056
@@ -24,6 +24,8 @@
 //   kEnvelopeModeLabels                                             ID 700
 //   kBodyMaterialLabels                                             ID 800
 //   kGrainEnvelopeLabels                                            ID 1016
+//   kFxSpreadDirectionLabels                                        ID 1413 (Phase 10)
+//   kFxDelaySyncNoteLabels                                          ID 1419 (Phase 10)
 // ==============================================================================
 
 #include "ui/parameter_helpers.h"  // createDropdownParameterWithDefault (FR-015)
@@ -33,6 +35,8 @@
 #include "public.sdk/source/vst/vsteditcontroller.h"  // Vst::ParameterContainer
 
 #include <krate/dsp/core/grain_envelope.h>          // GrainEnvelopeType
+#include <krate/dsp/core/note_value.h>              // dropdownToDelayMs (FR-017 compile-time gate)
+#include <krate/dsp/effects/spectral_delay.h>       // SpreadDirection
 #include <krate/dsp/processors/spectral_state.h>    // SpectralStateId, kSpectralStateCount
 #include <krate/dsp/systems/atmosphere_engine.h>    // AtmosphereEngine::kEnvelopeTypeCount
 #include <krate/dsp/systems/continuous_body.h>      // ContinuousBody::BodyMaterial
@@ -213,6 +217,79 @@ static_assert(kGrainEnvelopeLabels.size() == Krate::DSP::AtmosphereEngine::kEnve
               "the windows prepare() generates (atmosphere_engine.h:197, :427)");
 
 // ==============================================================================
+// ID 1413 - kFxDelaySpreadDirectionId (FR-017, Phase 10)
+// ==============================================================================
+// Declaration order of Krate::DSP::SpreadDirection (spectral_delay.h:53-57):
+// LowToHigh = 0, HighToLow, CenterOut. All THREE are live branches of
+// calculateBinDelayMs's switch (spectral_delay.h:587-597), so registering only
+// two would strand CenterOut permanently - the dropdown's TYPE is frozen at
+// registration (plugin_ids.h:184-190, FR-020) and no later phase could widen it.
+//
+// The count is declared HERE because `spectral_delay.h` declares no
+// enumerator-count sentinel of its own (unlike ContinuousBody::kNumMaterials,
+// asserted at :202 above) and this phase's Non-goals forbid adding one to dsp/.
+inline constexpr std::size_t kSpreadDirectionCount = 3;
+
+static_assert(kSpreadDirectionCount
+                  == static_cast<std::size_t>(Krate::DSP::SpreadDirection::CenterOut) + 1u,
+              "FR-017: an enum extension must not silently desynchronise this count "
+              "from the directions the component ships (spectral_delay.h:53-57)");
+
+// The arrow is U+2192 RIGHTWARDS ARROW, written as a universal-character-name
+// rather than as a raw UTF-8 byte run: STR16 pastes `u` onto the literal
+// (fstrdefs.h:26-32), so the escape is resolved to ONE char16_t code unit by every
+// compiler, independently of the source file's assumed encoding. A raw arrow, or a
+// `\xE2\x86\x92` byte triple, would land as three code units under MSVC's default
+// (non-UTF-8) source charset and render as mojibake in the host's dropdown.
+inline constexpr std::array<const Steinberg::Vst::TChar*, 3> kFxSpreadDirectionLabels = {
+    STR16("Low \u2192 High"), STR16("High \u2192 Low"), STR16("Center \u2192 Out")};
+
+static_assert(kFxSpreadDirectionLabels.size() == kSpreadDirectionCount,
+              "FR-017: one label per SpreadDirection enumerator");
+
+// ==============================================================================
+// ID 1419 - kFxDelaySyncNoteId (FR-017, plan D-1, Phase 10)
+// ==============================================================================
+// These ten strings are kNoteValueDropdownMapping's FIRST TEN ROWS
+// (core/note_value.h:136-164), i.e. the periods dropdownToDelayMs(index, tempo)
+// ACTUALLY produces for the 0-9 index SpectralDelay::setNoteValue clamps to
+// (spectral_delay.h:532-534), consumed only at spectral_delay.h:330.
+//
+// The mapping documented at spectral_delay.h:530 ("1/32, 1/16T, 1/16, 1/8T,
+// 1/8, ...") and the "Default to 1/8 note (index 4)" comment at :893 are
+// factually WRONG about the component's own behaviour - index 4 is 1/32
+// (0.125 beats), not 1/8 - and are deliberately NOT transcribed. Correcting the
+// component instead would be a dsp/ behaviour change the Non-goals forbid
+// (phase-owner ruling on plan OQ-1 / D-1, 2026-08-02).
+//
+// kSyncNoteLabels (:135, eight entries, a different ordering serving ID 406) is
+// NOT reused here: FR-017 requires this table to name what ID 1419 reaches.
+inline constexpr std::array<const Steinberg::Vst::TChar*, 10> kFxDelaySyncNoteLabels = {
+    STR16("1/64T"), STR16("1/64"), STR16("1/64D"), STR16("1/32T"), STR16("1/32"),
+    STR16("1/32D"), STR16("1/16T"), STR16("1/16"), STR16("1/16D"), STR16("1/8T")};
+
+/// C-6 row 1419's registered default, DECLARED HERE beside the table it indexes:
+/// the static_asserts below need it, and dropdown_mappings.h is INCLUDED BY
+/// effects_params.h, not the other way round, so a symbol defined there would
+/// not resolve at this point. effects_params.h aliases it.
+/// Index 7 = "1/16" = 0.25 beats = exactly 125.0 ms at 120 BPM.
+inline constexpr int kFxDelaySyncNoteDefaultIndex = 7;
+
+static_assert(kFxDelaySyncNoteDefaultIndex >= 0
+                  && kFxDelaySyncNoteDefaultIndex
+                         < static_cast<int>(kFxDelaySyncNoteLabels.size()),
+              "FR-017: the default index must address the shipped label table");
+
+// Ties the label to the period the component produces at that index, at compile
+// time (dropdownToDelayMs is constexpr, note_value.h:259), so a permuted or
+// aspirational table fails the BUILD rather than a user's ears. The arithmetic
+// is exact: getBeatsForNote(Sixteenth, None) == 0.25f (note_value.h:74, :95-101),
+// 60000.0 / 120.0 == 500.0 in double, one narrowing cast at the end
+// (note_value.h:226-241) => exactly 125.0f.
+static_assert(Krate::DSP::dropdownToDelayMs(kFxDelaySyncNoteDefaultIndex, 120.0) == 125.0f,
+              "FR-017 / plan D-1: the default label must name the period the component produces");
+
+// ==============================================================================
 // Index <-> enum converters
 // ==============================================================================
 // Plain `inline` functions with a bounds clamp, one pair per enum-backed table.
@@ -262,6 +339,15 @@ static_assert(kGrainEnvelopeLabels.size() == Krate::DSP::AtmosphereEngine::kEnve
 
 [[nodiscard]] inline int fromEnvelopeMode(Krate::DSP::SeraphisVoice::EnvelopeMode m) noexcept {
     return static_cast<int>(m);
+}
+
+[[nodiscard]] inline Krate::DSP::SpreadDirection toSpreadDirection(int index) noexcept {
+    const int i = std::clamp(index, 0, static_cast<int>(kSpreadDirectionCount) - 1);
+    return static_cast<Krate::DSP::SpreadDirection>(i);
+}
+
+[[nodiscard]] inline int fromSpreadDirection(Krate::DSP::SpreadDirection d) noexcept {
+    return static_cast<int>(d);
 }
 
 // ==============================================================================

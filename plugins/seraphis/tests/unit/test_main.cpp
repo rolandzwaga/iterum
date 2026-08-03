@@ -16,6 +16,11 @@
 
 // Provide moduleHandle symbol required by VST3 SDK's moduleinit.cpp.
 // In a real plugin this comes from dllmain.cpp; tests have no DLL entry point.
+// This definition satisfies moduleinit.cpp's `extern void* moduleHandle;` (vst3sdk
+// public.sdk/source/main/moduleinit.cpp:21), so it must be a MUTABLE global with EXTERNAL
+// linkage - `static`, `const`, or an anonymous namespace all turn it into an unresolved
+// external at link time. Hence the suppressions below rather than the suggested fixes.
+// NOLINTNEXTLINE(misc-use-internal-linkage,cppcoreguidelines-avoid-non-const-global-variables)
 void* moduleHandle = nullptr;
 
 int main(int argc, char* argv[]) {

@@ -290,7 +290,7 @@ constexpr double kContinuityFactor = 3.0;
 // Macro addressing
 // =============================================================================
 
-enum class Macro : std::size_t { Dream = 0, Bloom, Dissolve, Gravity, Entropy, Count };
+enum class Macro : std::uint8_t { Dream = 0, Bloom, Dissolve, Gravity, Entropy, Count };
 
 constexpr std::array<ParamID, 5> kMacroIds{Seraphis::kMacroDreamId, Seraphis::kMacroBloomId,
                                            Seraphis::kMacroDissolveId, Seraphis::kMacroGravityId,
@@ -330,30 +330,30 @@ struct ParamPoint {
 
 /// ContinuousBody's dry/wet: 0 == the input, unchanged. VP-routed (no macro row
 /// targets it), so this holds for every sweep.
-const ParamPoint kBodyMixOff{Seraphis::kBodyMixId,
-                             linNorm(0.0, Seraphis::kBodyMixMin, Seraphis::kBodyMixMax)};
+const ParamPoint kBodyMixOff{.id = Seraphis::kBodyMixId,
+                             .normalized=linNorm(0.0, Seraphis::kBodyMixMin, Seraphis::kBodyMixMax)};
 /// The body's parallel decay CLOUD, a texture with its own fixed decay that no
 /// macro row writes - a constant floor sitting exactly on top of the quantity
 /// Gravity's decay arm measures (Phase 7 measured 3.89389 -> 3.89081 s with it in,
 /// i.e. it reported cloudDecaySec and nothing else).
 const ParamPoint kBodyCloudMixOff{
-    Seraphis::kBodyCloudMixId,
-    linNorm(0.0, Seraphis::kBodyCloudMixMin, Seraphis::kBodyCloudMixMax)};
+    .id=Seraphis::kBodyCloudMixId,
+    .normalized=linNorm(0.0, Seraphis::kBodyCloudMixMin, Seraphis::kBodyCloudMixMax)};
 /// AtmosphereEngine's output level. MB-routed, and Dissolve is the ONLY macro
 /// that writes it - so on a Dream / Bloom / Gravity / Entropy sweep (Dissolve
 /// held at its neutral 0) the evaluated value IS this base, i.e. silence.
-const ParamPoint kAtmosLevelOff{Seraphis::kAtmosLevelId,
-                                linNorm(0.0, Seraphis::kAtmosLevelMin, Seraphis::kAtmosLevelMax)};
+const ParamPoint kAtmosLevelOff{.id = Seraphis::kAtmosLevelId,
+                                .normalized=linNorm(0.0, Seraphis::kAtmosLevelMin, Seraphis::kAtmosLevelMax)};
 /// AetherReverb's dry/wet. MB-routed, and DREAM is the only macro that writes it.
-const ParamPoint kAetherMixOff{Seraphis::kAetherMixId, 0.0};
+const ParamPoint kAetherMixOff{.id = Seraphis::kAetherMixId, .normalized = 0.0};
 /// The reverb's own delay modulation (AE-routed, no macro row), pushed to its
 /// minimum on the detector arm so the residual wet field Dream's own AetherMix
 /// row forces into the path smears the partial grid as little as it can.
-const ParamPoint kAetherModDepthOff{Seraphis::kAetherModDepthId, 0.0};
+const ParamPoint kAetherModDepthOff{.id = Seraphis::kAetherModDepthId, .normalized = 0.0};
 /// OrbitModulator rate at its floor (kMinRate = 0.01 Hz, a 100 s period): y is
 /// effectively constant across a 4 s step and identical across the sweep, which
 /// is what isolates Bloom's VoiceWidth row from its orbit.
-const ParamPoint kOrbitRatePinned{Seraphis::kLifeSpatialRateId, 0.0};
+const ParamPoint kOrbitRatePinned{.id = Seraphis::kLifeSpatialRateId, .normalized = 0.0};
 
 /// THE OUTPUT STAGE OFF - the surface equivalent of Phase 7's `composed = false`
 /// arms, and the reason it is needed is a hard structural difference between the
@@ -391,7 +391,7 @@ const ParamPoint kOrbitRatePinned{Seraphis::kLifeSpatialRateId, 0.0};
 /// The composed-chain arms (Bloom's centroid, Dream's wet tail, Dissolve's
 /// atmosphere fraction) keep it, because Phase 7 measured those WITH the output
 /// stage and changing them would be a new arm rather than a faithful one.
-const ParamPoint kSoftLimitOff{Seraphis::kSoftLimitId, 0.0};
+const ParamPoint kSoftLimitOff{.id = Seraphis::kSoftLimitId, .normalized = 0.0};
 
 /// -20 dB OF PRE-LIMITER HEADROOM, and it is the difference between measuring
 /// this instrument and measuring `TruePeakLimiter`.
@@ -443,7 +443,7 @@ const ParamPoint kSoftLimitOff{Seraphis::kSoftLimitId, 0.0};
 /// at rho = 0.802597 with no plugin code in the path at all
 /// (dsp_systems_tests.exe "SeraphisEngine_MacroSweepsMoveTheirAxis_Full"), which
 /// is where that defect has to be chased and fixed.
-const ParamPoint kPreLimiterHeadroom{Seraphis::kMasterGainId, 0.05};  // linear 0.1
+const ParamPoint kPreLimiterHeadroom{.id = Seraphis::kMasterGainId, .normalized = 0.05};  // linear 0.1
 
 // =============================================================================
 // Aggregates
@@ -459,12 +459,7 @@ const ParamPoint kPreLimiterHeadroom{Seraphis::kMasterGainId, 0.05};  // linear 
 }
 
 [[nodiscard]] bool allFiniteBits(const std::vector<float>& v) noexcept {
-    for (const float s : v) {
-        if (!isFiniteBits(s)) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(v, [](float s) { return isFiniteBits(s); });
 }
 
 [[nodiscard]] float maxAbs(const std::vector<float>& v) {
@@ -703,7 +698,7 @@ struct TailSpectrum {
 [[nodiscard]] TailSpectrum analyseTail(const std::vector<float>& mono, double sampleRate) {
     TailSpectrum out;
     const auto oneSecond = static_cast<std::size_t>(sampleRate);
-    const std::size_t len = std::min(mono.size(), std::min(oneSecond, kFftSize));
+    const std::size_t len = std::min({mono.size(), oneSecond, kFftSize});
     if (len < std::size_t{1024}) {
         return out;
     }
@@ -912,7 +907,7 @@ struct PartialFit {
                                             std::size_t segments) {
     TailSpectrum out;
     const auto oneSecond = static_cast<std::size_t>(sampleRate);
-    const std::size_t span = std::min(mono.size(), std::min(oneSecond, kFftSize));
+    const std::size_t span = std::min({mono.size(), oneSecond, kFftSize});
     if (span < std::size_t{2048} || segments < 2) {
         return out;
     }
@@ -1368,7 +1363,7 @@ struct DreamSeries {
         const StepOutputs wetOut = runStep(wet);
 
         StepInputs wetRef = wet;
-        wetRef.deep = withCompose(wet.deep, Compose{ParamPoint{Seraphis::kAetherDecayId, 0.0}});
+        wetRef.deep = withCompose(wet.deep, Compose{ParamPoint{.id = Seraphis::kAetherDecayId, .normalized = 0.0}});
         const StepOutputs wetRefOut = runStep(wetRef);
 
         const std::size_t refLen = std::min(wetOut.mono.size(), wetRefOut.mono.size());
@@ -1519,7 +1514,7 @@ struct DissolveSeries {
         // appended after `compose` regardless.
         StepInputs densityMuted = full;
         densityMuted.deep =
-            withCompose(compose, Compose{ParamPoint{Seraphis::kAtmosDensityId, 0.0}});
+            withCompose(compose, Compose{ParamPoint{.id = Seraphis::kAtmosDensityId, .normalized = 0.0}});
         const StepOutputs densityMutedOut = runStep(densityMuted);
 
         out.atmosFraction.push_back(
@@ -1684,11 +1679,11 @@ struct GravitySeries {
         // kRichnessHoldAmount / kTiltHoldAmount are the `amount` fields of the
         // FR-064 rows they cancel (seraphis_macro_matrix.h:369-386).
         const double g = (2.0 * value) - 1.0;
-        const ParamPoint richnessHold{Seraphis::kCloudRichnessId,
-                                      kRichnessHoldWanted - (kRichnessHoldAmount * g)};
+        const ParamPoint richnessHold{.id = Seraphis::kCloudRichnessId,
+                                      .normalized=kRichnessHoldWanted - (kRichnessHoldAmount * g)};
         const ParamPoint tiltHold{
-            Seraphis::kCloudTiltId,
-            linNorm(kTiltHoldWanted - (kTiltHoldAmount * g), Seraphis::kCloudTiltMin,
+            .id=Seraphis::kCloudTiltId,
+            .normalized=linNorm(kTiltHoldWanted - (kTiltHoldAmount * g), Seraphis::kCloudTiltMin,
                     Seraphis::kCloudTiltMax)};
 
         ring.deep = withCompose({kAtmosLevelOff, kAetherMixOff, kBodyCloudMixOff, kSoftLimitOff,
@@ -1785,37 +1780,37 @@ struct EntropySeries {
 // denormalization produces so the getTargetBase assertion can use `==`.
 
 const ParamPoint kDreamCompose{
-    Seraphis::kCloudInharmonicityId,
-    linNorm(0.060, Seraphis::kCloudInharmonicityMin, Seraphis::kCloudInharmonicityMax)};
+    .id=Seraphis::kCloudInharmonicityId,
+    .normalized=linNorm(0.060, Seraphis::kCloudInharmonicityMin, Seraphis::kCloudInharmonicityMax)};
 const float kDreamComposeBase = linPlain(kDreamCompose.normalized,
                                          Seraphis::kCloudInharmonicityMin,
                                          Seraphis::kCloudInharmonicityMax);
 
 /// Richness is the `lin [0,1]` unit form (cloud_params.h:106, :109-111), so the
 /// pack stores clamp(float(normalized), 0, 1) and the normalized value IS 0.45.
-const ParamPoint kBloomCompose{Seraphis::kCloudRichnessId, 0.45};
+const ParamPoint kBloomCompose{.id = Seraphis::kCloudRichnessId, .normalized = 0.45};
 const float kBloomComposeBase =
     std::clamp(static_cast<float>(kBloomCompose.normalized), 0.0f, 1.0f);
 
-const ParamPoint kDissolveCompose{Seraphis::kAtmosLevelId,
-                                  linNorm(0.30, Seraphis::kAtmosLevelMin,
+const ParamPoint kDissolveCompose{.id = Seraphis::kAtmosLevelId,
+                                  .normalized=linNorm(0.30, Seraphis::kAtmosLevelMin,
                                           Seraphis::kAtmosLevelMax)};
 const float kDissolveComposeBase =
     linPlain(kDissolveCompose.normalized, Seraphis::kAtmosLevelMin, Seraphis::kAtmosLevelMax);
 
-const ParamPoint kGravityCompose{Seraphis::kBodyDampingId,
-                                 linNorm(0.40, Seraphis::kBodyDampingMin,
+const ParamPoint kGravityCompose{.id = Seraphis::kBodyDampingId,
+                                 .normalized=linNorm(0.40, Seraphis::kBodyDampingMin,
                                          Seraphis::kBodyDampingMax)};
 const float kGravityComposeBase =
     linPlain(kGravityCompose.normalized, Seraphis::kBodyDampingMin, Seraphis::kBodyDampingMax);
 
 /// Morph entropy is the unit form as well (morph_params.h:144-146).
-const ParamPoint kEntropyCompose{Seraphis::kMorphEntropyId, 0.10};
+const ParamPoint kEntropyCompose{.id = Seraphis::kMorphEntropyId, .normalized = 0.10};
 const float kEntropyComposeBase =
     std::clamp(static_cast<float>(kEntropyCompose.normalized), 0.0f, 1.0f);
 
 /// Arm 3: kCloudRichnessId at the clamp Bloom travels toward.
-const ParamPoint kSaturatingRichness{Seraphis::kCloudRichnessId, 1.0};
+const ParamPoint kSaturatingRichness{.id = Seraphis::kCloudRichnessId, .normalized = 1.0};
 
 }  // namespace
 

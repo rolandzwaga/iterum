@@ -127,7 +127,7 @@ struct Drive {
     double masterGainNorm = 0.5;             ///< FR-043: linear gain = value * 2
     double softLimitNorm = 1.0;              ///< 1.0 -> saturation 0.15, 0.0 -> 0.0
     double polyphonyNorm = 7.0 / 15.0;       ///< normalized 7/15 == 8 voices (default)
-    std::span<const Steinberg::int16> pitches{};
+    std::span<const Steinberg::int16> pitches;
     float velocity = 0.8f;
     std::size_t totalSamples = 0;
 };
@@ -149,7 +149,7 @@ struct Drive {
     REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
 
     const std::size_t totalSamples = drive.totalSamples;
-    const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+    const auto blockSize = static_cast<std::size_t>(kBlock);
     const std::size_t numBlocks = (totalSamples + blockSize - 1u) / blockSize;
 
     fx.renderBlocks(numBlocks, blockSize,
@@ -329,12 +329,12 @@ constexpr double kPolyphonyNorm16 = 1.0;
 constexpr double kPolyphonyNorm8 = 7.0 / 15.0;
 
 struct DriveRung {
-    const char* name;
+    const char* name = nullptr;
     std::span<const Steinberg::int16> pitches;
-    float velocity;
-    double masterGainNorm;
-    double polyphonyNorm;
-    std::size_t totalSamples;
+    float velocity = 0.0f;
+    double masterGainNorm = 0.0;
+    double polyphonyNorm = 0.0;
+    std::size_t totalSamples = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -467,7 +467,7 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
     // SC-019 clause 1, SECOND HALF - THE SNAP ITSELF (FR-024a clause 3)
     // =========================================================================
     SECTION("clause 1: the snap seam silences a ringing chain from sample 0") {
-        const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+        const auto blockSize = static_cast<std::size_t>(kBlock);
 
         SeraphisTest::ProcessorFixture fx;
         REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
@@ -706,16 +706,16 @@ TEST_CASE("Seraphis_ParamFlowReachesEngine", "[seraphis][integration]") {
     // =========================================================================
     SECTION("Seraphis_SoftLimitIsMeasurable") {
         const DriveRung rungs[] = {
-            {"L0 1 note, vel 0.8, gain x1, poly 8, 2 s", kSingleNote, kSingleVelocity, 0.5,
-             kPolyphonyNorm8, kTwoSeconds},
-            {"L1 6 notes, vel 1.0, gain x2, poly 8, 2 s", kSixNoteChord, 1.0f, 1.0,
-             kPolyphonyNorm8, kTwoSeconds},
-            {"L2 16 notes, vel 1.0, gain x2, poly 16, 2 s", kSixteenNoteChord, 1.0f, 1.0,
-             kPolyphonyNorm16, kTwoSeconds},
-            {"L3 16 notes, vel 1.0, gain x2, poly 16, 4 s", kSixteenNoteChord, 1.0f, 1.0,
-             kPolyphonyNorm16, kFourSeconds},
-            {"L4 16 notes, vel 1.0, gain x2, poly 16, 16 s", kSixteenNoteChord, 1.0f, 1.0,
-             kPolyphonyNorm16, kSixteenSeconds},
+            {.name = "L0 1 note, vel 0.8, gain x1, poly 8, 2 s", .pitches = kSingleNote, .velocity = kSingleVelocity, .masterGainNorm = 0.5,
+             .polyphonyNorm=kPolyphonyNorm8, .totalSamples=kTwoSeconds},
+            {.name = "L1 6 notes, vel 1.0, gain x2, poly 8, 2 s", .pitches = kSixNoteChord, .velocity = 1.0f, .masterGainNorm = 1.0,
+             .polyphonyNorm=kPolyphonyNorm8, .totalSamples=kTwoSeconds},
+            {.name = "L2 16 notes, vel 1.0, gain x2, poly 16, 2 s", .pitches = kSixteenNoteChord, .velocity = 1.0f, .masterGainNorm = 1.0,
+             .polyphonyNorm=kPolyphonyNorm16, .totalSamples=kTwoSeconds},
+            {.name = "L3 16 notes, vel 1.0, gain x2, poly 16, 4 s", .pitches = kSixteenNoteChord, .velocity = 1.0f, .masterGainNorm = 1.0,
+             .polyphonyNorm=kPolyphonyNorm16, .totalSamples=kFourSeconds},
+            {.name = "L4 16 notes, vel 1.0, gain x2, poly 16, 16 s", .pitches = kSixteenNoteChord, .velocity = 1.0f, .masterGainNorm = 1.0,
+             .polyphonyNorm=kPolyphonyNorm16, .totalSamples=kSixteenSeconds},
         };
 
         // The loudest rung's figures; the assertions below are made on it.

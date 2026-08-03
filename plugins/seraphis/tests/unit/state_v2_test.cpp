@@ -64,6 +64,7 @@
 #include <krate/dsp/systems/seraphis_engine.h>
 #include <krate/dsp/systems/seraphis_macro_matrix.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -85,12 +86,26 @@ namespace {
 // =============================================================================
 
 /// Spec C-8 / plan §5.1. 73 floats + 18 int32 + the version int32 + 4 x 541.
+/// This is the size of a version-2 stream ONLY; it is no longer what this
+/// binary writes -- see kV3StateBytes.
 constexpr int32 kV2StateBytes = 2532;
 /// Phase 8's layout, which is a STRICT PREFIX of v2 (plan §5.1).
 constexpr int32 kV1StateBytes = 36;
 
 static_assert(73 * 4 + 18 * 4 + 4 + 4 * 541 == kV2StateBytes,
               "SC-010: the v2 arithmetic of plan 5.1 must reproduce 2532");
+
+/// Phase 10 spec C-8: v3 appends the [effects] block -- 12 float32 + 4 int32,
+/// written last by getState() and read last by setState(). v2 is a STRICT
+/// PREFIX of v3, so every size below that means "what getState() writes today"
+/// is kV3StateBytes; kV2StateBytes survives only where the v2 LAYOUT is the
+/// subject.
+constexpr int32 kEffectsBlockBytes = 12 * 4 + 4 * 4;
+constexpr int32 kV3StateBytes = kV2StateBytes + kEffectsBlockBytes;
+
+static_assert(kEffectsBlockBytes == 64, "spec C-6: sixteen effects fields, 64 bytes");
+static_assert(85 * 4 + 22 * 4 + 4 + 4 * 541 == kV3StateBytes,
+              "SC-009: the v3 arithmetic of plan 5.1 must reproduce 2596");
 
 struct StreamReleaser {
     void operator()(MemoryStream* s) const noexcept {
@@ -152,7 +167,7 @@ void rewindStream(MemoryStream& s) { s.seek(0, IBStream::kIBSeekSet, nullptr); }
 
 /// C-6's *Type* column. `R` = plain Vst::Parameter, `L` = StringListParameter,
 /// `T` = stepped toggle (stepCount == 1, i.e. two states).
-enum class Kind { R, L, T };
+enum class Kind : std::uint8_t { R, L, T };
 
 struct SurfaceRow {
     Vst::ParamID id;
@@ -163,111 +178,111 @@ struct SurfaceRow {
 
 constexpr SurfaceRow kSurface[] = {
     // --- Global (0-99) -------------------------------------------------------
-    {Seraphis::kMasterGainId, Kind::R, 0},
-    {Seraphis::kPolyphonyId, Kind::L, 16},
-    {Seraphis::kSoftLimitId, Kind::T, 0},
-    {Seraphis::kSeedId, Kind::L, 16},
+    {.id = Seraphis::kMasterGainId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kPolyphonyId, .kind = Kind::L, .entries = 16},
+    {.id = Seraphis::kSoftLimitId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kSeedId, .kind = Kind::L, .entries = 16},
 
     // --- Macros (100-199) ----------------------------------------------------
-    {Seraphis::kMacroDreamId, Kind::R, 0},
-    {Seraphis::kMacroBloomId, Kind::R, 0},
-    {Seraphis::kMacroDissolveId, Kind::R, 0},
-    {Seraphis::kMacroGravityId, Kind::R, 0},
-    {Seraphis::kMacroEntropyId, Kind::R, 0},
+    {.id = Seraphis::kMacroDreamId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroBloomId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroDissolveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroGravityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroEntropyId, .kind = Kind::R, .entries = 0},
 
     // --- Harmonic Cloud (200-399) -------------------------------------------
-    {Seraphis::kCloudRichnessId, Kind::R, 0},
-    {Seraphis::kCloudInharmonicityId, Kind::R, 0},
-    {Seraphis::kCloudTiltId, Kind::R, 0},
-    {Seraphis::kCloudMutationId, Kind::R, 0},
-    {Seraphis::kCloudGravityId, Kind::R, 0},
-    {Seraphis::kCloudDriftDepthId, Kind::R, 0},
-    {Seraphis::kCloudDriftSmoothnessId, Kind::R, 0},
-    {Seraphis::kCloudStereoSpreadId, Kind::R, 0},
-    {Seraphis::kCloudAttackId, Kind::R, 0},
-    {Seraphis::kCloudDecayId, Kind::R, 0},
-    {Seraphis::kCloudEnvOffsetSpreadId, Kind::R, 0},
+    {.id = Seraphis::kCloudRichnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudInharmonicityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudTiltId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudMutationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudGravityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDriftDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDriftSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudStereoSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudAttackId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudEnvOffsetSpreadId, .kind = Kind::R, .entries = 0},
 
     // --- Spectral Morph / Entropy (400-599) ---------------------------------
-    {Seraphis::kMorphEntropyId, Kind::R, 0},
-    {Seraphis::kMorphBloomId, Kind::R, 0},
-    {Seraphis::kMorphPositionId, Kind::R, 0},
-    {Seraphis::kMorphTravelModeId, Kind::L, 2},
-    {Seraphis::kMorphTravelRateId, Kind::R, 0},
-    {Seraphis::kMorphSyncId, Kind::T, 0},
-    {Seraphis::kMorphSyncNoteId, Kind::L, 8},
-    {Seraphis::kMorphWaypointIntervalId, Kind::R, 0},
-    {Seraphis::kMorphStateCountId, Kind::L, 3},
-    {Seraphis::kMorphState0Id, Kind::L, 5},
-    {Seraphis::kMorphState1Id, Kind::L, 5},
-    {Seraphis::kMorphState2Id, Kind::L, 5},
-    {Seraphis::kMorphState3Id, Kind::L, 5},
+    {.id = Seraphis::kMorphEntropyId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphBloomId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphPositionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphTravelModeId, .kind = Kind::L, .entries = 2},
+    {.id = Seraphis::kMorphTravelRateId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphSyncId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kMorphSyncNoteId, .kind = Kind::L, .entries = 8},
+    {.id = Seraphis::kMorphWaypointIntervalId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphStateCountId, .kind = Kind::L, .entries = 3},
+    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 5},
 
     // --- Life Modulators (600-699) + Voice Envelope (700-799) ---------------
-    {Seraphis::kLifeSpatialDepthId, Kind::R, 0},
-    {Seraphis::kLifeSpatialRateId, Kind::R, 0},
-    {Seraphis::kLifeSpatialCouplingId, Kind::R, 0},
-    {Seraphis::kLifeSpatialGrowthId, Kind::R, 0},
-    {Seraphis::kLifeVoiceWidthId, Kind::R, 0},
-    {Seraphis::kEnvModeId, Kind::L, 2},
-    {Seraphis::kEnvGrowthDurationId, Kind::R, 0},
-    {Seraphis::kEnvStage0MsId, Kind::R, 0},
-    {Seraphis::kEnvStage1MsId, Kind::R, 0},
-    {Seraphis::kEnvReleaseMsId, Kind::R, 0},
+    {.id = Seraphis::kLifeSpatialDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialRateId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialCouplingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialGrowthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeVoiceWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvModeId, .kind = Kind::L, .entries = 2},
+    {.id = Seraphis::kEnvGrowthDurationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvStage0MsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvStage1MsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvReleaseMsId, .kind = Kind::R, .entries = 0},
 
     // --- Continuous Body (800-999) ------------------------------------------
-    {Seraphis::kBodyMaterialId, Kind::L, 5},
-    {Seraphis::kBodyResonanceId, Kind::R, 0},
-    {Seraphis::kBodyDampingId, Kind::R, 0},
-    {Seraphis::kBodyKeyTrackingId, Kind::R, 0},
-    {Seraphis::kBodyDriveId, Kind::R, 0},
-    {Seraphis::kBodyMixId, Kind::R, 0},
-    {Seraphis::kBodyCloudMixId, Kind::R, 0},
-    {Seraphis::kBodyCloudDecayId, Kind::R, 0},
-    {Seraphis::kBodyCloudSizeId, Kind::R, 0},
-    {Seraphis::kBodyCloudDampingId, Kind::R, 0},
-    {Seraphis::kBodyWidthId, Kind::R, 0},
-    {Seraphis::kBodyInputAgcId, Kind::T, 0},
-    {Seraphis::kBodyResonatorBypassId, Kind::T, 0},
+    {.id = Seraphis::kBodyMaterialId, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kBodyResonanceId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyKeyTrackingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyDriveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudSizeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyInputAgcId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kBodyResonatorBypassId, .kind = Kind::T, .entries = 0},
 
     // --- Granular Atmosphere (1000-1199) ------------------------------------
-    {Seraphis::kAtmosLevelId, Kind::R, 0},
-    {Seraphis::kAtmosBlurId, Kind::R, 0},
-    {Seraphis::kAtmosDensityId, Kind::R, 0},
-    {Seraphis::kAtmosGrainSecondsId, Kind::R, 0},
-    {Seraphis::kAtmosDriftDepthId, Kind::R, 0},
-    {Seraphis::kAtmosPanSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosDecorrelationId, Kind::R, 0},
-    {Seraphis::kAtmosFreezeMixId, Kind::R, 0},
-    {Seraphis::kAtmosFreezeId, Kind::T, 0},
-    {Seraphis::kAtmosDriftSmoothnessId, Kind::R, 0},
-    {Seraphis::kAtmosDriftRangeId, Kind::R, 0},
-    {Seraphis::kAtmosJitterId, Kind::R, 0},
-    {Seraphis::kAtmosPositionId, Kind::R, 0},
-    {Seraphis::kAtmosPositionSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosPitchId, Kind::R, 0},
-    {Seraphis::kAtmosPitchSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosGrainEnvelopeId, Kind::L, 6},
+    {.id = Seraphis::kAtmosLevelId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosBlurId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDensityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosGrainSecondsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDriftDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPanSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDecorrelationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosFreezeMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosFreezeId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kAtmosDriftSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDriftRangeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosJitterId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPositionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPositionSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPitchId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPitchSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosGrainEnvelopeId, .kind = Kind::L, .entries = 6},
 
     // --- Aether Space (1200-1399) -------------------------------------------
-    {Seraphis::kAetherMixId, Kind::R, 0},
-    {Seraphis::kAetherSizeId, Kind::R, 0},
-    {Seraphis::kAetherDensityId, Kind::R, 0},
-    {Seraphis::kAetherDecayId, Kind::R, 0},
-    {Seraphis::kAetherFreezeId, Kind::T, 0},
-    {Seraphis::kAetherDimensionalityId, Kind::R, 0},
-    {Seraphis::kAetherDampingId, Kind::R, 0},
-    {Seraphis::kAetherPreDelayId, Kind::R, 0},
-    {Seraphis::kAetherModDepthId, Kind::R, 0},
-    {Seraphis::kAetherModSmoothnessId, Kind::R, 0},
-    {Seraphis::kAetherShimmerOctaveId, Kind::R, 0},
-    {Seraphis::kAetherShimmerFifthId, Kind::R, 0},
-    {Seraphis::kAetherBloomSendId, Kind::R, 0},
-    {Seraphis::kAetherBloomDecayId, Kind::R, 0},
-    {Seraphis::kAetherSpectralDiffusionId, Kind::R, 0},
-    {Seraphis::kAetherSizeBreathDepthId, Kind::R, 0},
-    {Seraphis::kAetherTideDepthId, Kind::R, 0},
-    {Seraphis::kAetherWidthId, Kind::R, 0},
+    {.id = Seraphis::kAetherMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSizeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDensityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherFreezeId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kAetherDimensionalityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherPreDelayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherModDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherModSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherShimmerOctaveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherShimmerFifthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherBloomSendId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherBloomDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSpectralDiffusionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSizeBreathDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherTideDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherWidthId, .kind = Kind::R, .entries = 0},
 };
 
 constexpr std::size_t kSurfaceRowCount = sizeof(kSurface) / sizeof(kSurface[0]);
@@ -318,7 +333,7 @@ static_assert(kSurfaceRowCount == 91, "spec C-6 is a 91-row table");
     }
     const double raw = normalized * static_cast<double>(states - 1) + 0.5;
     const int i = static_cast<int>(raw);
-    return (i < 0) ? 0 : ((i > states - 1) ? states - 1 : i);
+    return std::clamp(i, 0, states - 1);
 }
 
 /// SC-023's derived non-default value for one row. See construction choice 1 in
@@ -584,9 +599,7 @@ void renderNote(SeraphisTest::ProcessorFixture& fx, double sampleRate, std::size
     double worst = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i) {
         const double d = std::fabs(static_cast<double>(a[i]) - static_cast<double>(b[i]));
-        if (d > worst) {
-            worst = d;
-        }
+        worst = std::max(d, worst);
     }
     return worst;
 }
@@ -649,27 +662,27 @@ TEST_CASE("Seraphis_StateRoundTrip_IsExact", "[seraphis][state][v2]") {
     }
     driveAllParameters(driven, kSampleRate, kBlock);
 
-    SECTION("getState -> setState -> getState is byte-identical at exactly 2532 bytes") {
+    SECTION("getState -> setState -> getState is byte-identical at exactly 2596 bytes") {
         StreamPtr a = captureState(*driven.fx->proc);
-        REQUIRE(a->getSize() == kV2StateBytes);
+        REQUIRE(a->getSize() == kV3StateBytes);
 
         // NON-VACUITY: the stream must NOT be the default stream, or the
         // byte-identity check below would pass for a getState() writing
         // constants.
         Seraphis::Processor pristine;
         StreamPtr defaults = captureState(pristine);
-        REQUIRE(defaults->getSize() == kV2StateBytes);
+        REQUIRE(defaults->getSize() == kV3StateBytes);
         REQUIRE(std::memcmp(a->getData(), defaults->getData(),
-                            static_cast<std::size_t>(kV2StateBytes)) != 0);
+                            static_cast<std::size_t>(kV3StateBytes)) != 0);
 
         Seraphis::Processor second;
         rewindStream(*a);
         REQUIRE(second.setState(a.get()) == kResultOk);
         StreamPtr b = captureState(second);
 
-        REQUIRE(b->getSize() == kV2StateBytes);
+        REQUIRE(b->getSize() == kV3StateBytes);
         CHECK(std::memcmp(a->getData(), b->getData(),
-                          static_cast<std::size_t>(kV2StateBytes)) == 0);
+                          static_cast<std::size_t>(kV3StateBytes)) == 0);
 
         // ...and a third pass, because FR-094's byte identity must be a fixed
         // point and not merely a single self-consistent hop.
@@ -677,9 +690,9 @@ TEST_CASE("Seraphis_StateRoundTrip_IsExact", "[seraphis][state][v2]") {
         rewindStream(*b);
         REQUIRE(third.setState(b.get()) == kResultOk);
         StreamPtr c = captureState(third);
-        REQUIRE(c->getSize() == kV2StateBytes);
+        REQUIRE(c->getSize() == kV3StateBytes);
         CHECK(std::memcmp(b->getData(), c->getData(),
-                          static_cast<std::size_t>(kV2StateBytes)) == 0);
+                          static_cast<std::size_t>(kV3StateBytes)) == 0);
     }
 
     SECTION("Controller::setComponentState reproduces every one of the 91 values") {
@@ -763,9 +776,9 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
         Seraphis::Processor proc;
         REQUIRE(proc.setState(v1.get()) == kResultOk);
 
-        // The stream it writes back is a FULL v2 stream: migration widens.
+        // The stream it writes back is a FULL v3 stream: migration widens.
         StreamPtr out = captureState(proc);
-        REQUIRE(out->getSize() == kV2StateBytes);
+        REQUIRE(out->getSize() == kV3StateBytes);
 
         rewindStream(*out);
         REQUIRE(controller.setComponentState(out.get()) == kResultOk);
@@ -819,26 +832,31 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
         CHECK(maxAbsDiff(migrated.capturedR, control.capturedR) <= 1.0e-5);
     }
 
-    SECTION("A version-3 stream is refused with no state mutated") {
+    // Phase 10 FR-031 moved kCurrentStateVersion 2 -> 3, so the first FUTURE
+    // version is now 4. v3 is a version this binary writes and accepts.
+    SECTION("A version-4 stream is refused with no state mutated") {
         Seraphis::Processor proc;
         StreamPtr before = captureState(proc);
         std::vector<char> beforeBytes(static_cast<std::size_t>(before->getSize()));
         std::memcpy(beforeBytes.data(), before->getData(), beforeBytes.size());
 
-        StreamPtr v3 = makeV1Stream(Seraphis::kCurrentStateVersion + 1, 1.5f, 12, 0, 0.1f,
+        StreamPtr v4 = makeV1Stream(Seraphis::kCurrentStateVersion + 1, 1.5f, 12, 0, 0.1f,
                                     0.2f, 0.3f, 0.8f, 0.4f);
-        REQUIRE(Seraphis::kCurrentStateVersion + 1 == 3);
-        CHECK(proc.setState(v3.get()) == kResultFalse);
+        REQUIRE(Seraphis::kCurrentStateVersion + 1 == 4);
+        CHECK(proc.setState(v4.get()) == kResultFalse);
 
         StreamPtr after = captureState(proc);
         REQUIRE(after->getSize() == static_cast<int64>(beforeBytes.size()));
         CHECK(std::memcmp(after->getData(), beforeBytes.data(), beforeBytes.size()) == 0);
 
-        rewindStream(*v3);
-        CHECK(controller.setComponentState(v3.get()) == kResultFalse);
+        rewindStream(*v4);
+        CHECK(controller.setComponentState(v4.get()) == kResultFalse);
     }
 
-    SECTION("Twelve truncated version-2 streams load without crash") {
+    // Phase 10: the stream captured below is now a v3 one (v2 plus the
+    // 64-byte [effects] block). The twelve cut offsets are unchanged except
+    // the last, which is defined as "one byte short of the end".
+    SECTION("Twelve truncated version-3 streams load without crash") {
         DrivenProcessor driven;
         Lcg rng(0x5EEDu);
         for (std::size_t i = 0; i < kSurfaceRowCount; ++i) {
@@ -853,7 +871,7 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
         }
         driveAllParameters(driven, kSampleRate, static_cast<int32>(kBlock));
         StreamPtr full = captureState(*driven.fx->proc);
-        REQUIRE(full->getSize() == kV2StateBytes);
+        REQUIRE(full->getSize() == kV3StateBytes);
 
         // Deliberately chosen: below the version field; at the v1 boundary; at
         // the [seed] and [cloud] boundaries; INSIDE the first 541-byte payload;
@@ -873,7 +891,7 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
             2300,                     // after [morph]
             2340,                     // after [life]
             2460,                     // after [atmos]
-            kV2StateBytes - 1,        // one byte short of the end
+            kV3StateBytes - 1,        // one byte short of the end
         };
         static_assert(sizeof(cuts) / sizeof(cuts[0]) == 12,
                       "SC-011 asks for twelve chosen offsets");
@@ -891,10 +909,10 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
             }
 
             // Whatever survived, the processor is still serializable at the
-            // full v2 size and reloadable - "without crash, remainder at
+            // full v3 size and reloadable - "without crash, remainder at
             // defaults" is only meaningful if the object is still usable.
             StreamPtr out = captureState(proc);
-            CHECK(out->getSize() == kV2StateBytes);
+            CHECK(out->getSize() == kV3StateBytes);
 
             Seraphis::Processor again;
             rewindStream(*out);
@@ -931,7 +949,7 @@ TEST_CASE("Seraphis_SpectralStateSlots_RoundTripExactly", "[seraphis][state][v2]
             REQUIRE(source.processBlock(kBlock) == kResultOk);
 
             StreamPtr saved = captureState(*source.proc);
-            REQUIRE(saved->getSize() == kV2StateBytes);
+            REQUIRE(saved->getSize() == kV3StateBytes);
 
             SeraphisTest::ProcessorFixture reloaded;
             REQUIRE(reloaded.prepare(kSampleRate, kBlock) == kResultOk);
@@ -979,6 +997,10 @@ TEST_CASE("Seraphis_SpectralStateSlots_RoundTripExactly", "[seraphis][state][v2]
 
         CHECK_FALSE(
             Krate::DSP::deserializeSpectralState(garbage.data(), garbage.size(), victim));
+        // The assertion IS the byte comparison: the criterion is that a rejected stream leaves
+        // the destination BITWISE untouched, which a member-wise comparison would not cover
+        // (it would pass while a partial write scribbled padding). Suppressed, not obeyed.
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison)
         CHECK(std::memcmp(&victim, &original, sizeof(Krate::DSP::SpectralState)) == 0);
     }
 
@@ -990,7 +1012,7 @@ TEST_CASE("Seraphis_SpectralStateSlots_RoundTripExactly", "[seraphis][state][v2]
         REQUIRE(source.processBlock(kBlock) == kResultOk);
 
         StreamPtr saved = captureState(*source.proc);
-        REQUIRE(saved->getSize() == kV2StateBytes);
+        REQUIRE(saved->getSize() == kV3StateBytes);
 
         // Corrupt every byte of the four payloads in place. The 13 [morph]
         // scalars in front of them - including the four slot IDs - stay intact,
@@ -1071,7 +1093,7 @@ TEST_CASE("Seraphis_PresetLoadAfterPrepare_ReachesDsp", "[seraphis][state][v2]")
     reference.values = table;
     driveAllParameters(reference, kSampleRate, kBlock);
     StreamPtr preset = captureState(*reference.fx->proc);
-    REQUIRE(preset->getSize() == kV2StateBytes);
+    REQUIRE(preset->getSize() == kV3StateBytes);
 
     SECTION("Clauses 1-5: the preset reaches every route, consumed once on the audio thread") {
         // 1. Prepare and render ONE block, so every prepare-time push has run.
@@ -1130,7 +1152,7 @@ TEST_CASE("Seraphis_PresetLoadAfterPrepare_ReachesDsp", "[seraphis][state][v2]")
             }
             driveAllParameters(d, kSampleRate, static_cast<int32>(kBlockSz));
             StreamPtr s = captureState(*d.fx->proc);
-            REQUIRE(s->getSize() == kV2StateBytes);
+            REQUIRE(s->getSize() == kV3StateBytes);
             return s;
         };
 
@@ -1169,7 +1191,7 @@ TEST_CASE("Seraphis_PresetLoadAfterPrepare_ReachesDsp", "[seraphis][state][v2]")
             // or not `AetherMix` at 1.0 removes the dry path entirely. A raw
             // onset-index comparison would be a statement about the dry path,
             // which ID 1207 does not control.
-            const std::size_t earlyEnd = static_cast<std::size_t>(0.15 * kSampleRate);
+            const auto earlyEnd = static_cast<std::size_t>(0.15 * kSampleRate);
             const double earlyA = rmsOfRange(a.capturedL, a.capturedR, 0, earlyEnd);
             const double earlyB = rmsOfRange(b.capturedL, b.capturedR, 0, earlyEnd);
             INFO("first 150 ms RMS at 0 ms pre-delay: " << earlyA << ", at 200 ms: " << earlyB);
@@ -1242,13 +1264,13 @@ TEST_CASE("Seraphis_PresetLoadBeforePrepare_ReachesDsp", "[seraphis][state][v2]"
     for (std::size_t i = 0; i < kSurfaceRowCount; ++i) {
         if (kSurface[i].id == Seraphis::kMorphState0Id) { reference.values[i] = 1.0 / 4.0; }
         if (kSurface[i].id == Seraphis::kMorphState1Id) { reference.values[i] = 2.0 / 4.0; }
-        if (kSurface[i].id == Seraphis::kMorphState2Id) { reference.values[i] = 4.0 / 4.0; }
+        if (kSurface[i].id == Seraphis::kMorphState2Id) { reference.values[i] = 1.0; }  // 4/4
         if (kSurface[i].id == Seraphis::kMorphState3Id) { reference.values[i] = 1.0 / 4.0; }
         if (kSurface[i].id == Seraphis::kMorphStateCountId) { reference.values[i] = 1.0; }
     }
     driveAllParameters(reference, kSampleRate, kBlock);
     StreamPtr preset = captureState(*reference.fx->proc);
-    REQUIRE(preset->getSize() == kV2StateBytes);
+    REQUIRE(preset->getSize() == kV3StateBytes);
 
     // setState() BEFORE setupProcessing(), which FR-047 and the Edge cases ->
     // State bullet both make legal.
@@ -1383,7 +1405,7 @@ TEST_CASE("Seraphis_SampleRateChange_RePushesEverySurface", "[seraphis][state][v
     presetSource.values = table;
     driveAllParameters(presetSource, kFirstRate, kBlock);
     StreamPtr preset = captureState(*presetSource.fx->proc);
-    REQUIRE(preset->getSize() == kV2StateBytes);
+    REQUIRE(preset->getSize() == kV3StateBytes);
 
     SECTION("(a)-(c): the re-prepare clears the DSP and every surface is re-pushed") {
         SeraphisTest::ProcessorFixture target;

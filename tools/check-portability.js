@@ -104,6 +104,12 @@ function pluginFlagsFor(file) {
     // token, since nothing here opens them.
     flags.push(`-D${upper}_RESOURCES_DIR=\\"/tmp\\"`);
     flags.push(`-D${upper}_FIXTURES_DIR=\\"/tmp\\"`);
+    // Source roots. Seraphis' SC-011 lock clause scans the audio-thread source
+    // set at runtime and needs these two spelled the way
+    // plugins/seraphis/tests/CMakeLists.txt sets them. Same rule as above: this
+    // script only compiles, so the value need only exist as a token.
+    flags.push(`-D${upper}_SRC_DIR=\\"/tmp\\"`);
+    flags.push('-DKRATE_DSP_INCLUDE_DIR=\\"/tmp\\"');
     return flags;
 }
 

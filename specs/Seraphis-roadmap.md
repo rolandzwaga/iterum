@@ -459,6 +459,8 @@ state save/load with versioning, spectral-state serialization (Phase 3 round-tri
 wired. Editor-lifecycle harness enrollment (shared headless open/close harness — all plugins do this).
 Pluginval + full state round-trip tests.
 
+**Status: ✅ COMPLETE (2026-08-02)** — see specs/seraphis-phase9-parameters/compliance.md
+
 ### Phase 10: Integrated Effects
 
 **Spec:** `seraphis-phase10-effects`
@@ -467,6 +469,8 @@ The remaining effects roster, all reuse-heavy: spectral freeze (global capture-a
 Aether tail), spectral delay (`spectral_delay`), tape-like saturation (`tape_saturator`, gentle
 ceiling — no aggressive distortion, that's Disrumpo), stereo wandering (`BrownianDrift` → M/S width
 + azimuth via `midside_processor`). Ordering and sends defined here, not ad hoc.
+
+**Status: ✅ COMPLETE (2026-08-03)** — see specs/seraphis-phase10-effects/compliance.md
 
 ### Phase 11: UI
 
@@ -538,7 +542,7 @@ Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/ent
                       │                                                    │   Phase 8 (scaffold)
                       └─→ Phase 6 (aether) ────────────────────────────────┘        │
                                                                                     ▼
-                                                           Phase 9 → 10 → 11 → 12 → 13
+                                                           Phase 9 ✅ → 10 ✅ → 11 → 12 → 13
 ```
 
 Phases 2, 4, 5, 6 are independent of each other once Phase 1 lands — they can be specced/built in

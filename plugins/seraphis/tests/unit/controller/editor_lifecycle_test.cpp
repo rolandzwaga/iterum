@@ -239,19 +239,24 @@ TEST_CASE("Seraphis_EditorLifecycle_SurvivesFullSurface",
     REQUIRE(controller.initialize(nullptr) == Steinberg::kResultOk);
 
     // The precondition: the enlarged surface really is registered.
-    REQUIRE(controller.getParameterCount() == 91);
+    REQUIRE(controller.getParameterCount() == 107);
 
-    // SC-016: three headless open/close cycles, zero reports. The harness CHECKs
+    // SC-016: TEN headless open/close cycles, zero reports. The count is the
+    // criterion's own number, not a round one - SC-016 reads "the editor-lifecycle
+    // harness still passes 10 open/close cycles" - and it is load-bearing rather
+    // than decorative: a reference-count leak in VST3Editor's parameter
+    // attach/detach shows up as an arithmetic drift per cycle, so a 3-cycle run
+    // sees a third of the excursion a 10-cycle run does. The harness CHECKs
     // attached() == kResultTrue and REQUIREs getFrame()->getNbViews() > 0 on
     // every cycle (tests/test_helpers/editor_lifecycle_harness.h:102-105).
     Krate::TestSupport::exerciseEditorLifecycle(controller, "editor", uidescPath,
-                                               /*cycles=*/3);
+                                               /*cycles=*/10);
 
     // The surface must survive the cycles intact: VST3Editor takes and releases
     // references on the controller's parameters, and a teardown that released
     // one too many would show up here as a shrunken count rather than as a
     // crash on some later host action.
-    REQUIRE(controller.getParameterCount() == 91);
+    REQUIRE(controller.getParameterCount() == 107);
 
     controller.terminate();
 }

@@ -236,12 +236,7 @@ constexpr double kSeedSampleRate = 48000.0;
 }
 
 [[nodiscard]] bool allFiniteBits(const std::vector<float>& v) noexcept {
-    for (const float s : v) {
-        if (!isFiniteBits(s)) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(v, [](float s) { return isFiniteBits(s); });
 }
 
 [[nodiscard]] float maxAbs(const std::vector<float>& v) noexcept {
@@ -398,14 +393,10 @@ struct BandMetrics {
     const double binHz = sampleRate / static_cast<double>(kFftSize);
 
     // Bin 0 is DC and is excluded at every rate, so the low edge is at least 1.
-    std::size_t loBin = static_cast<std::size_t>(std::ceil(kBandLoHz / binHz));
-    if (loBin < std::size_t{1}) {
-        loBin = std::size_t{1};
-    }
-    std::size_t hiBin = static_cast<std::size_t>(std::floor(kBandHiHz / binHz));
-    if (hiBin > spectrum.size() - std::size_t{1}) {
-        hiBin = spectrum.size() - std::size_t{1};
-    }
+    auto loBin = static_cast<std::size_t>(std::ceil(kBandLoHz / binHz));
+    loBin = std::max(loBin, std::size_t{1});
+    auto hiBin = static_cast<std::size_t>(std::floor(kBandHiHz / binHz));
+    hiBin = std::min(hiBin, spectrum.size() - std::size_t{1});
     if (hiBin <= loBin) {
         return out;
     }
@@ -495,39 +486,39 @@ struct BandMetrics {
 
 [[nodiscard]] std::vector<ParamPoint> rateProbeParams() {
     return {
-        {Seraphis::kMasterGainId, kMasterGainUnityNorm},
-        {Seraphis::kPolyphonyId, kPolyphony8Norm},
+        {.id = Seraphis::kMasterGainId, .normalized = kMasterGainUnityNorm},
+        {.id = Seraphis::kPolyphonyId, .normalized = kPolyphony8Norm},
 
         // Harmonic cloud: per-partial envelope times + the drift depth.
-        {Seraphis::kCloudAttackId, 0.05},
-        {Seraphis::kCloudDecayId, 0.35},
-        {Seraphis::kCloudDriftDepthId, 0.50},
+        {.id = Seraphis::kCloudAttackId, .normalized = 0.05},
+        {.id = Seraphis::kCloudDecayId, .normalized = 0.35},
+        {.id = Seraphis::kCloudDriftDepthId, .normalized = 0.50},
 
         // Voice envelope: two stage times and the release.
-        {Seraphis::kEnvStage0MsId, 0.50},
-        {Seraphis::kEnvStage1MsId, 0.60},
-        {Seraphis::kEnvReleaseMsId, 0.50},
+        {.id = Seraphis::kEnvStage0MsId, .normalized = 0.50},
+        {.id = Seraphis::kEnvStage1MsId, .normalized = 0.60},
+        {.id = Seraphis::kEnvReleaseMsId, .normalized = 0.50},
 
         // Life modulators: the orbit rate, in Hz.
-        {Seraphis::kLifeSpatialRateId, 0.40},
+        {.id = Seraphis::kLifeSpatialRateId, .normalized = 0.40},
 
         // Spectral morph: the travel rate (journeys/s) and the spline waypoint
         // interval (seconds).
-        {Seraphis::kMorphTravelRateId, 0.35},
-        {Seraphis::kMorphWaypointIntervalId, 0.40},
+        {.id = Seraphis::kMorphTravelRateId, .normalized = 0.35},
+        {.id = Seraphis::kMorphWaypointIntervalId, .normalized = 0.40},
 
         // Continuous body: the parallel decay cloud's decay time, in seconds.
-        {Seraphis::kBodyCloudDecayId, 0.30},
+        {.id = Seraphis::kBodyCloudDecayId, .normalized = 0.30},
 
         // Atmosphere: grains/s and grain length in seconds - the two controls
         // that turn into sample counts inside the grain scheduler. 9.03 grains/s
         // of 1.686 s each = 15.2 concurrent (see the third shaping note above).
-        {Seraphis::kAtmosDensityId, 0.85},
-        {Seraphis::kAtmosGrainSecondsId, 0.55},
+        {.id = Seraphis::kAtmosDensityId, .normalized = 0.85},
+        {.id = Seraphis::kAtmosGrainSecondsId, .normalized = 0.55},
 
         // Aether: RT60 in seconds and the pre-delay in milliseconds.
-        {Seraphis::kAetherDecayId, 0.30},
-        {Seraphis::kAetherPreDelayId, 0.50},
+        {.id = Seraphis::kAetherDecayId, .normalized = 0.30},
+        {.id = Seraphis::kAetherPreDelayId, .normalized = 0.50},
     };
 }
 
@@ -557,11 +548,11 @@ struct BandMetrics {
     // (global_params.h:111-113), so index/15 selects the index exactly.
     const double seedNorm = static_cast<double>(seedIndex) / 15.0;
     return {
-        {Seraphis::kMasterGainId, kMasterGainUnityNorm},
-        {Seraphis::kPolyphonyId, kPolyphony8Norm},
-        {Seraphis::kSeedId, seedNorm},
-        {Seraphis::kCloudDriftDepthId, 0.50},  // 25 cents
-        {Seraphis::kBodyMaterialId, 0.0},      // Glass
+        {.id = Seraphis::kMasterGainId, .normalized = kMasterGainUnityNorm},
+        {.id = Seraphis::kPolyphonyId, .normalized = kPolyphony8Norm},
+        {.id = Seraphis::kSeedId, .normalized = seedNorm},
+        {.id = Seraphis::kCloudDriftDepthId, .normalized = 0.50},  // 25 cents
+        {.id = Seraphis::kBodyMaterialId, .normalized = 0.0},      // Glass
     };
 }
 

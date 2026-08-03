@@ -26,6 +26,14 @@ add_executable(seraphis_tests
     integration/param_character_test.cpp
     integration/param_perf_test.cpp
 
+    # Seraphis Phase 10 (specs/seraphis-phase10-effects): effects chain + v3
+    # state. Same rule as Phase 9 above - this list is ENUMERATED, not globbed,
+    # so an unregistered TU silently drops out of the build and its cases never
+    # run (Catch2 reports "No tests ran" rather than a failure).
+    unit/state_v3_test.cpp
+    integration/effects_chain_test.cpp
+    integration/effects_perf_test.cpp
+
     # SECOND compilation of every plugin .cpp (needed by the plugin-shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/controller/controller.cpp
@@ -67,9 +75,16 @@ target_include_directories(seraphis_tests
 target_compile_features(seraphis_tests PRIVATE cxx_std_20)
 
 # FR-063: tests locate resources/editor.uidesc through this definition.
+#
+# SC-011's "locks and exceptions" clause is instrumented in
+# integration/effects_perf_test.cpp by scanning the Phase 10 audio-thread source
+# set for lock and throw primitives. That scan needs the two roots those sources
+# live under, so they are handed to the TU the same way the resources path is.
 target_compile_definitions(seraphis_tests
     PRIVATE
         SERAPHIS_RESOURCES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../resources"
+        SERAPHIS_SRC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../src"
+        KRATE_DSP_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/dsp/include"
 )
 
 # FR-064: disable -ffast-math for IEEE 754 compliant NaN/Inf handling.
@@ -87,6 +102,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # (same rule as dsp/tests/CMakeLists.txt:735-740).
         integration/param_continuity_test.cpp
         unit/state_v2_test.cpp
+        # Seraphis Phase 10: effects_chain_test checks non-finite payloads by
+        # bit pattern and measures per-sample step statistics that fast-math
+        # contraction would reshape; state_v3_test round-trips raw floats.
+        # ONLY these two of the three Phase 10 TUs are listed.
+        # integration/effects_perf_test.cpp must stay out for the same reason
+        # param_perf_test.cpp does: -fno-fast-math would move the figures its
+        # baselines are pinned to.
+        integration/effects_chain_test.cpp
+        unit/state_v3_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

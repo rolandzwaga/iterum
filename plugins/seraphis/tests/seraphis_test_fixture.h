@@ -195,6 +195,20 @@ struct ProcessorFixture {
             return r;
         }
 
+        // Phase 10 FR-041 clauses 1 and 6. The scoped effects-stage timer and the
+        // pre-output tap are OFF in the shipped plugin (Constitution II: they are
+        // per-SLICE clock reads and a per-slice full-bus copy on the audio
+        // thread) and are turned on HERE, once, for EVERY Seraphis test - not
+        // only for the two TUs that read them.
+        //
+        // Enabling it fixture-wide rather than per-case is deliberate: it keeps
+        // every already-pinned CPU figure measuring exactly the work it measured
+        // before the gate existed, so SC-012/SC-013/SC-014 compare like with like
+        // and the gate cannot be mistaken for the reason a number moved. It is
+        // also the conservative direction - the test build pays MORE than the
+        // shipping build, never less.
+        proc->setEffectsStageInstrumentedForTest(true);
+
         return proc->setActive(true);
     }
 

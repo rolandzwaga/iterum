@@ -5,7 +5,7 @@
 //            specs/seraphis-phase9-parameters/plan.md   (§7.0, §7.3)
 //
 // CRITERIA OWNED BY THIS TU (plan §7.0's test-file map):
-//   SC-001  the registered surface is complete - 91 IDs, exactly C-6's set,
+//   SC-001  the registered surface is complete - 107 IDs, exactly C-6's set,
 //           each with the stepCount its Type column demands, plus the
 //           getParamStringByValue section that covers FR-061
 //   SC-014  the eight Phase 8 IDs are frozen field-for-field
@@ -65,6 +65,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -84,7 +85,7 @@ namespace {
 
 /// C-6's *Type* column. `R` = plain Vst::Parameter, `L` = StringListParameter,
 /// `T` = stepped toggle (stepCount == 1).
-enum class Kind { R, L, T };
+enum class Kind : std::uint8_t { R, L, T };
 
 struct SurfaceRow {
     Vst::ParamID id;
@@ -93,121 +94,144 @@ struct SurfaceRow {
     int entries;
 };
 
-/// All 91 rows of spec C-6, in band order. 73 R + 12 L + 6 T
-/// (plugin_ids.h:197-239 carries the same grouping as prose).
+/// All 107 rows of spec C-6, in band order. 85 R + 14 L + 8 T
+/// (plugin_ids.h:217-267 carries the same grouping as prose).
 constexpr SurfaceRow kSurface[] = {
     // --- Global (0-99) -------------------------------------------------------
-    {Seraphis::kMasterGainId, Kind::R, 0},
-    {Seraphis::kPolyphonyId, Kind::L, 16},
-    {Seraphis::kSoftLimitId, Kind::T, 0},
-    {Seraphis::kSeedId, Kind::L, 16},
+    {.id = Seraphis::kMasterGainId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kPolyphonyId, .kind = Kind::L, .entries = 16},
+    {.id = Seraphis::kSoftLimitId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kSeedId, .kind = Kind::L, .entries = 16},
 
     // --- Macros (100-199) ----------------------------------------------------
-    {Seraphis::kMacroDreamId, Kind::R, 0},
-    {Seraphis::kMacroBloomId, Kind::R, 0},
-    {Seraphis::kMacroDissolveId, Kind::R, 0},
-    {Seraphis::kMacroGravityId, Kind::R, 0},
-    {Seraphis::kMacroEntropyId, Kind::R, 0},
+    {.id = Seraphis::kMacroDreamId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroBloomId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroDissolveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroGravityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMacroEntropyId, .kind = Kind::R, .entries = 0},
 
     // --- Harmonic Cloud (200-399) -------------------------------------------
-    {Seraphis::kCloudRichnessId, Kind::R, 0},
-    {Seraphis::kCloudInharmonicityId, Kind::R, 0},
-    {Seraphis::kCloudTiltId, Kind::R, 0},
-    {Seraphis::kCloudMutationId, Kind::R, 0},
-    {Seraphis::kCloudGravityId, Kind::R, 0},
-    {Seraphis::kCloudDriftDepthId, Kind::R, 0},
-    {Seraphis::kCloudDriftSmoothnessId, Kind::R, 0},
-    {Seraphis::kCloudStereoSpreadId, Kind::R, 0},
-    {Seraphis::kCloudAttackId, Kind::R, 0},
-    {Seraphis::kCloudDecayId, Kind::R, 0},
-    {Seraphis::kCloudEnvOffsetSpreadId, Kind::R, 0},
+    {.id = Seraphis::kCloudRichnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudInharmonicityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudTiltId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudMutationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudGravityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDriftDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDriftSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudStereoSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudAttackId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kCloudEnvOffsetSpreadId, .kind = Kind::R, .entries = 0},
 
     // --- Spectral Morph / Entropy (400-599) ---------------------------------
-    {Seraphis::kMorphEntropyId, Kind::R, 0},
-    {Seraphis::kMorphBloomId, Kind::R, 0},
-    {Seraphis::kMorphPositionId, Kind::R, 0},
-    {Seraphis::kMorphTravelModeId, Kind::L, 2},
-    {Seraphis::kMorphTravelRateId, Kind::R, 0},
-    {Seraphis::kMorphSyncId, Kind::T, 0},
-    {Seraphis::kMorphSyncNoteId, Kind::L, 8},
-    {Seraphis::kMorphWaypointIntervalId, Kind::R, 0},
-    {Seraphis::kMorphStateCountId, Kind::L, 3},
-    {Seraphis::kMorphState0Id, Kind::L, 5},
-    {Seraphis::kMorphState1Id, Kind::L, 5},
-    {Seraphis::kMorphState2Id, Kind::L, 5},
-    {Seraphis::kMorphState3Id, Kind::L, 5},
+    {.id = Seraphis::kMorphEntropyId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphBloomId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphPositionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphTravelModeId, .kind = Kind::L, .entries = 2},
+    {.id = Seraphis::kMorphTravelRateId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphSyncId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kMorphSyncNoteId, .kind = Kind::L, .entries = 8},
+    {.id = Seraphis::kMorphWaypointIntervalId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kMorphStateCountId, .kind = Kind::L, .entries = 3},
+    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 5},
 
     // --- Life Modulators (600-699) + Voice Envelope (700-799) ---------------
-    {Seraphis::kLifeSpatialDepthId, Kind::R, 0},
-    {Seraphis::kLifeSpatialRateId, Kind::R, 0},
-    {Seraphis::kLifeSpatialCouplingId, Kind::R, 0},
-    {Seraphis::kLifeSpatialGrowthId, Kind::R, 0},
-    {Seraphis::kLifeVoiceWidthId, Kind::R, 0},
-    {Seraphis::kEnvModeId, Kind::L, 2},
-    {Seraphis::kEnvGrowthDurationId, Kind::R, 0},
-    {Seraphis::kEnvStage0MsId, Kind::R, 0},
-    {Seraphis::kEnvStage1MsId, Kind::R, 0},
-    {Seraphis::kEnvReleaseMsId, Kind::R, 0},
+    {.id = Seraphis::kLifeSpatialDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialRateId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialCouplingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeSpatialGrowthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kLifeVoiceWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvModeId, .kind = Kind::L, .entries = 2},
+    {.id = Seraphis::kEnvGrowthDurationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvStage0MsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvStage1MsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kEnvReleaseMsId, .kind = Kind::R, .entries = 0},
 
     // --- Continuous Body (800-999) ------------------------------------------
-    {Seraphis::kBodyMaterialId, Kind::L, 5},
-    {Seraphis::kBodyResonanceId, Kind::R, 0},
-    {Seraphis::kBodyDampingId, Kind::R, 0},
-    {Seraphis::kBodyKeyTrackingId, Kind::R, 0},
-    {Seraphis::kBodyDriveId, Kind::R, 0},
-    {Seraphis::kBodyMixId, Kind::R, 0},
-    {Seraphis::kBodyCloudMixId, Kind::R, 0},
-    {Seraphis::kBodyCloudDecayId, Kind::R, 0},
-    {Seraphis::kBodyCloudSizeId, Kind::R, 0},
-    {Seraphis::kBodyCloudDampingId, Kind::R, 0},
-    {Seraphis::kBodyWidthId, Kind::R, 0},
-    {Seraphis::kBodyInputAgcId, Kind::T, 0},
-    {Seraphis::kBodyResonatorBypassId, Kind::T, 0},
+    {.id = Seraphis::kBodyMaterialId, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kBodyResonanceId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyKeyTrackingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyDriveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudSizeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyCloudDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kBodyInputAgcId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kBodyResonatorBypassId, .kind = Kind::T, .entries = 0},
 
     // --- Granular Atmosphere (1000-1199) ------------------------------------
-    {Seraphis::kAtmosLevelId, Kind::R, 0},
-    {Seraphis::kAtmosBlurId, Kind::R, 0},
-    {Seraphis::kAtmosDensityId, Kind::R, 0},
-    {Seraphis::kAtmosGrainSecondsId, Kind::R, 0},
-    {Seraphis::kAtmosDriftDepthId, Kind::R, 0},
-    {Seraphis::kAtmosPanSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosDecorrelationId, Kind::R, 0},
-    {Seraphis::kAtmosFreezeMixId, Kind::R, 0},
-    {Seraphis::kAtmosFreezeId, Kind::T, 0},
-    {Seraphis::kAtmosDriftSmoothnessId, Kind::R, 0},
-    {Seraphis::kAtmosDriftRangeId, Kind::R, 0},
-    {Seraphis::kAtmosJitterId, Kind::R, 0},
-    {Seraphis::kAtmosPositionId, Kind::R, 0},
-    {Seraphis::kAtmosPositionSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosPitchId, Kind::R, 0},
-    {Seraphis::kAtmosPitchSpreadId, Kind::R, 0},
-    {Seraphis::kAtmosGrainEnvelopeId, Kind::L, 6},
+    {.id = Seraphis::kAtmosLevelId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosBlurId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDensityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosGrainSecondsId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDriftDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPanSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDecorrelationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosFreezeMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosFreezeId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kAtmosDriftSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosDriftRangeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosJitterId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPositionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPositionSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPitchId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosPitchSpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAtmosGrainEnvelopeId, .kind = Kind::L, .entries = 6},
 
     // --- Aether Space (1200-1399) -------------------------------------------
-    {Seraphis::kAetherMixId, Kind::R, 0},
-    {Seraphis::kAetherSizeId, Kind::R, 0},
-    {Seraphis::kAetherDensityId, Kind::R, 0},
-    {Seraphis::kAetherDecayId, Kind::R, 0},
-    {Seraphis::kAetherFreezeId, Kind::T, 0},
-    {Seraphis::kAetherDimensionalityId, Kind::R, 0},
-    {Seraphis::kAetherDampingId, Kind::R, 0},
-    {Seraphis::kAetherPreDelayId, Kind::R, 0},
-    {Seraphis::kAetherModDepthId, Kind::R, 0},
-    {Seraphis::kAetherModSmoothnessId, Kind::R, 0},
-    {Seraphis::kAetherShimmerOctaveId, Kind::R, 0},
-    {Seraphis::kAetherShimmerFifthId, Kind::R, 0},
-    {Seraphis::kAetherBloomSendId, Kind::R, 0},
-    {Seraphis::kAetherBloomDecayId, Kind::R, 0},
-    {Seraphis::kAetherSpectralDiffusionId, Kind::R, 0},
-    {Seraphis::kAetherSizeBreathDepthId, Kind::R, 0},
-    {Seraphis::kAetherTideDepthId, Kind::R, 0},
-    {Seraphis::kAetherWidthId, Kind::R, 0},
+    {.id = Seraphis::kAetherMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSizeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDensityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherFreezeId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kAetherDimensionalityId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherDampingId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherPreDelayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherModDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherModSmoothnessId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherShimmerOctaveId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherShimmerFifthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherBloomSendId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherBloomDecayId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSpectralDiffusionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherSizeBreathDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherTideDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kAetherWidthId, .kind = Kind::R, .entries = 0},
+
+    // --- Effects (1400-1499) - Phase 10 --------------------------------------
+    // The two `L` rows carry the ENTRY COUNT, not the stepCount: `entries` is
+    // documented above as "stepCount == entries - 1", so 1413's three
+    // kFxSpreadDirectionLabels (dropdown_mappings.h:244-245) give stepCount 2 and
+    // 1419's ten kFxDelaySyncNoteLabels (dropdown_mappings.h:267-269) give
+    // stepCount 9 - exactly what T005's table demands.
+    {.id = Seraphis::kFxSaturationId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelayMixId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelayTimeId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelaySpreadId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelaySpreadDirectionId, .kind = Kind::L, .entries = 3},
+    {.id = Seraphis::kFxDelayFeedbackId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelayTiltId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelayDiffusionId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelayWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxDelaySyncId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kFxDelaySyncNoteId, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kFxSpectralFreezeId, .kind = Kind::T, .entries = 0},
+    {.id = Seraphis::kFxWidthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxWanderDepthId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxWanderRateId, .kind = Kind::R, .entries = 0},
+    {.id = Seraphis::kFxAzimuthDepthId, .kind = Kind::R, .entries = 0},
 };
 
 constexpr std::size_t kSurfaceRowCount = sizeof(kSurface) / sizeof(kSurface[0]);
 
-static_assert(kSurfaceRowCount == 91,
-              "SC-001: spec C-6 is a 91-row table (8 shipped + 83 new)");
+static_assert(kSurfaceRowCount == 107,
+              "SC-001: spec C-6 is a 107-row table (8 shipped + 83 Phase 9 + 16 Phase 10)");
 
 [[nodiscard]] int expectedStepCount(const SurfaceRow& row) {
     switch (row.kind) {
@@ -240,28 +264,28 @@ struct DropdownTable {
 };
 
 const DropdownTable kDropdownTables[] = {
-    {Seraphis::kSeedId, Seraphis::kSeedLabels.data(),
-     static_cast<int>(Seraphis::kSeedLabels.size())},
-    {Seraphis::kMorphTravelModeId, Seraphis::kTravelModeLabels.data(),
-     static_cast<int>(Seraphis::kTravelModeLabels.size())},
-    {Seraphis::kMorphSyncNoteId, Seraphis::kSyncNoteLabels.data(),
-     static_cast<int>(Seraphis::kSyncNoteLabels.size())},
-    {Seraphis::kMorphStateCountId, Seraphis::kStateCountLabels.data(),
-     static_cast<int>(Seraphis::kStateCountLabels.size())},
-    {Seraphis::kMorphState0Id, Seraphis::kSpectralStateLabels.data(),
-     static_cast<int>(Seraphis::kSpectralStateLabels.size())},
-    {Seraphis::kMorphState1Id, Seraphis::kSpectralStateLabels.data(),
-     static_cast<int>(Seraphis::kSpectralStateLabels.size())},
-    {Seraphis::kMorphState2Id, Seraphis::kSpectralStateLabels.data(),
-     static_cast<int>(Seraphis::kSpectralStateLabels.size())},
-    {Seraphis::kMorphState3Id, Seraphis::kSpectralStateLabels.data(),
-     static_cast<int>(Seraphis::kSpectralStateLabels.size())},
-    {Seraphis::kEnvModeId, Seraphis::kEnvelopeModeLabels.data(),
-     static_cast<int>(Seraphis::kEnvelopeModeLabels.size())},
-    {Seraphis::kBodyMaterialId, Seraphis::kBodyMaterialLabels.data(),
-     static_cast<int>(Seraphis::kBodyMaterialLabels.size())},
-    {Seraphis::kAtmosGrainEnvelopeId, Seraphis::kGrainEnvelopeLabels.data(),
-     static_cast<int>(Seraphis::kGrainEnvelopeLabels.size())},
+    {.id = Seraphis::kSeedId, .labels = Seraphis::kSeedLabels.data(),
+     .count=static_cast<int>(Seraphis::kSeedLabels.size())},
+    {.id = Seraphis::kMorphTravelModeId, .labels = Seraphis::kTravelModeLabels.data(),
+     .count=static_cast<int>(Seraphis::kTravelModeLabels.size())},
+    {.id = Seraphis::kMorphSyncNoteId, .labels = Seraphis::kSyncNoteLabels.data(),
+     .count=static_cast<int>(Seraphis::kSyncNoteLabels.size())},
+    {.id = Seraphis::kMorphStateCountId, .labels = Seraphis::kStateCountLabels.data(),
+     .count=static_cast<int>(Seraphis::kStateCountLabels.size())},
+    {.id = Seraphis::kMorphState0Id, .labels = Seraphis::kSpectralStateLabels.data(),
+     .count=static_cast<int>(Seraphis::kSpectralStateLabels.size())},
+    {.id = Seraphis::kMorphState1Id, .labels = Seraphis::kSpectralStateLabels.data(),
+     .count=static_cast<int>(Seraphis::kSpectralStateLabels.size())},
+    {.id = Seraphis::kMorphState2Id, .labels = Seraphis::kSpectralStateLabels.data(),
+     .count=static_cast<int>(Seraphis::kSpectralStateLabels.size())},
+    {.id = Seraphis::kMorphState3Id, .labels = Seraphis::kSpectralStateLabels.data(),
+     .count=static_cast<int>(Seraphis::kSpectralStateLabels.size())},
+    {.id = Seraphis::kEnvModeId, .labels = Seraphis::kEnvelopeModeLabels.data(),
+     .count=static_cast<int>(Seraphis::kEnvelopeModeLabels.size())},
+    {.id = Seraphis::kBodyMaterialId, .labels = Seraphis::kBodyMaterialLabels.data(),
+     .count=static_cast<int>(Seraphis::kBodyMaterialLabels.size())},
+    {.id = Seraphis::kAtmosGrainEnvelopeId, .labels = Seraphis::kGrainEnvelopeLabels.data(),
+     .count=static_cast<int>(Seraphis::kGrainEnvelopeLabels.size())},
 };
 
 constexpr std::size_t kDropdownTableCount =
@@ -310,9 +334,13 @@ constexpr std::size_t kAllDropdownIdCount =
 
 /// For INFO() only - never for an assertion.
 [[nodiscard]] std::string describe(const Vst::TChar* s) {
+    // UString only wraps a MUTABLE char16 buffer, so the read-only argument is copied
+    // into one rather than const_cast away its constness.
+    Vst::String128 owned{};
+    UString(owned, 128).assign(s);
     char8 buffer[256] = {};
-    UString(const_cast<Vst::TChar*>(s), 128).toAscii(buffer, 256);
-    return std::string(buffer);
+    UString(owned, 128).toAscii(buffer, 256);
+    return {static_cast<const char*>(buffer)};
 }
 
 // ==============================================================================
@@ -448,8 +476,8 @@ struct BoundView {
         if (tagEnd == std::string::npos || classEnd == std::string::npos) {
             continue;
         }
-        views.push_back(BoundView{element.substr(classStart, classEnd - classStart),
-                                  element.substr(tagStart, tagEnd - tagStart)});
+        views.push_back(BoundView{.viewClass = element.substr(classStart, classEnd - classStart),
+                                  .tagName=element.substr(tagStart, tagEnd - tagStart)});
     }
     return views;
 }
@@ -477,7 +505,7 @@ TEST_CASE("Seraphis_ParameterSurface_IsComplete", "[seraphis][controller][params
     REQUIRE(controller.initialize(nullptr) == kResultOk);
 
     // --- the count -----------------------------------------------------------
-    CHECK(controller.getParameterCount() == 91);
+    CHECK(controller.getParameterCount() == 107);
 
     // --- the ID set, in both directions, with no duplicate -------------------
     std::set<Vst::ParamID> registered;
@@ -487,10 +515,13 @@ TEST_CASE("Seraphis_ParameterSurface_IsComplete", "[seraphis][controller][params
         REQUIRE(controller.getParameterInfo(i, info) == kResultOk);
         INFO("duplicate registration of parameter ID " << info.id);
         CHECK(registered.insert(info.id).second);
-        // spec C-5: nothing may sit outside the eight reserved bands, which run
-        // contiguously from 0 to kAetherParamRangeEnd - 1. 1400+ is Phase 10.
+        // spec C-5: nothing may sit outside the reserved bands, which run
+        // contiguously from 0 to kEffectsParamRangeEnd - 1. Phase 10 claimed the
+        // ninth band (1400-1499, plugin_ids.h:280), so the bound moved up from
+        // kAetherParamRangeEnd - loosening it any further would stop catching a
+        // squatter above 1500.
         INFO("parameter ID " << info.id << " lies outside the reserved bands");
-        CHECK(info.id < Seraphis::kAetherParamRangeEnd);
+        CHECK(info.id < Seraphis::kEffectsParamRangeEnd);
     }
     CHECK(registered.size() == kSurfaceRowCount);
 
@@ -516,8 +547,7 @@ TEST_CASE("Seraphis_ParameterSurface_IsComplete", "[seraphis][controller][params
     SECTION("Seraphis_ParamStringByValue_UsesTheSingleLabelTable") {
         // (1) Every dropdown whose labels live in dropdown_mappings.h, at EVERY
         //     index. A label list that existed in two places fails here.
-        for (std::size_t t = 0; t < kDropdownTableCount; ++t) {
-            const DropdownTable& table = kDropdownTables[t];
+        for (const auto & table : kDropdownTables) {
             REQUIRE(table.count > 1);
             for (int i = 0; i < table.count; ++i) {
                 const Vst::ParamValue normalized =
@@ -556,8 +586,7 @@ TEST_CASE("Seraphis_ParameterSurface_IsComplete", "[seraphis][controller][params
         //     six pack formatters DIRECTLY on every dropdown ID. A formatter that
         //     claimed one would render "0.400" instead of "Metal Plate" in every
         //     host and pass assertion (1) only by accident of ordering.
-        for (std::size_t d = 0; d < kAllDropdownIdCount; ++d) {
-            const Vst::ParamID id = kAllDropdownIds[d];
+        for (unsigned int id : kAllDropdownIds) {
             const Vst::ParamValue probe = 0.5;
             Vst::String128 text{};
             INFO("dropdown ID " << id << " must not be claimed by any format<Section>Param");
@@ -608,15 +637,15 @@ TEST_CASE("Seraphis_Phase8Parameters_AreFrozen", "[seraphis][controller][params]
     // untouched. Editing 7.0/15.0 down to 0.0 here would freeze the defect and
     // make SC-022's row for ID 1 unsatisfiable.
     constexpr FrozenInfo kPhase8[] = {
-        {Seraphis::kMasterGainId, 0, 0.5, "dB", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kPolyphonyId, 15, 7.0 / 15.0, "",
-         Vst::ParameterInfo::kCanAutomate | Vst::ParameterInfo::kIsList},
-        {Seraphis::kSoftLimitId, 1, 1.0, "", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kMacroDreamId, 0, 0.0, "%", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kMacroBloomId, 0, 0.0, "%", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kMacroDissolveId, 0, 0.0, "%", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kMacroGravityId, 0, 0.5, "%", Vst::ParameterInfo::kCanAutomate},
-        {Seraphis::kMacroEntropyId, 0, 0.0, "%", Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMasterGainId, .stepCount = 0, .defaultNormalized = 0.5, .units = "dB", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kPolyphonyId, .stepCount = 15, .defaultNormalized = 7.0 / 15.0, .units = "",
+         .flags=Vst::ParameterInfo::kCanAutomate | Vst::ParameterInfo::kIsList},
+        {.id = Seraphis::kSoftLimitId, .stepCount = 1, .defaultNormalized = 1.0, .units = "", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMacroDreamId, .stepCount = 0, .defaultNormalized = 0.0, .units = "%", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMacroBloomId, .stepCount = 0, .defaultNormalized = 0.0, .units = "%", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMacroDissolveId, .stepCount = 0, .defaultNormalized = 0.0, .units = "%", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMacroGravityId, .stepCount = 0, .defaultNormalized = 0.5, .units = "%", .flags = Vst::ParameterInfo::kCanAutomate},
+        {.id = Seraphis::kMacroEntropyId, .stepCount = 0, .defaultNormalized = 0.0, .units = "%", .flags = Vst::ParameterInfo::kCanAutomate},
     };
 
     Seraphis::Controller controller;
@@ -690,7 +719,7 @@ TEST_CASE("Seraphis_UidescControlTags_MatchRegisteredIds", "[seraphis][controlle
         const auto it = tagMap.find(view.tagName);
         REQUIRE(it != tagMap.end());
 
-        const Vst::ParamID id = static_cast<Vst::ParamID>(it->second);
+        const auto id = static_cast<Vst::ParamID>(it->second);
         const SurfaceRow* row = nullptr;
         for (const SurfaceRow& candidate : kSurface) {
             if (candidate.id == id) {
@@ -738,10 +767,10 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
                 Seraphis::saveGlobalParams(p, s);
                 Seraphis::saveGlobalSeed(p, s);
             },
-            {{Seraphis::kMasterGainId, 1.0f}},
-            {{Seraphis::kPolyphonyId, 8},
-             {Seraphis::kSoftLimitId, 1},
-             {Seraphis::kSeedId, 0}});  // index 0 == seed 1u (C-10)
+            {{.id = Seraphis::kMasterGainId, .expected = 1.0f}},
+            {{.id = Seraphis::kPolyphonyId, .expected = 8},
+             {.id = Seraphis::kSoftLimitId, .expected = 1},
+             {.id = Seraphis::kSeedId, .expected = 0}});  // index 0 == seed 1u (C-10)
     }
 
     // --- macros (100-104) ----------------------------------------------------
@@ -758,11 +787,11 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::MacroParams& p, IBStreamer& s) {
                 Seraphis::saveMacroParams(p, s);
             },
-            {{Seraphis::kMacroDreamId, 0.0f},
-             {Seraphis::kMacroBloomId, 0.0f},
-             {Seraphis::kMacroDissolveId, 0.0f},
-             {Seraphis::kMacroGravityId, 0.5f},  // bipolar around 0.5
-             {Seraphis::kMacroEntropyId, 0.0f}},
+            {{.id = Seraphis::kMacroDreamId, .expected = 0.0f},
+             {.id = Seraphis::kMacroBloomId, .expected = 0.0f},
+             {.id = Seraphis::kMacroDissolveId, .expected = 0.0f},
+             {.id = Seraphis::kMacroGravityId, .expected = 0.5f},  // bipolar around 0.5
+             {.id = Seraphis::kMacroEntropyId, .expected = 0.0f}},
             {});
     }
 
@@ -783,17 +812,17 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::CloudParams& p, IBStreamer& s) {
                 Seraphis::saveCloudParams(p, s);
             },
-            {{Seraphis::kCloudRichnessId, 0.60f},
-             {Seraphis::kCloudInharmonicityId, 0.030f},
-             {Seraphis::kCloudTiltId, 0.0f},
-             {Seraphis::kCloudMutationId, 0.25f},
-             {Seraphis::kCloudGravityId, 0.20f},
-             {Seraphis::kCloudDriftDepthId, 0.0f},
-             {Seraphis::kCloudDriftSmoothnessId, 0.5f},
-             {Seraphis::kCloudStereoSpreadId, 0.35f},
-             {Seraphis::kCloudAttackId, 0.05f},  // == HarmonicCloud::kMinAttackSec
-             {Seraphis::kCloudDecayId, 0.5f},
-             {Seraphis::kCloudEnvOffsetSpreadId, 0.0f}},
+            {{.id = Seraphis::kCloudRichnessId, .expected = 0.60f},
+             {.id = Seraphis::kCloudInharmonicityId, .expected = 0.030f},
+             {.id = Seraphis::kCloudTiltId, .expected = 0.0f},
+             {.id = Seraphis::kCloudMutationId, .expected = 0.25f},
+             {.id = Seraphis::kCloudGravityId, .expected = 0.20f},
+             {.id = Seraphis::kCloudDriftDepthId, .expected = 0.0f},
+             {.id = Seraphis::kCloudDriftSmoothnessId, .expected = 0.5f},
+             {.id = Seraphis::kCloudStereoSpreadId, .expected = 0.35f},
+             {.id = Seraphis::kCloudAttackId, .expected = 0.05f},  // == HarmonicCloud::kMinAttackSec
+             {.id = Seraphis::kCloudDecayId, .expected = 0.5f},
+             {.id = Seraphis::kCloudEnvOffsetSpreadId, .expected = 0.0f}},
             {});
     }
 
@@ -822,20 +851,20 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::MorphParams& p, IBStreamer& s) {
                 Seraphis::saveMorphParams(p, s);
             },
-            {{Seraphis::kMorphEntropyId, 0.20f},
-             {Seraphis::kMorphBloomId, 0.0f},
-             {Seraphis::kMorphPositionId, 0.0f},
-             {Seraphis::kMorphTravelRateId,
-              Krate::DSP::SpectralMorphEngine::kMinTravelRate},
-             {Seraphis::kMorphWaypointIntervalId, 2.0f}},
-            {{Seraphis::kMorphTravelModeId, 0},   // External
-             {Seraphis::kMorphSyncId, 0},         // Free
-             {Seraphis::kMorphSyncNoteId, 4},     // "1 Bar"
-             {Seraphis::kMorphStateCountId, 2},   // index 0 -> count 2
-             {Seraphis::kMorphState0Id, 0},       // SineStack
-             {Seraphis::kMorphState1Id, 3},       // Glass
-             {Seraphis::kMorphState2Id, 0},       // SineStack
-             {Seraphis::kMorphState3Id, 0}});     // SineStack
+            {{.id = Seraphis::kMorphEntropyId, .expected = 0.20f},
+             {.id = Seraphis::kMorphBloomId, .expected = 0.0f},
+             {.id = Seraphis::kMorphPositionId, .expected = 0.0f},
+             {.id = Seraphis::kMorphTravelRateId,
+              .expected=Krate::DSP::SpectralMorphEngine::kMinTravelRate},
+             {.id = Seraphis::kMorphWaypointIntervalId, .expected = 2.0f}},
+            {{.id = Seraphis::kMorphTravelModeId, .expected = 0},   // External
+             {.id = Seraphis::kMorphSyncId, .expected = 0},         // Free
+             {.id = Seraphis::kMorphSyncNoteId, .expected = 4},     // "1 Bar"
+             {.id = Seraphis::kMorphStateCountId, .expected = 2},   // index 0 -> count 2
+             {.id = Seraphis::kMorphState0Id, .expected = 0},       // SineStack
+             {.id = Seraphis::kMorphState1Id, .expected = 3},       // Glass
+             {.id = Seraphis::kMorphState2Id, .expected = 0},       // SineStack
+             {.id = Seraphis::kMorphState3Id, .expected = 0}});     // SineStack
     }
 
     // --- life modulators + voice envelope (600-604, 700-704) -----------------
@@ -855,16 +884,16 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::LifeModParams& p, IBStreamer& s) {
                 Seraphis::saveLifeModParams(p, s);
             },
-            {{Seraphis::kLifeSpatialDepthId, 0.35f},
-             {Seraphis::kLifeSpatialRateId, 0.1f},
-             {Seraphis::kLifeSpatialCouplingId, 0.0f},
-             {Seraphis::kLifeSpatialGrowthId, 0.0f},
-             {Seraphis::kLifeVoiceWidthId, 100.0f},
-             {Seraphis::kEnvGrowthDurationId, 10.0f},
-             {Seraphis::kEnvStage0MsId, 2000.0f},
-             {Seraphis::kEnvStage1MsId, 4000.0f},
-             {Seraphis::kEnvReleaseMsId, 8000.0f}},
-            {{Seraphis::kEnvModeId, 0}});  // Standard
+            {{.id = Seraphis::kLifeSpatialDepthId, .expected = 0.35f},
+             {.id = Seraphis::kLifeSpatialRateId, .expected = 0.1f},
+             {.id = Seraphis::kLifeSpatialCouplingId, .expected = 0.0f},
+             {.id = Seraphis::kLifeSpatialGrowthId, .expected = 0.0f},
+             {.id = Seraphis::kLifeVoiceWidthId, .expected = 100.0f},
+             {.id = Seraphis::kEnvGrowthDurationId, .expected = 10.0f},
+             {.id = Seraphis::kEnvStage0MsId, .expected = 2000.0f},
+             {.id = Seraphis::kEnvStage1MsId, .expected = 4000.0f},
+             {.id = Seraphis::kEnvReleaseMsId, .expected = 8000.0f}},
+            {{.id = Seraphis::kEnvModeId, .expected = 0}});  // Standard
     }
 
     // --- body (800-812) ------------------------------------------------------
@@ -888,19 +917,19 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::BodyParams& p, IBStreamer& s) {
                 Seraphis::saveBodyParams(p, s);
             },
-            {{Seraphis::kBodyResonanceId, 0.7f},
-             {Seraphis::kBodyDampingId, 0.25f},
-             {Seraphis::kBodyKeyTrackingId, 1.0f},
-             {Seraphis::kBodyDriveId, 1.0f},
-             {Seraphis::kBodyMixId, 1.0f},
-             {Seraphis::kBodyCloudMixId, 0.25f},
-             {Seraphis::kBodyCloudDecayId, 4.0f},
-             {Seraphis::kBodyCloudSizeId, 1.0f},
-             {Seraphis::kBodyCloudDampingId, 0.3f},
-             {Seraphis::kBodyWidthId, 1.0f}},
-            {{Seraphis::kBodyMaterialId, 0},        // Glass
-             {Seraphis::kBodyInputAgcId, 1},        // continuous_body.h:163
-             {Seraphis::kBodyResonatorBypassId, 0}});  // continuous_body.h:164
+            {{.id = Seraphis::kBodyResonanceId, .expected = 0.7f},
+             {.id = Seraphis::kBodyDampingId, .expected = 0.25f},
+             {.id = Seraphis::kBodyKeyTrackingId, .expected = 1.0f},
+             {.id = Seraphis::kBodyDriveId, .expected = 1.0f},
+             {.id = Seraphis::kBodyMixId, .expected = 1.0f},
+             {.id = Seraphis::kBodyCloudMixId, .expected = 0.25f},
+             {.id = Seraphis::kBodyCloudDecayId, .expected = 4.0f},
+             {.id = Seraphis::kBodyCloudSizeId, .expected = 1.0f},
+             {.id = Seraphis::kBodyCloudDampingId, .expected = 0.3f},
+             {.id = Seraphis::kBodyWidthId, .expected = 1.0f}},
+            {{.id = Seraphis::kBodyMaterialId, .expected = 0},        // Glass
+             {.id = Seraphis::kBodyInputAgcId, .expected = 1},        // continuous_body.h:163
+             {.id = Seraphis::kBodyResonatorBypassId, .expected = 0}});  // continuous_body.h:164
     }
 
     // --- atmosphere (1000-1016) ---------------------------------------------
@@ -926,23 +955,23 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::AtmosphereParams& p, IBStreamer& s) {
                 Seraphis::saveAtmosphereParams(p, s);
             },
-            {{Seraphis::kAtmosLevelId, 0.5f},
-             {Seraphis::kAtmosBlurId, 0.0f},
-             {Seraphis::kAtmosDensityId, 4.0f},
-             {Seraphis::kAtmosGrainSecondsId, 4.0f},
-             {Seraphis::kAtmosDriftDepthId, 0.3f},
-             {Seraphis::kAtmosPanSpreadId, 0.7f},
-             {Seraphis::kAtmosDecorrelationId, 0.5f},
-             {Seraphis::kAtmosFreezeMixId, 0.0f},
-             {Seraphis::kAtmosDriftSmoothnessId, 0.7f},
-             {Seraphis::kAtmosDriftRangeId, 2.0f},
-             {Seraphis::kAtmosJitterId, 0.5f},
-             {Seraphis::kAtmosPositionId, 1.0f},
-             {Seraphis::kAtmosPositionSpreadId, 0.3f},
-             {Seraphis::kAtmosPitchId, 0.0f},
-             {Seraphis::kAtmosPitchSpreadId, 0.15f}},
-            {{Seraphis::kAtmosFreezeId, 0},
-             {Seraphis::kAtmosGrainEnvelopeId, 0}});  // Hann
+            {{.id = Seraphis::kAtmosLevelId, .expected = 0.5f},
+             {.id = Seraphis::kAtmosBlurId, .expected = 0.0f},
+             {.id = Seraphis::kAtmosDensityId, .expected = 4.0f},
+             {.id = Seraphis::kAtmosGrainSecondsId, .expected = 4.0f},
+             {.id = Seraphis::kAtmosDriftDepthId, .expected = 0.3f},
+             {.id = Seraphis::kAtmosPanSpreadId, .expected = 0.7f},
+             {.id = Seraphis::kAtmosDecorrelationId, .expected = 0.5f},
+             {.id = Seraphis::kAtmosFreezeMixId, .expected = 0.0f},
+             {.id = Seraphis::kAtmosDriftSmoothnessId, .expected = 0.7f},
+             {.id = Seraphis::kAtmosDriftRangeId, .expected = 2.0f},
+             {.id = Seraphis::kAtmosJitterId, .expected = 0.5f},
+             {.id = Seraphis::kAtmosPositionId, .expected = 1.0f},
+             {.id = Seraphis::kAtmosPositionSpreadId, .expected = 0.3f},
+             {.id = Seraphis::kAtmosPitchId, .expected = 0.0f},
+             {.id = Seraphis::kAtmosPitchSpreadId, .expected = 0.15f}},
+            {{.id = Seraphis::kAtmosFreezeId, .expected = 0},
+             {.id = Seraphis::kAtmosGrainEnvelopeId, .expected = 0}});  // Hann
     }
 
     // --- aether (1200-1217) --------------------------------------------------
@@ -966,24 +995,24 @@ TEST_CASE("Seraphis_RegisteredDefaults_AreExact", "[seraphis][controller][params
             [](const Seraphis::AetherParams& p, IBStreamer& s) {
                 Seraphis::saveAetherParams(p, s);
             },
-            {{Seraphis::kAetherMixId, 0.35f},
-             {Seraphis::kAetherSizeId, 0.50f},
-             {Seraphis::kAetherDensityId, 0.70f},
-             {Seraphis::kAetherDecayId, 4.0f},
-             {Seraphis::kAetherDimensionalityId, 0.35f},
-             {Seraphis::kAetherDampingId, 0.40f},
-             {Seraphis::kAetherPreDelayId, 0.0f},
-             {Seraphis::kAetherModDepthId, 0.25f},
-             {Seraphis::kAetherModSmoothnessId, 0.60f},
-             {Seraphis::kAetherShimmerOctaveId, 0.0f},
-             {Seraphis::kAetherShimmerFifthId, 0.0f},
-             {Seraphis::kAetherBloomSendId, 0.0f},
-             {Seraphis::kAetherBloomDecayId, 0.50f},
-             {Seraphis::kAetherSpectralDiffusionId, 0.0f},
-             {Seraphis::kAetherSizeBreathDepthId, 0.20f},
-             {Seraphis::kAetherTideDepthId, 0.20f},
-             {Seraphis::kAetherWidthId, 1.0f}},
-            {{Seraphis::kAetherFreezeId, 0}});
+            {{.id = Seraphis::kAetherMixId, .expected = 0.35f},
+             {.id = Seraphis::kAetherSizeId, .expected = 0.50f},
+             {.id = Seraphis::kAetherDensityId, .expected = 0.70f},
+             {.id = Seraphis::kAetherDecayId, .expected = 4.0f},
+             {.id = Seraphis::kAetherDimensionalityId, .expected = 0.35f},
+             {.id = Seraphis::kAetherDampingId, .expected = 0.40f},
+             {.id = Seraphis::kAetherPreDelayId, .expected = 0.0f},
+             {.id = Seraphis::kAetherModDepthId, .expected = 0.25f},
+             {.id = Seraphis::kAetherModSmoothnessId, .expected = 0.60f},
+             {.id = Seraphis::kAetherShimmerOctaveId, .expected = 0.0f},
+             {.id = Seraphis::kAetherShimmerFifthId, .expected = 0.0f},
+             {.id = Seraphis::kAetherBloomSendId, .expected = 0.0f},
+             {.id = Seraphis::kAetherBloomDecayId, .expected = 0.50f},
+             {.id = Seraphis::kAetherSpectralDiffusionId, .expected = 0.0f},
+             {.id = Seraphis::kAetherSizeBreathDepthId, .expected = 0.20f},
+             {.id = Seraphis::kAetherTideDepthId, .expected = 0.20f},
+             {.id = Seraphis::kAetherWidthId, .expected = 1.0f}},
+            {{.id = Seraphis::kAetherFreezeId, .expected = 0}});
     }
 
     controller.terminate();

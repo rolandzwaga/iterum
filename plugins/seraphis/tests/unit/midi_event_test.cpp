@@ -135,9 +135,13 @@ constexpr std::size_t kPartitions[] = {1, 7, 64, 65, 512, 2048, 4096};
 /// is a different lane by construction and any comparison across partitions
 /// would fail a correct implementation.
 constexpr ScriptEvent kScript[] = {
-    {1000, true, 60, 0.80f},   {13337, true, 64, 0.60f},  {40001, true, 67, 0.90f},
-    {71111, false, 60, 0.0f},  {99999, true, 72, 0.50f},  {133333, false, 64, 0.0f},
-    {160007, false, 67, 0.0f},
+    {.position = 1000, .noteOn = true, .pitch = 60, .velocity = 0.80f},
+    {.position = 13337, .noteOn = true, .pitch = 64, .velocity = 0.60f},
+    {.position = 40001, .noteOn = true, .pitch = 67, .velocity = 0.90f},
+    {.position = 71111, .noteOn = false, .pitch = 60, .velocity = 0.0f},
+    {.position = 99999, .noteOn = true, .pitch = 72, .velocity = 0.50f},
+    {.position = 133333, .noteOn = false, .pitch = 64, .velocity = 0.0f},
+    {.position = 160007, .noteOn = false, .pitch = 67, .velocity = 0.0f},
 };
 
 struct Render {

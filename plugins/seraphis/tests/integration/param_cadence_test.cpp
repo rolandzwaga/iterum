@@ -1,8 +1,9 @@
 // ==============================================================================
-// Seraphis - Push cadence and allocation tests (Phase 9)
+// Seraphis - Push cadence and allocation tests (Phase 9 + Phase 10)
 // ==============================================================================
 // Reference: specs/seraphis-phase9-parameters/spec.md
 //            specs/seraphis-phase9-parameters/plan.md   (§7.0, §7.7)
+//            specs/seraphis-phase10-effects/spec.md     (SC-018, T020)
 //
 // CRITERIA OWNED BY THIS TU (plan §7.0's test-file map):
 //   SC-006  no allocation on the audio thread across the whole parameter push
@@ -10,6 +11,11 @@
 //           and the configure-time surface only when a value actually moved
 //   SC-013  the FR-046 retry - a rejected configure-time push is retried, per
 //           voice, and stops retrying once the voice accepts
+//   SC-018  (Phase 10) the effects cadence - clauses (a)-(e), at the bottom of
+//           this file: FR-008's conditional reset, FR-011's per-block drift
+//           advance, FR-012's per-CALL bypass predicate, FR-019's Route::FX
+//           bumping no generation counter, and FR-007's "no chunk while the
+//           send is neither active nor draining"
 //
 // THE COUNTERS ARE FR-041a's, AND EACH MEANS SOMETHING DIFFERENT (processor.h:
 // 168-240): applyVoiceParamsCallCountForTest() and
@@ -77,6 +83,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace {
@@ -510,7 +517,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kBodyKeyTrackingId, 0.40}});
+        pushParams(*fx, {{.id = Seraphis::kBodyKeyTrackingId, .normalized = 0.40}});
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -543,7 +550,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         const Counters before = snapshot(*fx->proc);
 
         constexpr double kResonanceNorm = 0.55;  // from the 0.70 default: D = 0.15
-        pushParams(*fx, {{Seraphis::kBodyResonanceId, kResonanceNorm}});
+        pushParams(*fx, {{.id = Seraphis::kBodyResonanceId, .normalized = kResonanceNorm}});
         renderQuiet(*fx, kClassBBlocks);
 
         const Counters after = snapshot(*fx->proc);
@@ -580,7 +587,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         const Counters before = snapshot(*fx->proc);
         const auto basesBefore = baseSnapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kCloudRichnessId, 0.85}});
+        pushParams(*fx, {{.id = Seraphis::kCloudRichnessId, .normalized = 0.85}});
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -614,7 +621,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         const auto basesBefore = baseSnapshot(*fx->proc);
 
         constexpr double kDampingNorm = 0.40;  // from the 0.25 default: D = 0.15
-        pushParams(*fx, {{Seraphis::kBodyDampingId, kDampingNorm}});
+        pushParams(*fx, {{.id = Seraphis::kBodyDampingId, .normalized = kDampingNorm}});
         renderQuiet(*fx, kClassBBlocks);
 
         const Counters after = snapshot(*fx->proc);
@@ -652,7 +659,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         const Counters before = snapshot(*fx->proc);
         const auto basesBefore = baseSnapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kMacroBloomId, 0.50}});
+        pushParams(*fx, {{.id = Seraphis::kMacroBloomId, .normalized = 0.50}});
         renderQuiet(*fx, kSettleBlocks);
 
         const Counters after = snapshot(*fx->proc);
@@ -675,7 +682,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kMorphState0Id, dropdownNorm(4, 5)}});  // Breath
+        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(4, 5)}});  // Breath
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -697,7 +704,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kAetherDampingId, 0.80}});
+        pushParams(*fx, {{.id = Seraphis::kAetherDampingId, .normalized = 0.80}});
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -717,7 +724,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kBodyKeyTrackingId, 0.25}});
+        pushParams(*fx, {{.id = Seraphis::kBodyKeyTrackingId, .normalized = 0.25}});
         renderQuiet(*fx, kSettleBlocks);
 
         const Counters after = snapshot(*fx->proc);
@@ -734,7 +741,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kSeedId, dropdownNorm(5, 16)}});
+        pushParams(*fx, {{.id = Seraphis::kSeedId, .normalized = dropdownNorm(5, 16)}});
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -751,7 +758,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{Seraphis::kAtmosFreezeId, 1.0}});
+        pushParams(*fx, {{.id = Seraphis::kAtmosFreezeId, .normalized = 1.0}});
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -786,7 +793,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         // The donor differs from `fx` in kSeedId ALONE, so nothing else in the
         // stream can be what moved the counter.
         auto donor = makeRig();
-        pushParams(*donor, {{Seraphis::kSeedId, dropdownNorm(7, 16)}});
+        pushParams(*donor, {{.id = Seraphis::kSeedId, .normalized = dropdownNorm(7, 16)}});
         renderQuiet(*donor, 1);
         StreamPtr other = captureState(*donor->proc);
 
@@ -808,8 +815,8 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         fx->setTempo(120.0, 4, 4, /*tempoValid*/ true, /*sigValid*/ true);
 
         // Sync ON at "1 Bar" (C-7 index 4): the derived rate appears once.
-        pushParams(*fx, {{Seraphis::kMorphSyncId, 1.0},
-                         {Seraphis::kMorphSyncNoteId, dropdownNorm(4, 8)}});
+        pushParams(*fx, {{.id = Seraphis::kMorphSyncId, .normalized = 1.0},
+                         {.id = Seraphis::kMorphSyncNoteId, .normalized = dropdownNorm(4, 8)}});
         renderQuiet(*fx, 1);
         const Counters syncOn = snapshot(*fx->proc);
 
@@ -854,9 +861,9 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         // 1 ms envelope stages so the note reaches its sustain immediately; it is
         // held (no note-off) for the whole clause, which is what keeps one voice
         // un-configurable.
-        pushParams(*fx, {{Seraphis::kEnvStage0MsId, 0.0},
-                         {Seraphis::kEnvStage1MsId, 0.0},
-                         {Seraphis::kEnvReleaseMsId, 0.0}});
+        pushParams(*fx, {{.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+                         {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+                         {.id = Seraphis::kEnvReleaseMsId, .normalized = 0.0}});
         fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
         renderQuiet(*fx, 4);
 
@@ -866,7 +873,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
 
         // count 4 (index 2 of three entries) - a CFG push with an observable
         // per-voice read-back.
-        pushParams(*fx, {{Seraphis::kMorphStateCountId, dropdownNorm(2, 3)}});
+        pushParams(*fx, {{.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)}});
         renderQuiet(*fx, 1);
 
         const auto rejFirst = rejectionSnapshot(engine);
@@ -938,10 +945,13 @@ namespace {
 ///   - the body's cloud-feedback blend at 0 and the Aether mix at 0, so nothing
 ///     downstream of the voice colours the differential.
 [[nodiscard]] std::vector<ParamPoint> gateArmSettings() {
-    return {{Seraphis::kEnvStage0MsId, 0.0},  {Seraphis::kEnvStage1MsId, 0.0},
-            {Seraphis::kEnvReleaseMsId, 0.0}, {Seraphis::kAtmosLevelId, 0.0},
-            {Seraphis::kBodyMixId, 0.0},      {Seraphis::kBodyCloudMixId, 0.0},
-            {Seraphis::kAetherMixId, 0.0}};
+    return {{.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
+            {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
+            {.id = Seraphis::kEnvReleaseMsId, .normalized = 0.0},
+            {.id = Seraphis::kAtmosLevelId, .normalized = 0.0},
+            {.id = Seraphis::kBodyMixId, .normalized = 0.0},
+            {.id = Seraphis::kBodyCloudMixId, .normalized = 0.0},
+            {.id = Seraphis::kAetherMixId, .normalized = 0.0}};
 }
 
 void pushVector(Fixture& fx, const std::vector<ParamPoint>& points) {
@@ -1040,8 +1050,8 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
 
         constexpr int kSlotIndex = 4;   // Breath
         constexpr int kStateCount = 4;  // dropdown index 2 of three entries
-        pushParams(*fx, {{Seraphis::kMorphState0Id, dropdownNorm(kSlotIndex, 5)},
-                         {Seraphis::kMorphStateCountId, dropdownNorm(2, 3)}});
+        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(kSlotIndex, 5)},
+                         {.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)}});
         renderQuiet(*fx, 1);
 
         Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
@@ -1101,8 +1111,8 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
             renderQuiet(*fx, 8);
 
             // The CFG push lands while the voice is sounding, so the gate rejects.
-            pushParams(*fx, {{Seraphis::kMorphState0Id, dropdownNorm(slotIndex, 5)},
-                             {Seraphis::kMorphStateCountId, dropdownNorm(countIndex, 3)}});
+            pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(slotIndex, 5)},
+                             {.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(countIndex, 3)}});
             renderQuiet(*fx, 1);
 
             Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
@@ -1178,5 +1188,490 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
         const double delta = relativeRmsDifference(arms[0], arms[1]);
         INFO("relative RMS difference = " << delta);
         REQUIRE(delta >= kChangedFloor);
+    }
+}
+
+// =============================================================================
+// SC-018 (Phase 10) - the effects cadence, clauses (a)-(e)
+// =============================================================================
+//
+// EVERY COUNTER READ HERE IS FR-041's, AND NONE OF THEM IS EVER RESET (they are
+// plain std::size_t members, processor.h:1029-1033), so every clause below is a
+// DELTA across a known number of process() calls rather than an absolute.
+//
+// THE SEED IS NEVER TOUCHED IN THIS CASE, and that is load-bearing rather than
+// incidental: pushEffectsParams()' seed-change burst calls spectralDelay_.reset()
+// and increments the SAME counter FR-008's deferred reset does
+// (processor.cpp:1621-1638), so an arm that moved kSeedId could not attribute a
+// reset to a transition at all.
+//
+// NO std::isnan / std::isinf ANYWHERE - see this file's top banner.
+// =============================================================================
+
+namespace {
+
+// -----------------------------------------------------------------------------
+// FR-009a's window, on this file's 48 kHz / 512 grid
+// -----------------------------------------------------------------------------
+/// kFxSendDrainMs (processor.h:156 - one SpectralDelay::kMaxDelayMs) in samples.
+constexpr std::size_t kSamplesPerMsAt48k = 48;
+constexpr std::size_t kDrainWindowSamples =
+    static_cast<std::size_t>(Seraphis::kFxSendDrainMs) * kSamplesPerMsAt48k;
+static_assert(kDrainWindowSamples == 96000u, "kFxSendDrainMs = 2000 ms at 48 kHz");
+
+/// The drain window rounded UP to this file's block grid: ceil(96000 / 512).
+constexpr std::size_t kDrainWindowBlocks =
+    (kDrainWindowSamples + kBlockSamples - 1u) / kBlockSamples;
+static_assert(kDrainWindowBlocks == 188u, "ceil(96000 / 512)");
+
+/// FR-008 condition (a) is "bypassed for LONGER than kFxSendDrainMs", and
+/// fxBypassedSamples_ advances by the WHOLE block on every bypassed process()
+/// call (processor.cpp:2290-2294). 190 blocks is 97 280 samples, i.e. strictly
+/// past the window with just over two blocks of margin - so the arms below fail
+/// on the requirement rather than on an off-by-one at the boundary.
+constexpr std::size_t kLongBypassBlocks = 190;
+static_assert(kLongBypassBlocks * kBlockSamples > kDrainWindowSamples,
+              "SC-018(a): the qualifying engage needs a WHOLE kFxSendDrainMs of prior bypass");
+
+/// FR-009a's "shorter than the drain window" excursion: 19 x 512 = 9728 samples
+/// = 202.7 ms, the same 200 ms figure SC-011a pins.
+constexpr std::size_t kShortExcursionBlocks = 19;
+static_assert(kShortExcursionBlocks * kBlockSamples < kDrainWindowSamples,
+              "SC-018(a): the excursion must be well INSIDE kFxSendDrainMs");
+
+/// Blocks rendered either side of a transition when only a counter is being read.
+constexpr std::size_t kFxObserveBlocks = 24;
+
+// -----------------------------------------------------------------------------
+// The Phase 10 counter surface, as one value
+// -----------------------------------------------------------------------------
+struct FxCounters {
+    std::size_t resets = 0;         ///< FR-041 clause 2 - FR-008's deferred reset()
+    std::size_t chunks = 0;         ///< clause 7 - one per SpectralDelay::process()
+    std::size_t driftBlocks = 0;    ///< clause 4 - FR-011's per-block advance
+    std::size_t predicateEvals = 0; ///< clause 5 - FR-012's per-CALL predicate
+    std::size_t effectsPushes = 0;  ///< clause 3 - FR-022/FR-024 pushes issued
+    std::size_t stageCalls = 0;     ///< clause 1's per-process()-CALL divisor
+    std::size_t voice = 0;          ///< Phase 9, processor.h:172
+    std::size_t aether = 0;         ///< Phase 9, processor.h:186
+    std::size_t engSoftLimit = 0;   ///< Phase 9, re-used by FR-021's sole writer
+};
+
+[[nodiscard]] FxCounters fxSnapshot(const Seraphis::Processor& p) {
+    FxCounters c;
+    c.resets = p.spectralDelayResetCountForTest();
+    c.chunks = p.sendChunkCountForTest();
+    c.driftBlocks = p.widthDriftBlockCountForTest();
+    c.predicateEvals = p.bypassPredicateEvalCountForTest();
+    c.effectsPushes = p.effectsPushCountForTest();
+    c.stageCalls = p.effectsStageProcessCallsForTest();
+    c.voice = p.applyVoiceParamsCallCountForTest();
+    c.aether = p.applyAetherParamsCallCountForTest();
+    c.engSoftLimit = p.engSoftLimitPushCountForTest();
+    return c;
+}
+
+/// A prepared rig holding one note for the whole arm, rendered until the send has
+/// been CONTINUOUSLY BYPASSED for longer than kFxSendDrainMs - i.e. FR-008
+/// condition (a) is satisfied and only condition (b) is left to decide the reset.
+///
+/// The note is held (there is no note-off) because a bypass excursion's drain is
+/// fed SILENCE and terminates early on kFxSendDrainFloor (FR-009a): with a silent
+/// BUS as well, the drain would end on energy in every arm and the excursion
+/// clause would stop describing the window it names.
+[[nodiscard]] std::unique_ptr<Fixture> makeLongBypassedRig() {
+    auto fx = makeRig();
+    fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
+    renderQuiet(*fx, kLongBypassBlocks);
+    // The precondition, asserted rather than assumed: at the C-6 defaults the
+    // send has never run a chunk, which is FR-007 and is what makes
+    // fxBypassedSamples_ the whole render.
+    REQUIRE(fx->proc->sendChunkCountForTest() == std::size_t{0});
+    return fx;
+}
+
+/// Largest |L - R| over the pre-output-stage tap, i.e. C-1 step 5's OUTPUT.
+///
+/// The tap is the correct measurement point and the plugin output is not: satL_
+/// and satR_ are two independent TapeSaturator instances whose filter state has
+/// already diverged on the stereo bus that preceded the collapse, so a mono
+/// collapse is exact BEFORE processOutputStage and only approximate after it.
+[[nodiscard]] float maxChannelDifference(std::span<const float> l, std::span<const float> r) {
+    const std::size_t n = std::min(l.size(), r.size());
+    float worst = 0.0f;
+    for (std::size_t i = 0; i < n; ++i) {
+        worst = std::max(worst, std::fabs(l[i] - r[i]));
+    }
+    return worst;
+}
+
+// -----------------------------------------------------------------------------
+// Clause (d)'s drive table - all SIXTEEN C-6 IDs, every value DIFFERENT from the
+// registered default, so each row is a real change rather than a no-op the
+// on-change guards would swallow.
+// -----------------------------------------------------------------------------
+constexpr ParamPoint kFxDrivePoints[] = {
+    {.id = Seraphis::kFxSaturationId, .normalized = 0.80},                    // 0.15 -> 0.80   (Route::ENG)
+    {.id = Seraphis::kFxDelayMixId, .normalized = 1.00},                      // 0    -> 1      (engages the send)
+    {.id = Seraphis::kFxDelayTimeId, .normalized = 0.25},                     // 250  -> 500 ms
+    {.id = Seraphis::kFxDelaySpreadId, .normalized = 0.10},                   // 0    -> 200 ms
+    {.id = Seraphis::kFxDelaySpreadDirectionId, .normalized = dropdownNorm(2, 3)},   // LowToHigh -> CenterOut
+    {.id = Seraphis::kFxDelayFeedbackId, .normalized = 0.50},                 // 0.35 -> 0.475
+    {.id = Seraphis::kFxDelayTiltId, .normalized = 0.75},                     // 0    -> +0.5
+    {.id = Seraphis::kFxDelayDiffusionId, .normalized = 0.60},                // 0.30 -> 0.60
+    {.id = Seraphis::kFxDelayWidthId, .normalized = 0.80},                    // 0.50 -> 0.80
+    {.id = Seraphis::kFxDelaySyncId, .normalized = 1.00},                     // off  -> on
+    {.id = Seraphis::kFxDelaySyncNoteId, .normalized = dropdownNorm(2, 10)},  // index 7 -> index 2
+    {.id = Seraphis::kFxSpectralFreezeId, .normalized = 1.00},                // off  -> on
+    {.id = Seraphis::kFxWidthId, .normalized = 0.75},                         // 100  -> 150 %
+    {.id = Seraphis::kFxWanderDepthId, .normalized = 0.50},                   // 0    -> 0.50
+    {.id = Seraphis::kFxWanderRateId, .normalized = 0.25},                    // 0.50 -> 0.25
+    {.id = Seraphis::kFxAzimuthDepthId, .normalized = 0.50},                  // 0    -> 0.50
+};
+
+constexpr std::size_t kFxDrivePointCount = sizeof(kFxDrivePoints) / sizeof(kFxDrivePoints[0]);
+static_assert(kFxDrivePointCount == 16, "C-6 registers exactly 16 effects IDs");
+
+/// The ten pack rows whose push is counted in effectsPushes_ unconditionally once
+/// their value moves: 1411, 1412, 1413, 1414, 1415, 1416, 1417, 1418, 1419, 1442
+/// (processor.cpp:1645-1763). 1410, 1440, 1441 and 1443 are plugin-owned and
+/// deliberately absent from that helper (:1582-1586), and 1430's push is the
+/// COMPOSED freezeReady of plan D-5, which is deferred until the send has
+/// consumed kFxFreezePrimeSamples of live bus - so this is a floor, not an
+/// equality.
+constexpr std::size_t kFxCountedPackRows = 10;
+
+}  // namespace
+
+TEST_CASE("Effects push cadence", "[seraphis][params][cadence][effects]") {
+
+    // =========================================================================
+    // (a) FR-008 - the reset is CONDITIONAL, and both conditions are load-bearing
+    // =========================================================================
+    SECTION("(a) a qualifying engage resets the send exactly once") {
+        auto fx = makeLongBypassedRig();
+        const FxCounters before = fxSnapshot(*fx->proc);
+        REQUIRE(before.resets == std::size_t{0});
+
+        // The engage: mix 0 -> 1 after a WHOLE drain window of bypass, with the
+        // freeze OFF. Both FR-008 conditions hold, so exactly one reset() runs -
+        // on the first fill-chunk boundary of this engage (processor.cpp:1961).
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 1.0}});
+        renderQuiet(*fx, kFxObserveBlocks);
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        INFO("resets " << before.resets << " -> " << after.resets);
+        REQUIRE(after.resets == before.resets + 1u);
+        // Non-vacuity: the engage really happened, so the +1 describes a
+        // transition and not an idle rig.
+        REQUIRE(after.chunks > before.chunks);
+
+        // ... and it does not keep resetting while the send stays engaged.
+        renderQuiet(*fx, kFxObserveBlocks);
+        REQUIRE(fx->proc->spectralDelayResetCountForTest() == after.resets);
+    }
+
+    SECTION("(a) a freeze-FORCED engage resets nothing (FR-023a)") {
+        auto fx = makeLongBypassedRig();
+        const FxCounters before = fxSnapshot(*fx->proc);
+        REQUIRE(before.resets == std::size_t{0});
+
+        // Condition (a) is satisfied EXACTLY as in the arm above - the ONLY
+        // difference is that the engage is freeze-forced, which is what makes
+        // this the control for condition (b). kFxDelayMixId stays at its C-6
+        // default of 0 throughout.
+        pushParams(*fx, {{.id = Seraphis::kFxSpectralFreezeId, .normalized = 1.0}});
+        renderQuiet(*fx, kFxObserveBlocks);
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        INFO("freeze-forced engage: resets " << before.resets << " -> " << after.resets);
+        // A reset here would clear the frozen spectrum buffers and wasFrozen_
+        // (spectral_delay.h:256-257, :276-277) at the very instant the capture is
+        // meant to happen.
+        CHECK(after.resets == before.resets);
+        // Non-vacuity: FR-023a's forced engage DID run the send at mix 0.
+        REQUIRE(after.chunks > before.chunks);
+    }
+
+    SECTION("(a) a sub-drain mix excursion resets nothing (FR-009a)") {
+        auto fx = makeLongBypassedRig();
+
+        // Engage first (this one qualifies, so it is allowed its single reset),
+        // then take the counter as the baseline for the excursion itself.
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 1.0}});
+        renderQuiet(*fx, kFxObserveBlocks);
+        const FxCounters engaged = fxSnapshot(*fx->proc);
+        REQUIRE(engaged.resets == std::size_t{1});
+
+        // EXACTLY 0 - FR-007's predicate is an exact comparison, and an epsilon
+        // would leave the send engaged and this arm measuring nothing.
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 0.0}});
+        renderQuiet(*fx, kShortExcursionBlocks);
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 1.0}});
+        renderQuiet(*fx, kFxObserveBlocks);
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        INFO("excursion: resets " << engaged.resets << " -> " << after.resets);
+        // The excursion is far shorter than kFxSendDrainMs, so FR-008 condition
+        // (a) cannot hold on the re-engage and the tail survives.
+        CHECK(after.resets == engaged.resets);
+        REQUIRE(after.chunks > engaged.chunks);
+    }
+
+    // =========================================================================
+    // (b) FR-011 - the drifts advance once per process() CALL in BOTH bypass
+    //     states, so re-engaging continues a walk instead of restarting one
+    // =========================================================================
+    SECTION("(b) the wander sources advance per block under both bypass states") {
+        auto fx = makeRig();
+
+        // --- state 1: the stage is SKIPPED (the C-6 defaults are FR-010's exact
+        //     identity: width 100 %, both depths 0), so the advance happens in
+        //     the pre-slice block (processor.cpp:1092-1095).
+        const FxCounters start = fxSnapshot(*fx->proc);
+        renderQuiet(*fx, kFxObserveBlocks);
+        const FxCounters bypassed = fxSnapshot(*fx->proc);
+        INFO("skipped-stage delta = " << (bypassed.driftBlocks - start.driftBlocks));
+        REQUIRE(bypassed.driftBlocks == start.driftBlocks + kFxObserveBlocks);
+        // The divisor and the drift counter are both per-CALL, so they move
+        // together - a build that moved either per SLICE fails here.
+        REQUIRE(bypassed.stageCalls == start.stageCalls + kFxObserveBlocks);
+
+        // --- state 2: the stage RUNS. The advance moves inside it, onto the
+        //     absolute 64-sample control grid (processor.cpp:2141-2144) - eight
+        //     grid boundaries per 512-sample block - and the counter must STILL
+        //     be one per block, because it counts blocks and not advances.
+        pushParams(*fx, {{.id = Seraphis::kFxWanderDepthId, .normalized = 0.50},
+                         {.id = Seraphis::kFxAzimuthDepthId, .normalized = 0.50}});
+        renderQuiet(*fx, kFxObserveBlocks);
+        const FxCounters engaged = fxSnapshot(*fx->proc);
+        INFO("running-stage delta = " << (engaged.driftBlocks - bypassed.driftBlocks));
+        REQUIRE(engaged.driftBlocks == bypassed.driftBlocks + kFxObserveBlocks);
+
+        // --- and with the SEND engaged as well, which is the other bypass state
+        //     FR-011 names.
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 1.0}});
+        renderQuiet(*fx, kFxObserveBlocks);
+        const FxCounters both = fxSnapshot(*fx->proc);
+        REQUIRE(both.driftBlocks == engaged.driftBlocks + kFxObserveBlocks);
+        REQUIRE(both.chunks > engaged.chunks);  // the send really was running
+    }
+
+    // =========================================================================
+    // (c) FR-012 - the bypass predicate is evaluated once per process() CALL,
+    //     never per SLICE
+    // =========================================================================
+    SECTION("(c) the bypass predicate is evaluated once per process() call") {
+        constexpr std::size_t kSlicedBlocks = 16;
+        // Three events per block at three DISTINCT offsets, ascending (VST3
+        // requires sorted events). The slice loop cuts at the two non-zero ones
+        // (processor.cpp:1168-1190), i.e. THREE slices per block - [0, 170),
+        // [170, 340), [340, 512) - so a per-slice evaluation would land at 3x the
+        // call count.
+        constexpr Steinberg::int32 kOffsetB = 170;
+        constexpr Steinberg::int32 kOffsetC = 340;
+        static_assert(kOffsetB > 0 && kOffsetC > kOffsetB
+                          && static_cast<std::size_t>(kOffsetC) < kBlockSamples,
+                      "the three offsets must be strictly inside the block, in order");
+
+        auto fx = makeSettledRig();
+        const FxCounters before = fxSnapshot(*fx->proc);
+
+        fx->renderBlocks(kSlicedBlocks, kBlockSamples,
+                         [&](std::size_t, Krate::Test::EventList&,
+                             SeraphisTest::ParameterChanges&) {
+                             fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
+                             fx->pushEvent(Steinberg::Vst::Event::kNoteOffEvent, kNote, 0.0f,
+                                           kOffsetB);
+                             fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent,
+                                           static_cast<Steinberg::int16>(kNote + 7), 0.8f,
+                                           kOffsetC);
+                         });
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        INFO("predicate evaluations = " << (after.predicateEvals - before.predicateEvals)
+                                        << " over " << kSlicedBlocks << " process() calls");
+        REQUIRE(after.predicateEvals == before.predicateEvals + kSlicedBlocks);
+        REQUIRE(after.stageCalls == before.stageCalls + kSlicedBlocks);
+        REQUIRE(fx->checkCanaries());
+
+        // ---------------------------------------------------------------------
+        // NON-VACUITY: the render above really WAS subdivided. Two same-binary,
+        // same-session arms differing only in ONE event's sampleOffset must
+        // render differently - which they can only do if the loop cut the block
+        // at that offset. Without this, a processor that ignored sampleOffset
+        // entirely (one slice per block, always) would satisfy the clause above
+        // trivially.
+        // ---------------------------------------------------------------------
+        constexpr std::size_t kWitnessBlocks = 3;
+        constexpr Steinberg::int32 kWitnessOffset = 300;
+        std::vector<float> witness[2];
+        for (int arm = 0; arm < 2; ++arm) {
+            INFO("witness arm " << arm);
+            auto w = makeRig();
+            const Steinberg::int32 offset = (arm == 0) ? 0 : kWitnessOffset;
+            w->renderBlocks(kWitnessBlocks, kBlockSamples,
+                            [&](std::size_t b, Krate::Test::EventList&,
+                                SeraphisTest::ParameterChanges&) {
+                                if (b == 0) {
+                                    w->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote,
+                                                 0.8f, offset);
+                                }
+                            });
+            witness[arm] = w->capturedL;
+            REQUIRE(w->checkCanaries());
+        }
+        const double witnessDelta = relativeRmsDifference(witness[0], witness[1]);
+        INFO("witness relative RMS difference = " << witnessDelta);
+        REQUIRE(witnessDelta >= kChangedFloor);
+    }
+
+    // =========================================================================
+    // (d) FR-019 - Route::FX bumps NO generation counter
+    // =========================================================================
+    SECTION("(d) driving the effects surface never re-pushes the voices or the Aether") {
+        auto fx = makeSettledRig();
+        const FxCounters before = fxSnapshot(*fx->proc);
+
+        // One ID per block, so a single failing row is named by its own INFO
+        // rather than hidden inside a batch.
+        for (auto kFxDrivePoint : kFxDrivePoints) {
+            INFO("effects ID " << kFxDrivePoint.id);
+            pushParams(*fx, {kFxDrivePoint});
+            renderQuiet(*fx, 1);
+
+            const FxCounters step = fxSnapshot(*fx->proc);
+            // ID 1400 is Route::ENG and 1410-1443 are Route::FX; NEITHER route
+            // may bump voiceParamGeneration_ or aetherParamGeneration_.
+            REQUIRE(step.voice == before.voice);
+            REQUIRE(step.aether == before.aether);
+        }
+
+        // The three class-(b) smoothers (1410, 1441, 1443) keep the slice loop on
+        // the 64-sample grid for ~20 ms after the last row, which is exactly the
+        // window in which a per-slice re-push would show up.
+        renderQuiet(*fx, kSettleBlocks);
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        REQUIRE(after.voice == before.voice);
+        REQUIRE(after.aether == before.aether);
+
+        // --- NON-VACUITY: the sixteen values really did reach the processor ---
+        // ID 1400 (Route::ENG) through FR-021's sole writer and its retained
+        // Phase 9 counter ...
+        REQUIRE(after.engSoftLimit == before.engSoftLimit + 1u);
+        // ... the ten counted pack rows through effectsPushes_ ...
+        INFO("effects pushes = " << (after.effectsPushes - before.effectsPushes));
+        REQUIRE(after.effectsPushes >= before.effectsPushes + kFxCountedPackRows);
+        // ... and ID 1410 through the send actually running.
+        REQUIRE(after.chunks > before.chunks);
+
+        // The three plugin-owned wander IDs have no push counter of their own, so
+        // ID 1440 is witnessed through the audio it controls: at width 0 % the M/S
+        // stage emits mid only, and the azimuth pair is a single per-sample scalar
+        // applied identically to both channels at depth 0 - so the PRE-OUTPUT bus
+        // is exactly mono once the 10 ms width smoother has snapped
+        // (midside_processor.h:186-210, smoother.h:199-200).
+        auto w = makeRig();
+        w->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
+        renderQuiet(*w, 12);
+        REQUIRE_FALSE(w->proc->preOutputTapTruncatedForTest());
+        const float stereoBefore = maxChannelDifference(w->proc->preOutputTapLForTest(),
+                                                        w->proc->preOutputTapRForTest());
+        INFO("pre-output |L - R| before the width collapse = " << stereoBefore);
+        REQUIRE(stereoBefore > 0.0f);  // the control: the bus IS stereo
+
+        pushParams(*w, {{.id = Seraphis::kFxWidthId, .normalized = 0.0}});  // 0 % width
+        renderQuiet(*w, 24);                            // >> the 10 ms width smoother
+        REQUIRE_FALSE(w->proc->preOutputTapTruncatedForTest());
+        const float stereoAfter = maxChannelDifference(w->proc->preOutputTapLForTest(),
+                                                       w->proc->preOutputTapRForTest());
+        INFO("pre-output |L - R| after the width collapse = " << stereoAfter);
+        CHECK(stereoAfter == 0.0f);
+        REQUIRE(w->checkCanaries());
+    }
+
+    // =========================================================================
+    // (e) FR-007 - the send runs ONLY while it is active or draining
+    //
+    // THIS CLAUSE IS THE ONLY CI-GATED OBSERVATION OF FR-007. SC-012's threshold
+    // is [.perf]-tagged and outside the gate, and SC-002 is structurally blind to
+    // it: at mix 0 the mix loop adds fxOut[i] * 0.0f, so a fully-running send
+    // leaves the bus bit-identical.
+    // =========================================================================
+    SECTION("(e) at the C-6 defaults the send never runs a chunk") {
+        auto fx = makeRig();
+        fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
+        const FxCounters before = fxSnapshot(*fx->proc);
+
+        constexpr std::size_t kDefaultsBlocks = 40;
+        renderQuiet(*fx, kDefaultsBlocks);
+
+        const FxCounters after = fxSnapshot(*fx->proc);
+        // Non-vacuity: the render really happened (the drift advance is
+        // unconditional, FR-011), so `chunks == 0` is a property of the send and
+        // not of an empty render.
+        REQUIRE(after.driftBlocks == before.driftBlocks + kDefaultsBlocks);
+        CHECK(after.chunks == std::size_t{0});
+        CHECK(after.resets == std::size_t{0});
+    }
+
+    SECTION("(e) the send stops running once the drain window has ended") {
+        // Geometry, in blocks: [0, kBypassBlock) active, then bypassed for the
+        // whole drain window plus two blocks of margin, then a tail across which
+        // the chunk counter must not move at all.
+        constexpr std::size_t kBypassBlock = 40;
+        constexpr std::size_t kFrozenTailBlocks = 40;
+        constexpr std::size_t kTotalBlocks =
+            kBypassBlock + kDrainWindowBlocks + 2u + kFrozenTailBlocks;
+        static_assert(kTotalBlocks > kBypassBlock + kDrainWindowBlocks + 1u + kFrozenTailBlocks,
+                      "the tail must start AFTER the last block the drain can still run on");
+
+        auto fx = makeRig();
+        fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
+        pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 1.0}});  // engaged from block 0
+
+        std::size_t previous = fx->proc->sendChunkCountForTest();
+        std::size_t chunksAtBypass = 0;
+        std::size_t lastIncreaseBlock = 0;
+        bool anyIncrease = false;
+
+        for (std::size_t b = 0; b < kTotalBlocks; ++b) {
+            if (b == kBypassBlock) {
+                // EXACTLY 0 - FR-007's predicate is an exact comparison.
+                pushParams(*fx, {{.id = Seraphis::kFxDelayMixId, .normalized = 0.0}});
+            }
+            renderQuiet(*fx, 1);
+
+            const std::size_t now = fx->proc->sendChunkCountForTest();
+            if (now > previous) {
+                lastIncreaseBlock = b;
+                anyIncrease = true;
+            }
+            if (b == kBypassBlock) {
+                chunksAtBypass = now;
+            }
+            previous = now;
+        }
+
+        INFO("last chunk on block " << lastIncreaseBlock << ", bypass at block " << kBypassBlock);
+        REQUIRE(anyIncrease);
+        // It advanced while ACTIVE ...
+        REQUIRE(chunksAtBypass > std::size_t{0});
+        // ... it kept advancing through the drain, which is FR-009a's whole point
+        // (a send cut in one sample would stop on the bypass block) ...
+        CHECK(lastIncreaseBlock >= kBypassBlock);
+        // ... and the LAST increment lands no later than the block on which the
+        // state returns to Bypassed. fxDrainRemaining_ is armed at 96 000 on the
+        // bypass block and decremented by the whole block on every DRAINING call
+        // (processor.cpp:2321-2330), so the `<= 0` exit is taken on block
+        // kBypassBlock + 189 = kBypassBlock + kDrainWindowBlocks + 1, and the
+        // last block that can still produce a chunk is the one before it. The
+        // kFxSendDrainFloor energy exit can only make this EARLIER.
+        CHECK(lastIncreaseBlock <= kBypassBlock + kDrainWindowBlocks + 1u);
+        // ... after which nothing runs at all: no copy into the accumulator, no
+        // SpectralDelay::process, for the whole tail.
+        CHECK(lastIncreaseBlock < kTotalBlocks - kFrozenTailBlocks);
+        REQUIRE(fx->checkCanaries());
     }
 }

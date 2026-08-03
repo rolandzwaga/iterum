@@ -185,12 +185,7 @@ constexpr std::uint8_t kEngineVelocityMax = 127;
 }
 
 [[nodiscard]] bool allFiniteBits(const std::vector<float>& v) noexcept {
-    for (const float s : v) {
-        if (!isFiniteBits(s)) {
-            return false;
-        }
-    }
-    return true;
+    return std::ranges::all_of(v, [](float s) { return isFiniteBits(s); });
 }
 
 [[nodiscard]] float maxAbs(const std::vector<float>& v) {
@@ -269,7 +264,7 @@ struct Drive {
     bool automatePolyphony = true;
     bool automateMacros = false;
     double macroNorm = 0.0;
-    std::span<const Steinberg::int16> pitches{};
+    std::span<const Steinberg::int16> pitches;
     float velocity = kHostVelocity100;
     std::size_t numBlocks = kFourSecondBlocks;
 };
@@ -283,7 +278,7 @@ struct Drive {
     SeraphisTest::ProcessorFixture fx;
     REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
 
-    const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+    const auto blockSize = static_cast<std::size_t>(kBlock);
 
     fx.renderBlocks(drive.numBlocks, blockSize,
                     [&](std::size_t b, Krate::Test::EventList& events,
@@ -410,7 +405,7 @@ struct Drive {
     auto reverb = makeMirroredReverb();
     const Krate::DSP::SeraphisMacroMatrix macros{};
 
-    const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+    const auto blockSize = static_cast<std::size_t>(kBlock);
     const std::size_t totalSamples = numBlocks * blockSize;
 
     std::vector<float> dryL(blockSize, 0.0f);
@@ -507,7 +502,7 @@ void fillSine(std::vector<float>& dst, double& phase) {
     targets.size = sizeValue;
     Seraphis::applyAetherTargets(*reverb, targets);
 
-    const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+    const auto blockSize = static_cast<std::size_t>(kBlock);
     std::vector<float> silence(blockSize, 0.0f);
     std::vector<float> outL(blockSize, 0.0f);
     std::vector<float> outR(blockSize, 0.0f);
@@ -528,7 +523,7 @@ void fillSine(std::vector<float>& dst, double& phase) {
     targets.mix = mixValue;
     Seraphis::applyAetherTargets(*reverb, targets);
 
-    const std::size_t blockSize = static_cast<std::size_t>(kBlock);
+    const auto blockSize = static_cast<std::size_t>(kBlock);
     std::vector<float> input(blockSize, 0.0f);
     std::vector<float> outL(blockSize, 0.0f);
     std::vector<float> outR(blockSize, 0.0f);
