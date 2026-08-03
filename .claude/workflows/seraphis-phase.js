@@ -10,11 +10,11 @@ export const meta = {
     { title: 'Plan', detail: 'plan.md, reuse APIs verified against real headers', model: 'opus' },
     { title: 'Challenge Plan', detail: 'layer/RT/reuse skeptics + revision', model: 'opus' },
     { title: 'Tasks', detail: 'dependency-ordered tasks.md with parallel groups', model: 'opus' },
-    { title: 'Dispatch', detail: 'parse tasks.md into executable groups', model: 'opus' },
+    { title: 'Dispatch', detail: 'parse tasks.md into executable groups', model: 'sonnet' },
     { title: 'Implement', detail: 'one agent per task, TDD, disjoint files', model: 'opus' },
-    { title: 'Build+Test', detail: 'build + run suites, bounded fix loop', model: 'opus' },
+    { title: 'Build+Test', detail: 'build + run suites (sonnet reporter), bounded fix loop (opus fixer)', model: 'opus' },
     { title: 'Comply', detail: 'adversarial FR/SC verification, real output only', model: 'opus' },
-    { title: 'Report', detail: 'compliance.md + honest gap list; roadmap marked done if COMPLETE', model: 'opus' },
+    { title: 'Report', detail: 'compliance.md + honest gap list (sonnet); roadmap marked done if COMPLETE (haiku)', model: 'sonnet' },
   ],
 }
 
@@ -95,13 +95,47 @@ read this session. Never invent an API — open the header and quote the real
 signature.
 `
 
+// Slim context for MECHANICAL roles (reporters, transcribers, gates): no
+// roadmap read — the full roadmap re-read across dozens of agents was the
+// single fattest redundant input cost. Everything these roles need is in
+// their prompt and the files it names.
+const CONTEXT_LITE = `
+You are working in the Krate Audio monorepo at f:/projects/iterum, on the
+SERAPHIS synthesizer, roadmap Phase ${phaseNum} (spec slug "${SLUG}").
+Phase artifacts: ${DIR}/ (spec.md, plan.md, tasks.md). Do NOT read
+specs/Seraphis-roadmap.md — everything you need is in this prompt and the
+files it names.
+
+Build (Windows, ALWAYS full cmake path):
+  "C:/Program Files/CMake/bin/cmake.exe" --build build/windows-x64-release --config Release --target <target>
+Run one suite directly: build/windows-x64-release/bin/Release/<target>.exe 2>&1 | tail -5
+Filter Catch2 by test name: <exe> "TestName*"  (positional arg, not -c; tags in [brackets]).
+
+DISCIPLINE: report only what you actually observed; quote real output
+verbatim, never paraphrase or invent.
+`
+
 // ---------------------------------------------------------------------------
-// Model policy: every subagent runs Opus; the orchestrating main loop runs
-// whatever the session model is (Fable). Change MODEL here to retune all
-// agents at once; add per-call overrides only if a stage proves it needs one.
+// Model policy (tiered 2026-08-03; was: blanket Opus):
+// - AUTHOR (opus): authoring + judgment + verification roles. Errors here are
+//   SILENT (a lazy comply verifier rubber-stamps a broken FR; a weak spec
+//   ships wrong requirements) or rebound as expensive Opus fix loops (impl).
+//   Covers: specify, plan, tasks, clarify-scan, revise, impl, fixer,
+//   comply, remediate, reverify, and the judgment-lens skeptics.
+// - MECH (sonnet): transcription/reporting/gate roles. Errors here are LOUD
+//   (schema mismatch, red build gate, reviewable diff), so cheaper is safe.
+//   Covers: dispatch, build reporter (effort low), recheck, clarify-gate
+//   (effort low), encode-clarifications, report, and the reality-lens
+//   skeptics (open-header signature cross-checks). These also get
+//   CONTEXT_LITE where the roadmap is irrelevant.
+// - TRIVIAL (haiku): mark-roadmap (one status line, self-contained prompt).
+// Deliberately NOT tiered yet: impl agents (DSP quality; revisit for a
+// mostly-mechanical phase like presets) and all comply lenses (honesty gate).
 // ---------------------------------------------------------------------------
-const MODEL = 'opus'
-const run = (prompt, opts) => agent(prompt, { model: MODEL, ...opts })
+const AUTHOR = 'opus'
+const MECH = 'sonnet'
+const TRIVIAL = 'haiku'
+const run = (prompt, opts) => agent(prompt, { model: AUTHOR, ...opts })
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -274,7 +308,7 @@ async function challengeAndRevise(docPath, docKind, skeptics, phaseTitle) {
       skeptics.map(s => () =>
         run(
           `${CONTEXT}\n\nYou are an adversarial reviewer of ${docPath} (${docKind}). Read it fully, plus every file it cites. YOUR LENS: ${s.lens}\n\nReport only defects you can substantiate. An empty issues list is a valid result — do not pad.`,
-          { label: `challenge:${s.key}:r${round}`, phase: phaseTitle, schema: ISSUES_SCHEMA },
+          { label: `challenge:${s.key}:r${round}`, phase: phaseTitle, schema: ISSUES_SCHEMA, model: s.model || AUTHOR },
         ).then(r => r.issues.map(i => ({ ...i, lens: s.key }))),
       ),
     )
@@ -290,7 +324,7 @@ async function challengeAndRevise(docPath, docKind, skeptics, phaseTitle) {
 
     const recheck = await run(
       `${CONTEXT}\n\nVerify that ${docPath} now addresses every blocker/major issue below (resolved in-text or explicitly rejected in "Review notes" with sound reasoning). Quote the document for each.\n\nISSUES:\n${JSON.stringify(serious, null, 2)}`,
-      { label: `recheck:${docKind}:r${round}`, phase: phaseTitle, schema: RECHECK_SCHEMA },
+      { label: `recheck:${docKind}:r${round}`, phase: phaseTitle, schema: RECHECK_SCHEMA, model: MECH },
     )
     if (!recheck || recheck.resolved) return { rounds: round, unresolved: [] }
     unresolvedTail = recheck.unresolved
@@ -317,7 +351,7 @@ if (stage === 'specify') {
   const specReview = await challengeAndRevise(SPEC, 'spec', [
     { key: 'fidelity', lens: `ROADMAP FIDELITY: compare every FR/SC against specs/Seraphis-roadmap.md Phase ${phaseNum}. Flag roadmap requirements missing from the spec, spec content the roadmap never asked for (scope creep), and any silently weakened threshold (roadmap says X, spec says easier-than-X).` },
     { key: 'testability', lens: 'TESTABILITY: every FR must be verifiable by a concrete test; every SC must state metric + threshold + measurement method. Flag vague criteria ("sounds organic", "no artifacts") lacking an operational metric, untestable FRs, and SCs that would need bit-exact float goldens (forbidden — must use measured tolerances).' },
-    { key: 'reality', lens: 'CODE REALITY: open every existing-component header the spec cites and verify the claimed API/behaviour is real. Re-run the ODR sweep for each new class name. Flag invented APIs, wrong paths, wrong layer assignments, and name collisions the spec missed.' },
+    { key: 'reality', model: MECH, lens: 'CODE REALITY: open every existing-component header the spec cites and verify the claimed API/behaviour is real. Re-run the ODR sweep for each new class name. Flag invented APIs, wrong paths, wrong layer assignments, and name collisions the spec missed.' },
   ], 'Challenge Spec')
 
   // Clarify scan — speckit.clarify equivalent. The workflow cannot interview
@@ -356,14 +390,14 @@ if (stage === 'plan') {
   phase('Encode Clarifications')
   if (clarifications) {
     await run(
-      `${CONTEXT}\n\nThe user was interviewed about the open clarifications in ${SPEC}. Encode their answers into the spec (speckit.clarify style):\n1. Add/extend a "## Clarifications" section with a dated session log: one line per question — the question and the user's decision.\n2. UPDATE every FR/SC/section the answer affects so the spec body itself reflects the decision (the reader must never need the log to know the behaviour).\n3. DELETE the "## Open Clarifications" section entirely — every question below is now decided.\n4. Do not weaken any threshold unless the answer explicitly decides that.\n\nANSWERS (id → decision):\n${JSON.stringify(clarifications, null, 2)}`,
-      { label: 'encode-clarifications', phase: 'Encode Clarifications' },
+      `${CONTEXT_LITE}\n\nThe user was interviewed about the open clarifications in ${SPEC}. Encode their answers into the spec (speckit.clarify style):\n1. Add/extend a "## Clarifications" section with a dated session log: one line per question — the question and the user's decision.\n2. UPDATE every FR/SC/section the answer affects so the spec body itself reflects the decision (the reader must never need the log to know the behaviour).\n3. DELETE the "## Open Clarifications" section entirely — every question below is now decided.\n4. Do not weaken any threshold unless the answer explicitly decides that.\n\nANSWERS (id → decision):\n${JSON.stringify(clarifications, null, 2)}`,
+      { label: 'encode-clarifications', phase: 'Encode Clarifications', model: MECH },
     )
   }
   // Gate: refuse to plan while the spec still carries unresolved questions.
   const gate = await run(
-    `${CONTEXT}\n\nRead ${SPEC}. Check whether a "## Open Clarifications" section with unresolved questions still exists, and whether any FR/SC still contradicts the "## Clarifications" decisions log (if present). resolved=true only if the spec is clean and self-consistent.`,
-    { label: 'clarify-gate', phase: 'Encode Clarifications', schema: RECHECK_SCHEMA },
+    `${CONTEXT_LITE}\n\nRead ${SPEC}. Check whether a "## Open Clarifications" section with unresolved questions still exists, and whether any FR/SC still contradicts the "## Clarifications" decisions log (if present). resolved=true only if the spec is clean and self-consistent.`,
+    { label: 'clarify-gate', phase: 'Encode Clarifications', schema: RECHECK_SCHEMA, model: MECH, effort: 'low' },
   )
   if (gate && !gate.resolved) {
     return {
@@ -388,7 +422,7 @@ if (stage === 'plan') {
   const planReview = await challengeAndRevise(PLAN, 'plan', [
     { key: 'spec-coverage', lens: `SPEC COVERAGE: map every FR/SC in ${SPEC} to a design element + test in the plan. Flag anything unaddressed, any test that could not actually detect its FR failing, and any plan element with no FR behind it.` },
     { key: 'rt-layers', lens: 'RT SAFETY + LAYER DISCIPLINE: audit the proposed designs for audio-thread allocations/locks/exceptions, unbounded work, denormal hazards, and layer violations (a Layer 2 component including Layer 3, wrong directory for the declared layer). Check the prepare/process split actually keeps allocation out of process.' },
-    { key: 'reuse-reality', lens: 'REUSE REALITY: open every reused header the plan cites and verify each signature the plan quotes compiles as used (argument types, const-ness, concept conformance — especially the ModulationSource concept). Flag any API drift between plan and reality.' },
+    { key: 'reuse-reality', model: MECH, lens: 'REUSE REALITY: open every reused header the plan cites and verify each signature the plan quotes compiles as used (argument types, const-ness, concept conformance — especially the ModulationSource concept). Flag any API drift between plan and reality.' },
   ], 'Challenge Plan')
 
   phase('Tasks')
@@ -417,8 +451,8 @@ if (stage === 'plan') {
 // ===========================================================================
 phase('Dispatch')
 const dispatch = await run(
-  `${CONTEXT}\n\nRead ${SPEC}, ${PLAN}, and ${TASKS}. Convert tasks.md into executable task groups, preserving its group order and [P] parallel markers. Copy each task's instructions VERBATIM-or-expanded (executors see nothing else). Mark a group parallel=true ONLY if every task in it touches disjoint new files. Also list the cmake test targets this phase runs.`,
-  { label: 'dispatch', phase: 'Dispatch', schema: TASKGROUPS_SCHEMA },
+  `${CONTEXT_LITE}\n\nRead ${SPEC}, ${PLAN}, and ${TASKS}. Convert tasks.md into executable task groups, preserving its group order and [P] parallel markers. Copy each task's instructions VERBATIM-or-expanded (executors see nothing else). Mark a group parallel=true ONLY if every task in it touches disjoint new files. Also list the cmake test targets this phase runs.`,
+  { label: 'dispatch', phase: 'Dispatch', schema: TASKGROUPS_SCHEMA, model: MECH },
 )
 if (!dispatch || !dispatch.groups || dispatch.groups.length === 0) throw new Error(`Dispatcher produced no task groups — check ${TASKS} exists (run stages "specify" then "plan" first)`)
 log(`${dispatch.groups.length} groups, ${dispatch.groups.reduce((n, g) => n + g.tasks.length, 0)} tasks, targets: ${dispatch.test_targets.join(', ')}`)
@@ -457,8 +491,8 @@ for (const group of dispatch.groups) {
   while (attempt < 4) {
     attempt++
     buildLog = await run(
-      `${CONTEXT}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n(retry-epoch 3: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
-      { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT },
+      `${CONTEXT_LITE}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n(retry-epoch 3: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
+      { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT, model: MECH, effort: 'low' },
     )
     if (!buildLog) throw new Error('Build agent died — aborting to avoid blind fixes')
     if (buildLog.build_ok && buildLog.tests_ok) { log(`Group "${group.name}" green: ${buildLog.summary}`); break }
@@ -526,16 +560,16 @@ const finalFailures = finalItems.filter(i => i.verdict !== 'pass')
 // ---------------------------------------------------------------------------
 phase('Report')
 const report = await run(
-  `${CONTEXT}\n\nWrite the compliance report to ${COMPLIANCE} and return the same markdown. Content:\n- Header: phase ${phaseNum} (${SLUG}), overall status (COMPLETE only if zero fail/partial items — otherwise INCOMPLETE with the honest gap list first).\n- Compliance table: one row per item below, with its verbatim evidence. Do not soften any fail.\n- Implementation notes: deviations reported by task agents.\n- Remaining gates for the human loop: clang-tidy, commit; pluginval only if plugin code changed (phases 8+).\n\nITEMS:\n${JSON.stringify(finalItems, null, 2)}\n\nTASK NOTES:\n${JSON.stringify(implResults, null, 2)}`,
-  { label: 'report', phase: 'Report', schema: DOC_SCHEMA },
+  `${CONTEXT_LITE}\n\nWrite the compliance report to ${COMPLIANCE} and return the same markdown. Content:\n- Header: phase ${phaseNum} (${SLUG}), overall status (COMPLETE only if zero fail/partial items — otherwise INCOMPLETE with the honest gap list first).\n- Compliance table: one row per item below, with its verbatim evidence. Do not soften any fail.\n- Implementation notes: deviations reported by task agents.\n- Remaining gates for the human loop: clang-tidy, commit; pluginval only if plugin code changed (phases 8+).\n\nITEMS:\n${JSON.stringify(finalItems, null, 2)}\n\nTASK NOTES:\n${JSON.stringify(implResults, null, 2)}`,
+  { label: 'report', phase: 'Report', schema: DOC_SCHEMA, model: MECH },
 )
 
 // Mark the roadmap phase as finished — ONLY on a fully green compliance table.
 // An INCOMPLETE phase never touches the roadmap.
 if (finalFailures.length === 0) {
   await run(
-    `${CONTEXT}\n\nThe implementation of roadmap Phase ${phaseNum} is verified complete. Update specs/Seraphis-roadmap.md to mark it finished:\n1. In the "### Phase ${phaseNum}: ..." heading's section, insert a status line directly under the heading: "**Status: ✅ COMPLETE (<today's date, YYYY-MM-DD — get it by running the date command>)** — see ${COMPLIANCE}".\n2. In the Dependency Graph section, if practical, annotate this phase as done (a ✅ next to its node label) WITHOUT breaking the ASCII diagram alignment — if you cannot keep the diagram intact, skip the diagram and only do step 1.\n3. Touch NOTHING else in the roadmap: no rewording, no reformatting, no updates to other phases.`,
-    { label: 'mark-roadmap', phase: 'Report' },
+    `You are in the Krate Audio monorepo at f:/projects/iterum. The implementation of Seraphis roadmap Phase ${phaseNum} is verified complete. Update specs/Seraphis-roadmap.md to mark it finished:\n1. In the "### Phase ${phaseNum}: ..." heading's section, insert a status line directly under the heading: "**Status: ✅ COMPLETE (<today's date, YYYY-MM-DD — get it by running the date command>)** — see ${COMPLIANCE}".\n2. In the Dependency Graph section, if practical, annotate this phase as done (a ✅ next to its node label) WITHOUT breaking the ASCII diagram alignment — if you cannot keep the diagram intact, skip the diagram and only do step 1.\n3. Touch NOTHING else in the roadmap: no rewording, no reformatting, no updates to other phases.`,
+    { label: 'mark-roadmap', phase: 'Report', model: TRIVIAL },
   )
   log(`Roadmap phase ${phaseNum} marked COMPLETE`)
 } else {
