@@ -67,12 +67,15 @@ inline constexpr std::int32_t kDrawerHandleTag = 9002;  ///< drawer pull-up hand
 inline constexpr std::int32_t kBlendTag        = 9003;  ///< Blend A->B slider
 inline constexpr std::int32_t kTiltTag         = 9004;  ///< Tilt dB/oct control
 
-/// Seven drawer tab buttons: kTabBaseTag + 0 .. + 6 (FR-022's order).
-inline constexpr std::int32_t kTabBaseTag = 9100;
+/// The seven-tab drawer bar: ONE IconSegmentButton (session-tag "tabs"), the
+/// Ruinae MainTab idiom (2026-08-04 consistency pass). The selected tab index
+/// is the control's value: round(valueNormalized * (kSessionTabCount - 1)).
+inline constexpr std::int32_t kTabBarTag = 9100;
 inline constexpr int kSessionTabCount = 7;
 
-/// Four morph slot selector buttons: kSlotBaseTag + 0 .. + 3.
-inline constexpr std::int32_t kSlotBaseTag = 9200;
+/// The four-slot morph selector bar: ONE IconSegmentButton (session-tag
+/// "slots"), same value convention over kSessionSlotCount segments.
+inline constexpr std::int32_t kSlotBarTag = 9200;
 inline constexpr int kSessionSlotCount = 4;
 
 /// What sessionTagForName() returns for an unrecognised name.
@@ -80,7 +83,7 @@ inline constexpr std::int32_t kInvalidSessionTag = -1;
 
 /// Map a `session-tag` attribute value onto its tag, or kInvalidSessionTag.
 /// Recognised names: "preset", "mode", "drawerHandle", "blend", "tilt",
-/// "tab0".."tab6", "slot0".."slot3".
+/// "tabs", "slots".
 [[nodiscard]] std::int32_t sessionTagForName(std::string_view name) noexcept;
 
 // ==============================================================================

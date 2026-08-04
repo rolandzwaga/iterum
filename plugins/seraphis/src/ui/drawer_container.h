@@ -11,7 +11,8 @@
 // occupies exactly TWO rects and no others: collapsed (tab strip only) and open
 // (the active tab's knob page). It owns no DSP, no parameter and no timer; its
 // children are plain uidesc controls - ArcKnob / CSlider / COptionMenu /
-// CCheckBox, FR-025's exact four - plus the seven page containers.
+// ToggleButton (FR-025, as amended by the 2026-08-04 consistency pass) plus
+// the IconSegmentButton tab bar, the handle and the seven page containers.
 //
 // D-4 - THIS VIEW MUST BE A DIRECT CHILD OF THE 1000 x 700 TEMPLATE ROOT.
 // getViewSize() is in PARENT coordinates, so the two rects below are the

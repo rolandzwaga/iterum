@@ -197,8 +197,9 @@
           fill-color="track" frame-width="1" transparent="false"
           style-3D-in="false" style-3D-out="false"/>
 
-    <view class="CCheckBox" control-tag="SoftLimit" origin="394, 7" size="70, 18"
-          title="Limit" font="small-font" font-color="text"/>
+    <view class="ToggleButton" control-tag="SoftLimit" origin="394, 7" size="70, 18"
+          title="Limit" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="text-dim"/>
 
     <view class="CTextLabel" title="Seed" origin="472, 9" size="32, 14"
           font="small-font" font-color="text-dim" transparent="true"
@@ -208,21 +209,26 @@
           fill-color="track" frame-width="1" transparent="false"
           style-3D-in="false" style-3D-out="false"/>
 
-    <!-- The freeze cluster: the ONLY three second bindings in the document. -->
-    <view class="CCheckBox" control-tag="AtmosFreeze" origin="578, 7" size="88, 18"
-          title="Atmos Frz" font="small-font" font-color="text"/>
-    <view class="CCheckBox" control-tag="AetherFreeze" origin="670, 7" size="90, 18"
-          title="Aether Frz" font="small-font" font-color="text"/>
-    <view class="CCheckBox" control-tag="FxSpectralFreeze" origin="764, 7" size="88, 18"
-          title="Spec Frz" font="small-font" font-color="text"/>
+    <!-- The freeze cluster: the ONLY three second bindings in the document.
+         Shared ToggleButton (power icon), the same control every other Krate
+         plugin uses for freezes (2026-08-04 consistency pass). -->
+    <view class="ToggleButton" control-tag="AtmosFreeze" origin="578, 7" size="88, 18"
+          title="Atmos Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="text-dim"/>
+    <view class="ToggleButton" control-tag="AetherFreeze" origin="670, 7" size="90, 18"
+          title="Aether Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="text-dim"/>
+    <view class="ToggleButton" control-tag="FxSpectralFreeze" origin="764, 7" size="88, 18"
+          title="Spec Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="text-dim"/>
 
-    <!-- Preset button: NO control-tag (FR-045 / D-5). A real CTextButton with
-         kick-style="false": one valueChanged per click (a kick-style button
-         fires twice and would self-cancel a toggle handler), and it draws its
-         own frame + title, unlike the invisible bitmap-less COnOffButton this
-         replaced (2026-08-04 dead-controls fix). -->
-    <view class="CTextButton" session-tag="preset" title="PRESETS" kick-style="false"
-          origin="898, 7" size="90, 18" font="label-font"/>
+    <!-- Preset button: NO control-tag (FR-045 / D-5). The SHARED flat-outline
+         renderer every other plugin's Presets button uses, instantiated by
+         createCustomView("PresetButton") as an OutlineBrowserButton - a
+         CControl, so verifyView() still assigns session tag 9000 + listener.
+         One valueChanged per click. -->
+    <view class="CView" custom-view-name="PresetButton" session-tag="preset"
+          origin="898, 7" size="90, 18"/>
 
     <!-- ====================================================================
          3. THE FIVE MACRO RINGS, at C-1's anchors, over the constellation.
@@ -258,8 +264,9 @@
          4. EDIT MINI-TOOLBAR - tag-less, session-tagged, the sub-controller
             listens. None of these three is a parameter binding.
          ==================================================================== -->
-    <view class="CTextButton" session-tag="mode" title="OBS | EDIT" kick-style="false"
-          origin="140, 636" size="76, 22" font="small-font"/>
+    <view class="ToggleButton" session-tag="mode" title="EDIT"
+          title-position="right" origin="140, 636" size="76, 22" font="small-font"
+          font-color="text" on-color="accent" off-color="text-dim"/>
 
     <view class="CTextLabel" title="Blend A to B" origin="224, 622" size="100, 12"
           font="small-font" font-color="text-dim" transparent="true"
@@ -290,25 +297,26 @@
           origin="0, 670" size="1000, 30"
           background-color="panel" background-color-draw-style="filled">
 
-      <view class="CTextButton" session-tag="drawerHandle" title="DEEP" kick-style="false"
-            origin="8, 4" size="80, 22" font="label-font"/>
+      <!-- The handle: shared ToggleButton with the chevron icon - up when
+           collapsed (pull me up), down when open (2026-08-04 consistency
+           pass). -->
+      <view class="ToggleButton" session-tag="drawerHandle" title="DEEP"
+            title-position="right" icon-style="chevron"
+            off-orientation="up" on-orientation="down"
+            origin="8, 4" size="80, 22" font="label-font" font-color="text"
+            on-color="accent" off-color="text-dim"/>
 
-      <!-- FR-022's seven tabs, in EXACTLY this order. SC-004 arm 2 reads the
-           titles back off the built tree in child order. -->
-      <view class="CTextButton" session-tag="tab0" title="Cloud"
-            origin="100, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab1" title="Morph"
-            origin="200, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab2" title="Body"
-            origin="300, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab3" title="Atmos"
-            origin="400, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab4" title="Aether"
-            origin="500, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab5" title="FX"
-            origin="600, 4" size="96, 22" font="label-font"/>
-      <view class="CTextButton" session-tag="tab6" title="Life/Env"
-            origin="700, 4" size="96, 22" font="label-font"/>
+      <!-- FR-022's seven tabs, in EXACTLY this order: ONE IconSegmentButton
+           (the Ruinae MainTab idiom - flat, outlined, transparent), replacing
+           the seven capsule CTextButtons (2026-08-04 consistency pass).
+           SC-004 arm 2 reads segment-names back off the built control. -->
+      <view class="IconSegmentButton" session-tag="tabs"
+            origin="100, 4" size="700, 22"
+            segment-names="Cloud,Morph,Body,Atmos,Aether,FX,Life/Env"
+            font="label-font"
+            text-color="text-dim" text-color-highlighted="text"
+            selected-color="accent" unselected-color="text-dim"
+            frame-color="track" round-radius="3" transparent="true"/>
 
       <!-- ==================================================================
            PAGE 0 - Cloud (200-210, 11 bindings)
@@ -356,7 +364,7 @@
         <view class="CTextLabel" title="Rate" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="MorphTravelRate" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Sync" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="MorphSync" origin="568, 40" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="MorphSync" origin="568, 40" size="80, 20" on-color="accent" off-color="text-dim"/>
         <view class="CTextLabel" title="Sync Note" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="COptionMenu" control-tag="MorphSyncNote" origin="673, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false"/>
         <view class="CTextLabel" title="Waypoint" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
@@ -374,10 +382,13 @@
         <view class="COptionMenu" control-tag="MorphState3" origin="343, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false"/>
 
         <view class="CTextLabel" title="Edit slot" origin="448, 130" size="430, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="left" mouse-enabled="false"/>
-        <view class="CTextButton" session-tag="slot0" title="A" origin="453, 162" size="90, 20" font="label-font"/>
-        <view class="CTextButton" session-tag="slot1" title="B" origin="563, 162" size="90, 20" font="label-font"/>
-        <view class="CTextButton" session-tag="slot2" title="C" origin="673, 162" size="90, 20" font="label-font"/>
-        <view class="CTextButton" session-tag="slot3" title="D" origin="783, 162" size="90, 20" font="label-font"/>
+        <view class="IconSegmentButton" session-tag="slots"
+              origin="453, 162" size="420, 20"
+              segment-names="A,B,C,D"
+              font="label-font"
+              text-color="text-dim" text-color-highlighted="text"
+              selected-color="accent" unselected-color="text-dim"
+              frame-color="track" round-radius="3" transparent="true"/>
       </view>
 
       <!-- ==================================================================
@@ -408,9 +419,9 @@
         <view class="CTextLabel" title="Width" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="BodyWidth" origin="140, 146" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Input AGC" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="BodyInputAgc" origin="238, 162" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="BodyInputAgc" origin="238, 162" size="80, 20" on-color="accent" off-color="text-dim"/>
         <view class="CTextLabel" title="Res Bypass" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="BodyResonatorBypass" origin="348, 162" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="BodyResonatorBypass" origin="348, 162" size="80, 20" on-color="accent" off-color="text-dim"/>
       </view>
 
       <!-- ==================================================================
@@ -435,7 +446,7 @@
         <view class="CTextLabel" title="Freeze Mix" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="AtmosFreezeMix" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Freeze" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="AtmosFreeze" origin="898, 40" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="AtmosFreeze" origin="898, 40" size="80, 20" on-color="accent" off-color="text-dim"/>
 
         <view class="CTextLabel" title="Drift Smth" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="AtmosDriftSmoothness" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track"/>
@@ -469,7 +480,7 @@
         <view class="CTextLabel" title="Decay" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="AetherDecay" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Freeze" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="AetherFreeze" origin="458, 40" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="AetherFreeze" origin="458, 40" size="80, 20" on-color="accent" off-color="text-dim"/>
         <view class="CTextLabel" title="Dimension" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="AetherDimensionality" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Damping" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
@@ -524,11 +535,11 @@
         <view class="ArcKnob" control-tag="FxDelayWidth" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track"/>
 
         <view class="CTextLabel" title="Delay Sync" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="FxDelaySync" origin="18, 162" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="FxDelaySync" origin="18, 162" size="80, 20" on-color="accent" off-color="text-dim"/>
         <view class="CTextLabel" title="Sync Note" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="COptionMenu" control-tag="FxDelaySyncNote" origin="123, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false"/>
         <view class="CTextLabel" title="Spec Freeze" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
-        <view class="CCheckBox" control-tag="FxSpectralFreeze" origin="238, 162" size="80, 20" title="" font="small-font" font-color="text"/>
+        <view class="ToggleButton" control-tag="FxSpectralFreeze" origin="238, 162" size="80, 20" on-color="accent" off-color="text-dim"/>
         <view class="CTextLabel" title="Stereo Width" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
         <view class="ArcKnob" control-tag="FxStereoWidth" origin="360, 146" size="56, 56" arc-color="accent" guide-color="track"/>
         <view class="CTextLabel" title="Wander" origin="448, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>

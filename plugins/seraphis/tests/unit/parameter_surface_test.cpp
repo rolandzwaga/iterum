@@ -496,15 +496,17 @@ struct BoundView {
 /// freezes the REGISTERED types; a mismatched control class binds with NO error
 /// path, which is the only reason this is checked at all.
 ///
-/// `T` is DELIBERATELY a singleton set. The header freeze cluster and every drawer
-/// toggle are CCheckBox, `ToggleButton` appears nowhere in the shipped uidesc, and
-/// widening `T` to {"CCheckBox", "ToggleButton"} would make this criterion unable
-/// to detect EITHER choice.
+/// `T` is DELIBERATELY a singleton set. Since the 2026-08-04 consistency pass
+/// the header freeze cluster and every drawer toggle are the SHARED
+/// `ToggleButton` (the control every other Krate plugin uses); `CCheckBox`
+/// appears nowhere in the shipped uidesc, and widening `T` to
+/// {"CCheckBox", "ToggleButton"} would make this criterion unable to detect
+/// EITHER choice.
 [[nodiscard]] std::set<std::string> expectedViewClasses(Kind kind) {
     switch (kind) {
         case Kind::R: return {"CSlider", "ArcKnob"};
         case Kind::L: return {"COptionMenu"};
-        case Kind::T: return {"CCheckBox"};
+        case Kind::T: return {"ToggleButton"};
     }
     return {};
 }

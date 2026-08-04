@@ -61,13 +61,16 @@ every view in the document (including the header preset button) is inside its su
 are untouched; it only claims the tag-less ones.
 
 Everything else in the drawer is a **plain uidesc control** — `ArcKnob`, `CSlider`, `COptionMenu`,
-`CCheckBox`, and nothing else. Adding a fourth custom view is a spec amendment, not a refactor.
+`ToggleButton`, plus the two `IconSegmentButton` bars, and nothing else (2026-08-04 consistency-pass
+amendment: `CCheckBox`/`CTextButton` appear nowhere; toggles are the shared `ToggleButton`, the tab and
+slot rows are shared `IconSegmentButton`s, the preset button is a shared `OutlineBrowserButton` via
+`createCustomView("PresetButton")`). Adding a fourth NEW view class is a spec amendment, not a refactor.
 
 `MacroRingKnob` uses a `ViewCreatorAdapter` (not `createCustomView`) because it must accept `control-tag`
 and the rest of the `CControl` attributes from the uidesc. Its creator is an inline global, and an inline
 global only runs its constructor in a **linked** TU — which is why `src/entry.cpp` includes
-`ui/macro_ring_knob.h` and `<ui/arc_knob.h>`. The Phase 8 "entry.cpp must include no `ui/*.h`" banner is
-gone; do not restore it.
+`ui/macro_ring_knob.h`, `<ui/arc_knob.h>`, `<ui/toggle_button.h>` and `<ui/icon_segment_button.h>`. The
+Phase 8 "entry.cpp must include no `ui/*.h`" banner is gone; do not restore it.
 
 **The drawer is never a `UIViewSwitchContainer`.** All seven pages (Cloud, Morph, Body, Atmos, Aether, FX,
 Life/Env) exist in the XML at once with exactly one visible; a view switch realises only the active
@@ -152,13 +155,13 @@ without burning a registered parameter.
 
 | Tag | Control |
 |---|---|
-| 9000 | header preset button |
-| 9001 | Obs \| Edit mode toggle |
-| 9002 | drawer pull-up handle |
+| 9000 | header preset button (shared `OutlineBrowserButton` via `createCustomView("PresetButton")`) |
+| 9001 | Obs \| Edit mode toggle (`ToggleButton`) |
+| 9002 | drawer pull-up handle (`ToggleButton`, chevron) |
 | 9003 | Blend A→B slider |
 | 9004 | Tilt dB/oct |
-| 9100 + 0…6 | the seven drawer tabs |
-| 9200 + 0…3 | the four morph slot buttons |
+| 9100 | the seven-tab drawer bar — ONE `IconSegmentButton`, session-tag `tabs`; index = `round(v·6)` |
+| 9200 | the four-slot morph bar — ONE `IconSegmentButton`, session-tag `slots`; index = `round(v·3)` |
 
 The registered surface tops out at 1443, so a session tag can never be mistaken for a `ParamID` and is
 never counted as a parameter binding. **Never write one as `control-tag`.**

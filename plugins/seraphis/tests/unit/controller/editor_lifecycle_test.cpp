@@ -61,6 +61,9 @@
 #include "ui/cloud_view.h"
 #include "ui/edit_sub_controller.h"
 
+// Shared toggle the 2026-08-04 consistency pass drew SoftLimit as.
+#include <ui/toggle_button.h>
+
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cview.h"
 #include "vstgui/lib/cviewcontainer.h"
@@ -200,7 +203,7 @@ TEST_CASE("Seraphis_EditorLifecycle", "[seraphis][controller][ui][lifecycle]") {
         // is a stepped toggle.
         REQUIRE(dynamic_cast<VSTGUI::COptionMenu*>(controlWithTag(
                     controls, static_cast<std::int32_t>(Seraphis::kPolyphonyId))) != nullptr);
-        REQUIRE(dynamic_cast<VSTGUI::CCheckBox*>(controlWithTag(
+        REQUIRE(dynamic_cast<Krate::Plugins::ToggleButton*>(controlWithTag(
                     controls, static_cast<std::int32_t>(Seraphis::kSoftLimitId))) != nullptr);
 
         view->removed();

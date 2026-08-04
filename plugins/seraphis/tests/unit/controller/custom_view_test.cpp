@@ -35,6 +35,11 @@
 #include "ui/macro_ring_knob.h"
 #include "ui/preset_browser_view.h"
 
+// Shared components the 2026-08-04 consistency pass put in the uidesc: the
+// tab/slot segment bars and (via createCustomView) the outline preset button.
+#include <ui/icon_segment_button.h>
+#include <ui/outline_button.h>
+
 #include <krate/dsp/processors/spectral_state.h>
 
 #include "public.sdk/source/vst/hosting/hostclasses.h"
@@ -665,19 +670,15 @@ const std::vector<SessionControlRow>& sessionControlRows() {
          .drives = "drawer open/close"},
         {.attribute = "blend", .tag = Seraphis::UI::kBlendTag, .drives = "Blend A->B slider"},
         {.attribute = "tilt", .tag = Seraphis::UI::kTiltTag, .drives = "Tilt dB/oct"},
-        {.attribute = "tab0", .tag = Seraphis::UI::kTabBaseTag + 0, .drives = "drawer tab Cloud"},
-        {.attribute = "tab1", .tag = Seraphis::UI::kTabBaseTag + 1, .drives = "drawer tab Morph"},
-        {.attribute = "tab2", .tag = Seraphis::UI::kTabBaseTag + 2, .drives = "drawer tab Body"},
-        {.attribute = "tab3", .tag = Seraphis::UI::kTabBaseTag + 3, .drives = "drawer tab Atmos"},
-        {.attribute = "tab4", .tag = Seraphis::UI::kTabBaseTag + 4, .drives = "drawer tab Aether"},
-        {.attribute = "tab5", .tag = Seraphis::UI::kTabBaseTag + 5, .drives = "drawer tab FX"},
-        {.attribute = "tab6",
-         .tag = Seraphis::UI::kTabBaseTag + 6,
-         .drives = "drawer tab Life/Env"},
-        {.attribute = "slot0", .tag = Seraphis::UI::kSlotBaseTag + 0, .drives = "morph slot 0"},
-        {.attribute = "slot1", .tag = Seraphis::UI::kSlotBaseTag + 1, .drives = "morph slot 1"},
-        {.attribute = "slot2", .tag = Seraphis::UI::kSlotBaseTag + 2, .drives = "morph slot 2"},
-        {.attribute = "slot3", .tag = Seraphis::UI::kSlotBaseTag + 3, .drives = "morph slot 3"},
+        // 2026-08-04 consistency pass: the seven tab buttons and four slot
+        // buttons became TWO IconSegmentButton bars (the Ruinae MainTab idiom);
+        // the selected index rides the control's normalized value.
+        {.attribute = "tabs",
+         .tag = Seraphis::UI::kTabBarTag,
+         .drives = "seven-tab drawer bar (FR-022)"},
+        {.attribute = "slots",
+         .tag = Seraphis::UI::kSlotBarTag,
+         .drives = "four-slot morph selector bar"},
     };
     return rows;
 }
@@ -783,11 +784,14 @@ TEST_CASE("Seraphis_Phase11_SubController_OwnsEveryTaglessControl",
         for (const SessionControlRow& row : sessionControlRows()) {
             CHECK(Seraphis::UI::sessionTagForName(row.attribute) == row.tag);
         }
-        // A typo'd or out-of-range name is rejected, never clamped onto a
-        // neighbouring control.
+        // A typo'd or superseded name is rejected, never clamped onto a
+        // neighbouring control. The per-button "tabN"/"slotN" grammar died in
+        // the 2026-08-04 segment-bar consolidation.
+        CHECK(Seraphis::UI::sessionTagForName("tab0") ==
+              Seraphis::UI::kInvalidSessionTag);
         CHECK(Seraphis::UI::sessionTagForName("tab7") ==
               Seraphis::UI::kInvalidSessionTag);
-        CHECK(Seraphis::UI::sessionTagForName("slot4") ==
+        CHECK(Seraphis::UI::sessionTagForName("slot0") ==
               Seraphis::UI::kInvalidSessionTag);
         CHECK(Seraphis::UI::sessionTagForName("Preset") ==
               Seraphis::UI::kInvalidSessionTag);
@@ -844,29 +848,27 @@ TEST_CASE("Seraphis_DrawerTab_ClickOpensACollapsedDrawer", "[controller][phase11
 
     REQUIRE_FALSE(drawer->isOpen());  // declared collapsed, as in the uidesc
 
-    VSTGUI::SharedPointer<VSTGUI::COnOffButton> tab2 = makeTaglessButton();
-    VSTGUI::UIAttributes tab2Attributes;
-    setSessionTagAttribute(tab2Attributes, "tab2");
-    REQUIRE(sub->verifyView(tab2.get(), tab2Attributes, nullptr) == tab2.get());
+    // The tab bar (2026-08-04): ONE segment control whose normalized value
+    // carries the selected index over kSessionTabCount segments.
+    VSTGUI::SharedPointer<VSTGUI::COnOffButton> tabBar = makeTaglessButton();
+    VSTGUI::UIAttributes tabBarAttributes;
+    setSessionTagAttribute(tabBarAttributes, "tabs");
+    REQUIRE(sub->verifyView(tabBar.get(), tabBarAttributes, nullptr) == tabBar.get());
 
-    // A kick-style CTextButton fires valueChanged TWICE per click - once at max,
-    // once when it snaps back to min (cbuttons.cpp:1028-1046). The handler must
-    // OPEN on both fires, never toggle.
-    tab2->setValue(tab2->getMax());
-    sub->valueChanged(tab2.get());
-    tab2->setValue(tab2->getMin());
-    sub->valueChanged(tab2.get());
+    tabBar->setValueNormalized(2.0f /
+                               static_cast<float>(Seraphis::UI::kSessionTabCount - 1));
+    sub->valueChanged(tabBar.get());
+    // The handler must stay idempotent under a redundant second fire.
+    sub->valueChanged(tabBar.get());
 
     CHECK(drawer->isOpen());
     CHECK(drawer->getViewSize() == DrawerContainer::kOpenRect);
     CHECK(drawer->activeTab() == 2);
 
     // A second tab while open: the page switches and the drawer STAYS open.
-    VSTGUI::SharedPointer<VSTGUI::COnOffButton> tab5 = makeTaglessButton();
-    VSTGUI::UIAttributes tab5Attributes;
-    setSessionTagAttribute(tab5Attributes, "tab5");
-    REQUIRE(sub->verifyView(tab5.get(), tab5Attributes, nullptr) == tab5.get());
-    sub->valueChanged(tab5.get());
+    tabBar->setValueNormalized(5.0f /
+                               static_cast<float>(Seraphis::UI::kSessionTabCount - 1));
+    sub->valueChanged(tabBar.get());
     CHECK(drawer->isOpen());
     CHECK(drawer->activeTab() == 5);
 
@@ -1231,9 +1233,10 @@ template <typename T>
     return found;
 }
 
-/// The drawer's tab buttons, IN CHILD ORDER, by their title. Identified by the
-/// session tag verifyView assigned - never by position - so a re-ordered or
-/// mis-titled strip shows up as a different LIST rather than as a silent pass.
+/// The drawer's tab names, IN SEGMENT ORDER, read back off the ONE
+/// IconSegmentButton tab bar (2026-08-04 consistency pass) - identified by the
+/// session tag verifyView assigned, never by position, so a re-ordered or
+/// mis-titled bar shows up as a different LIST rather than as a silent pass.
 [[nodiscard]] std::vector<std::string> drawerTabTitles(DrawerContainer* drawer) {
     std::vector<std::string> titles;
     if (drawer == nullptr) {
@@ -1241,16 +1244,21 @@ template <typename T>
     }
     const std::uint32_t count = drawer->getNbViews();
     for (std::uint32_t i = 0; i < count; ++i) {
-        auto* button = dynamic_cast<VSTGUI::CTextButton*>(drawer->getView(i));
-        if (button == nullptr) {
+        auto* bar = dynamic_cast<Krate::Plugins::IconSegmentButton*>(drawer->getView(i));
+        if (bar == nullptr || bar->getTag() != Seraphis::UI::kTabBarTag) {
             continue;
         }
-        const std::int32_t tag = button->getTag();
-        if (tag < Seraphis::UI::kTabBaseTag ||
-            tag >= Seraphis::UI::kTabBaseTag + Seraphis::UI::kSessionTabCount) {
-            continue;
+        const std::string joined = bar->getSegmentNames();
+        std::size_t start = 0;
+        while (start <= joined.size()) {
+            const std::size_t comma = joined.find(',', start);
+            if (comma == std::string::npos) {
+                titles.push_back(joined.substr(start));
+                break;
+            }
+            titles.push_back(joined.substr(start, comma - start));
+            start = comma + 1;
         }
-        titles.push_back(button->getTitle().getString());
     }
     return titles;
 }

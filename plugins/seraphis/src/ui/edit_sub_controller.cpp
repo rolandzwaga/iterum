@@ -13,30 +13,23 @@
 #include "vstgui/lib/controls/ccontrol.h"
 #include "vstgui/uidescription/uiattributes.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <string>
 
 namespace Seraphis::UI {
 
 namespace {
 
-/// "tab3" -> 3, "slot2" -> 2, or -1 when the suffix is not a single digit in
-/// [0, count). Deliberately NOT a strtol: a single digit is the whole grammar,
-/// and anything else must be an unrecognised name rather than a clamped one.
-[[nodiscard]] int indexedSuffix(std::string_view name, std::string_view prefix,
-                                int count) noexcept {
-    if (name.size() != prefix.size() + 1u) {
-        return -1;
-    }
-    if (!name.starts_with(prefix)) {
-        return -1;
-    }
-    const char digit = name[prefix.size()];
-    if (digit < '0' || digit > '9') {
-        return -1;
-    }
-    const int index = digit - '0';
-    return (index < count) ? index : -1;
+/// Segment index of a segment-bar control: its normalized value spread over
+/// `count` segments (IconSegmentButton's own convention,
+/// plugins/shared/src/ui/icon_segment_button.h getSelectedSegment()).
+[[nodiscard]] int segmentIndex(const VSTGUI::CControl* control, int count) noexcept {
+    const float norm = control->getValueNormalized();
+    const int index =
+        static_cast<int>(std::lround(norm * static_cast<float>(count - 1)));
+    return std::clamp(index, 0, count - 1);
 }
 
 }  // namespace
@@ -57,11 +50,11 @@ std::int32_t sessionTagForName(std::string_view name) noexcept {
     if (name == "tilt") {
         return kTiltTag;
     }
-    if (const int tab = indexedSuffix(name, "tab", kSessionTabCount); tab >= 0) {
-        return kTabBaseTag + static_cast<std::int32_t>(tab);
+    if (name == "tabs") {
+        return kTabBarTag;
     }
-    if (const int slot = indexedSuffix(name, "slot", kSessionSlotCount); slot >= 0) {
-        return kSlotBaseTag + static_cast<std::int32_t>(slot);
+    if (name == "slots") {
+        return kSlotBarTag;
     }
     return kInvalidSessionTag;
 }
@@ -143,13 +136,13 @@ void SeraphisEditSubController::valueChanged(VSTGUI::CControl* control) {
         owner_->toggleDrawer();
         return;
     }
-    if (tag >= kTabBaseTag && tag < kTabBaseTag + kSessionTabCount) {
-        owner_->setDrawerTab(static_cast<int>(tag - kTabBaseTag));
+    if (tag == kTabBarTag) {
+        owner_->setDrawerTab(segmentIndex(control, kSessionTabCount));
         return;
     }
-    if (tag >= kSlotBaseTag && tag < kSlotBaseTag + kSessionSlotCount) {
+    if (tag == kSlotBarTag) {
         // kind 6 is sent by the controller, which owns the selection.
-        owner_->setSelectedSlot(static_cast<int>(tag - kSlotBaseTag));
+        owner_->setSelectedSlot(segmentIndex(control, kSessionSlotCount));
         return;
     }
     if (tag == kBlendTag) {

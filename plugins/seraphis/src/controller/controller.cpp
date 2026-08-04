@@ -16,11 +16,14 @@
 #include "plugin_ids.h"
 #include "preset/seraphis_preset_config.h"
 
-// Phase 11 T017. The two custom-view classes createCustomView owns, the
-// sub-controller, and the shared preset browser the header button opens.
+// Phase 11 T017. The custom views createCustomView owns, the sub-controller,
+// and the shared preset browser the header button opens. outline_button.h is
+// the shared flat-outline family every plugin's Presets button uses
+// (2026-08-04 consistency pass).
 #include "ui/cloud_view.h"
 #include "ui/drawer_container.h"
 #include "ui/edit_sub_controller.h"
+#include "ui/outline_button.h"
 #include "ui/preset_browser_view.h"
 
 #include "base/source/fstreamer.h"
@@ -339,6 +342,13 @@ VSTGUI::CView* Controller::createCustomView(VSTGUI::UTF8StringPtr name,
     if (std::strcmp(name, "DrawerContainer") == 0) {
         drawer_ = new UI::DrawerContainer(viewRect);
         return drawer_;
+    }
+    // The header preset button: the SHARED flat-outline renderer every other
+    // plugin's Presets button uses (Krate::Plugins::drawOutlineButton). It is a
+    // CControl, so verifyView() gives it its session tag (9000) and this
+    // listener from the session-tag attribute - one valueChanged per click.
+    if (std::strcmp(name, "PresetButton") == 0) {
+        return new Krate::Plugins::OutlineBrowserButton(viewRect, nullptr, -1, "PRESETS");
     }
     return nullptr;
 }

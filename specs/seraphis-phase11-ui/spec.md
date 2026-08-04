@@ -2592,3 +2592,33 @@ dimensionally meaningless or below float epsilon, not because they were hard to 
 6. **`exp10f` is banned by name in C-6**, with the repo's existing precedent cited
    (`continuous_body.h:1643-1645`), so FR-044's portability gate does not have to be the thing that finds it.
 
+
+---
+
+## AMENDMENT (2026-08-04, phase owner) — shared-component consistency pass
+
+> **Directive:** the shipped editor used stock `CCheckBox` and capsule-styled `CTextButton` views where
+> every other Krate plugin uses the shared component library. Ruled after ship, applied same day.
+>
+> 1. **Every toggle is `Krate::Plugins::ToggleButton`** (registered ViewCreator, `plugins/shared/src/ui/
+>    toggle_button.h`): the header SoftLimit + freeze cluster, all seven drawer-page toggles, the
+>    Obs|Edit mode toggle (session-tag `mode`, title "EDIT") and the drawer handle (session-tag
+>    `drawerHandle`, chevron icon, off-orientation up / on-orientation down). `CCheckBox` appears
+>    nowhere; SC-003's `T` class set is now `{"ToggleButton"}` (still a singleton — the criterion's
+>    either-choice detection argument is preserved).
+> 2. **The seven drawer tabs and four morph slot buttons are TWO `Krate::Plugins::IconSegmentButton`
+>    bars** (the Ruinae MainTab idiom — flat, outlined, transparent): session-tags `tabs` and `slots`
+>    replace `tab0..tab6` / `slot0..slot3` in C-7b; the selected index rides the control's normalized
+>    value (`round(v * (N-1))`, IconSegmentButton's own convention). `kTabBarTag`/`kSlotBarTag` keep the
+>    9100/9200 values. FR-022's seven names, in order, are the bar's `segment-names`; SC-004 arm 2 reads
+>    them back off the built control.
+> 3. **The header preset button is the shared flat-outline renderer** every plugin's Presets button
+>    uses: `createCustomView("PresetButton")` returns a `Krate::Plugins::OutlineBrowserButton`
+>    (session-tag `preset` still assigns tag 9000 + listener via verifyView; one valueChanged per
+>    click). This instantiates a SHARED class — the phase's closed roster of NEW view classes
+>    (CloudView, MacroRingKnob, DrawerContainer) is unchanged.
+> 4. FR-025's permitted drawer-control list reads `ArcKnob / CSlider / COptionMenu / ToggleButton`
+>    (+ the IconSegmentButton bars); the binding budget (110 over 107) and the freeze-cluster duplicate
+>    allowlist are untouched.
+> 5. `entry.cpp` gains the `<ui/toggle_button.h>` and `<ui/icon_segment_button.h>` creator includes
+>    (inline-global registration requires a linked TU, same reason as ArcKnob/MacroRingKnob).
