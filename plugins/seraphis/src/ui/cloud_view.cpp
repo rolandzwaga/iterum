@@ -29,6 +29,10 @@ const VSTGUI::CColor kMaskedColor{130, 140, 160, 220};
 /// Edit-mode affordance: a thin accent border so the mode change is visible
 /// even before a point moves (2026-08-04 "I don't see any difference" fix).
 const VSTGUI::CColor kEditModeFrameColor{143, 168, 216, 150};
+/// Q4 / SC-034: the border turns amber when the selected slot does NOT
+/// contribute to the current morph blend - edits land but are barely audible
+/// until the journey reaches this slot.
+const VSTGUI::CColor kNotSoundingFrameColor{255, 178, 96, 190};
 
 /// NaN-tolerant clamp. std::clamp propagates a NaN input, and std::isnan is not
 /// usable under -ffast-math (which the macOS leg builds with); writing the
@@ -140,6 +144,16 @@ float CloudView::referenceHz() const noexcept {
         return f.fundamentalHz;
     }
     return kFallbackReferenceHz;
+}
+
+bool CloudView::selectedSlotContributes() const noexcept {
+    const CloudFrame& f = currentFrame();
+    if (f.partialCount == 0) {
+        return true;  // no live frame: the drawn constellation IS the slot
+    }
+    const float pos = clampToRange(f.morphTravelPosition, 0.0f, 3.0f);
+    const int k = static_cast<int>(pos);  // floor: pos is clamped non-negative
+    return selectedSlot_ == k || selectedSlot_ == k + 1;
 }
 
 // ==============================================================================
@@ -276,13 +290,16 @@ void CloudView::emit(VSTGUI::CDrawContext* context) const {
     context->setFillColor(kBackgroundColor);
     context->drawRect(vs, VSTGUI::kDrawFilled);
 
-    // Edit-mode affordance: a thin accent border, so entering Edit is visible
-    // before anything is touched.
+    // Edit-mode affordance: a thin border, so entering Edit is visible before
+    // anything is touched. Accent while the selected slot contributes to the
+    // blend; AMBER when it does not (Q4 / SC-034 - edits land but are barely
+    // audible until the journey reaches the slot).
     if (mode_ == Mode::Edit) {
         VSTGUI::CRect border = vs;
         border.inset(0.5, 0.5);
-        context->setFrameColor(kEditModeFrameColor);
-        context->setLineWidth(1.0);
+        context->setFrameColor(selectedSlotContributes() ? kEditModeFrameColor
+                                                         : kNotSoundingFrameColor);
+        context->setLineWidth(selectedSlotContributes() ? 1.0 : 2.0);
         context->drawRect(border, VSTGUI::kDrawStroked);
     }
 

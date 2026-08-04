@@ -2622,3 +2622,23 @@ dimensionally meaningless or below float epsilon, not because they were hard to 
 >    allowlist are untouched.
 > 5. `entry.cpp` gains the `<ui/toggle_button.h>` and `<ui/icon_segment_button.h>` creator includes
 >    (inline-global registration requires a linked TU, same reason as ArcKnob/MacroRingKnob).
+
+> **AMENDMENT ADDENDUM (2026-08-04, decision-coverage audit).** The audit that followed the Q6
+> half-build found ONE more log-only clause: Q4's view half. The frame's `morphTravelPosition` and the
+> producer write existed (T008), but no indicator was ever built. Now enforced as:
+>
+> - **SC-034 — the Edit-mode "not currently sounding" mark (Q4).** `CloudView::selectedSlotContributes()`
+>   mirrors `SpectralMorphEngine::slotContributes` (slot == floor(pos) or floor(pos)+1,
+>   `spectral_morph_engine.h:565-569`) against the frame's `morphTravelPosition`; with no live frame it is
+>   trivially true (the drawn constellation IS the slot). Edit mode draws its border amber (2 px) when the
+>   selected slot does not contribute, accent (1 px) when it does. *Test:*
+>   `Seraphis_CloudView_SelectedSlotContributionIndicator` (`tests/unit/controller/custom_view_test.cpp`),
+>   covering the no-frame case and both verdicts on each side of two journey positions.
+> - Q6's drawing half is likewise now enforced by the regression case
+>   `Seraphis_CloudView_EditModeDrawsTheSlotWhileSilent` (same TU): Edit mode with an EMPTY live frame
+>   draws the selected slot's authored partials against the C4 fallback (centred column), gate
+>   `partialCount == 0` so frames carrying release tails still draw as frames (SC-024 unaffected).
+> - Every other Clarifications decision was audited against its implementation this session: Q1 (mirror),
+>   Q2 (BlendBegin latch), Q3 ([partials] block), Q5 (maskBits + hollow rings), Q7 (controller refcount),
+>   Q8 (throttle + terminal flush), OQ1-3 and D1 (SC-028/029/030) all verified built. The workflow now
+>   requires every decision clause to cite an enforcing FR/SC (seraphis-phase.js, 2026-08-04).

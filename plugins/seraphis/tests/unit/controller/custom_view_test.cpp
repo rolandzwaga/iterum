@@ -470,6 +470,50 @@ TEST_CASE("Seraphis_CloudView_EditModeDrawsTheSlotWhileSilent",
 }
 
 // =============================================================================
+// Regression (2026-08-04 decision-coverage audit): Q4's view half. The frame
+// has carried morphTravelPosition since T008 and the spec ruled "the view marks
+// the selected slot 'not currently sounding' when it does not contribute" -
+// but no indicator was ever built (the clause lived only in the decisions
+// log; SC-034 now enforces it). Contribution mirrors SpectralMorphEngine::
+// slotContributes (spectral_morph_engine.h:565-569): slot == floor(pos) or
+// floor(pos)+1.
+// =============================================================================
+TEST_CASE("Seraphis_CloudView_SelectedSlotContributionIndicator",
+          "[cloud_view][phase11]") {
+    Seraphis::Controller controller;
+    auto view = makeView(controller);
+    view->setMode(CloudView::Mode::Edit);
+
+    // No live frame: the slot IS what is drawn, so it always "contributes".
+    REQUIRE(view->pointsDrawnForTest() == 0u);
+    CHECK(view->selectedSlotContributesForTest());
+
+    // Live frame with the journey parked between slots 0 and 1.
+    Seraphis::CloudFrame frame = makeOctaveFrame(1u, static_cast<std::uint8_t>(8));
+    frame.morphTravelPosition = 0.2f;
+    deliver(controller, frame);
+    view->onTimerForTest();
+
+    view->setSelectedSlot(0);
+    CHECK(view->selectedSlotContributesForTest());   // k = 0
+    view->setSelectedSlot(1);
+    CHECK(view->selectedSlotContributesForTest());   // k + 1
+    view->setSelectedSlot(2);
+    CHECK_FALSE(view->selectedSlotContributesForTest());
+    view->setSelectedSlot(3);
+    CHECK_FALSE(view->selectedSlotContributesForTest());
+
+    // Journey moves onto the 2/3 pair: the verdicts follow the frame.
+    Seraphis::CloudFrame moved = makeOctaveFrame(2u, static_cast<std::uint8_t>(8));
+    moved.morphTravelPosition = 2.9f;
+    deliver(controller, moved);
+    view->onTimerForTest();
+    CHECK(view->selectedSlotContributesForTest());   // slot 3, k + 1
+    view->setSelectedSlot(0);
+    CHECK_FALSE(view->selectedSlotContributesForTest());
+}
+
+// =============================================================================
 // T016 - DrawerContainer (SC-020, FR-018, FR-023, FR-024)
 // =============================================================================
 // The criterion is the FRAME -> REDRAW path, not a bare timer. A headless

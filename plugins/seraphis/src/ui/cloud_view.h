@@ -135,6 +135,14 @@ public:
     /// and using it would bake momentary Brownian detune into a stored ratio.
     [[nodiscard]] float referenceHz() const noexcept;
 
+    /// Q4 / SC-034: whether the SELECTED slot contributes to the current morph
+    /// blend. Mirrors SpectralMorphEngine::slotContributes (slot == floor(pos)
+    /// or floor(pos)+1, spectral_morph_engine.h:565-569) using the frame's
+    /// morphTravelPosition. With no live frame the slot IS what is drawn, so it
+    /// trivially "contributes". Edit mode tints its border amber when false -
+    /// the "not currently sounding" mark.
+    [[nodiscard]] bool selectedSlotContributes() const noexcept;
+
     // --- test seams --------------------------------------------------------
     [[nodiscard]] std::size_t invalidCountForTest() const noexcept { return invalidCount_; }
     [[nodiscard]] std::size_t drawCountForTest() const noexcept { return drawCount_; }
@@ -154,6 +162,9 @@ public:
     }
     [[nodiscard]] float amplitudeFromYForTest(VSTGUI::CCoord y) const noexcept {
         return amplitudeFromY(y);
+    }
+    [[nodiscard]] bool selectedSlotContributesForTest() const noexcept {
+        return selectedSlotContributes();
     }
 
     struct DrawnPoint {
