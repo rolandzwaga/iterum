@@ -151,6 +151,7 @@
 #include <krate/dsp/primitives/spectral_buffer.h>             // L1
 #include <krate/dsp/primitives/stft.h>        // L1  STFT, OverlapAdd, WindowType
 #include <krate/dsp/processors/grain_scheduler.h>             // L2
+#include <krate/dsp/processors/grain_span_simd.h>             // L2 (Phase 11.5)
 #include <krate/dsp/processors/spectral_freeze_oscillator.h>  // L2
 
 #include <algorithm>
@@ -1834,60 +1835,30 @@ private:
         float readFrac = grain.readFrac;
         const float ratio = grain.ratio;  // held constant within a chunk (FR-024)
         const float envPhaseInc = grain.envPhaseInc;
-        const float panL = grain.panL;
-        const float panR = grain.panR;
         const float decorrAge = grain.decorrAge;
         std::uint32_t age = grain.ageSamples;
 
-        for (std::size_t i = start; i < spanEnd; ++i) {
-            // The age is formed against THIS SAMPLE's write head (chunkBase +
-            // i) in the integer domain - BIT-IDENTICAL to the former
-            // one-snapshot-per-sample expression, and that is load-bearing:
-            // formed against the END-of-chunk head instead, the float
-            // quantization of a large age becomes a function of where the
-            // chunk boundary fell, and the render stops being
-            // partition-invariant (measured: 3.3e-4 against the 1e-5 partition
-            // bound). The difference is non-negative by construction (read age
-            // >= kMinAgeSamples = 64 >= numSamples - also why pass A's
-            // captures could be hoisted ahead of every read) and bounded by
-            // C - 2 < 2^22, so the int64 -> float conversion is EXACT; the
-            // SIGNED intermediate compiles to one vcvtsi2ss.
-            const float ageNow =
-                static_cast<float>(static_cast<std::int64_t>(
-                    (chunkBase + static_cast<std::uint64_t>(i)) - readIndexInt)) -
-                readFrac;
-
-            // Envelope phase is MULTIPLIED, never accumulated: ageSamples is
-            // exact to 2^24, so this costs one rounding, whereas a
-            // `phase += 1/L'` accumulator over 1.44 M additions drifts by up
-            // to ~4 % of full scale and would retire a grain at envelope
-            // ~0.02 instead of 0 - a click.
-            const float env = GrainEnvelope::lookup(
-                envelope, kEnvelopeTableSize, static_cast<float>(age) * envPhaseInc);
-
-            // The reader snapshot is END-of-chunk; the index is rebased by how
-            // many samples newer than sample i that snapshot is, so position
-            // and interpolation weights match the former per-sample snapshot
-            // bit for bit.
-            const std::size_t newerOffset = numSamples - 1u - i;
-            float grainL = 0.0f;
-            float grainR = 0.0f;
-            reader.readStereoOffset(ageNow, newerOffset, grainL, grainR);
-            if (decorrAge > 0.0f) {
-                // The R channel reads a DIFFERENT point of the ring. Skipped
-                // entirely at decorrelation = 0. readRightOffset() rather than
-                // a second stereo read: the left half of that read was loaded,
-                // interpolated and discarded.
-                grainR = reader.readRightOffset(ageNow + decorrAge, newerOffset);
-            }
-            busL_[i] += env * panL * grainL;
-            busR_[i] += env * panR * grainR;
-
-            // S9.8's age fold: the chunk's first and last sample, plus the
-            // retirement sample (the former `if (!foldNow)` retire fold - the
-            // disjunction below folds each qualifying sample exactly once
-            // either way). ageNow is already the per-sample-head value the
-            // former shape folded.
+        // Shared per-sample age recurrence, used by both paths below. The age
+        // is formed against THIS SAMPLE's write head (chunkBase + i) in the
+        // integer domain - BIT-IDENTICAL to the former one-snapshot-per-sample
+        // expression, and that is load-bearing: formed against the
+        // END-of-chunk head instead, the float quantization of a large age
+        // becomes a function of where the chunk boundary fell, and the render
+        // stops being partition-invariant (measured: 3.3e-4 against the 1e-5
+        // partition bound). The difference is non-negative by construction
+        // (read age >= kMinAgeSamples = 64 >= numSamples - also why pass A's
+        // captures could be hoisted ahead of every read) and bounded by
+        // C - 2 < 2^22, so the int64 -> float conversion is EXACT; the SIGNED
+        // intermediate compiles to one vcvtsi2ss.
+        const auto ageAt = [&](std::size_t i) noexcept {
+            return static_cast<float>(static_cast<std::int64_t>(
+                       (chunkBase + static_cast<std::uint64_t>(i)) - readIndexInt)) -
+                   readFrac;
+        };
+        // S9.8's age fold sites: the chunk's first and last sample, plus the
+        // retirement sample (the former `if (!foldNow)` retire fold - the
+        // disjunction folds each qualifying sample exactly once either way).
+        const auto foldAt = [&](std::size_t i, float ageNow) noexcept {
             const bool edgeFold = (i == 0) || (i + 1 == numSamples);
             const bool retireFold = retires && (i + 1 == spanEnd);
             if (edgeFold || retireFold) {
@@ -1896,17 +1867,103 @@ private:
                     foldObservedAge(ageNow + decorrAge);
                 }
             }
-
-            // Advance: integer + fraction, exact for the whole lifetime at
-            // any rate. TRUNCATION, NOT std::floor: readFrac is non-negative
-            // for the grain's whole life, so truncation toward zero IS the
-            // floor - and std::floor(float) is a CRT call on MSVC's default
-            // /arch. The carry is in [0, 8] because ratio <= 8.
+        };
+        // Advance: integer + fraction, exact for the whole lifetime at any
+        // rate. TRUNCATION, NOT std::floor: readFrac is non-negative for the
+        // grain's whole life, so truncation toward zero IS the floor - and
+        // std::floor(float) is a CRT call on MSVC's default /arch. The carry
+        // is in [0, 8] because ratio <= 8.
+        const auto advance = [&]() noexcept {
             readFrac += ratio;
             const auto carryInt = static_cast<std::int32_t>(readFrac);
             readIndexInt += static_cast<std::uint64_t>(carryInt);
             readFrac -= static_cast<float>(carryInt);
             ++age;
+        };
+
+        if (!reader.isValid() || envelope == nullptr) {
+            // Cold path: every read yields 0 (the reader's own rule), so the
+            // span contributes nothing - but state, folds and ages must still
+            // advance exactly. Unreachable while any grain is admitted (FR-014
+            // demands >= kMinAgeSamples available at birth); kept for the same
+            // defensive reason readStereo() zero-fills.
+            for (std::size_t i = start; i < spanEnd; ++i) {
+                foldAt(i, ageAt(i));
+                advance();
+            }
+        } else {
+            // --- Phase 1 (scalar): exact per-sample recurrences --------------
+            // Ring indices/weights via LinearReader::indexAt - the SAME
+            // clamp/truncate/rebase arithmetic as readStereoOffset(), so every
+            // position and weight is bit-identical to the pre-SIMD shape.
+            // Envelope index/weight is GrainEnvelope::lookup's arithmetic
+            // verbatim (core/grain_envelope.h:165-196, including the NaN-safe
+            // clamp and the index1-at-the-boundary rule, so no gather can
+            // overread the envelope bank). Everything lands in stack arrays
+            // sized for one control chunk (~2.3 KB).
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> idxL0;
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> idxL1;
+            alignas(32) std::array<float, kControlChunkSamples> fracL;
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> idxR0;
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> idxR1;
+            alignas(32) std::array<float, kControlChunkSamples> fracR;
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> envI0;
+            alignas(32) std::array<std::int32_t, kControlChunkSamples> envI1;
+            alignas(32) std::array<float, kControlChunkSamples> envF;
+
+            const bool decorr = decorrAge > 0.0f;
+            const auto lastEnv = static_cast<std::ptrdiff_t>(kEnvelopeTableSize - 1);
+            std::size_t m = 0;
+            for (std::size_t i = start; i < spanEnd; ++i, ++m) {
+                const float ageNow = ageAt(i);
+                // The reader snapshot is END-of-chunk; the index is rebased by
+                // how many samples newer than sample i that snapshot is, so
+                // position and weights match a per-sample snapshot bit for bit.
+                const std::size_t newerOffset = numSamples - 1u - i;
+                reader.indexAt(ageNow, newerOffset, idxL0[m], idxL1[m], fracL[m]);
+                if (decorr) {
+                    // The R channel reads a DIFFERENT point of the ring;
+                    // skipped entirely at decorrelation = 0.
+                    reader.indexAt(ageNow + decorrAge, newerOffset, idxR0[m], idxR1[m],
+                                   fracR[m]);
+                }
+
+                // Envelope phase is MULTIPLIED, never accumulated: ageSamples
+                // is exact to 2^24, so this costs one rounding, whereas a
+                // `phase += 1/L'` accumulator over 1.44 M additions drifts by
+                // up to ~4 % of full scale and would retire a grain at
+                // envelope ~0.02 instead of 0 - a click.
+                float phase = static_cast<float>(age) * envPhaseInc;
+                if (!(phase >= 0.0f)) {
+                    phase = 0.0f;
+                }
+                if (phase > 1.0f) {
+                    phase = 1.0f;
+                }
+                const float indexFloat = phase * static_cast<float>(lastEnv);
+                const auto e0 = static_cast<std::ptrdiff_t>(indexFloat);
+                envI0[m] = static_cast<std::int32_t>(e0);
+                envI1[m] = static_cast<std::int32_t>((e0 < lastEnv) ? e0 + 1 : lastEnv);
+                envF[m] = indexFloat - static_cast<float>(e0);
+
+                foldAt(i, ageNow);
+                advance();
+            }
+
+            // --- Phase 2 (vector): gathers + lerps + accumulate --------------
+            // Six gathers, three lerps, two FMAs per sample, all PER-LANE - no
+            // cross-lane reduction - so vector grouping (and therefore the
+            // caller's block partition) cannot change any sample's value; see
+            // grain_span_simd.h. A non-decorrelated grain hands the L index
+            // arrays to the R reads: same positions, R channel data.
+            accumulateGrainSpanSIMD(reader.leftData(), reader.rightData(), idxL0.data(),
+                                    idxL1.data(), fracL.data(),
+                                    decorr ? idxR0.data() : idxL0.data(),
+                                    decorr ? idxR1.data() : idxL1.data(),
+                                    decorr ? fracR.data() : fracL.data(), envelope,
+                                    envI0.data(), envI1.data(), envF.data(), grain.panL,
+                                    grain.panR, m, busL_.data() + start,
+                                    busR_.data() + start);
         }
 
         grain.readIndexInt = readIndexInt;

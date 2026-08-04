@@ -113,7 +113,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 178
+      "line": 179
     },
     {
       "name": "AtmosphereGrain",
@@ -121,7 +121,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 1180
+      "line": 1181
     },
     {
       "name": "AttractorConstants",
@@ -537,7 +537,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 1209
+      "line": 1210
     },
     {
       "name": "DriftLanes",
@@ -569,7 +569,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 2534
+      "line": 2591
     },
     {
       "name": "DynamicsProcessor",
@@ -881,7 +881,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 1219
+      "line": 1220
     },
     {
       "name": "GrainParams",
@@ -1833,7 +1833,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 368
+      "line": 369
     },
     {
       "name": "PrepareProcessorVisitor",
@@ -1929,7 +1929,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 2527
+      "line": 2584
     },
     {
       "name": "Reverb",

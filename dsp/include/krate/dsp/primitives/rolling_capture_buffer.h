@@ -264,6 +264,31 @@ public:
             return right_[i0] + frac_ * (right_[i1] - right_[i0]);
         }
 
+        /// @brief The INDEXING HALF of readStereoOffset(), without the loads:
+        ///        ring indices and interpolation weight for a rebased read.
+        ///
+        /// Exists for the gather-based grain span kernel (Phase 11.5): a
+        /// scalar pass precomputes every sample's indices/weight with EXACTLY
+        /// this arithmetic - the same clamp, truncation and rebase, so
+        /// positions are bit-identical to readStereoOffset() - and a SIMD pass
+        /// then gathers and interpolates. i1 is one sample OLDER than i0, the
+        /// readStereo() identity. Capacity < 2^31 always (the ring is at most
+        /// ~2^22 frames), so int32 indices are exact.
+        ///
+        /// @pre isValid(); the caller takes the zero-yield path itself when not.
+        void indexAt(float ageSamples, size_t newerOffset, std::int32_t& outI0,
+                     std::int32_t& outI1, float& outFrac) const noexcept {
+            const size_t i0 = (index0(ageSamples) - newerOffset) & mask_;
+            outI0 = static_cast<std::int32_t>(i0);
+            outI1 = static_cast<std::int32_t>((i0 + mask_) & mask_);
+            outFrac = frac_;
+        }
+
+        /// Raw channel storage for the gather kernel. Never null while
+        /// isValid(); lifetime is the snapshot's (see the class banner).
+        [[nodiscard]] const float* leftData() const noexcept { return left_; }
+        [[nodiscard]] const float* rightData() const noexcept { return right_; }
+
         /// @brief False when the source buffer held fewer than 2 samples, or was
         ///        not prepared. Every read then yields 0.
         [[nodiscard]] bool isValid() const noexcept { return valid_; }

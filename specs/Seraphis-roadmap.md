@@ -574,6 +574,17 @@ pass, the anti-alias `sqrt` pass, and whatever the attribution ranks above them)
 pinned by render-behavior tests (aggregate metrics, never bit digests) and the full DSP + plugin suites.
 The exit criteria below are UNCHANGED.
 
+**CORRECTION 2026-08-04 (record of an overclaim in commit 7881a6ff):** that commit's message credits
+the blur identity skip (skip the per-bin phase loop when the smoother has settled at `blurAmount == 0`)
+with "~2.4 %" — that figure was the WHOLE Atmos/Blur decomposition row, which is dominated by the STFT
+FFT round-trips the skip does not touch. The skipped loop itself is polar-native (`SpectralBuffer`
+stores magnitude/phase directly; `getPhase`/`setPhase` are plain loads/stores, no trig), and the
+measured effect of the skip is ≈ zero. The change is kept — it is harmless, exact-identity-gated, and
+burns the same RNG draws so the SC-010 stream is unchanged — but it recovered nothing. The measured
+recoveries in this phase are the grain-sweep restructure (7666aa83, ~10-15 % off the sweep) and the
+Highway gather kernel for the grain span (grain-sample cost 8.90-8.96 → 8.29 ns at matched machine
+state, ~12 % further).
+
 **Phase 12 MUST NOT ship before this phase is green.** Release readiness that ships a 31.7 % instrument
 against a documented 25 % promise is not release readiness; the gate belongs here, ahead of the release
 phase, not inside it.
