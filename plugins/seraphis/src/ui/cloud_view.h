@@ -57,9 +57,12 @@ inline constexpr float kViewMinHz = 20.0f;
 inline constexpr float kViewMaxHz = 20000.0f;
 
 /// A silent UNMASKED partial dissolves to nothing rather than vanishing with a
-/// discontinuity, so the floor is literally zero (FR-017).
+/// discontinuity, so the floor is literally zero (FR-017). The radius map is
+/// PERCEPTUAL (quartic root of amplitude, cloud_view.cpp radiusFromAmplitude) -
+/// a linear map drew typical normalized amplitudes (1/8 .. 1/64) as sub-pixel
+/// dots (2026-08-04 fix).
 inline constexpr VSTGUI::CCoord kMinRadius = 0.0;
-inline constexpr VSTGUI::CCoord kMaxRadius = 7.0;
+inline constexpr VSTGUI::CCoord kMaxRadius = 9.0;
 
 /// The ONE case where radius is not a monotone function of amplitude (Q5): a
 /// masked partial's amplitude has smoothed to 0, but it must stay a click

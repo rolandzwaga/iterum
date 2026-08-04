@@ -424,6 +424,52 @@ TEST_CASE("Seraphis_CloudView_GesturesEmitTheRightEditMessage", "[cloud_view][ph
 }
 
 // =============================================================================
+// Regression (user bug 2026-08-04): "when I switch to edit mode, I don't see
+// any difference. I still have to play a note to see anything."
+// Q6's drawing half: with NO live frame, Edit mode MUST draw the selected
+// slot's authored partials against the C4 fallback reference so there is
+// something to see and drag while silent. Only the inverse map's C4 fallback
+// had been implemented; the slot rendering never was.
+// =============================================================================
+TEST_CASE("Seraphis_CloudView_EditModeDrawsTheSlotWhileSilent",
+          "[cloud_view][phase11]") {
+    Seraphis::Controller controller;
+    REQUIRE(controller.initialize(nullptr) == Steinberg::kResultOk);  // seeds slotMirror_
+    auto view = makeView(controller);
+
+    // No frame was ever delivered: Observe mode has nothing to draw.
+    view->renderForTest();
+    REQUIRE(view->pointsDrawnForTest() == 0u);
+
+    // Edit mode: the SELECTED SLOT's authored partials appear, silent or not.
+    view->setMode(CloudView::Mode::Edit);
+    view->renderForTest();
+
+    const Krate::DSP::SpectralState& slot = controller.slotMirror(0);
+    REQUIRE(slot.numPartials > 0);  // factory-seeded at initialize()
+    REQUIRE(view->pointsDrawnForTest() == static_cast<std::size_t>(slot.numPartials));
+
+    // The y axis is the authored ratio against the C4 fallback (Q6): drift-free
+    // by construction, because there is no live frame to leak drift from.
+    const std::vector<CloudView::DrawnPoint>& points = view->drawnPointsForTest();
+    for (const std::size_t i : {std::size_t{0}, std::size_t{1}}) {
+        const float hz = slot.ratios[i] * Seraphis::UI::kFallbackReferenceHz;
+        CHECK(points[i].y == Catch::Approx(view->yFromHzForTest(hz)).margin(1e-9));
+    }
+
+    // The points are draggable: the hit test finds one where it was drawn.
+    CHECK(view->hitTestForTest(VSTGUI::CPoint(points[0].x, points[0].y)) == 0);
+
+    // Switching the edit slot redraws (a stale constellation was the bug's
+    // second face: setSelectedSlot never invalidated).
+    const std::size_t invalidsBefore = view->invalidCountForTest();
+    view->setSelectedSlot(2);
+    CHECK(view->invalidCountForTest() == invalidsBefore + 1u);
+
+    controller.terminate();
+}
+
+// =============================================================================
 // T016 - DrawerContainer (SC-020, FR-018, FR-023, FR-024)
 // =============================================================================
 // The criterion is the FRAME -> REDRAW path, not a bare timer. A headless

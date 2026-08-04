@@ -23,9 +23,12 @@ namespace {
 // Display only. `overriddenBits` tints a point so a user-authored partial reads
 // differently from an engine-driven one (FR-017); nothing here feeds a gesture.
 const VSTGUI::CColor kBackgroundColor{14, 16, 22, 255};
-const VSTGUI::CColor kPartialColor{150, 200, 255, 220};
-const VSTGUI::CColor kOverriddenColor{255, 190, 110, 235};
-const VSTGUI::CColor kMaskedColor{120, 130, 150, 200};
+const VSTGUI::CColor kPartialColor{176, 214, 255, 255};
+const VSTGUI::CColor kOverriddenColor{255, 196, 120, 255};
+const VSTGUI::CColor kMaskedColor{130, 140, 160, 220};
+/// Edit-mode affordance: a thin accent border so the mode change is visible
+/// even before a point moves (2026-08-04 "I don't see any difference" fix).
+const VSTGUI::CColor kEditModeFrameColor{143, 168, 216, 150};
 
 /// NaN-tolerant clamp. std::clamp propagates a NaN input, and std::isnan is not
 /// usable under -ffast-math (which the macOS leg builds with); writing the
@@ -63,6 +66,16 @@ const VSTGUI::CColor kMaskedColor{120, 130, 150, 200};
 [[nodiscard]] const Krate::DSP::SpectralState& emptyState() noexcept {
     static const Krate::DSP::SpectralState kEmpty{};
     return kEmpty;
+}
+
+/// Perceptual radius map. A normalized 64-partial cloud puts typical per-partial
+/// amplitudes at 1/8 .. 1/64 of full scale, where the old LINEAR map drew
+/// sub-pixel dots (the 2026-08-04 "very faint pixels" bug). The quartic root
+/// puts 1/64 at ~0.35 of kMaxRadius while keeping amplitude 0 exactly at
+/// kMinRadius (which the silent-partial criterion pins).
+[[nodiscard]] VSTGUI::CCoord radiusFromAmplitude(float amplitude) noexcept {
+    const double amp = clampToRange(static_cast<double>(amplitude), 0.0, 1.0);
+    return kMinRadius + std::sqrt(std::sqrt(amp)) * (kMaxRadius - kMinRadius);
 }
 
 }  // namespace
@@ -108,6 +121,9 @@ void CloudView::setSelectedSlot(int slot) noexcept {
         return;
     }
     selectedSlot_ = slot;
+    // Edit mode may be drawing THIS slot's authored partials right now
+    // (2026-08-04 fix) - a slot switch is a visible change.
+    invalid();
 }
 
 // ==============================================================================
@@ -187,28 +203,56 @@ void CloudView::buildPoints() {
     drawnPoints_.clear();
 
     const CloudFrame& f = currentFrame();
-    const std::size_t count =
-        std::min<std::size_t>(static_cast<std::size_t>(f.partialCount), 64u);
 
-    for (std::size_t i = 0; i < count; ++i) {
-        const bool masked = ((f.maskBits >> i) & 1ull) != 0ull;
+    // Q6's DRAWING half (2026-08-04 fix): with no live frame to display, Edit
+    // mode draws the SELECTED SLOT's authored partials against the fallback
+    // reference, so there is something to see - and drag - in silence. Only the
+    // inverse map's C4 fallback had been implemented; this is the other half.
+    // Pan has no authored source (it is a live-cloud override, C-4), so the
+    // authored column draws centred.
+    // The gate is partialCount == 0 - NOT activeVoices: a frame can carry
+    // partials with zero active voices (release tails, SC-024's silent-frame
+    // arm), and those frames are still the thing to draw.
+    if (mode_ == Mode::Edit && f.partialCount == 0 && controller_ != nullptr) {
+        const Krate::DSP::SpectralState& slot = controller_->slotMirror(selectedSlot_);
+        const float ref = referenceHz();  // C4 while silent (Q6)
+        const std::size_t authored = std::min<std::size_t>(
+            static_cast<std::size_t>(std::max(slot.numPartials, 0)), 64u);
+        const VSTGUI::CRect vs = getViewSize();
+        const VSTGUI::CCoord centerX = vs.left + vs.getWidth() * 0.5;
 
-        DrawnPoint pt{};
-        pt.x = xFromPosition(f.position[i]);
-        pt.y = yFromHz(f.frequencyHz[i]);
-
-        if (masked) {
-            // Q5: fixed ring, REGARDLESS of amplitude. Not culled, not shrunk to
-            // kMinRadius - it has to stay a click target for the un-mask gesture.
-            pt.radius = kMaskedRingRadius;
-            pt.hollow = true;
-        } else {
-            const double amp = static_cast<double>(clampToRange(f.amplitude[i], 0.0f, 1.0f));
-            pt.radius = kMinRadius + amp * (kMaxRadius - kMinRadius);
+        for (std::size_t i = 0; i < authored; ++i) {
+            DrawnPoint pt{};
+            pt.x = centerX;
+            pt.y = yFromHz(slot.ratios[i] * ref);
+            pt.radius = radiusFromAmplitude(slot.amplitudes[i]);
             pt.hollow = false;
+            drawnPoints_.push_back(pt);
         }
+    } else {
+        const std::size_t count =
+            std::min<std::size_t>(static_cast<std::size_t>(f.partialCount), 64u);
 
-        drawnPoints_.push_back(pt);
+        for (std::size_t i = 0; i < count; ++i) {
+            const bool masked = ((f.maskBits >> i) & 1ull) != 0ull;
+
+            DrawnPoint pt{};
+            pt.x = xFromPosition(f.position[i]);
+            pt.y = yFromHz(f.frequencyHz[i]);
+
+            if (masked) {
+                // Q5: fixed ring, REGARDLESS of amplitude. Not culled, not shrunk
+                // to kMinRadius - it has to stay a click target for the un-mask
+                // gesture.
+                pt.radius = kMaskedRingRadius;
+                pt.hollow = true;
+            } else {
+                pt.radius = radiusFromAmplitude(f.amplitude[i]);
+                pt.hollow = false;
+            }
+
+            drawnPoints_.push_back(pt);
+        }
     }
 
     // C-8: in Edit mode the constellation still animates. Only the DRAGGED
@@ -232,6 +276,16 @@ void CloudView::emit(VSTGUI::CDrawContext* context) const {
     context->setFillColor(kBackgroundColor);
     context->drawRect(vs, VSTGUI::kDrawFilled);
 
+    // Edit-mode affordance: a thin accent border, so entering Edit is visible
+    // before anything is touched.
+    if (mode_ == Mode::Edit) {
+        VSTGUI::CRect border = vs;
+        border.inset(0.5, 0.5);
+        context->setFrameColor(kEditModeFrameColor);
+        context->setLineWidth(1.0);
+        context->drawRect(border, VSTGUI::kDrawStroked);
+    }
+
     const CloudFrame& f = currentFrame();
 
     for (std::size_t i = 0; i < drawnPoints_.size(); ++i) {
@@ -240,18 +294,37 @@ void CloudView::emit(VSTGUI::CDrawContext* context) const {
             continue;  // a dissolved partial: still COUNTED, just nothing to paint
         }
 
-        const VSTGUI::CRect r(pt.x - pt.radius, pt.y - pt.radius, pt.x + pt.radius,
-                              pt.y + pt.radius);
         const bool overridden = ((f.overriddenBits >> i) & 1ull) != 0ull;
+        const VSTGUI::CColor& color = overridden ? kOverriddenColor : kPartialColor;
 
         if (pt.hollow) {
+            const VSTGUI::CRect r(pt.x - pt.radius, pt.y - pt.radius, pt.x + pt.radius,
+                                  pt.y + pt.radius);
             context->setFrameColor(overridden ? kOverriddenColor : kMaskedColor);
             context->setLineWidth(kRingLineWidth);
             context->drawEllipse(r, VSTGUI::kDrawStroked);
-        } else {
-            context->setFillColor(overridden ? kOverriddenColor : kPartialColor);
-            context->drawEllipse(r, VSTGUI::kDrawFilled);
+            continue;
         }
+
+        // Two-pass glow under a bright core (the 2026-08-04 "more spectacular"
+        // pass): 64 x 3 anti-aliased ellipses at 30 Hz is trivial fill work.
+        VSTGUI::CColor halo = color;
+        const double haloRadius = pt.radius * 2.4;
+        halo.alpha = 32;
+        context->setFillColor(halo);
+        context->drawEllipse(VSTGUI::CRect(pt.x - haloRadius, pt.y - haloRadius,
+                                           pt.x + haloRadius, pt.y + haloRadius),
+                             VSTGUI::kDrawFilled);
+        const double midRadius = pt.radius * 1.5;
+        halo.alpha = 84;
+        context->setFillColor(halo);
+        context->drawEllipse(VSTGUI::CRect(pt.x - midRadius, pt.y - midRadius,
+                                           pt.x + midRadius, pt.y + midRadius),
+                             VSTGUI::kDrawFilled);
+        context->setFillColor(color);
+        context->drawEllipse(VSTGUI::CRect(pt.x - pt.radius, pt.y - pt.radius,
+                                           pt.x + pt.radius, pt.y + pt.radius),
+                             VSTGUI::kDrawFilled);
     }
 }
 
