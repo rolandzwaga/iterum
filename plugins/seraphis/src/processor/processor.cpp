@@ -83,6 +83,17 @@ using namespace Steinberg;
 
 namespace {
 
+/// Phase 11.5 Step 0. Close one decomposition timer region: add the elapsed ns
+/// since `start` into `slot` and return a fresh start point for the next
+/// region. Only ever called behind the processDecompInstrumented_ gate, so no
+/// shipping path reaches the clock read (Constitution II).
+[[nodiscard]] std::chrono::steady_clock::time_point decompLap(
+    double& slot, std::chrono::steady_clock::time_point start) noexcept {
+    const auto now = std::chrono::steady_clock::now();
+    slot += std::chrono::duration<double, std::nano>(now - start).count();
+    return now;
+}
+
 /// Plan 3.2. Clamp a host event offset into [0, total].
 ///
 /// Negative and past-the-end offsets are both legal inputs from a malformed
@@ -1242,9 +1253,21 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     // processor.cpp:1073-1075). core/scoped_denormal_mode.h:60.
     const Krate::DSP::ScopedDenormalMode denormalGuard;
 
+    // Phase 11.5 Step 0. FALSE on every shipping path; when armed by a test the
+    // per-region laps below attribute this call's wall time to DecompStage rows.
+    const bool decomp = processDecompInstrumented_;
+    std::chrono::steady_clock::time_point decompT{};
+    if (decomp) {
+        decompT = std::chrono::steady_clock::now();
+    }
+
     // Automation is latched BEFORE the shape guards: a block that renders
     // nothing must still not lose the host's parameter changes.
     processParameterChanges(data.inputParameterChanges);
+    if (decomp) {
+        decompT = decompLap(decompNs_[static_cast<std::size_t>(DecompStage::Params)], decompT);
+        ++decompProcessCalls_;
+    }
 
     // FR-030 early-outs, in THIS ORDER. The order is load-bearing twice over:
     //  (a) buffer VALIDATION precedes the readiness check, so the one degenerate
@@ -1559,6 +1582,12 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
         masterGain_.setTarget(gainTarget);  // smoother.h:170
     }
 
+    // Phase 11.5 Step 0. Everything since the Params lap - the whole
+    // once-per-call pre-slice push block - lands in one row.
+    if (decomp) {
+        decompT = decompLap(decompNs_[static_cast<std::size_t>(DecompStage::PreSlice)], decompT);
+    }
+
     // FR-025 / FR-026: the event-driven slice loop. SeraphisEngine::noteOn /
     // noteOff take NO sample offset (seraphis_engine.h:370, 415), so
     // sub-division is the only way to deliver one.
@@ -1635,9 +1664,16 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
         // carries the value the smoothers just reached. FR-044 is satisfied
         // unchanged - macros_.apply() and applyAetherTargets() still run every
         // slice, at their existing positions inside renderSlice().
+        if (decomp) {
+            decompT = std::chrono::steady_clock::now();
+        }
         advanceParamSmoothers(n);
         pushVoiceParams();    // FR-042: the 37 VP values
         pushMacroSurfaces();  // FR-043: macros + the 27 VP/AE bases
+        if (decomp) {
+            (void)decompLap(decompNs_[static_cast<std::size_t>(DecompStage::SlicePush)],
+                            decompT);
+        }
         renderSlice(outL + cursor, outR + cursor, n);
         controlPhase_ += n;
         cursor += n;
@@ -2276,6 +2312,15 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
     // count on any render carrying MIDI or an unsettled class-(b) smoother.
     ++renderSlices_;
 
+    // Phase 11.5 Step 0, same gate as process()'s copy: FALSE on every shipping
+    // path, so this function pays five always-false branches per slice and no
+    // clock read.
+    const bool decomp = processDecompInstrumented_;
+    std::chrono::steady_clock::time_point decompT{};
+    if (decomp) {
+        decompT = std::chrono::steady_clock::now();
+    }
+
     // 2. Macros -> engine, and the Aether-owned half -> reverb.
     //
     //    Applied EVERY SLICE even at Phase 8's neutral macro defaults (FR-034):
@@ -2326,13 +2371,23 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
     }
 
     applyAetherTargets(*reverb_, macros_.computeAetherTargets());  // :667 + FR-034a
+    if (decomp) {
+        decompT = decompLap(decompNs_[static_cast<std::size_t>(DecompStage::MacroApply)],
+                            decompT);
+    }
 
     // 3. Voice sum only - no reverb, no output stage.
     engine_->processStereoBlock(dryL_.data(), dryR_.data(), n);  // engine.h:441
+    if (decomp) {
+        decompT = decompLap(decompNs_[static_cast<std::size_t>(DecompStage::Engine)], decompT);
+    }
 
     // 4. The Layer 4 stage the engine cannot own.
     reverb_->processStereoBlock(dryL_.data(), dryR_.data(), wetL_.data(), wetR_.data(),
                                 n);  // reverb.h:2164
+    if (decomp) {
+        decompT = decompLap(decompNs_[static_cast<std::size_t>(DecompStage::Reverb)], decompT);
+    }
 
     // 4b. FR-024a clause 3: master gain, ONCE PER OUTPUT SAMPLE, on the reverb
     //     return. Never advanceSamples(n) and never once per slice - a ramp
@@ -2346,6 +2401,9 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
         const float g = masterGain_.process();  // smoother.h:197
         wetL_[s] *= g;
         wetR_[s] *= g;
+    }
+    if (decomp) {
+        (void)decompLap(decompNs_[static_cast<std::size_t>(DecompStage::MasterGain)], decompT);
     }
 
     // 4c. Phase 10, C-1 STEPS 4 AND 5, plus FR-041 clause 6's pre-output tap -
@@ -2418,7 +2476,13 @@ void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
 
     // 5. Output stage IN PLACE on the reverb return: tape saturator -> true-peak
     //    limiter. ALWAYS LAST.
+    if (decomp) {
+        decompT = std::chrono::steady_clock::now();
+    }
     engine_->processOutputStage(wetL_.data(), wetR_.data(), n);  // engine.h:512
+    if (decomp) {
+        (void)decompLap(decompNs_[static_cast<std::size_t>(DecompStage::Output)], decompT);
+    }
 
     // FR-040 capability 2, TEST PATHS ONLY. SC-003(a)'s positive control needs
     // the deliberately-wrong order - step 5 AFTER step 6 - to provably FAIL the

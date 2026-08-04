@@ -644,6 +644,47 @@ public:
     void setCloudFrameInstrumentedForTest(bool on) noexcept { cloudFrameInstrumented_ = on; }
 
     // =========================================================================
+    // Phase 11.5 Step 0 - whole-process() decomposition instrumentation.
+    //
+    // WHY IT EXISTS. Phase 11's OE-1 decomposed the measured 31.74 % as "chain
+    // 22.04 % + effects 0.45 % + ~9.2 points of remainder", but the chain-only
+    // subject (param_perf_test.cpp:1833-1878) runs a DIFFERENT configuration
+    // (body material, diffusion FFT size) from the plugin - the remainder is
+    // arithmetic over non-identical scenarios, not a measured cost. These timers
+    // measure the split INSIDE the failing subject itself, so Phase 11.5
+    // optimizes what is measured rather than what was inferred.
+    //
+    // Same discipline as effectsStageInstrumented_ / cloudFrameInstrumented_
+    // (Constitution II): the gate is FALSE on every shipping path, so the
+    // shipped plugin executes no clock read here - it pays one always-false
+    // branch per timed region. Diagnostic only: no criterion gates on these.
+    // =========================================================================
+    enum class DecompStage : std::size_t {
+        Params,      ///< processParameterChanges(), top of process()
+        PreSlice,    ///< force-push consume .. masterGain target (all once-per-call pushes)
+        SlicePush,   ///< advanceParamSmoothers + pushVoiceParams + pushMacroSurfaces, per slice
+        MacroApply,  ///< macros_.apply + spread tracker + computeAetherTargets/apply, per slice
+        Engine,      ///< engine_->processStereoBlock (the voice sum)
+        Reverb,      ///< reverb_->processStereoBlock (Aether)
+        MasterGain,  ///< the per-sample master-gain loop
+        Output,      ///< engine_->processOutputStage (saturator + limiter)
+        Count
+    };
+    void setProcessDecompInstrumentedForTest(bool on) noexcept {
+        processDecompInstrumented_ = on;
+    }
+    [[nodiscard]] double decompNsForTest(DecompStage stage) const noexcept {
+        return decompNs_[static_cast<std::size_t>(stage)];
+    }
+    [[nodiscard]] std::size_t decompProcessCallsForTest() const noexcept {
+        return decompProcessCalls_;
+    }
+    void resetDecompForTest() noexcept {
+        decompNs_.fill(0.0);
+        decompProcessCalls_ = 0;
+    }
+
+    // =========================================================================
     // Phase 11 C-10 / FR-037..FR-039 (plan section 4, T013) - the COMPOSED
     // effects targets. SC-021(b)/(c)'s observables.
     //
@@ -1478,6 +1519,12 @@ private:
     bool cloudFrameInstrumented_ = false;
     double cloudFrameStageNs_ = 0.0;
     std::size_t cloudFrameStageProcessCalls_ = 0;
+
+    // Phase 11.5 Step 0 decomposition instrumentation - see the DecompStage
+    // banner above. OFF on every shipping path (Constitution II).
+    bool processDecompInstrumented_ = false;
+    std::array<double, static_cast<std::size_t>(DecompStage::Count)> decompNs_{};
+    std::size_t decompProcessCalls_ = 0;
 
     /// The previous focus slot, C-2 clause 4(b)'s retention state. Audio-thread
     /// owned; only publishCloudFrame() reads or writes it.

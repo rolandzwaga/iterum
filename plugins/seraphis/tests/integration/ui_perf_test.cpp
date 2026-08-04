@@ -84,6 +84,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -1825,6 +1826,194 @@ TEST_CASE("Seraphis_EditGestureInFlight_FitsTheBudget", "[.perf][phase11]") {
     // in the order the banner lists. The bound, the ceiling and the 30 Hz
     // throttle are all off the table.
     REQUIRE((gestureNs - noGestureNs) <= kGestureDeltaBoundNs);
+
+    REQUIRE(fx->checkCanaries());
+    REQUIRE(isFinitePerfValue(audioSink));
+}
+
+// =============================================================================
+// Phase 11.5 Step 0 - THE WHOLE-process() DECOMPOSITION (diagnostic; NO GATE)
+// =============================================================================
+// WHY IT EXISTS. OE-1 decomposed the measured 31.74 % as "chain 22.04 % +
+// effects 0.45 % + ~9.2 points of remainder", but the chain-only subject runs a
+// DIFFERENT configuration from the plugin (body material, diffusion FFT 4096 vs
+// 1024, hand-built bloom voice) - the remainder is arithmetic over non-identical
+// scenarios, not a measured cost. This case measures the split INSIDE the
+// failing subject itself, with the processor's own Phase 11.5 stage timers
+// (processor.h DecompStage), so optimization effort follows measured cost
+// rather than inferred cost. Two arms:
+//   (A) the static SC-010(b) subject - gate closed, dominant surface, no
+//       automation. anyClassBSmootherUnsettled() is false here, so the slice
+//       loop runs ONE slice per block.
+//   (B) the same fixture under the SC-014 arm 7 Bloom macro sweep - class-(b)
+//       smoothers unsettled every block, the 8x64 subdivision ACTIVE, the
+//       per-slice pushes running up to 8x.
+// The only REQUIREs are sanity (call counter exact, render stages non-zero, the
+// stage sum inside the wall figure) - THE TABLE IS THE DELIVERABLE. The wall
+// figure here INCLUDES the instrumentation's own clock reads (~26 steady_clock
+// pairs per block, <0.05 % of a block period); any figure a criterion gates on
+// is measured elsewhere with every instrumentation flag OFF.
+// =============================================================================
+namespace {
+
+constexpr std::size_t kDecompStageCount =
+    static_cast<std::size_t>(Seraphis::Processor::DecompStage::Count);
+
+/// Row labels, in DecompStage declaration order (processor.h).
+constexpr std::array<const char*, kDecompStageCount> kDecompLabels{
+    "Params     (processParameterChanges)   ",
+    "PreSlice   (once-per-call push block)  ",
+    "SlicePush  (smoothers+voice+macro push)",
+    "MacroApply (matrix apply + aether tgt) ",
+    "Engine     (voice sum)                 ",
+    "Reverb     (Aether)                    ",
+    "MasterGain (per-sample gain loop)      ",
+    "Output     (saturator + limiter)       ",
+};
+
+/// One measured arm: the best-of-N trial's wall figure and that SAME trial's
+/// per-stage accumulator deltas, all normalised to per-block.
+struct DecompSample {
+    double wallNs = std::numeric_limits<double>::max();
+    std::array<double, kDecompStageCount> stageNs{};
+    double effectsNs = 0.0;     ///< effectsStageNs_, the Phase 10 timer
+    double cloudFrameNs = 0.0;  ///< cloudFrameStageNs_, the Phase 11 timer
+    std::size_t calls = 0;      ///< decompProcessCalls_ delta over the best trial
+};
+
+[[nodiscard]] double decompStageSum(const DecompSample& s) noexcept {
+    double sum = s.effectsNs + s.cloudFrameNs;
+    for (const double ns : s.stageNs) {
+        sum += ns;
+    }
+    return sum;
+}
+
+[[nodiscard]] std::string decompTable(const char* title, const DecompSample& s) {
+    const auto pct = [](double ns) { return (ns / kBlockBudgetNs) * 100.0; };
+    std::ostringstream os;
+    os << title << "\n"
+       << "  whole process()                          : " << s.wallNs << " ns/block  ("
+       << pct(s.wallNs) << " % of one core)\n";
+    for (std::size_t i = 0; i < kDecompStageCount; ++i) {
+        os << "  " << kDecompLabels[i] << "  : " << s.stageNs[i] << " ns  (" << pct(s.stageNs[i])
+           << " %)\n";
+    }
+    os << "  EffectsStage (Phase 10's own timer)      : " << s.effectsNs << " ns  ("
+       << pct(s.effectsNs) << " %)\n"
+       << "  CloudFrame publish (Phase 11's own timer): " << s.cloudFrameNs << " ns  ("
+       << pct(s.cloudFrameNs) << " %)\n"
+       << "  SUM of stages                            : " << decompStageSum(s) << " ns  ("
+       << pct(decompStageSum(s)) << " %)\n"
+       << "  residual (wall - sum)                    : " << (s.wallNs - decompStageSum(s))
+       << " ns  (" << pct(s.wallNs - decompStageSum(s))
+       << " %)  <- event dispatch, loop glue, output copies, bloom lifecycle";
+    return os.str();
+}
+
+}  // namespace
+
+TEST_CASE("Seraphis_WholeProcess_Decomposition", "[.perf][phase11_5]") {
+    auto fx = std::make_unique<Fixture>();
+    REQUIRE(fx->prepare(kSr48, kBlock) == Steinberg::kResultOk);
+
+    // Gate CLOSED - the SC-010(b) subject. bringToOperatingPoint never touches
+    // the gate, and this case never opens it.
+    bringToOperatingPoint(*fx);
+    requireOperatingPoint(*fx);
+
+    // Arm everything: this case measures the split, not a gated figure.
+    // effectsStageInstrumented_ is already on fixture-wide (ProcessorFixture::
+    // prepare()); the other two are per-case.
+    fx->proc->setProcessDecompInstrumentedForTest(true);
+    fx->proc->setCloudFrameInstrumentedForTest(true);
+
+    double audioSink = 0.0;
+    const auto renderBlock = [&]() {
+        (void)fx->processBlock(kBlock);
+        audioSink += static_cast<double>(fx->audioL()[0])
+                     + static_cast<double>(fx->audioR()[kBlockSize - 1u]);
+    };
+
+    using Stage = Seraphis::Processor::DecompStage;
+    const auto readStages = [&]() {
+        std::array<double, kDecompStageCount> out{};
+        for (std::size_t i = 0; i < kDecompStageCount; ++i) {
+            out[i] = fx->proc->decompNsForTest(static_cast<Stage>(i));
+        }
+        return out;
+    };
+
+    // bestNsPerBlock's trial shape, with one addition: the winning trial also
+    // keeps ITS OWN accumulator deltas, so the stage split and the wall figure
+    // describe the same 100 blocks rather than an average over all 16 trials.
+    const auto measure = [&](const auto& prelude) {
+        DecompSample best{};
+        const auto blocks = static_cast<double>(kPerfBlocksPerTrial);
+        for (int trial = 0; trial < kPerfTrials; ++trial) {
+            const auto stages0 = readStages();
+            const double effects0 = fx->proc->effectsStageNsForTest();
+            const double cloud0 = fx->proc->cloudFrameStageNsForTest();
+            const std::size_t calls0 = fx->proc->decompProcessCallsForTest();
+            double wallNs = 0.0;
+            for (int b = 0; b < kPerfBlocksPerTrial; ++b) {
+                prelude();
+                const auto start = std::chrono::steady_clock::now();
+                renderBlock();
+                const auto end = std::chrono::steady_clock::now();
+                wallNs += std::chrono::duration<double, std::nano>(end - start).count();
+            }
+            wallNs /= blocks;
+            if (wallNs < best.wallNs) {
+                best.wallNs = wallNs;
+                const auto stages1 = readStages();
+                for (std::size_t i = 0; i < kDecompStageCount; ++i) {
+                    best.stageNs[i] = (stages1[i] - stages0[i]) / blocks;
+                }
+                best.effectsNs = (fx->proc->effectsStageNsForTest() - effects0) / blocks;
+                best.cloudFrameNs = (fx->proc->cloudFrameStageNsForTest() - cloud0) / blocks;
+                best.calls = fx->proc->decompProcessCallsForTest() - calls0;
+            }
+        }
+        return best;
+    };
+
+    // ---- ARM A: the static failing subject ----------------------------------
+    const auto noPrelude = []() noexcept {};
+    const DecompSample staticArm = measure(noPrelude);
+    WARN(decompTable("PHASE 11.5 DECOMPOSITION, ARM A - STATIC (SC-010(b)'s subject: gate "
+                     "closed, dominant surface, no automation, ONE slice per block)",
+                     staticArm));
+
+    REQUIRE(staticArm.calls == static_cast<std::size_t>(kPerfBlocksPerTrial));
+    REQUIRE(staticArm.stageNs[static_cast<std::size_t>(Stage::Engine)] > 0.0);
+    REQUIRE(staticArm.stageNs[static_cast<std::size_t>(Stage::Reverb)] > 0.0);
+    REQUIRE(staticArm.stageNs[static_cast<std::size_t>(Stage::Output)] > 0.0);
+    REQUIRE(decompStageSum(staticArm) <= staticArm.wallNs * 1.05);
+
+    // ---- ARM B: the Bloom sweep (SC-014 arm 7's shape) ----------------------
+    // A DIFFERENT value every block, so the class-(b) smoothers never settle and
+    // the 8x64 subdivision is active in every measured block.
+    std::size_t sweepStep = 0;
+    const auto sweepBloom = [&]() {
+        const double v = static_cast<double>(sweepStep % 16u) / 15.0;
+        fx->setParam(Seraphis::kMacroBloomId, v);
+        ++sweepStep;
+    };
+    for (int b = 0; b < 64; ++b) {  // warm the sweep itself (SC-014 arm 7's shape)
+        sweepBloom();
+        renderBlock();
+    }
+    const DecompSample sweepArm = measure(sweepBloom);
+    gSink = gSink + audioSink;  // optimization barrier
+
+    WARN(decompTable("PHASE 11.5 DECOMPOSITION, ARM B - BLOOM SWEEP (class-(b) smoothers "
+                     "unsettled, 8x64 subdivision ACTIVE, per-slice pushes up to 8x)",
+                     sweepArm));
+
+    REQUIRE(sweepArm.calls == static_cast<std::size_t>(kPerfBlocksPerTrial));
+    REQUIRE(sweepArm.stageNs[static_cast<std::size_t>(Stage::Engine)] > 0.0);
+    REQUIRE(decompStageSum(sweepArm) <= sweepArm.wallNs * 1.05);
 
     REQUIRE(fx->checkCanaries());
     REQUIRE(isFinitePerfValue(audioSink));
