@@ -569,7 +569,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 2512
+      "line": 2534
     },
     {
       "name": "DynamicsProcessor",
@@ -1929,7 +1929,7 @@
       "scope": "Krate::DSP::AtmosphereEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/atmosphere_engine.h",
-      "line": 2505
+      "line": 2527
     },
     {
       "name": "Reverb",

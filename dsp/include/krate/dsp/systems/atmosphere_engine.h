@@ -2271,11 +2271,33 @@ private:
                 // which is what makes blur produce progressive stereo
                 // decorrelation as well as fog. That is intended behaviour, not
                 // a second width control (FR-060/N-9).
+                //
+                // PHASE 11.5 EXACT-IDENTITY SKIP. At a SETTLED blur of exactly
+                // 0.0f (OnePoleSmoother::advanceSamples snaps on completion,
+                // primitives/smoother.h:249-253, so 0.0f is reachable and
+                // stable - the shipped default) the perturbation term is
+                // identically zero, but setPhase(k, getPhase(k) + 0) still
+                // costs an atan2 and a sin/cos PER BIN PER HOP: a polar
+                // round-trip that only re-rounds the spectrum. Whole-process()
+                // attribution measured this identity work at ~2.4 % of one
+                // core across 8 voices. The skip leaves the spectrum UNTOUCHED
+                // (more exactly transparent than the round-trip, not less) and
+                // BURNS the same per-bin draws, so blurRng_'s stream position
+                // - which SC-010 pins - is exactly the full path's. Any
+                // non-zero blurAmount, however small, still takes the full
+                // path: this is an exact-identity gate in the FR-010 wander
+                // predicate's shape, never a threshold.
                 SpectralBuffer& spectrum = blurSpectrum_[ch];
                 const std::size_t numBins = spectrum.numBins();
-                for (std::size_t k = 1; k + 1 < numBins; ++k) {
-                    spectrum.setPhase(k, spectrum.getPhase(k) +
-                                             blurAmount * kPi * blurRng_.nextFloat());
+                if (blurAmount == 0.0f) {
+                    for (std::size_t k = 1; k + 1 < numBins; ++k) {
+                        (void)blurRng_.nextFloat();
+                    }
+                } else {
+                    for (std::size_t k = 1; k + 1 < numBins; ++k) {
+                        spectrum.setPhase(k, spectrum.getPhase(k) +
+                                                 blurAmount * kPi * blurRng_.nextFloat());
+                    }
                 }
 
                 blurOla_[ch].synthesize(spectrum);
