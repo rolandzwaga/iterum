@@ -809,6 +809,110 @@ TEST_CASE("Seraphis_Phase11_SubController_OwnsEveryTaglessControl",
     controller.terminate();
 }
 
+// =============================================================================
+// Regression (user bug 2026-08-04): "there are 7 buttons at the bottom of the
+// plugin view, when I click on any of them, nothing happens."
+// Root cause 1: Controller::setDrawerTab() switched the visibility of pages
+// that are CLIPPED inside the 30 px collapsed strip and never opened the
+// drawer, so a tab click had no visible effect at all.
+// =============================================================================
+TEST_CASE("Seraphis_DrawerTab_ClickOpensACollapsedDrawer", "[controller][phase11]") {
+    Seraphis::Controller controller;
+    REQUIRE(controller.initialize(nullptr) == Steinberg::kResultOk);
+
+    // The drawer must be the one the controller CACHES (createCustomView) - a
+    // harness-local drawer would pass even while the cached pointer went unused.
+    VSTGUI::UIAttributes drawerAttributes;
+    drawerAttributes.setAttribute("origin", "0, 670");
+    drawerAttributes.setAttribute("size", "1000, 30");
+    VSTGUI::CView* rawDrawer =
+        controller.createCustomView("DrawerContainer", drawerAttributes, nullptr, nullptr);
+    REQUIRE(rawDrawer != nullptr);
+    const VSTGUI::SharedPointer<VSTGUI::CView> ownedDrawer = VSTGUI::owned(rawDrawer);
+    auto* drawer = dynamic_cast<DrawerContainer*>(rawDrawer);
+    REQUIRE(drawer != nullptr);
+    for (int i = 0; i < DrawerContainer::kTabCount; ++i) {
+        drawer->addView(new VSTGUI::CViewContainer(kTabPageRect));
+    }
+
+    VSTGUI::IController* rawSub =
+        controller.createSubController("SeraphisEdit", nullptr, nullptr);
+    REQUIRE(rawSub != nullptr);
+    const std::unique_ptr<VSTGUI::IController> ownedSub(rawSub);
+    auto* sub = dynamic_cast<SeraphisEditSubController*>(rawSub);
+    REQUIRE(sub != nullptr);
+
+    REQUIRE_FALSE(drawer->isOpen());  // declared collapsed, as in the uidesc
+
+    VSTGUI::SharedPointer<VSTGUI::COnOffButton> tab2 = makeTaglessButton();
+    VSTGUI::UIAttributes tab2Attributes;
+    setSessionTagAttribute(tab2Attributes, "tab2");
+    REQUIRE(sub->verifyView(tab2.get(), tab2Attributes, nullptr) == tab2.get());
+
+    // A kick-style CTextButton fires valueChanged TWICE per click - once at max,
+    // once when it snaps back to min (cbuttons.cpp:1028-1046). The handler must
+    // OPEN on both fires, never toggle.
+    tab2->setValue(tab2->getMax());
+    sub->valueChanged(tab2.get());
+    tab2->setValue(tab2->getMin());
+    sub->valueChanged(tab2.get());
+
+    CHECK(drawer->isOpen());
+    CHECK(drawer->getViewSize() == DrawerContainer::kOpenRect);
+    CHECK(drawer->activeTab() == 2);
+
+    // A second tab while open: the page switches and the drawer STAYS open.
+    VSTGUI::SharedPointer<VSTGUI::COnOffButton> tab5 = makeTaglessButton();
+    VSTGUI::UIAttributes tab5Attributes;
+    setSessionTagAttribute(tab5Attributes, "tab5");
+    REQUIRE(sub->verifyView(tab5.get(), tab5Attributes, nullptr) == tab5.get());
+    sub->valueChanged(tab5.get());
+    CHECK(drawer->isOpen());
+    CHECK(drawer->activeTab() == 5);
+
+    // The handle keeps its unchanged toggle contract on top of a tab-opened
+    // drawer: one toggle closes it.
+    VSTGUI::SharedPointer<VSTGUI::COnOffButton> handle = makeTaglessButton();
+    VSTGUI::UIAttributes handleAttributes;
+    setSessionTagAttribute(handleAttributes, "drawerHandle");
+    REQUIRE(sub->verifyView(handle.get(), handleAttributes, nullptr) == handle.get());
+    sub->valueChanged(handle.get());
+    CHECK_FALSE(drawer->isOpen());
+
+    controller.terminate();
+}
+
+// =============================================================================
+// Regression (user bug 2026-08-04), root cause 2: COnOffButton draws NOTHING
+// without a bitmap (its draw() renders the background bitmap and nothing else),
+// so a bitmap-less one is an invisible click target. The preset button, the
+// mode toggle and the drawer handle all shipped as exactly that. Every
+// COnOffButton in the uidesc must carry a bitmap; visible text controls belong
+// to CTextButton (kick-style="false" for toggles - a kick-style one fires
+// valueChanged twice per click and self-cancels any toggle handler).
+// =============================================================================
+TEST_CASE("Seraphis_Uidesc_HasNoInvisibleButtons", "[controller][phase11]") {
+    const std::string uidescPath =
+        std::string(SERAPHIS_RESOURCES_DIR) + "/editor.uidesc";
+    std::ifstream in(uidescPath, std::ios::binary);
+    REQUIRE(in.good());
+    const std::string xml{std::istreambuf_iterator<char>(in),
+                          std::istreambuf_iterator<char>()};
+    REQUIRE_FALSE(xml.empty());
+
+    std::size_t pos = 0;
+    while ((pos = xml.find("<view", pos)) != std::string::npos) {
+        const std::size_t end = xml.find('>', pos);
+        REQUIRE(end != std::string::npos);
+        const std::string element = xml.substr(pos, end - pos);
+        if (element.find("\"COnOffButton\"") != std::string::npos) {
+            INFO("bitmap-less COnOffButton is invisible: " << element);
+            CHECK(element.find("bitmap=") != std::string::npos);
+        }
+        pos = end;
+    }
+}
+
 // The [lifecycle] tag is load-bearing: .github/workflows/valgrind-nightly.yml
 // invokes each binary as `"$BINDIR/$bin" '[lifecycle]'`, and T017 requires this
 // case to run in that lane so a browser still open at willClose() is a REPORT

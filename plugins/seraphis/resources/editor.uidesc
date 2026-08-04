@@ -216,13 +216,13 @@
     <view class="CCheckBox" control-tag="FxSpectralFreeze" origin="764, 7" size="88, 18"
           title="Spec Frz" font="small-font" font-color="text"/>
 
-    <!-- Preset button: NO control-tag (FR-045 / D-5). The label sits underneath
-         with mouse-enabled="false" so the tag-less button - which draws nothing
-         without a bitmap - still reads as a button and still takes the click. -->
-    <view class="CTextLabel" title="PRESETS" origin="898, 7" size="90, 18"
-          font="label-font" font-color="accent" transparent="true"
-          text-alignment="center" mouse-enabled="false"/>
-    <view class="COnOffButton" session-tag="preset" origin="898, 7" size="90, 18"/>
+    <!-- Preset button: NO control-tag (FR-045 / D-5). A real CTextButton with
+         kick-style="false": one valueChanged per click (a kick-style button
+         fires twice and would self-cancel a toggle handler), and it draws its
+         own frame + title, unlike the invisible bitmap-less COnOffButton this
+         replaced (2026-08-04 dead-controls fix). -->
+    <view class="CTextButton" session-tag="preset" title="PRESETS" kick-style="false"
+          origin="898, 7" size="90, 18" font="label-font"/>
 
     <!-- ====================================================================
          3. THE FIVE MACRO RINGS, at C-1's anchors, over the constellation.
@@ -258,10 +258,8 @@
          4. EDIT MINI-TOOLBAR - tag-less, session-tagged, the sub-controller
             listens. None of these three is a parameter binding.
          ==================================================================== -->
-    <view class="CTextLabel" title="OBS | EDIT" origin="140, 636" size="76, 22"
-          font="small-font" font-color="accent" transparent="true"
-          text-alignment="center" mouse-enabled="false"/>
-    <view class="COnOffButton" session-tag="mode" origin="140, 636" size="76, 22"/>
+    <view class="CTextButton" session-tag="mode" title="OBS | EDIT" kick-style="false"
+          origin="140, 636" size="76, 22" font="small-font"/>
 
     <view class="CTextLabel" title="Blend A to B" origin="224, 622" size="100, 12"
           font="small-font" font-color="text-dim" transparent="true"
@@ -292,10 +290,8 @@
           origin="0, 670" size="1000, 30"
           background-color="panel" background-color-draw-style="filled">
 
-      <view class="CTextLabel" title="DEEP" origin="8, 4" size="80, 22"
-            font="label-font" font-color="accent" transparent="true"
-            text-alignment="center" mouse-enabled="false"/>
-      <view class="COnOffButton" session-tag="drawerHandle" origin="8, 4" size="80, 22"/>
+      <view class="CTextButton" session-tag="drawerHandle" title="DEEP" kick-style="false"
+            origin="8, 4" size="80, 22" font="label-font"/>
 
       <!-- FR-022's seven tabs, in EXACTLY this order. SC-004 arm 2 reads the
            titles back off the built tree in child order. -->

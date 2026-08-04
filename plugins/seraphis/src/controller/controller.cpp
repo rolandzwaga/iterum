@@ -473,6 +473,11 @@ void Controller::toggleDrawer() noexcept {
 void Controller::setDrawerTab(int index) noexcept {
     if (drawer_ != nullptr) {
         drawer_->setActiveTab(index);
+        // A tab click on a COLLAPSED drawer must open it: the pages live below
+        // the 30 px strip, so switching visibility alone is invisible to the
+        // user (the 2026-08-04 dead-tabs bug). setOpen(true) is idempotent, so
+        // the kick-style double-fire is harmless here.
+        drawer_->setOpen(true);
     }
 }
 
