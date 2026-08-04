@@ -296,7 +296,9 @@ struct Counters {
     return c;
 }
 
-/// All 27 macro-matrix bases, through the one route FR-041a exposes.
+/// All 29 macro-matrix bases, through the one route FR-041a exposes. (27 through
+/// Phase 10; Phase 11 / C-10 appended FxDelaySend and FxWanderDepth, which is why
+/// the loop bound is kNumTargets and never a transcribed literal.)
 [[nodiscard]] std::array<float, kNumTargets> baseSnapshot(const Seraphis::Processor& p) {
     std::array<float, kNumTargets> v{};
     for (std::size_t t = 0; t < kNumTargets; ++t) {
@@ -355,14 +357,11 @@ struct Counters {
     return std::sqrt(diff / ref);
 }
 
-/// SC-013 clause 1's "unchanged". The two arms differ only in a write the gate
-/// REJECTED, so the two renders come out of the identical code path in the
-/// identical binary; the floor is two orders of magnitude below the 1 %
-/// "changed" floor clause 3 uses, so the two clauses cannot both pass on noise.
-constexpr double kUnchangedFloor = 1.0e-4;
-
-/// SC-013 clause 3's "renders the new spectrum", the same 1 % relative-RMS floor
-/// SC-003's CFG rows use.
+/// "renders the new spectrum", the same 1 % relative-RMS floor SC-003's CFG rows
+/// use. Phase 11 FR-033a made this the floor for BOTH spectral-assignment
+/// clauses: the old `kUnchangedFloor` (1e-4) existed only for the arm that
+/// asserted a sounding voice's spectrum does NOT move, which is exactly the
+/// behaviour D-1 removed, so it has no remaining consumer.
 constexpr double kChangedFloor = 1.0e-2;
 
 }  // namespace
@@ -598,7 +597,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         renderQuiet(*fx, kSettleBlocks);
         REQUIRE(snapshot(*fx->proc).targetBase == after.targetBase);
 
-        // Exactly one of the 27 moved.
+        // Exactly one of the 29 moved.
         const auto basesAfter = baseSnapshot(*fx->proc);
         for (std::size_t t = 0; t < kNumTargets; ++t) {
             INFO("macro target " << t);
@@ -612,7 +611,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
 
     // -------------------------------------------------------------------------
     // class-(b) MB: +1 ... +N_chunk on setTargetBase, it must STOP rising, and
-    // the other 26 targets must be untouched. ID 802 is MB-routed
+    // the other 28 targets must be untouched. ID 802 is MB-routed
     // (processor.cpp:187-188) and class (b) (plan 3.5.3).
     // -------------------------------------------------------------------------
     SECTION("class-(b) MB change (802) is bounded and touches ONE target") {
@@ -848,19 +847,25 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
 
     // -------------------------------------------------------------------------
     // The retry-bound clause - what applySpectralStatesAttemptCountForTest()
-    // exists for. With ONE voice sounding and fifteen idle, the attempt counter
-    // rises once per block (the retry is per block by design) but the PER-VOICE
-    // work does not: the fifteen accepted on the FIRST attempt and their bits
-    // left spectralRetryMask_ there, so applySpectralStates never writes them
-    // again. The mask itself is private; "their bits left the mask" is observed
-    // in the form it has - the fifteen already hold the pushed state count after
-    // attempt 1 and their rejection counters never move again.
+    // exists for.
+    //
+    // PHASE 11 D-1 / FR-033a REWROTE THIS CLAUSE. It used to read "the CFG retry
+    // is bounded to the voices that are still rejecting", and held a note for the
+    // whole clause precisely so ONE voice would keep rejecting and the retry
+    // would keep running every block. FR-033a removed that gate from
+    // setSpectralState/setSpectralStateCount, so a held note no longer rejects
+    // anything and the bound is now the STRONGER one: with a note sounding, the
+    // whole pool accepts on attempt 1, spectralRetryMask_ empties in the same
+    // block, and applySpectralStates is never called again until something new
+    // is pushed. The mask is private; "it emptied" is observed in the form it
+    // has - the flag cleared, the success counter moved, and the attempt counter
+    // stops.
     // -------------------------------------------------------------------------
-    SECTION("the CFG retry is bounded to the voices that are still rejecting") {
+    SECTION("the CFG push converges on attempt 1 even with a note sounding") {
         auto fx = makeRig();
         // 1 ms envelope stages so the note reaches its sustain immediately; it is
-        // held (no note-off) for the whole clause, which is what keeps one voice
-        // un-configurable.
+        // held (no note-off) for the whole clause, so the push lands on a voice
+        // that HAS sounded and is NOT finished - the state Phase 9's gate rejected.
         pushParams(*fx, {{.id = Seraphis::kEnvStage0MsId, .normalized = 0.0},
                          {.id = Seraphis::kEnvStage1MsId, .normalized = 0.0},
                          {.id = Seraphis::kEnvReleaseMsId, .normalized = 0.0}});
@@ -868,6 +873,8 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         renderQuiet(*fx, 4);
 
         Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
+        // Non-vacuity: a voice really is sounding for the whole clause.
+        REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});
         const auto rejBefore = rejectionSnapshot(engine);
         const Counters before = snapshot(*fx->proc);
 
@@ -876,47 +883,38 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         pushParams(*fx, {{.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)}});
         renderQuiet(*fx, 1);
 
+        // NOTHING rejected - not the sounding voice, not the fifteen idle ones.
         const auto rejFirst = rejectionSnapshot(engine);
-        std::size_t sounding = kMaxVoices;
         for (std::size_t v = 0; v < kMaxVoices; ++v) {
-            if (rejFirst[v] != rejBefore[v]) {
-                INFO("a second voice rejected: " << v);
-                REQUIRE(sounding == kMaxVoices);
-                sounding = v;
-            }
+            INFO("voice " << v);
+            REQUIRE(rejFirst[v] == rejBefore[v]);
         }
-        REQUIRE(sounding < kMaxVoices);
 
         const Counters afterFirst = snapshot(*fx->proc);
         REQUIRE(afterFirst.spectralAttempt == before.spectralAttempt + 1u);
-        REQUIRE(afterFirst.spectralSuccess == before.spectralSuccess);
-        REQUIRE(fx->proc->spectralStatesPendingForTest());
+        REQUIRE(afterFirst.spectralSuccess == before.spectralSuccess + 1u);
+        REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
 
-        // The fifteen accepted on attempt 1.
+        // ALL SIXTEEN took it on attempt 1, sounding slot included.
         for (std::size_t v = 0; v < kMaxVoices; ++v) {
-            if (v == sounding) {
-                continue;
-            }
-            INFO("idle voice " << v);
+            INFO("voice " << v);
             REQUIRE(engine.getVoice(v).morph().getStateCount() == 4);
         }
+        REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});  // still held
 
         constexpr std::size_t kRetryBlocks = 20;
         renderQuiet(*fx, kRetryBlocks);
 
+        // ... and it never runs again: no attempt, no success, no rejection.
         const Counters afterRetries = snapshot(*fx->proc);
-        REQUIRE(afterRetries.spectralAttempt == afterFirst.spectralAttempt + kRetryBlocks);
+        REQUIRE(afterRetries.spectralAttempt == afterFirst.spectralAttempt);
         REQUIRE(afterRetries.spectralSuccess == afterFirst.spectralSuccess);
-        REQUIRE(fx->proc->spectralStatesPendingForTest());
+        REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
 
         const auto rejAfter = rejectionSnapshot(engine);
         for (std::size_t v = 0; v < kMaxVoices; ++v) {
             INFO("voice " << v);
-            if (v == sounding) {
-                REQUIRE(rejAfter[v] > rejFirst[v]);  // still rejecting, still retried
-            } else {
-                REQUIRE(rejAfter[v] == rejFirst[v]);  // never written again
-            }
+            REQUIRE(rejAfter[v] == rejFirst[v]);
         }
     }
 }
@@ -977,21 +975,34 @@ constexpr std::size_t kQuiescenceBlocks = 300;
 
 }  // namespace
 
-TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][spectral]") {
+// PHASE 11 D-1 / FR-033a INVERTED THIS TEST CASE, which shipped in Phase 9 as
+// `Seraphis_SpectralStateAssignment_HonoursGate` (SC-013). The gate it pinned -
+// SeraphisVoice::setSpectralState / setSpectralStateCount rejecting while the
+// voice sounds - was deliberately removed, because SpectralMorphEngine::setState
+// absorbs a live swap through the FR-047 fade and Phase 3's FR-042/FR-044 prove
+// that path continuity-safe. Every clause below now asserts the OPPOSITE
+// outcome through the SAME observables: the push lands on the sounding voice, on
+// the first block, audibly, and the rejection counter never moves.
+//
+// What did NOT change, and is still asserted here: FR-046 clause 4 - the
+// parameter atomics are never rolled back - and FR-046 clause 3 - the pending
+// flag clears exactly when every targeted voice has taken the push.
+// spec.md (seraphis-phase11-ui) FR-033a, SC-028 - SC-030.
+TEST_CASE("Seraphis_SpectralStateAssignment_ReachesSoundingVoice",
+          "[seraphis][params][spectral]") {
 
     // -------------------------------------------------------------------------
-    // Clause 1 - assigning a new state while a voice is SOUNDING leaves that
-    // voice's audible spectrum unchanged for the note, and increments
+    // Clause 1 - assigning a new state while a voice is SOUNDING moves that
+    // voice's audible spectrum WITHIN the note, and does NOT increment
     // getRejectedConfigureTimeCallCount().
     //
     // The two arms differ ONLY in whether the CFG change is pushed at block 10.
     // Both render the same note with the same settings from the same fixed seed,
-    // so a rejected write is the only thing that could move the output - and it
-    // must not.
+    // so the accepted write is the only thing that could move the output - and it
+    // must.
     // -------------------------------------------------------------------------
-    SECTION("clause 1 - a sounding voice rejects and its spectrum does not move") {
+    SECTION("clause 1 - a sounding voice accepts and its spectrum moves") {
         std::vector<float> arms[2];
-        std::uint32_t rejectionRise = 0;
 
         for (int arm = 0; arm < 2; ++arm) {
             INFO("arm " << arm);
@@ -1016,33 +1027,46 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
                     }
                 });
 
+            const Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
+            // The note is never released, so the push at block 10 landed - and
+            // the render ended - with the voice still sounding.
+            REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});
+            for (std::size_t v = 0; v < kMaxVoices; ++v) {
+                INFO("voice " << v);
+                REQUIRE(engine.getVoice(v).getRejectedConfigureTimeCallCount() == 0u);
+            }
             if (arm == 1) {
-                const Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
+                // FR-046 clause 3: every targeted voice took it, so the flag is
+                // down - it is not left set waiting for a quiescent block.
+                REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
                 for (std::size_t v = 0; v < kMaxVoices; ++v) {
-                    rejectionRise = std::max(
-                        rejectionRise, engine.getVoice(v).getRejectedConfigureTimeCallCount());
+                    INFO("voice " << v);
+                    REQUIRE(engine.getVoice(v).morph().getStateCount() == 4);
                 }
-                // FR-046 leaves the flag set while a targeted voice keeps rejecting.
-                REQUIRE(fx->proc->spectralStatesPendingForTest());
             }
 
             arms[arm] = fx->capturedL;
             REQUIRE(fx->checkCanaries());
         }
 
-        REQUIRE(rejectionRise > 0u);  // the sounding voice DID reject
         const double delta = relativeRmsDifference(arms[0], arms[1]);
         INFO("relative RMS difference = " << delta);
-        REQUIRE(delta < kUnchangedFloor);
+        REQUIRE(delta >= kChangedFloor);
     }
 
     // -------------------------------------------------------------------------
-    // Clause 2 - the pending flag STAYS SET while a targeted voice keeps
-    // rejecting, and the parameter atomics are never cleared or reset in
-    // response to a rejection (FR-046 clause 4: a rejected write is retried, not
-    // rolled back).
+    // Clause 2 - the pending flag CLEARS on the block the push lands, and the
+    // parameter atomics are never cleared or reset by the push (FR-046 clause 4:
+    // the atomics are the record of what the user asked for, and nothing in the
+    // apply path writes back to them).
+    //
+    // Phase 9's version of this clause held the note so the flag would STAY set
+    // and the rejection counter would keep rising; FR-033a removed the rejection,
+    // so the surviving obligations - clause 3's "clears when every targeted voice
+    // took it" and clause 4's "never rolled back" - are asserted in their new
+    // form, over the same held note.
     // -------------------------------------------------------------------------
-    SECTION("clause 2 - the flag stays set and the atomics are never rolled back") {
+    SECTION("clause 2 - the flag clears on the first block and the atomics are never rolled back") {
         auto fx = makeRig();
         pushVector(*fx, gateArmSettings());
         fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
@@ -1055,23 +1079,26 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
         renderQuiet(*fx, 1);
 
         Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
-        REQUIRE(fx->proc->spectralStatesPendingForTest());
+        // Non-vacuity: the note is held for the whole clause, so every assertion
+        // below is made against a voice that HAS sounded and is NOT finished.
+        REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});
+        REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
 
-        auto previous = rejectionSnapshot(engine);
+        const auto atPush = rejectionSnapshot(engine);
         for (std::size_t round = 0; round < 8; ++round) {
             INFO("retry round " << round);
             renderQuiet(*fx, 4);
 
-            // The flag is still set ...
-            REQUIRE(fx->proc->spectralStatesPendingForTest());
-            // ... the rejection counter is still rising on the sounding voice ...
+            // The flag stays down - nothing re-raises it while the note runs ...
+            REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
+            // ... no voice ever rejects, sounding one included ...
             const auto current = rejectionSnapshot(engine);
-            bool anyRose = false;
             for (std::size_t v = 0; v < kMaxVoices; ++v) {
-                anyRose = anyRose || (current[v] > previous[v]);
+                INFO("voice " << v);
+                REQUIRE(current[v] == atPush[v]);
+                REQUIRE(engine.getVoice(v).morph().getStateCount() == kStateCount);
             }
-            REQUIRE(anyRose);
-            previous = current;
+            REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});
 
             // ... and the atomics still carry exactly what was pushed.
             const Seraphis::MorphParams& mp = fx->proc->morphParamsForTest();
@@ -1081,17 +1108,25 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
     }
 
     // -------------------------------------------------------------------------
-    // Clause 3 - on the FIRST block after every voice has become quiescent the
-    // retry succeeds: the flag clears, the rejection counter stops rising on
-    // every voice, morph().getStateCount() equals the pushed count on ALL SIXTEEN
-    // slots, and the next note-on renders the new spectrum.
+    // Clause 3 - the push converges on the FIRST block, with the note still
+    // sounding: the flag clears there, no rejection counter ever moves,
+    // morph().getStateCount() equals the pushed count on ALL SIXTEEN slots, and
+    // the state stays installed across the note-off and the whole quiescence
+    // wait, so the next note-on renders the new spectrum.
+    //
+    // Phase 9's version waited for quiescence because that was the only block on
+    // which the retry could succeed; FR-033a made that wait unnecessary. The wait
+    // is RETAINED here anyway - both arms still render kQuiescenceBlocks - because
+    // the two fixtures' render histories must stay aligned up to the second
+    // note-on for the differential to mean anything, and because "the installed
+    // state survives retirement" is worth pinning.
     //
     // The control arm runs the IDENTICAL sequence with the slot and count
     // dropdowns at their registered defaults, so the two fixtures share their
     // whole render history up to the second note-on and the differential can only
     // come from the state that was installed.
     // -------------------------------------------------------------------------
-    SECTION("clause 3 - the retry converges on the first quiescent block") {
+    SECTION("clause 3 - the push converges on the first block and the state survives retirement") {
         constexpr int kDefaultSlotIndex = 0;  // C-6's default for slot 0
         constexpr int kNewSlotIndex = 4;      // Breath
         constexpr int kDefaultCountIndex = 0;
@@ -1110,64 +1145,59 @@ TEST_CASE("Seraphis_SpectralStateAssignment_HonoursGate", "[seraphis][params][sp
             fx->pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kNote, 0.8f, 0);
             renderQuiet(*fx, 8);
 
-            // The CFG push lands while the voice is sounding, so the gate rejects.
+            // The CFG push lands while the voice is sounding, and is taken (FR-033a).
             pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(slotIndex, 5)},
                              {.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(countIndex, 3)}});
             renderQuiet(*fx, 1);
 
             Krate::DSP::SeraphisEngine& engine = engineOf(*fx);
 
-            // Identify the sounding voice through the clause-1 observable.
-            std::size_t sounding = kMaxVoices;
+            // Non-vacuity: the push above landed on a voice that HAS sounded and
+            // is NOT finished - the state Phase 9's gate rejected.
+            REQUIRE(engine.getActiveVoiceCount() == std::size_t{1});
             const auto rejAtPush = rejectionSnapshot(engine);
             for (std::size_t v = 0; v < kMaxVoices; ++v) {
-                if (rejAtPush[v] > 0u) {
-                    sounding = v;
-                }
+                INFO("voice " << v);
+                REQUIRE(rejAtPush[v] == 0u);
             }
             if (changed) {
-                REQUIRE(sounding < kMaxVoices);
-                REQUIRE(fx->proc->spectralStatesPendingForTest());
+                // Converged on THIS block - no waiting for quiescence.
+                REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
+                for (std::size_t v = 0; v < kMaxVoices; ++v) {
+                    INFO("voice " << v);
+                    REQUIRE(engine.getVoice(v).morph().getStateCount() == 4);
+                }
             }
 
             // Note-off, then wait. Both arms render the SAME fixed number of
             // blocks, so their histories stay aligned.
             fx->pushEvent(Steinberg::Vst::Event::kNoteOffEvent, kNote, 0.0f, 0);
-            bool cleared = false;
+            bool retired = false;
             for (std::size_t b = 0; b < kQuiescenceBlocks; ++b) {
-                const bool pendingBefore = fx->proc->spectralStatesPendingForTest();
-                const bool quiescentBefore =
-                    (sounding < kMaxVoices) && engine.getVoice(sounding).isFinished();
-
                 renderQuiet(*fx, 1);
-
-                if (changed && pendingBefore && quiescentBefore && !cleared) {
-                    // THE FIRST BLOCK after the voice became quiescent.
-                    INFO("block " << b);
-                    REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
-                    cleared = true;
-                }
+                retired = retired || (engine.getActiveVoiceCount() == std::size_t{0});
             }
+            // The wait really does retire the voice, so "survives retirement"
+            // below is a claim about a retired pool, not an unreleased one.
+            REQUIRE(retired);
+
+            renderQuiet(*fx, 8);
 
             if (changed) {
-                REQUIRE(cleared);
-
-                // The rejection counter stops rising on EVERY voice.
+                // Nothing re-raised the flag and nothing rejected across the whole
+                // note-off, retirement and settle window.
+                REQUIRE_FALSE(fx->proc->spectralStatesPendingForTest());
                 const auto settledRejections = rejectionSnapshot(engine);
-                renderQuiet(*fx, 8);
-                const auto laterRejections = rejectionSnapshot(engine);
                 for (std::size_t v = 0; v < kMaxVoices; ++v) {
                     INFO("voice " << v);
-                    REQUIRE(laterRejections[v] == settledRejections[v]);
+                    REQUIRE(settledRejections[v] == 0u);
                 }
 
-                // ALL SIXTEEN voices hold the same state.
+                // ALL SIXTEEN voices still hold the state that was pushed.
                 for (std::size_t v = 0; v < kMaxVoices; ++v) {
                     INFO("voice " << v);
                     REQUIRE(engine.getVoice(v).morph().getStateCount() == 4);
                 }
-            } else {
-                renderQuiet(*fx, 8);
             }
 
             // The NEXT note-on renders whatever spectrum is now installed.

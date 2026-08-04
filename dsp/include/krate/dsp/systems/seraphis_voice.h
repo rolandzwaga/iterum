@@ -649,6 +649,30 @@ public:
     void setAttackTimeSec(float seconds) noexcept { cloud_.setAttackTimeSec(seconds); }
     void setDecayTimeSec(float seconds) noexcept { cloud_.setDecayTimeSec(seconds); }
 
+    /// @brief Phase 11 FR-030/FR-031. The three per-partial authoring surfaces,
+    ///        on the same "no added clamping" contract as the block banner.
+    ///
+    /// MASK POLARITY: HarmonicCloud::setPartialMask's body is
+    /// `masked_[index] = !active` (harmonic_cloud.h:1084-1089), so
+    /// `active == true` means AUDIBLE and `active == false` means SILENCED;
+    /// clearPartialMask() is `masked_.fill(false)` (:1101), i.e. everything
+    /// audible. The plugin-side CloudFrame::maskBits convention is the OPPOSITE
+    /// sense (bit set <=> masked), so every plugin call must invert.
+    ///
+    /// NO SECOND GUARD: the owner already rejects an out-of-range index and a
+    /// non-finite position (harmonic_cloud.h:1070-1075, :1085-1087). Adding one
+    /// here would only let the two surfaces disagree about what was stored.
+    ///
+    /// @par Thread ownership: AUDIO THREAD ONLY (or the host thread with the
+    ///      audio thread stopped). These write `panPosition_`,
+    ///      `positionOverridden_`, `panLeft_`/`panRight_` (harmonic_cloud.h:1069-1079,
+    ///      updatePanGains at :1818-1834) and `masked_` (:1084-1089) - all of
+    ///      which HarmonicCloud::process() reads and writes. Calling them from
+    ///      the message thread is a data race.
+    void setPartialPosition(std::size_t i, float p) noexcept { cloud_.setPartialPosition(i, p); }
+    void setPartialMask(std::size_t i, bool active) noexcept { cloud_.setPartialMask(i, active); }
+    void clearPartialMask() noexcept { cloud_.clearPartialMask(); }
+
     // -- SpectralMorphEngine (Phase 3) ---------------------------------------
     void setEntropy(float e) noexcept { morph_.setEntropy(e); }
     void setBloom(float bloom) noexcept { morph_.setBloom(bloom); }
@@ -757,30 +781,19 @@ public:
     }
 
     // =========================================================================
-    // Configure-time-gated forwarders (FR-031)
+    // Spectral state forwarders (FR-031, RELAXED by Phase 11 FR-033a / D-1)
     // =========================================================================
 
-    /// Gated on `!hasSounded_ || isFinished()`. NOT isFinished() alone: a freshly
-    /// prepared, never-rendered voice has quiescentChunks_ at the retire value but
-    /// mse_ idle and cloud_ quiescent, and the gate must ACCEPT it - that is the
-    /// object Phase 9 configures. The gate exists because SpectralMorphEngine
-    /// carries a boxed contract: "prepare(), reset(), setSeed(), setState() and
-    /// setStateCount() are NOT to be called while the consumer is sounding"
-    /// (spectral_morph_engine.h:198-207).
-    void setSpectralState(int slot, const SpectralState& s) noexcept {
-        if (!isConfigurable()) {
-            ++rejectedConfigCalls_;
-            return;
-        }
-        morph_.setState(slot, s);
-    }
-    void setSpectralStateCount(int n) noexcept {
-        if (!isConfigurable()) {
-            ++rejectedConfigCalls_;
-            return;
-        }
-        morph_.setStateCount(n);
-    }
+    /// Phase 11 FR-033a (D1). NOT configure-time gated: SpectralMorphEngine::setState
+    /// absorbs a live state swap through the FR-047 fade (spectral_morph_engine.h:312,
+    /// slotContributes() at :558), which Phase 3's FR-042/FR-044 already prove
+    /// continuity-safe. The Phase 9 gate was SeraphisVoice's own extra restriction and
+    /// made a Phase 11 partial edit inaudible until the next note-on.
+    void setSpectralState(int slot, const SpectralState& s) noexcept { morph_.setState(slot, s); }
+    void setSpectralStateCount(int n) noexcept { morph_.setStateCount(n); }
+    /// KEPT (plan R-17), NOT dead: SC-028 arm (ii) asserts this counter is
+    /// UNCHANGED across a live spectral push, so it is the observable that proves
+    /// the relaxation landed. Deleting it deletes the criterion.
     [[nodiscard]] std::uint32_t getRejectedConfigureTimeCallCount() const noexcept {
         return rejectedConfigCalls_;
     }

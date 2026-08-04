@@ -151,8 +151,29 @@ function changedFiles(mode) {
         }
     }
     // Unpushed commits on this branch, plus uncommitted work (the base...HEAD
-    // form only sees committed trees, so the working-tree diff is unioned in).
+    // form only sees committed trees, so the working-tree diff is unioned in),
+    // plus UNTRACKED files.
+    //
+    // The untracked union is not a nicety. `git diff` in every form only reports
+    // paths git already knows about, so a phase that ADDS new .cpp files sees
+    // them silently skipped until the moment they are committed - i.e. this gate
+    // is at its weakest on exactly the code most likely to be unportable, and it
+    // still reports "all clear". Phase 11 hit this: ten new Seraphis TUs
+    // (src/ui/*.cpp and five new test TUs) were never compiled by a run that
+    // printed "all clear -- 18 compiled". `--exclude-standard` keeps .gitignore
+    // honoured, so build outputs and generated sources stay out.
     const seen = new Set();
+    try {
+        execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
+            cwd: ROOT,
+            encoding: 'utf8',
+        })
+            .split('\n')
+            .filter(Boolean)
+            .forEach((f) => seen.add(f));
+    } catch {
+        // ignore
+    }
     try {
         execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${baseRef()}...HEAD`], {
             cwd: ROOT,

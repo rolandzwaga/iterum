@@ -12,12 +12,20 @@
 //       PROCESSOR side. The third parameter is the payloads' destination - a
 //       Processor-owned staging buffer (plan 3.7), never a field here.
 //
-//   loadMorphParamsToController(IBStreamer&, SetParamFunc)
-//       CONTROLLER side. The signature IS the contract's, and the body MUST
-//       STILL CONSUME the 4 x 541 = 2164 payload bytes into a scratch and
-//       DISCARD them. A loader that stopped after the 13 scalars would leave the
-//       cursor 2164 bytes short and the following [life]/[body]/[atmos]/[aether]
-//       blocks - 55 parameters - would each be read from the wrong offset.
+//   loadMorphParamsToController(IBStreamer&, SetParamFunc,
+//                               std::array<SpectralState,4>& mirror)
+//       CONTROLLER side. PHASE 11 T018 (FR-046 re-seed source 2) gave it the
+//       third parameter and stopped it discarding the payloads: they now land in
+//       the controller's DISPLAY-ONLY slotMirror_, without which a reloaded
+//       project would draw the factory states the dropdowns name while the
+//       processor rendered the user's edited ones. The two-argument form is kept
+//       as an overload, so no other caller changes shape.
+//
+//       The body MUST STILL CONSUME all 4 x 541 = 2164 payload bytes whatever
+//       happens to their contents. A loader that stopped after the 13 scalars -
+//       or that bailed out of the payload loop on a REJECTED record - would
+//       leave the cursor short and the following [life]/[body]/[atmos]/[aether]
+//       blocks (55 parameters) would each be read from the wrong offset.
 //
 // saveMorphParams writes THE THIRTEEN SCALARS ONLY. It has no payload source by
 // construction (same FR-041b rule), so the caller writes the four payloads
@@ -448,12 +456,19 @@ inline bool loadMorphParams(MorphParams& params,
 }
 
 // ==============================================================================
-// Controller State Sync (inverts every mapping above, THEN discards the payload)
+// Controller State Sync (inverts every mapping above, THEN decodes the payloads)
 // ==============================================================================
+// Phase 11 T018 / FR-046. @p mirror receives the four SpectralState payloads -
+// the controller's display-only slotMirror_. The scalar half is unchanged, and
+// the ORDER matters: the four dropdown values are replayed through @p setParam
+// FIRST (which is what re-seeds the mirror from the factory table on the
+// controller), and the payloads then overwrite each entry, so a stream's own
+// authored state always wins over the factory state its dropdown names.
 
 template <typename SetParamFunc>
 inline void loadMorphParamsToController(
-    Steinberg::IBStreamer& streamer, SetParamFunc setParam) {
+    Steinberg::IBStreamer& streamer, SetParamFunc setParam,
+    std::array<Krate::DSP::SpectralState, 4>& mirror) {
 
     float fv = 0.0f;
     Steinberg::int32 iv = 0;
@@ -518,18 +533,36 @@ inline void loadMorphParamsToController(
                      static_cast<double>(kSpectralStateLabels.size() - 1));
     }
 
-    // --- THE DISCARD LOOP, and it is load-bearing ----------------------------
-    // The controller has nowhere to put a SpectralState and no parameter to set
-    // from one, but the 2164 bytes MUST still leave the cursor, or the following
-    // [life]/[body]/[atmos]/[aether] blocks - 55 parameters - are read from the
-    // wrong offset (plan 2.3.0).
+    // --- THE PAYLOAD LOOP, and it is load-bearing ----------------------------
+    // Phase 11 T018: what used to be a discard now decodes into @p mirror. The
+    // 2164 bytes MUST still leave the cursor whatever the decode does, or the
+    // following [life]/[body]/[atmos]/[aether] blocks - 55 parameters - are read
+    // from the wrong offset (plan 2.3.0).
+    //
+    // THE RETURN VALUE IS IGNORED DELIBERATELY. deserializeSpectralState leaves
+    // `out` BITWISE UNTOUCHED on rejection (spectral_state.h:274-286), which is
+    // exactly the right display fallback - a corrupt payload shows whatever the
+    // mirror already held, and the cursor has still advanced the full 541 bytes.
+    // Bailing out here on a rejected record would desynchronise every parameter
+    // that follows.
     std::array<std::byte, Krate::DSP::kSpectralStateBytes> scratch{};
     const auto payloadBytes = static_cast<Steinberg::TSize>(scratch.size());
-    for (int i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < mirror.size(); ++i) {
         if (streamer.readRaw(scratch.data(), payloadBytes) != payloadBytes) {
-            return;
+            return;  // EOF-safe: this and every later slot keep their value.
         }
+        (void) Krate::DSP::deserializeSpectralState(scratch.data(), scratch.size(), mirror[i]);
     }
+}
+
+/// The two-argument form, kept so no pre-Phase-11 caller changes shape: the
+/// payloads are consumed into a local mirror that is then thrown away, which is
+/// byte-for-byte the behaviour this function had before T018.
+template <typename SetParamFunc>
+inline void loadMorphParamsToController(
+    Steinberg::IBStreamer& streamer, SetParamFunc setParam) {
+    std::array<Krate::DSP::SpectralState, 4> discarded{};
+    loadMorphParamsToController(streamer, setParam, discarded);
 }
 
 }  // namespace Seraphis

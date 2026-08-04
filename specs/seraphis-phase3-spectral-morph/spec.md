@@ -150,6 +150,31 @@ they exist so a later phase does not inherit a silent contradiction.
   *(RA-3's escape is scoped to clause 2 only. SC-010 clause 1 and clause 3 are separately not met — see
   SC-010 and compliance.md — and RA-3 does not and may not cover them.)*
 
+> **AMENDMENT (2026-08-03, phase-owner ruling "relax the gate", recorded from
+> `specs/seraphis-phase11-ui/spec.md` D1).** Phase 11's clarification session found that
+> `SeraphisVoice::setSpectralState`/`setSpectralStateCount` (Phase 7,
+> `dsp/include/krate/dsp/systems/seraphis_voice.h:770-776`, `:908`) reject a state push whenever the voice
+> `hasSounded_` and is not `isFinished()`, citing this file's own *"CONFIGURATION-TIME CALLS: prepare(),
+> reset(), setSeed(), setState() and setStateCount() are NOT to be called while the consumer is sounding"*
+> class comment (`spectral_morph_engine.h:198-206`) as justification — with the effect that a UI ratio/
+> amplitude edit landed inaudibly until the next note-on. That comment **over-groups** `setState`/
+> `setStateCount` with `reset()`/`setSeed()`: this spec's own FR-042 and FR-044 already establish
+> `setState`/`setStateCount` as **continuity-safe** while a voice sounds — both are absorbed by the FR-047
+> absorption crossfade (`armStateFade()`, `spectral_morph_engine.h:311`-`:312`, gated on
+> `slotContributes(slot)` at `:558`) and are explicitly **not** among FR-044's two named exemptions, which
+> are only `setSeed()` and `reset()` (see FR-044 above: *"Exactly two public calls are exempt … `setSeed()`
+> … and `reset()`"*). `SeraphisVoice`'s gate was therefore a stricter restriction than this spec requires,
+> not a restriction this spec's contract demands. **Two edits are admitted by Phase 11's ruling, both
+> outside this spec's own scope but recorded here because they touch a contract this document owns:**
+> (1) `spectral_morph_engine.h:198-206`'s class comment is corrected to name only `prepare()`, `reset()`
+> and `setSeed()` — comment-only, `setState`'s and `setStateCount`'s bodies are unchanged, and every
+> existing test in this phase's suite (FR-044's continuity table, the FR-047 crossfade tests, SC-001
+> through SC-013) is asserted to stay green **unmodified** (Phase 11 SC-030). (2) Phase 7's
+> `SeraphisVoice::setSpectralState`/`setSpectralStateCount` stop routing through `isConfigurable()`; every
+> other `isConfigurable()`-gated caller in Phase 7 is unchanged. Neither edit changes this phase's FR-042,
+> FR-044, FR-047 or their measured thresholds. Full detail, click-freeness and audibility criteria:
+> `specs/seraphis-phase11-ui/spec.md`, D1, FR-033a, SC-028 – SC-030.
+
 ## Scope
 
 In scope for this phase:

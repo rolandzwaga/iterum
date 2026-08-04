@@ -196,13 +196,20 @@ public:
     // -------------------------------------------------------------------------
     // Lifecycle
     //
-    // CONFIGURATION-TIME CALLS: prepare(), reset(), setSeed(), setState() and
-    // setStateCount() are NOT to be called while the consumer is sounding.
+    // CONFIGURATION-TIME CALLS: prepare(), reset() and setSeed() are NOT to be
+    // called while the consumer is sounding.
     // reset() rewinds the travel position and every RNG stream; setSeed()
     // redraws all 64 scatter offsets (a step of up to 2 * kMaxScatterCents = 14
     // cents per partial in one chunk). They are named exemptions in FR-044's
     // continuity list. prepare() in particular is NOT RT-safe by contract, even
     // though it is declared noexcept and allocates nothing.
+    //
+    // setState() and setStateCount() were listed here through Phase 9 and are
+    // struck by Phase 11 FR-033a (D-1): neither is a continuity exemption. Both
+    // arm the FR-047 absorption fade (:312, :327) whenever the affected slot
+    // contributes (slotContributes() at :558), which is precisely the mechanism
+    // FR-042/FR-044 already prove continuity-safe, and the prose above only ever
+    // justified reset() and setSeed().
     // -------------------------------------------------------------------------
 
     /// @brief Load all four slots with makeFactoryState(SineStack) (FR-005).

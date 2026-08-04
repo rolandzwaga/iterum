@@ -5,6 +5,92 @@ All notable changes to Seraphis will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-04
+
+Phase 11 — the interface. Every release so far shipped the placeholder editor from 0.1.0: 107
+host-automatable parameters and eight on-screen controls. This one replaces it with the organism-first
+editor the roadmap describes — the live partial constellation fills the window and **is** the interface,
+the five macros orbit it, and the deep parameters live in a pull-up drawer. It also opens the two paths
+that make that possible in both directions: the engine now publishes what it is doing, and the editor can
+now author individual partials. **No new parameters** — the registered surface stays at 107 and every
+registered type is unchanged.
+
+### Added
+
+- **The cloud view** — A live constellation of the harmonic cloud: one point per partial, x = stereo
+  position, y = frequency on a fixed 20 Hz – 20 kHz log axis, size = amplitude. It redraws at 30 Hz and
+  only when the engine actually published something new. The frequency axis is deliberately **fixed, never
+  autoscaled** — with stereo spread at zero all 64 points are coincident, and an autoscaled axis would
+  divide by zero exactly there.
+- **Five macro rings, and they show the real DSP** — Dream, Bloom, Dissolve, Gravity and Entropy are large
+  ring knobs anchored around the view. Turning one visibly perturbs the constellation, and the motion you
+  see is **the engine's actual response read back out of it** — there is no view-local animation, no
+  synthetic displacement, and nothing interpolating toward a target the DSP is not producing.
+- **A pull-up drawer for the deep parameters** — Seven tabs (Cloud, Morph, Body, Atmos, Aether, FX,
+  Life/Env), collapsed to a 30 px tab strip or open to the bottom 40 % of the window. All seven pages are
+  present at once with one visible, so no parameter is ever unreachable. Opening the drawer never removes,
+  hides or resizes the cloud view — the drawer grows up over it and the constellation keeps rendering.
+- **Per-partial editing** — An Observe | Edit toggle on the cloud view. In Edit mode a partial can be
+  dragged in frequency and amplitude, panned, and masked or unmasked with a click; a Blend A→B slider and
+  an absolute Tilt dB/oct control sit in the same mini-toolbar. A masked partial keeps drawing as a hollow
+  ring after its amplitude has smoothed to zero, so it stays a click target for the un-mask gesture rather
+  than disappearing and becoming unreachable.
+- **Editing works with no note held** — Authoring uses a fixed reference pitch when nothing is sounding,
+  so a spectrum can be built silently and then played, not only adjusted while a note rings.
+- **The three `SpectralState` authoring mutators** — `setPartial`, `blendStates` and `tiltState`, in the
+  shared DSP library. They exist for exactly one consumer, the editing surface, which is why they ship now
+  rather than with the states themselves. Each one is total: adversarial input — out-of-range ratios,
+  non-monotone neighbours, amplitudes outside 0…1, partial counts outside 0…64, non-finite arguments — is
+  rejected **before the first store**, so a rejected edit leaves the state byte-for-byte unchanged rather
+  than half-written. A ratio dragged past its neighbour clamps; it never swaps.
+- **Edits reach a sounding voice immediately** — Setting a spectral state on a voice is no longer gated to
+  configure time. The morph engine absorbs a live swap through its own fade, so a partial dragged while a
+  chord is held is audible on that chord instead of waiting for the next note-on.
+- **Dissolve and Entropy now reach the effects** — The macro matrix gains a fourth target owner: Dissolve
+  drives the spectral-delay send and Entropy drives the stereo-wander depth. This closes the 0.3.0 known
+  limitation that the macros moved the engine but not the effects stage. It is purely additive — every
+  pre-existing macro target keeps its index and its response bit-for-bit.
+- **Per-partial pan and mask fan-outs** — The engine can now push a pan position or a mask to the same
+  partial index on **all sixteen** voice slots, including ones the allocator has not handed out yet, so a
+  voice stolen or allocated later already carries the override.
+
+### Changed
+
+- **Project state still says version 3** — The per-partial override table is written as a 272-byte
+  `[partials]` block appended after `[effects]`, which keeps every 0.1.0, 0.2.0 and 0.3.0 stream a strict
+  byte prefix of a Phase 11 one. **Projects and presets saved with any earlier release load unchanged**;
+  the override table comes back empty, which is the un-edited configuration. The stream is 2868 bytes.
+- **Editor session state is not a parameter** — Mode, drawer state, active tab, selected morph slot and the
+  per-partial override table are session state. The controls that carry them use a tag namespace starting
+  at 9000, outside the registered ID space, so none of them can collide with a parameter, be automated by
+  the host, or be counted as a parameter binding.
+- **The two directions use two transports, on purpose** — The engine → editor path is a DataExchange queue
+  carrying one 808-byte frame per processed block, piggybacked on the existing mechanism rather than a new
+  one. The editor → engine path is a discrete 12-byte message per gesture step. Nothing about editing
+  travels on the frame queue, and no frame data travels on the message channel.
+- **Edit messages are treated as untrusted input** — An unknown message kind, an out-of-range slot or
+  partial index, a wrong payload size or a non-finite value is dropped silently. The mutators' own
+  rejection is the second line of defence, not the first.
+
+### Performance
+
+- **A closed editor costs one atomic load per block.** The frame producer is gated on an editor actually
+  being open. With none open, the gate is the entire cost: no focus voice is picked, no frame is built and
+  nothing is published. The gated-closed cost is enforced by the test suite, not asserted here.
+- With the editor open the frame is published **once per processed block**, never once per internal
+  64-sample slice, and the whole composed chain still fits under the **25 % of one core at 8 voices**
+  budget the roadmap sets. A drag in flight is rate-limited to the same 30 Hz the view redraws at, with a
+  mandatory flush at gesture end so the value you released on is never swallowed.
+- Reported latency is unchanged at 1024 samples.
+
+### Known limitations
+
+- No factory presets ship. The library, and the preset categories beyond the seeded `Textures`, are
+  Phase 12.
+- No MPE or per-note expression. It ships in Phase 13.
+- The drawer opens and closes instantly; there is no slide animation.
+- The window is a fixed 1000 × 700.
+
 ## [0.3.0] - 2026-08-03
 
 The last stage of the global bus. 0.2.0 exposed the engine; this release puts the four effects the

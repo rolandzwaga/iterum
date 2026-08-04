@@ -16,6 +16,15 @@
 //   (d) the v3 blob's bytes FROM OFFSET 4 have the v2 blob's bytes from offset 4
 //       as a STRICT PREFIX, and the two differ ONLY in the leading int32.
 //
+// CRITERION ADDED BY PHASE 11 (specs/seraphis-phase11-ui, T012): SC-015 /
+// FR-034/FR-034a - an EDITED state round-trips at version 3, unchanged.
+//   Seraphis_EditedState_RoundTripsAtV3 authors a slot payload edit, a pan
+//   override and a mask through the REAL C-5 message path, then asserts the
+//   272-byte [partials] block is appended LAST, the leading int32 is still 3,
+//   getState -> setState -> getState is BYTE-IDENTICAL (FR-094), and a stream
+//   truncated immediately before the block still loads with every override
+//   absent - the EOF-safe strict-prefix chain, never a version branch.
+//
 // ------------------------------------------------------------------------------
 // THREE CONSTRUCTION CHOICES, stated here rather than discovered in review:
 //
@@ -59,17 +68,34 @@
 
 #include "processor/processor.h"
 
+// Phase 11 T018. The CONTROLLER half of SC-016: slotMirror_ is controller-side
+// session state, and its two re-seed sources (the 409-412 dropdowns and the
+// state stream) can only be observed from the controller. This TU therefore
+// names BOTH components - which is a test-only composition, not a production
+// cross-include: neither shipping header sees the other.
+#include "controller/controller.h"
+
 #include "parameters/dropdown_mappings.h"
 #include "parameters/effects_params.h"
+#include "parameters/morph_params.h"
 #include "plugin_ids.h"
 #include "seraphis_test_fixture.h"
+// Phase 11 C-5. The wire format the edit arm drives the processor through - the
+// same POD Controller sends, so the round trip is asserted about the SHIPPING
+// path rather than about a test-only back door.
+#include "ui/edit_message.h"
 
 #include "base/source/fstreamer.h"
 #include "public.sdk/source/common/memorystream.h"
+#include "public.sdk/source/vst/hosting/hostclasses.h"
+
+#include <pluginterfaces/base/smartpointer.h>  // Steinberg::owned
+#include <pluginterfaces/vst/ivstmessage.h>    // IMessage / IAttributeList
 
 #include <krate/dsp/core/note_value.h>
 #include <krate/dsp/effects/spectral_delay.h>
 #include <krate/dsp/processors/midside_processor.h>
+#include <krate/dsp/processors/spectral_state.h>
 #include <krate/dsp/systems/seraphis_engine.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -77,6 +103,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 
@@ -92,17 +119,28 @@ namespace {
 constexpr int32 kV2StateBytes = 2532;
 /// Phase 8's layout, a strict prefix of both.
 constexpr int32 kV1StateBytes = 36;
-/// C-8's [effects] block: 12 floats + 4 int32, appended LAST.
+/// C-8's [effects] block: 12 floats + 4 int32, appended LAST in Phase 10.
 constexpr int32 kEffectsBlockBytes = 64;
-/// Phase 10: 2532 + 64.
-constexpr int32 kV3StateBytes = 2596;
+/// Everything through [effects] - the whole stream as PHASE 10 wrote it, and
+/// therefore the OFFSET of the block Phase 11 appends after it.
+constexpr int32 kEffectsEndBytes = 2596;
+/// Phase 11 FR-034a's [partials] block: 64 x float pan + two uint64 masks,
+/// appended LAST with kCurrentStateVersion UNCHANGED at 3.
+constexpr int32 kPartialsBlockBytes = 272;
+/// The WHOLE v3 stream as Phase 11 writes it: 2596 + 272.
+constexpr int32 kV3StateBytes = kEffectsEndBytes + kPartialsBlockBytes;
 
 static_assert(12 * 4 + 4 * 4 == kEffectsBlockBytes,
               "SC-009: C-8's [effects] block is 12 floats + 4 int32 = 64 bytes");
-static_assert(kV2StateBytes + kEffectsBlockBytes == kV3StateBytes,
-              "SC-009: the v3 stream is the v2 stream plus the 64-byte [effects] block");
-static_assert(85 * 4 + 22 * 4 + 4 + 4 * 541 == kV3StateBytes,
-              "SC-009: the v3 arithmetic must reproduce 2596");
+static_assert(kV2StateBytes + kEffectsBlockBytes == kEffectsEndBytes,
+              "SC-009: the Phase 10 stream is the v2 stream plus the 64-byte [effects] block");
+static_assert(85 * 4 + 22 * 4 + 4 + 4 * 541 == kEffectsEndBytes,
+              "SC-009: the Phase 10 arithmetic must reproduce 2596");
+static_assert(64 * 4 + 8 + 8 == kPartialsBlockBytes,
+              "SC-015 / FR-034a: 256 pan bytes + two 8-byte masks = 272");
+static_assert(kV3StateBytes == 2868,
+              "SC-015 / FR-034a: the Phase 11 stream is 2596 + 272 - and the VERSION int32 "
+              "at offset 0 still reads 3, because the block is an APPEND");
 
 // =============================================================================
 // Stream plumbing (modelled on unit/state_v2_test.cpp)
@@ -370,6 +408,155 @@ template struct PrivateMemberBinder<GlobalMsAccess, &Seraphis::Processor::global
     return processor.*seraphisStateV3PrivateMember(GlobalMsAccess{});
 }
 
+// =============================================================================
+// Phase 11 FR-034a - the appended [partials] block, read out of a stream
+// =============================================================================
+// Layout, 272 bytes, appended LAST (after [effects]) with kCurrentStateVersion
+// UNCHANGED at 3 - Processor::savePartialOverrides() is the authority:
+//
+//   | Offset | Size | Field                                       |
+//   |      0 |  256 | 64 x float pan, index order                 |
+//   |    256 |    8 | uint64 panOverrideBits (writeInt64u)        |
+//   |    264 |    8 | uint64 maskBits        (writeInt64u)        |
+//
+// Decoded by OFFSET rather than by re-running the writer, so a block written at
+// the wrong place in the chain - or split into four int32s - fails here.
+
+struct PartialsBlock {
+    std::array<float, 64> pan{};
+    std::uint64_t panOverrideBits = 0;
+    std::uint64_t maskBits = 0;
+};
+
+[[nodiscard]] PartialsBlock decodePartialsBlock(const char* base) {
+    PartialsBlock b{};
+    constexpr std::size_t kPanBytes = 64 * sizeof(float);
+    std::memcpy(b.pan.data(), base, kPanBytes);
+    std::memcpy(&b.panOverrideBits, base + kPanBytes, sizeof(std::uint64_t));
+    std::memcpy(&b.maskBits, base + kPanBytes + sizeof(std::uint64_t), sizeof(std::uint64_t));
+    return b;
+}
+
+/// The [partials] block of a full Phase 11 stream.
+[[nodiscard]] PartialsBlock partialsBlockOf(MemoryStream& s) {
+    REQUIRE(s.getSize() == kV3StateBytes);
+    return decodePartialsBlock(s.getData() + kEffectsEndBytes);
+}
+
+/// Every field of the block absent - what a stream that carries no [partials]
+/// block at all must produce on the next save.
+void requirePartialsBlockAbsent(const PartialsBlock& got) {
+    CHECK(got.panOverrideBits == 0u);
+    CHECK(got.maskBits == 0u);
+    for (std::size_t i = 0; i < got.pan.size(); ++i) {
+        INFO("[partials] pan " << i);
+        CHECK(got.pan[i] == 0.0f);
+    }
+}
+
+// =============================================================================
+// The four 541-byte SpectralState payloads, read out of a stream by offset
+// =============================================================================
+// Processor::getState()'s write order gives the offset:
+//   4 [version] + 12 [global] + 20 [macro] + 4 [seed] + 44 [cloud]
+//   + 52 [morph scalars] = 136.
+constexpr int32 kSpectralPayloadOffset = 136;
+constexpr int32 kSpectralPayloadBytes =
+    4 * static_cast<int32>(Krate::DSP::kSpectralStateBytes);
+
+static_assert(kSpectralPayloadOffset + kSpectralPayloadBytes + 40 + 52 + 68 + 72
+                  == kV2StateBytes,
+              "the payload offset must reproduce the v2 total: [life] 40 + [body] 52 "
+              "+ [atmos] 68 + [aether] 72 follow the payloads");
+
+[[nodiscard]] Krate::DSP::SpectralState slotPayloadOf(MemoryStream& s, int slot) {
+    REQUIRE(s.getSize() == kV3StateBytes);
+    REQUIRE(slot >= 0);
+    REQUIRE(slot < 4);
+    std::array<std::byte, Krate::DSP::kSpectralStateBytes> buf{};
+    std::memcpy(buf.data(),
+                s.getData() + kSpectralPayloadOffset
+                    + (static_cast<std::ptrdiff_t>(slot)
+                       * static_cast<std::ptrdiff_t>(Krate::DSP::kSpectralStateBytes)),
+                buf.size());
+    Krate::DSP::SpectralState out{};
+    REQUIRE(Krate::DSP::deserializeSpectralState(buf.data(), buf.size(), out));
+    return out;
+}
+
+// =============================================================================
+// The C-5 edit wire - one HostMessage per send, byte for byte what Controller
+// sends (the same helper shape integration/partial_edit_test.cpp uses)
+// =============================================================================
+
+[[nodiscard]] Seraphis::UI::EditMessage makeEdit(std::uint8_t kind, std::uint8_t slot,
+                                                 std::uint16_t index, float a, float b) {
+    Seraphis::UI::EditMessage m{};
+    m.kind = kind;
+    m.slot = slot;
+    m.index = index;
+    m.a = a;
+    m.b = b;
+    return m;
+}
+
+tresult sendEdit(Seraphis::Processor& processor, const Seraphis::UI::EditMessage& m) {
+    auto message = Steinberg::owned(new Steinberg::Vst::HostMessage());
+    message->setMessageID(Seraphis::UI::kSeraphisEditMessageId);
+    Vst::IAttributeList* attributes = message->getAttributes();
+    REQUIRE(attributes != nullptr);
+    REQUIRE(attributes->setBinary(Seraphis::UI::kSeraphisEditAttributeId, &m,
+                                  static_cast<uint32>(sizeof(m)))
+            == kResultOk);
+    return processor.notify(message);
+}
+
+/// MEMBER-WISE, never memcmp over the object representation - see the identical
+/// helper in tests/integration/partial_edit_test.cpp for the reasoning: a float
+/// has no unique object representation, so a byte compare asks a different
+/// question from the one every call site here means. std::array's operator== is
+/// element-wise, so the arrays need no loop.
+[[nodiscard]] bool statesEqual(const Krate::DSP::SpectralState& a,
+                               const Krate::DSP::SpectralState& b) noexcept {
+    return a.ratios == b.ratios && a.amplitudes == b.amplitudes && a.name == b.name
+           && a.tiltDbPerOct == b.tiltDbPerOct && a.inharmonicity == b.inharmonicity
+           && a.numPartials == b.numPartials;
+}
+
+// =============================================================================
+// Phase 11 T018 - the CONTROLLER-side slot mirror (SC-016, FR-035, FR-046)
+// =============================================================================
+
+/// The normalized value of factory-state index `i` on a 409-412 dropdown. The
+/// registration form is addDropdownParam over kSpectralStateLabels, so the
+/// inverse of detail::morphDropdownIndex is index / (count - 1).
+[[nodiscard]] double slotDropdownNorm(int index) {
+    return static_cast<double>(index)
+           / static_cast<double>(Seraphis::kSpectralStateLabels.size() - 1);
+}
+
+/// A byte-for-byte copy of `source`, so a corruption arm can edit one payload
+/// without disturbing the pristine stream the other arm reads.
+[[nodiscard]] StreamPtr cloneStream(MemoryStream& source) {
+    StreamPtr copy = makeStream();
+    int32 written = 0;
+    const auto size = static_cast<int32>(source.getSize());
+    copy->write(source.getData(), size, &written);
+    REQUIRE(written == size);
+    rewindStream(*copy);
+    return copy;
+}
+
+/// An edit that is guaranteed to STORE on any valid state: the ratio is written
+/// back unchanged (so setPartial's monotone window cannot clamp it into a
+/// different value) and only the amplitude moves.
+[[nodiscard]] Seraphis::UI::EditMessage makeAmplitudeEdit(int slot,
+                                                          const Krate::DSP::SpectralState& current,
+                                                          float amplitude) {
+    return makeEdit(/*kind=*/1, static_cast<std::uint8_t>(slot), /*index=*/0,
+                    current.ratios[0], amplitude);
+}
+
 }  // namespace
 
 // =============================================================================
@@ -469,9 +656,10 @@ TEST_CASE("Seraphis_StateVersion3_RoundTripsAndMigrates", "[seraphis][state][v3]
         StreamPtr v3 = captureState(*driven.proc);
         StreamPtr v2 = makeV2BlobFrom(*v3);
 
-        // STRICT: the v3 stream is longer, by exactly the [effects] block.
+        // STRICT: the v3 stream is longer, by exactly the two APPENDED blocks -
+        // Phase 10's [effects] and Phase 11's [partials].
         REQUIRE(v3->getSize() > v2->getSize());
-        CHECK(v3->getSize() - v2->getSize() == kEffectsBlockBytes);
+        CHECK(v3->getSize() - v2->getSize() == kEffectsBlockBytes + kPartialsBlockBytes);
 
         // The payloads agree over the whole of the shorter one...
         CHECK(std::memcmp(v3->getData() + 4, v2->getData() + 4,
@@ -696,5 +884,433 @@ TEST_CASE("Seraphis_StateVersion3_RoundTripsAndMigrates", "[seraphis][state][v3]
         fx.setParam(Seraphis::kSoftLimitId, 1.0);
         REQUIRE(fx.processBlock(kBlock) == kResultOk);
         CHECK(engine->getOutputSaturation() == 0.80f);
+    }
+}
+
+// =============================================================================
+// SC-015 / FR-034 / FR-034a - Phase 11 (T012)
+// =============================================================================
+// The three things a Phase 11 edit puts in the stream, and the ONE thing that
+// must not move:
+//
+//   * a slot payload edit  -> already carried, by Phase 9's full 541-byte
+//                             payload serialization. Nothing new is needed for
+//                             it, which is exactly why the format version does
+//                             not move (spec Overview fact 5).
+//   * a pan override       -> the new [partials] block.
+//   * a mask              -> the new [partials] block.
+//   * kCurrentStateVersion -> STAYS 3. The block is an APPEND, read back by an
+//                             EOF-safe loader with NO version-aware branch, so
+//                             an older stream runs out before it and an older
+//                             binary ignores the tail.
+//
+// Everything is driven through the REAL C-5 message path (Processor::notify),
+// never by writing the processor's tables directly: a round trip that only
+// asserts about a back door says nothing about what a user's project saves.
+//
+// FR-094 (getState -> setState -> getState is byte-identical) survives by
+// construction, because every field of the block is a STORED VALUE and never an
+// arithmetic result - the same argument Phase 9's [morph] payload uses. It is
+// asserted here rather than assumed, and NO carve-out is taken for the block.
+// =============================================================================
+
+TEST_CASE("Seraphis_EditedState_RoundTripsAtV3", "[seraphis][state][phase11]") {
+    // C-5's kind numbers (ui/edit_message.h's table).
+    constexpr std::uint8_t kPartialRatioAmp = 1;
+    constexpr std::uint8_t kPartialPan = 2;
+    constexpr std::uint8_t kPartialMask = 3;
+
+    constexpr std::uint8_t kEditedSlot = 1;
+    constexpr std::uint16_t kPanPartial = 5;
+    constexpr std::uint16_t kMaskPartial = 9;
+    constexpr float kAuthoredPan = 0.8f;
+    // A perfect fifth on partial 0. The index is 0 deliberately: setPartial()'s
+    // monotone window caps the upper edge at ratios[1] / kAuthorSpacing, and
+    // index 0 is the one index at which 1.5 is inside it for every factory
+    // state, so the edit STORES rather than clamping to a value the "the edit
+    // survived" comparison could not distinguish from the original.
+    constexpr float kEditedRatio = 1.5f;
+
+    Seraphis::Processor source;
+
+    // The pre-edit slot, so "the edit survived the round trip" is distinguishable
+    // from "the slot was already like that".
+    const Krate::DSP::SpectralState before = source.spectralAuthoringSlotForTest(kEditedSlot);
+
+    REQUIRE(sendEdit(source, makeEdit(kPartialRatioAmp, kEditedSlot, /*index=*/0, kEditedRatio,
+                                      before.amplitudes[0]))
+            == kResultOk);
+    REQUIRE(sendEdit(source, makeEdit(kPartialPan, /*slot=*/0, kPanPartial, kAuthoredPan, 0.0f))
+            == kResultOk);
+    REQUIRE(sendEdit(source, makeEdit(kPartialMask, /*slot=*/0, kMaskPartial, 1.0f, 0.0f))
+            == kResultOk);
+
+    const Krate::DSP::SpectralState edited = source.spectralAuthoringSlotForTest(kEditedSlot);
+
+    // NON-VACUITY. The mutator really did store; otherwise every assertion below
+    // would pass on a build whose edit channel dropped the message.
+    REQUIRE(!statesEqual(before, edited));
+    REQUIRE(edited.ratios[0] == kEditedRatio);
+    REQUIRE(source.editStageWriteCountForTest() == 1u);
+
+    StreamPtr a = captureState(source);
+    REQUIRE(a->getSize() == kV3StateBytes);
+
+    SECTION("The format version does not move, and the block is appended LAST") {
+        int32 encodedVersion = 0;
+        std::memcpy(&encodedVersion, a->getData(), sizeof(int32));
+        CHECK(encodedVersion == Seraphis::kCurrentStateVersion);
+        CHECK(encodedVersion == 3);
+
+        // The [effects] block is still where Phase 10 put it - i.e. [partials]
+        // went AFTER it, not into the middle of the chain. Nothing drove an
+        // effects ID here, so it must decode as the C-6 default column.
+        requireBlockIsC6Defaults(effectsBlockOf(*a));
+
+        const PartialsBlock block = partialsBlockOf(*a);
+        CHECK(block.panOverrideBits == (std::uint64_t{1} << kPanPartial));
+        CHECK(block.maskBits == (std::uint64_t{1} << kMaskPartial));
+        CHECK(block.pan[kPanPartial] == kAuthoredPan);
+        for (std::size_t i = 0; i < block.pan.size(); ++i) {
+            if (i == static_cast<std::size_t>(kPanPartial)) {
+                continue;
+            }
+            INFO("[partials] un-authored pan " << i);
+            CHECK(block.pan[i] == 0.0f);
+        }
+
+        // The slot payload, decoded from the SAME stream at Phase 9's offset.
+        CHECK(statesEqual(slotPayloadOf(*a, kEditedSlot), edited));
+    }
+
+    SECTION("getState -> setState -> getState is byte-identical (FR-094)") {
+        Seraphis::Processor second;
+        rewindStream(*a);
+        REQUIRE(second.setState(a.get()) == kResultOk);
+
+        StreamPtr b = captureState(second);
+        REQUIRE(b->getSize() == kV3StateBytes);
+
+        // The WHOLE stream is a fixed point - the block included, with no
+        // FR-094 carve-out.
+        CHECK(std::memcmp(a->getData(), b->getData(),
+                          static_cast<std::size_t>(kV3StateBytes))
+              == 0);
+
+        // ...and the three edited quantities really came back, read out of the
+        // reloaded processor rather than only out of its re-serialized bytes.
+        const PartialsBlock reloaded = partialsBlockOf(*b);
+        CHECK(reloaded.panOverrideBits == (std::uint64_t{1} << kPanPartial));
+        CHECK(reloaded.maskBits == (std::uint64_t{1} << kMaskPartial));
+        CHECK(reloaded.pan[kPanPartial] == kAuthoredPan);
+        CHECK(statesEqual(second.spectralAuthoringSlotForTest(kEditedSlot), edited));
+    }
+
+    SECTION("A stream truncated immediately before the block still loads, overrides absent") {
+        // Exactly the bytes a Phase 10 binary would have written: the strict
+        // prefix through [effects]. No version re-stamp - the leading int32 is
+        // ALREADY 3, which is the whole point of FR-034a.
+        StreamPtr truncated = makeStream();
+        int32 written = 0;
+        truncated->write(a->getData(), kEffectsEndBytes, &written);
+        REQUIRE(written == kEffectsEndBytes);
+        rewindStream(*truncated);
+
+        int32 encodedVersion = 0;
+        std::memcpy(&encodedVersion, truncated->getData(), sizeof(int32));
+        REQUIRE(encodedVersion == Seraphis::kCurrentStateVersion);
+
+        Seraphis::Processor third;
+        REQUIRE(third.setState(truncated.get()) == kResultOk);  // MUST NOT fail
+
+        StreamPtr out = captureState(third);
+        REQUIRE(out->getSize() == kV3StateBytes);  // the save WIDENS
+
+        // Every override absent - reached by running out of stream, not by a
+        // version branch.
+        requirePartialsBlockAbsent(partialsBlockOf(*out));
+
+        // ...and everything the truncated stream DID carry is intact, including
+        // the slot payload edit, which needs no block of its own.
+        CHECK(std::memcmp(out->getData() + 4, truncated->getData() + 4,
+                          static_cast<std::size_t>(kEffectsEndBytes - 4))
+              == 0);
+        CHECK(statesEqual(slotPayloadOf(*out, kEditedSlot), edited));
+    }
+}
+
+// =============================================================================
+// SC-016 arm 1 (T018) - FR-035: a slot dropdown discards THAT slot's edits only
+// =============================================================================
+// Two halves, because the criterion names two owners:
+//
+//   PROCESSOR - spectralSlotsAuthoring_ is reconciled with the four dropdowns
+//               lazily (Processor::syncAuthoringMirrorFromDropdowns, called from
+//               getState() and from every edit message), so the observable is
+//               the saved payload plus the authoring seam.
+//   CONTROLLER - slotMirror_ is re-seeded from makeFactoryState() on the SAME
+//               dropdown move (FR-046 source 1), through the SAME factory
+//               function, which is what keeps the display and the audio from
+//               disagreeing about what "Breath" means.
+//
+// The edit used here moves ONLY the amplitude: setPartial writes the ratio back
+// unchanged, so the monotone window cannot clamp the stored value into something
+// the "the edit survived" comparison could not distinguish from the original.
+// =============================================================================
+
+TEST_CASE("Seraphis_SlotDropdown_DiscardsOnlyThatSlot", "[seraphis][state][phase11]") {
+    constexpr double kSampleRate = 48000.0;
+    constexpr int32 kBlock = 512;
+
+    // Slot 0's registered default is SineStack (index 0) and slot 1's is Glass
+    // (index 3) - kMorphSlotDefaultIndices, morph_params.h. The move below picks
+    // Breath (index 4), which is neither, so "it reloaded" is distinguishable
+    // from "it never moved".
+    constexpr int kNewSlot0Index = 4;
+    static_assert(Seraphis::kMorphSlotDefaultIndices[0] != kNewSlot0Index,
+                  "SC-016: the dropdown must MOVE, or the discard is untested");
+
+    const Krate::DSP::SpectralState breath =
+        Krate::DSP::makeFactoryState(Krate::DSP::SpectralStateId::Breath);
+    const Krate::DSP::SpectralState glass =
+        Krate::DSP::makeFactoryState(Krate::DSP::SpectralStateId::Glass);
+
+    // -------------------------------------------------------------------------
+    // Processor half
+    // -------------------------------------------------------------------------
+    SeraphisTest::ProcessorFixture fx;
+    REQUIRE(fx.prepare(kSampleRate, kBlock) == kResultOk);
+
+    const Krate::DSP::SpectralState before0 = fx.proc->spectralAuthoringSlotForTest(0);
+    const Krate::DSP::SpectralState before1 = fx.proc->spectralAuthoringSlotForTest(1);
+
+    REQUIRE(sendEdit(*fx.proc, makeAmplitudeEdit(0, before0, 0.125f)) == kResultOk);
+    REQUIRE(sendEdit(*fx.proc, makeAmplitudeEdit(1, before1, 0.375f)) == kResultOk);
+
+    const Krate::DSP::SpectralState edited0 = fx.proc->spectralAuthoringSlotForTest(0);
+    const Krate::DSP::SpectralState edited1 = fx.proc->spectralAuthoringSlotForTest(1);
+
+    // NON-VACUITY: both slots really were edited before the discard.
+    REQUIRE(!statesEqual(before0, edited0));
+    REQUIRE(!statesEqual(before1, edited1));
+    REQUIRE(edited0.amplitudes[0] == 0.125f);
+    REQUIRE(edited1.amplitudes[0] == 0.375f);
+
+    // Move ID 409 only.
+    fx.setParam(Seraphis::kMorphState0Id, slotDropdownNorm(kNewSlot0Index));
+    REQUIRE(fx.processBlock(kBlock) == kResultOk);
+
+    StreamPtr saved = captureState(*fx.proc);  // getState() reconciles first
+    REQUIRE(saved->getSize() == kV3StateBytes);
+
+    CHECK(statesEqual(fx.proc->spectralAuthoringSlotForTest(0), breath));
+    CHECK(statesEqual(slotPayloadOf(*saved, 0), breath));
+    // ...and slot 1 is BYTE-IDENTICAL to what it was edited to. A discard that
+    // walked all four slots would have reset this one to Glass.
+    CHECK(statesEqual(fx.proc->spectralAuthoringSlotForTest(1), edited1));
+    CHECK(statesEqual(slotPayloadOf(*saved, 1), edited1));
+    CHECK(!statesEqual(slotPayloadOf(*saved, 1), glass));
+
+    // -------------------------------------------------------------------------
+    // Controller half (FR-046 source 1)
+    // -------------------------------------------------------------------------
+    Seraphis::Controller controller;
+    REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+    // The mirror starts on the REGISTERED defaults, from the same factory table.
+    REQUIRE(statesEqual(controller.slotMirror(1), glass));
+
+    // Author into the mirror so "the dropdown discarded it" is observable.
+    Krate::DSP::SpectralState authored = controller.slotMirror(0);
+    Krate::DSP::setPartial(authored, 0, authored.ratios[0], 0.125f);
+    controller.setSlotMirror(0, authored);
+    REQUIRE(!statesEqual(controller.slotMirror(0), breath));
+    REQUIRE(!statesEqual(controller.slotMirror(0),
+                         Krate::DSP::makeFactoryState(Krate::DSP::SpectralStateId::SineStack)));
+
+    controller.setParamNormalized(Seraphis::kMorphState0Id, slotDropdownNorm(kNewSlot0Index));
+
+    CHECK(statesEqual(controller.slotMirror(0), breath));
+    // Only that slot: the other three are untouched by the move.
+    CHECK(statesEqual(controller.slotMirror(1), glass));
+
+    SECTION("re-sending the SAME dropdown value does not discard an edit") {
+        // FR-035 is about MOVING the dropdown. A host that re-sends the value it
+        // already sent (every automation write of a parked control does) must not
+        // silently wipe the user's authoring.
+        Krate::DSP::SpectralState again = controller.slotMirror(0);
+        Krate::DSP::setPartial(again, 0, again.ratios[0], 0.625f);
+        controller.setSlotMirror(0, again);
+
+        controller.setParamNormalized(Seraphis::kMorphState0Id,
+                                      slotDropdownNorm(kNewSlot0Index));
+        CHECK(statesEqual(controller.slotMirror(0), again));
+    }
+
+    controller.terminate();
+}
+
+// =============================================================================
+// SC-016 arm 2 (T018) - FR-046 source 2: the mirror re-seeds from the STREAM
+// =============================================================================
+// This is the sole justification for the loadMorphParamsToController signature
+// change: before it, the four 541-byte payloads went into a scratch buffer and
+// were dropped, so a reloaded project showed the FACTORY states in the cloud
+// view while the processor rendered the user's edited ones.
+//
+// Arm 2b is what pins the failure mode of the discard loop's replacement: the
+// deserialize's return value is IGNORED ON PURPOSE. A rejected payload must
+// leave its mirror entry BITWISE UNTOUCHED (spectral_state.h:264-265, :300-305)
+// and the cursor must still advance the full 541 bytes, or the 55 parameters
+// that follow are read from the wrong offset.
+// =============================================================================
+
+TEST_CASE("Seraphis_SlotMirror_ReSeedsFromTheStateStream", "[seraphis][state][phase11]") {
+    constexpr double kSampleRate = 48000.0;
+    constexpr int32 kBlock = 512;
+
+    // The slot whose payload arm 2b corrupts. Its dropdown keeps its REGISTERED
+    // default in the stream, so the FR-046 source-1 path is a no-op for it and
+    // "byte-unchanged from its pre-load value" is a statement about the payload
+    // decode alone.
+    constexpr int kCorruptSlot = 2;
+    static_assert(kCorruptSlot >= 0 && kCorruptSlot < 4);
+
+    // Four parameters from the blocks that FOLLOW the payloads - one per block.
+    // If the payload loop stops advancing the cursor by 4 x 541, every one of
+    // these is read from the wrong offset.
+    constexpr std::array<Vst::ParamID, 4> kAfterPayloads = {
+        Seraphis::kLifeVoiceWidthId, Seraphis::kBodyMixId, Seraphis::kAtmosLevelId,
+        Seraphis::kAetherSizeId};
+    constexpr std::array<double, 4> kAfterPayloadValues = {0.3125, 0.4375, 0.5625, 0.6875};
+
+    // -------------------------------------------------------------------------
+    // Build ONE stream carrying four EDITED payloads and four driven parameters
+    // -------------------------------------------------------------------------
+    SeraphisTest::ProcessorFixture fx;
+    REQUIRE(fx.prepare(kSampleRate, kBlock) == kResultOk);
+
+    for (std::size_t k = 0; k < kAfterPayloads.size(); ++k) {
+        fx.setParam(kAfterPayloads[k], kAfterPayloadValues[k]);
+    }
+    REQUIRE(fx.processBlock(kBlock) == kResultOk);
+
+    std::array<Krate::DSP::SpectralState, 4> expected{};
+    for (int slot = 0; slot < 4; ++slot) {
+        const Krate::DSP::SpectralState before = fx.proc->spectralAuthoringSlotForTest(slot);
+        const float amplitude = 0.1f + 0.2f * static_cast<float>(slot);
+        REQUIRE(sendEdit(*fx.proc, makeAmplitudeEdit(slot, before, amplitude)) == kResultOk);
+        expected[static_cast<std::size_t>(slot)] =
+            fx.proc->spectralAuthoringSlotForTest(slot);
+        REQUIRE(!statesEqual(before, expected[static_cast<std::size_t>(slot)]));
+        REQUIRE(expected[static_cast<std::size_t>(slot)].amplitudes[0] == amplitude);
+    }
+
+    StreamPtr stream = captureState(*fx.proc);
+    REQUIRE(stream->getSize() == kV3StateBytes);
+    for (int slot = 0; slot < 4; ++slot) {
+        INFO("stream payload " << slot);
+        REQUIRE(statesEqual(slotPayloadOf(*stream, slot),
+                            expected[static_cast<std::size_t>(slot)]));
+    }
+
+    SECTION("every mirror entry comes back byte-identical to the stream's payload") {
+        Seraphis::Controller controller;
+        REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+        rewindStream(*stream);
+        REQUIRE(controller.setComponentState(stream.get()) == kResultOk);
+
+        for (int slot = 0; slot < 4; ++slot) {
+            INFO("slot " << slot);
+            const Krate::DSP::SpectralState& mirror = controller.slotMirror(slot);
+            CHECK(statesEqual(mirror, expected[static_cast<std::size_t>(slot)]));
+
+            // ...and that IS deserializeSpectralState's own result, not a
+            // coincidence of two factory states.
+            std::array<std::byte, Krate::DSP::kSpectralStateBytes> raw{};
+            std::memcpy(raw.data(),
+                        stream->getData() + kSpectralPayloadOffset
+                            + (static_cast<std::ptrdiff_t>(slot)
+                               * static_cast<std::ptrdiff_t>(Krate::DSP::kSpectralStateBytes)),
+                        raw.size());
+            Krate::DSP::SpectralState decoded{};
+            REQUIRE(Krate::DSP::deserializeSpectralState(raw.data(), raw.size(), decoded));
+            CHECK(statesEqual(mirror, decoded));
+            // NON-VACUITY: it is NOT the factory state the dropdown names.
+            CHECK(!statesEqual(mirror, Krate::DSP::makeFactoryState(
+                                           static_cast<Krate::DSP::SpectralStateId>(
+                                               Seraphis::kMorphSlotDefaultIndices
+                                                   [static_cast<std::size_t>(slot)]))));
+        }
+
+        controller.terminate();
+    }
+
+    SECTION("a corrupt payload leaves ONLY its own mirror entry, byte-unchanged") {
+        StreamPtr corrupt = cloneStream(*stream);
+
+        char* payload = corrupt->getData() + kSpectralPayloadOffset
+                        + (static_cast<std::ptrdiff_t>(kCorruptSlot)
+                           * static_cast<std::ptrdiff_t>(Krate::DSP::kSpectralStateBytes));
+        // Offset 0 of a record is the format version (spectral_state.h:193).
+        REQUIRE(static_cast<unsigned char>(payload[0])
+                == static_cast<unsigned char>(Krate::DSP::kSpectralStateFormatVersion));
+        payload[0] = static_cast<char>(0x7F);
+
+        Seraphis::Controller controller;
+        REQUIRE(controller.initialize(nullptr) == kResultOk);
+
+        // The pre-load value, made distinctive so "unchanged" is an assertion
+        // and not a comparison of two default-constructed states.
+        Krate::DSP::SpectralState marked = controller.slotMirror(kCorruptSlot);
+        Krate::DSP::setPartial(marked, 0, marked.ratios[0], 0.9375f);
+        controller.setSlotMirror(kCorruptSlot, marked);
+        REQUIRE(!statesEqual(marked, expected[static_cast<std::size_t>(kCorruptSlot)]));
+
+        rewindStream(*corrupt);
+        REQUIRE(controller.setComponentState(corrupt.get()) == kResultOk);
+
+        // (i) the rejected slot: BITWISE untouched.
+        CHECK(statesEqual(controller.slotMirror(kCorruptSlot), marked));
+
+        // (ii) the other three still loaded.
+        for (int slot = 0; slot < 4; ++slot) {
+            if (slot == kCorruptSlot) {
+                continue;
+            }
+            INFO("slot " << slot);
+            CHECK(statesEqual(controller.slotMirror(slot),
+                              expected[static_cast<std::size_t>(slot)]));
+        }
+
+        // (iii) the cursor still advanced 541 bytes for the rejected record, so
+        // the parameters that follow the payloads read from the right offset.
+        //
+        // The reference is a SECOND controller loading the CLEAN stream, not a
+        // transcription of the normalized values driven above: several of these
+        // IDs are log-mapped, so a hand-written expectation would be asserting
+        // about the pack's mapping arithmetic instead of about the cursor. Two
+        // loads of the same bytes are compared with ==, which is exact.
+        Seraphis::Controller reference;
+        REQUIRE(reference.initialize(nullptr) == kResultOk);
+        std::array<double, 4> registeredDefaults{};
+        for (std::size_t k = 0; k < kAfterPayloads.size(); ++k) {
+            registeredDefaults[k] = reference.getParamNormalized(kAfterPayloads[k]);
+        }
+        rewindStream(*stream);
+        REQUIRE(reference.setComponentState(stream.get()) == kResultOk);
+
+        for (std::size_t k = 0; k < kAfterPayloads.size(); ++k) {
+            INFO("parameter " << kAfterPayloads[k]);
+            const double loaded = reference.getParamNormalized(kAfterPayloads[k]);
+            // NON-VACUITY: the stream really does carry a non-default here, so a
+            // build that read garbage - or nothing - cannot match by accident.
+            REQUIRE(loaded != registeredDefaults[k]);
+            CHECK(controller.getParamNormalized(kAfterPayloads[k]) == loaded);
+        }
+        reference.terminate();
+
+        controller.terminate();
     }
 }

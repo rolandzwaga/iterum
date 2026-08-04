@@ -13,7 +13,15 @@
 //           orphan tag exists
 //   SC-022  every registered default matches the C-6 table
 //
-// All four are PURE TABLE TESTS: no render, no engine. Nothing here prepares
+// PHASE 11 (T019) ADDS TWO MORE to Seraphis_UidescControlTags_MatchRegisteredIds,
+// because the layout it asserts about now exists:
+//   SC-002  the binding budget is EXACTLY 110 - 107 primary bindings plus the
+//           three enumerated second bindings of the header freeze cluster - and
+//           unreachableParams() is empty with an EMPTY allowlist
+//   SC-003  every bound view's class is in the SET its parameter's kind permits,
+//           with MacroRingKnob enumerated by ID for 100..104
+//
+// All of them are PURE TABLE TESTS: no render, no engine. Nothing here prepares
 // the 771 968 B engine, so the whole TU stays cheap.
 //
 // COMPILE FLAGS: this TU is NOT listed under "-fno-fast-math
@@ -64,6 +72,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -482,16 +491,50 @@ struct BoundView {
     return views;
 }
 
-/// C-6's *Type* column, expressed as the VSTGUI control class the placeholder
-/// template must keep using (FR-048 freezes the registered types, and a
-/// mismatched control class binds with NO error path).
-[[nodiscard]] const char* expectedViewClass(Kind kind) {
+/// C-6's *Type* column, expressed as the SET of VSTGUI control classes Phase 11's
+/// layout is allowed to draw that kind as (plan section 9, SC-003). FR-048 still
+/// freezes the REGISTERED types; a mismatched control class binds with NO error
+/// path, which is the only reason this is checked at all.
+///
+/// `T` is DELIBERATELY a singleton set. The header freeze cluster and every drawer
+/// toggle are CCheckBox, `ToggleButton` appears nowhere in the shipped uidesc, and
+/// widening `T` to {"CCheckBox", "ToggleButton"} would make this criterion unable
+/// to detect EITHER choice.
+[[nodiscard]] std::set<std::string> expectedViewClasses(Kind kind) {
     switch (kind) {
-        case Kind::R: return "CSlider";
-        case Kind::L: return "COptionMenu";
-        case Kind::T: return "CCheckBox";
+        case Kind::R: return {"CSlider", "ArcKnob"};
+        case Kind::L: return {"COptionMenu"};
+        case Kind::T: return {"CCheckBox"};
     }
-    return "";
+    return {};
+}
+
+/// FR-020's exception to the `R` set, ENUMERATED BY ID rather than waived by
+/// loosening the rule: exactly the five macro parameters draw as the big rings,
+/// and a sixth MacroRingKnob anywhere else is a failure.
+constexpr Vst::ParamID kMacroRingIds[] = {
+    Seraphis::kMacroDreamId,   Seraphis::kMacroBloomId, Seraphis::kMacroDissolveId,
+    Seraphis::kMacroGravityId, Seraphis::kMacroEntropyId,
+};
+
+[[nodiscard]] bool isMacroRingId(Vst::ParamID id) {
+    return std::ranges::any_of(kMacroRingIds,
+                               [id](const Vst::ParamID ring) { return ring == id; });
+}
+
+/// C-3's COMPLETE duplicate allowlist (RQ-2): the three freeze parameters the
+/// header re-binds BESIDE their primary binding on the drawer page that owns
+/// them. Every other registered ID is bound exactly once, and this list is
+/// enumerated here so a fourth duplicate is a failure rather than a shrug.
+constexpr Vst::ParamID kSecondBindingIds[] = {
+    Seraphis::kAtmosFreezeId,
+    Seraphis::kAetherFreezeId,
+    Seraphis::kFxSpectralFreezeId,
+};
+
+[[nodiscard]] bool isSecondBindingId(Vst::ParamID id) {
+    return std::ranges::any_of(kSecondBindingIds,
+                               [id](const Vst::ParamID dup) { return dup == id; });
 }
 
 }  // namespace
@@ -672,9 +715,10 @@ TEST_CASE("Seraphis_Phase8Parameters_AreFrozen", "[seraphis][controller][params]
 // ==============================================================================
 
 TEST_CASE("Seraphis_UidescControlTags_MatchRegisteredIds", "[seraphis][controller][ui]") {
-    // NOT Krate::Test::unreachableParams: Phase 9 adds 83 tags with NO view on
-    // purpose (layout is Phase 11's), and that helper would report all 83 as
-    // unreachable. Only the tag MAP is consumed here.
+    // Phase 9 added 83 tags with NO view on purpose (layout was Phase 11's), so
+    // this case used to consume only the tag MAP. Phase 11 SHIPS the layout, so
+    // Krate::Test::unreachableParams is now used as well - with an EMPTY
+    // allowlist (T019, SC-002/C-3).
     const std::string xml = readUidesc();
     const std::map<std::string, int> tagMap = Krate::Test::extractControlTagMap(xml);
 
@@ -708,11 +752,57 @@ TEST_CASE("Seraphis_UidescControlTags_MatchRegisteredIds", "[seraphis][controlle
     }
     CHECK(tagged == registered);
 
-    // The eight placeholder views still bind, and still bind as the control class
-    // spec C-6's Type column demands (FR-048: no new <view> is added by Phase 9).
+    // ==========================================================================
+    // SC-002 / FR-003 (T019) - THE BINDING BUDGET, AND IT IS EXACT.
+    // ==========================================================================
+    // 110 = 107 primary bindings + the three SECOND bindings of the header freeze
+    // cluster. If extractBoundViews returns anything else, the XML is what gets
+    // fixed - never this number.
     const std::vector<BoundView> bound = extractBoundViews(xml);
-    CHECK(bound.size() == 8u);
+    CHECK(bound.size() == 110u);
 
+    // C-3: EVERY registered ID is reachable from some <view>, asserted with an
+    // EMPTY allowlist. No parameter of this surface is driven by a custom view
+    // instead of a control-tag, and the drawer is a plain CViewContainer with all
+    // seven pages present rather than a UIViewSwitchContainer (which would realise
+    // only the active page and strand six tabs' worth of IDs here).
+    const std::vector<int> registeredIds(registered.begin(), registered.end());
+    const std::vector<int> unreachable =
+        Krate::Test::unreachableParams(xml, registeredIds, {});
+    std::ostringstream unreachableList;
+    for (const int id : unreachable) {
+        unreachableList << id << ' ';
+    }
+    INFO("registered parameter IDs no <view> binds: " << unreachableList.str());
+    CHECK(unreachable.empty());
+
+    // The MULTISET of bound IDs: exactly twice for the enumerated three, exactly
+    // once for every other registered ID, and never an ID that is not registered.
+    std::map<int, int> bindCount;
+    for (const BoundView& view : bound) {
+        INFO("<view control-tag=\"" << view.tagName << "\"> names no <control-tag>");
+        const auto it = tagMap.find(view.tagName);
+        REQUIRE(it != tagMap.end());
+        ++bindCount[it->second];
+    }
+    for (const int id : registered) {
+        const int expectedCount =
+            isSecondBindingId(static_cast<Vst::ParamID>(id)) ? 2 : 1;
+        const auto found = bindCount.find(id);
+        const int actualCount = (found == bindCount.end()) ? 0 : found->second;
+        INFO("parameter ID " << id << " is bound " << actualCount << " time(s), want "
+                             << expectedCount);
+        CHECK(actualCount == expectedCount);
+    }
+    for (const auto& entry : bindCount) {
+        INFO("a <view> binds tag " << entry.first << ", which names no registered "
+                                                     "parameter");
+        CHECK(registered.count(entry.first) == 1u);
+    }
+
+    // ==========================================================================
+    // SC-003 / FR-004 - each bound view's class matches its parameter's kind.
+    // ==========================================================================
     for (const BoundView& view : bound) {
         INFO("<view class=\"" << view.viewClass << "\" control-tag=\"" << view.tagName
                               << "\">");
@@ -728,7 +818,12 @@ TEST_CASE("Seraphis_UidescControlTags_MatchRegisteredIds", "[seraphis][controlle
             }
         }
         REQUIRE(row != nullptr);
-        CHECK(view.viewClass == std::string(expectedViewClass(row->kind)));
+
+        std::set<std::string> allowed = expectedViewClasses(row->kind);
+        if (isMacroRingId(id)) {
+            allowed.insert("MacroRingKnob");
+        }
+        CHECK(allowed.count(view.viewClass) == 1u);
     }
 
     controller.terminate();

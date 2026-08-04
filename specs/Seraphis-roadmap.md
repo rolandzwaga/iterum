@@ -474,13 +474,54 @@ ceiling — no aggressive distortion, that's Disrumpo), stereo wandering (`Brown
 
 ### Phase 11: UI
 
+**Status: ✅ COMPLETE (2026-08-04)** — see specs/seraphis-phase11-ui/compliance.md
+
 **Spec:** `seraphis-phase11-ui`
 
-`editor.uidesc` (VSTGUI only, cross-platform). Macro-first layout: the five macros dominate; engine
-panels underneath. One signature visualization: the **cloud view** — live partial constellation
-(per-partial freq/amp/pan as drifting points) fed via DataExchange piggyback (Membrum
-MetersBlock pattern — no new queues). Custom views get the standard sub-controller treatment
-(vst-guide skill). No param-type swaps on registered IDs, ever.
+`editor.uidesc` (VSTGUI only, cross-platform). **Organism-first layout**: the **cloud view** — live
+partial constellation (per-partial freq/amp/pan as drifting points, x=pan / y=freq / size=amp) — fills
+the whole window; it is the interface, not a panel among panels. Fed via DataExchange piggyback
+(Membrum MetersBlock pattern — no new queues). The five macros are large custom ring knobs anchored
+at the corners/edges, orbiting the view; deep parameter sections live in a pull-up drawer along the
+bottom edge. Custom views get the standard sub-controller treatment (vst-guide skill). No param-type
+swaps on registered IDs, ever.
+
+```
++----------------------------------------------------------------------+
+| SERAPHIS   [preset]                              [seed][poly][limit] |  <- slim header
+|                                                                      |
+|   (DREAM)                                              (BLOOM)       |
+|                    .  o      .        o                              |
+|              o          CLOUD VIEW          .                        |
+|                  .   fills entire window        o                    |
+|   (GRAVITY)        o      O     .    .               (DISSOLVE)      |
+|                       .        o                                     |
+|                  x=pan  y=freq  size=amp                             |
+|                          (ENTROPY)                                   |
+|                                                          [obs|edit]  |
++----------------------------------------------------------------------+
+|  ^ drawer handle: [Cloud][Morph][Body][Atmos][Aether][FX][Life/Env]  |
++----------------------------------------------------------------------+
+```
+
+Layout commitments:
+
+- **Macro rings react**: turning a macro visibly perturbs nearby partials in the cloud view (e.g.
+  Bloom pulls partials upward) — the payoff that justifies the custom views.
+- **Drawer**: collapsed = tab strip only (~30 px); open = slides up to ~40% height showing one
+  section's knobs (7 tabs: Cloud, Morph, Body, Atmos, Aether, FX, Life/Env). The cloud view never
+  stops rendering — it compresses or is overlapped, but stays alive.
+- **Obs/Edit toggle** (bottom-right of cloud view): *Observe* = live constellation; *Edit* = drag
+  partials → `setPartial`, with a Blend A→B slider → `blendStates` and Tilt dB control → `tiltState`
+  in a mini-toolbar. This makes the cloud view the sole consumer of the inherited mutators (below)
+  rather than a separate editing table.
+- **Drawer knobs stay plain uidesc controls.** Custom-view surface is exactly three: cloud view,
+  macro ring knob (one class, five instances), drawer container.
+
+Left for the implementation spec to resolve: morph state-slot A–D placement (suggest inside the
+Morph tab: 4 slot buttons + travel controls), whether the three freeze controls (Atmos, Aether,
+FX spectral) also get a floating always-visible cluster or stay drawer-only, and fixed vs
+resizable window sizing (cloud view scales naturally; drawer knob rows are the constraint).
 
 **Inherited from Phase 3 via Phase 9 (RQ-1, decided 2026-08-01).** Phase 11 owns the three
 `SpectralState` authoring mutators — `setPartial(index, ratio, amplitude)`, `blendStates(A, B, t)` and
@@ -495,6 +536,42 @@ the per-partial engine surface those mutators exist to drive — `HarmonicCloud:
 `setPartialPosition` and `setPartialMask` — which Phase 9 deliberately left unregistered for the same
 reason: no per-partial control surface exists until this phase. See
 `specs/seraphis-phase9-parameters/spec.md` → *Resolved Questions* RQ-1 and FR-058 clause 4.
+
+### Phase 11.5: Processor whole-`process()` optimization
+
+**Spec:** `seraphis-phase11-5-process-optimization`
+
+**Added 2026-08-04 by the phase-owner ruling "Hybrid" on Phase 11's OE-1.** This phase exists because
+Phase 11's compliance pass measured, for the first time, the thing line 313 of this document actually
+promises — **whole-`process()`, not the chain alone** — and found the shipped plugin over it.
+
+**Goal:** whole-`process()`, 8 voices, everything on, **≤ 25 % of one core on the reference machine**
+(fresh-boot, seven runs, worst reported — the protocol `param_perf_test.cpp:144-207` defines).
+
+**Evidence base:** `specs/seraphis-phase11-ui/spec.md` → *Open Escalations* → **OE-1**, which decomposes
+the measured 31.7 % as: chain only, 107-row surface **22.04 %** + effects stage at maxima **0.4484 %** =
+22.5 %, leaving a **~9.2-point remainder** that is neither. Phase 11's own marginal cost is **≤ 1.88
+points at the worst**, measured as same-run deltas, so Phase 11 is not the mechanism and could not have
+been the fix.
+
+**Scope:** the ~9.2-point remainder only — the `Processor`'s **8 × 64 control-chunk slice loop** and the
+**per-slice parameter fan-out** over a maxed 107-row surface, i.e. **Phase 8–10 plumbing**. Not the
+engine, not the effects stage, not Phase 11's producer (all three are already inside their own budgets and
+have their own criteria).
+
+**Phase 12 MUST NOT ship before this phase is green.** Release readiness that ships a 31.7 % instrument
+against a documented 25 % promise is not release readiness; the gate belongs here, ahead of the release
+phase, not inside it.
+
+**Exit criteria:**
+1. Whole-`process()` at the 8-voice operating point is **≤ 25 % of one core**, worst-of-seven on a
+   fresh-boot idle machine.
+2. Phase 11's four restated perf arms stay green **in their differential form** — SC-009(a), SC-014 arm 7
+   and SC-031 (`tests/integration/ui_perf_test.cpp`). An optimization that made the marginal costs worse
+   while lowering the absolute is not accepted.
+3. Phase 11's **SC-010(b) absolute arm passes with `kSc010BaselinePinned = true`** — i.e.
+   `kBaselineWholeProcessNs` is re-pinned from a real seven-run fresh-boot cold set after the optimization,
+   and the arm gates rather than reports.
 
 ### Phase 12: Factory Presets & Release Readiness
 
@@ -542,12 +619,14 @@ Phase 1 (life mods) ✅┬─→ Phase 2 (cloud) ✅┬─→ Phase 3 (morph/ent
                       │                                                    │   Phase 8 (scaffold)
                       └─→ Phase 6 (aether) ────────────────────────────────┘        │
                                                                                     ▼
-                                                           Phase 9 ✅ → 10 ✅ → 11 → 12 → 13
+                                                           Phase 9 ✅ → 10 ✅ → 11 ✅ → 11.5 → 12 → 13
 ```
 
 Phases 2, 4, 5, 6 are independent of each other once Phase 1 lands — they can be specced/built in
 any order (or interleaved with listening checkpoints). Phase 7 needs all of them. Part B is strictly
-sequential.
+sequential. **Phase 11.5 is a hard gate ahead of Phase 12** (added 2026-08-04 by the phase-owner ruling
+on Phase 11's OE-1): the whole-`process()` 25 % promise on line 313 is owned there, and release readiness
+does not run before it is met.
 
 ## Cross-Cutting Constraints (apply to every spec)
 

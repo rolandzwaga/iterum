@@ -583,7 +583,14 @@ static_assert(kBlockSize / SeraphisEngine::kControlChunkSamples == 8,
 static_assert(AetherReverb::kMaxBloomResonators == 32, "RA-1 row (c) drives the bloom ceiling");
 static_assert(ContinuousBody::kNumMaterials == 5, "row 800 is chosen from all five materials");
 static_assert(SpectralMorphEngine::kMaxStates == 4, "the spectral fan-out writes four slots");
-static_assert(SeraphisMacroMatrix::kNumTargets == 27, "plan sec. 7.9's MB route is 27 rows");
+// MOVED 27 -> 29 by Phase 11 T004 (specs/seraphis-phase11-ui/tasks.md), which
+// appends SeraphisMacroTarget::FxDelaySend and ::FxWanderDepth before `Count`
+// (seraphis_macro_matrix.h, the C-10 Effects owner). The MB route's LOOP is
+// `t < kNumTargets` (:1318), so it now walks 29 targets; the two new ones are
+// Effects-owned and are READ back through computeEffectsTargets() rather than
+// pushed into the engine. The literal tracks the enum by design - the
+// assertion's job is to make a further addition a build break, not to freeze 27.
+static_assert(SeraphisMacroMatrix::kNumTargets == 29, "plan sec. 7.9's MB route is 29 rows");
 static_assert(SeraphisVoiceParams::kFieldCount == 37, "plan sec. 7.9's VP route is 37 rows");
 
 /// Finite check WITHOUT std::isnan: the macOS leg builds with -ffast-math, which
@@ -2466,6 +2473,46 @@ TEST_CASE("Seraphis_ParameterPush_CpuBudget", "[.perf]") {
 // already the maximum both static_asserts admit.
 //
 // =============================================================================
+// PHASE 11 / SC-009 (specs/seraphis-phase11-ui, task T023) - THE "GATE-OPEN
+// RE-RUN" OF THIS ARM, AND WHAT IT CAN AND CANNOT BE
+// =============================================================================
+// Phase 11's SC-009 names this case as one of its two tests: "a re-run of
+// Seraphis_FullPoly_CpuBudget_WithFullSurface with the gate open"
+// (specs/seraphis-phase11-ui/spec.md:1362-1370). THE GATE IS NOT AN OPERATION
+// THIS SUBJECT ADMITS, and saying so is the honest result rather than a dodge:
+//
+//   * the "gate" is Phase 11's C-2 clause 6 producer gate, a member of
+//     Seraphis::Processor read by publishCloudFrame() (processor.cpp:3986), and
+//     opened through Processor::setCloudFrameGateForTest / a C-5 kind-0
+//     EditMessage;
+//   * FINDING 1 above records what this arm's timed region actually contains:
+//     three calls on a hand-built engine/reverb pair. There is NO Processor in
+//     it, so there is no gate to open and no publishCloudFrame() to run. The
+//     figure below is INVARIANT to the gate BY CONSTRUCTION, and re-running it
+//     "with the gate open" produces the same number for the same reason a
+//     compiler flag with no code to apply to produces the same binary.
+//
+// SO WHERE IS THE GATE-OPEN NUMBER? It is a WHOLE-process() figure, and it is
+// measured in tests/integration/ui_perf_test.cpp:
+//     Seraphis_CloudFrame_CpuBudget                 SC-009(a) gate OPEN
+//                                                   SC-009(b) the snapshot stage alone
+//     Seraphis_CloudFrame_CostsNothingWhenClosed    SC-010(a)(b) gate CLOSED
+//     Seraphis_PartialOverrides_RepushWorstCase     SC-014 arm 7
+//     Seraphis_EditGestureInFlight_FitsTheBudget    SC-031
+// All four are "[.perf]", run in the SAME `seraphis_tests.exe "[.perf]"` pass as
+// this case, and all four gate against kFullPolyCeilingNs / the pinned baseline
+// as copied constants pinned by static_assert - so this file's numbers are read
+// by them and never edited by them.
+//
+// WHAT PHASE 11 CHANGED HERE: NOTHING BUT THIS COMMENT AND THE WARN ROW THE CASE
+// NOW PRINTS. kFullPolyCeilingNs (:392), kRegressionFactor (:395) and
+// kBaselineFullPolyNs (:472) are byte-identical to what Phase 10 left them, and
+// T023's file list forbids touching them. If Phase 11's whole-process() arms
+// breach their ceilings, the remedies are the ones ui_perf_test.cpp's banners
+// enumerate - a cheaper producer, a cheaper fan-out, a narrower
+// spectralRetryMask_ - and NOT a constant in this file.
+//
+// =============================================================================
 
 TEST_CASE("Seraphis_FullPoly_CpuBudget_WithFullSurface", "[.perf]") {
     // -------------------------------------------------------------------------
@@ -2618,6 +2665,27 @@ TEST_CASE("Seraphis_FullPoly_CpuBudget_WithFullSurface", "[.perf]") {
     // gate.
     REQUIRE(measuredNs <= kFullPolyCeilingNs);
     checkAgainstBaseline("SC-009", measuredNs, kBaselineFullPolyNs, kSc009BaselinePinned);
+
+    // -------------------------------------------------------------------------
+    // 4b. PHASE 11 / SC-009's "gate-open re-run", recorded in the transcript
+    //     rather than left to a reader to reconstruct. See the PHASE 11 banner
+    //     above for why this subject cannot carry the gate, and where the
+    //     gate-open whole-process() figure is measured instead.
+    // -------------------------------------------------------------------------
+    {
+        std::ostringstream os;
+        os << "PHASE 11 SC-009 - THIS ARM IS THE GATE-OPEN RE-RUN, AND IT IS GATE-INVARIANT.\n"
+           << "  The timed region is a hand-built engine/reverb pair (FINDING 1): no Processor, "
+              "so no C-2 clause 6 gate and no publishCloudFrame().\n"
+           << "  This run: " << measuredNs << " ns/block  ("
+           << ((measuredNs / kBlockBudgetNs) * 100.0) << " % of one core), ceiling "
+           << kFullPolyCeilingNs << " ns.\n"
+           << "  The gate-OPEN and gate-CLOSED whole-process() figures are SC-009(a) and "
+              "SC-010(b) in tests/integration/ui_perf_test.cpp, in this same [.perf] pass.\n"
+           << "  Phase 11 changed NO constant in this file: kFullPolyCeilingNs, "
+              "kRegressionFactor and kBaselineFullPolyNs are what Phase 10 left them.";
+        WARN(os.str());
+    }
 
     // -------------------------------------------------------------------------
     // 5. THE 16-VOICE FIGURE: MEASURED AND RECORDED, NON-GATING (plan sec. 7.9).

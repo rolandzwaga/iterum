@@ -361,6 +361,25 @@ add_executable(dsp_systems_tests
     # applyVoiceParams / applySpectralStates, the macro base overrides, the new
     # SeraphisVoice forwarders and ContinuousBody accessors.
     unit/systems/seraphis_param_broadcast_test.cpp
+    # Seraphis Phase 11 (specs/seraphis-phase11-ui): the SeraphisEngine
+    # per-partial fan-outs and their SeraphisVoice pass-throughs (T003).
+    unit/systems/seraphis_partial_fanout_test.cpp
+    # Seraphis Phase 11 (specs/seraphis-phase11-ui): SC-012's acceptance arm and
+    # SC-013's four audibility arms for the SpectralState authoring mutators
+    # (T005). Layer 3 because every arm needs SpectralMorphEngine/HarmonicCloud;
+    # the Layer 2 preservation table stays in
+    # unit/processors/spectral_state_test.cpp. Deliberately NOT in the
+    # -fno-fast-math block below: its non-finite arguments are built from bit
+    # patterns and the mutators' guards are detail::isNaN/isInf, so the file must
+    # build in the FP mode the header actually ships in.
+    #
+    # T027 audit: these are the ONLY two dsp/ TUs Phase 11 adds, both here in
+    # dsp_systems_tests, each exactly once, and neither in the -fno-fast-math
+    # block below. unit/processors/spectral_state_test.cpp (T002's Layer 2
+    # preservation table) was already registered to dsp_processors_tests and stays
+    # there. SC-030 needs NO new TU - it is a re-run of the existing
+    # spectral_morph_* cases in this same executable.
+    unit/systems/spectral_state_authoring_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests

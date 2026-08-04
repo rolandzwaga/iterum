@@ -99,13 +99,27 @@ static_assert(73 * 4 + 18 * 4 + 4 + 4 * 541 == kV2StateBytes,
 /// written last by getState() and read last by setState(). v2 is a STRICT
 /// PREFIX of v3, so every size below that means "what getState() writes today"
 /// is kV3StateBytes; kV2StateBytes survives only where the v2 LAYOUT is the
-/// subject.
+/// subject. Phase 11 appends a SECOND block after [effects] (see
+/// kPartialsBlockBytes) without moving the version stamp, so kV3StateBytes is
+/// the running total of the append chain, not a fixed Phase 10 number.
 constexpr int32 kEffectsBlockBytes = 12 * 4 + 4 * 4;
-constexpr int32 kV3StateBytes = kV2StateBytes + kEffectsBlockBytes;
+/// Everything through [effects]: the whole stream as PHASE 10 wrote it, and so
+/// the OFFSET of the block Phase 11 appends after it.
+constexpr int32 kEffectsEndBytes = kV2StateBytes + kEffectsBlockBytes;
+/// Phase 11 (specs/seraphis-phase11-ui, FR-034a / T012) appends the [partials]
+/// block LAST -- 64 x float pan override + two uint64 bitmasks -- with
+/// kCurrentStateVersion UNCHANGED at 3, because an append keeps v2/Phase-10
+/// streams strict prefixes of what getState() writes today.
+constexpr int32 kPartialsBlockBytes = 64 * 4 + 8 + 8;
+constexpr int32 kV3StateBytes = kEffectsEndBytes + kPartialsBlockBytes;
 
 static_assert(kEffectsBlockBytes == 64, "spec C-6: sixteen effects fields, 64 bytes");
-static_assert(85 * 4 + 22 * 4 + 4 + 4 * 541 == kV3StateBytes,
-              "SC-009: the v3 arithmetic of plan 5.1 must reproduce 2596");
+static_assert(85 * 4 + 22 * 4 + 4 + 4 * 541 == kEffectsEndBytes,
+              "SC-009: the Phase 10 arithmetic of plan 5.1 must reproduce 2596");
+static_assert(kPartialsBlockBytes == 272,
+              "FR-034a: 256 pan bytes + two 8-byte masks = 272");
+static_assert(kV3StateBytes == 2868,
+              "FR-034a: the Phase 11 stream is 2596 + 272, still stamped version 3");
 
 struct StreamReleaser {
     void operator()(MemoryStream* s) const noexcept {
@@ -662,7 +676,7 @@ TEST_CASE("Seraphis_StateRoundTrip_IsExact", "[seraphis][state][v2]") {
     }
     driveAllParameters(driven, kSampleRate, kBlock);
 
-    SECTION("getState -> setState -> getState is byte-identical at exactly 2596 bytes") {
+    SECTION("getState -> setState -> getState is byte-identical at exactly 2868 bytes") {
         StreamPtr a = captureState(*driven.fx->proc);
         REQUIRE(a->getSize() == kV3StateBytes);
 
@@ -854,8 +868,10 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
     }
 
     // Phase 10: the stream captured below is now a v3 one (v2 plus the
-    // 64-byte [effects] block). The twelve cut offsets are unchanged except
-    // the last, which is defined as "one byte short of the end".
+    // 64-byte [effects] block); Phase 11 appends the 272-byte [partials]
+    // block after it. The twelve cut offsets are unchanged except the last,
+    // which is defined as "one byte short of the end" and so now lands INSIDE
+    // [partials] -- exactly the EOF-safe case FR-034a's loader must survive.
     SECTION("Twelve truncated version-3 streams load without crash") {
         DrivenProcessor driven;
         Lcg rng(0x5EEDu);

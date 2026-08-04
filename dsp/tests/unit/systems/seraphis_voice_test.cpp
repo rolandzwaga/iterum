@@ -1423,29 +1423,41 @@ TEST_CASE("SeraphisVoice_ForwardersAndConfigureTimeGate") {
         REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore);
     }
 
-    SECTION("FR-031 REJECT: a sounding voice rejects and counts") {
+    // Phase 11 D-1 / FR-033a REPLACES the Phase 9 assertion that used to live
+    // here ("FR-031 REJECT: a sounding voice rejects and counts"). The gate on
+    // setSpectralState/setSpectralStateCount was deliberately removed, because
+    // SpectralMorphEngine::setState absorbs a live swap through the FR-047 fade
+    // (Phase 3's FR-042/FR-044 prove it continuity-safe), so the SeraphisVoice
+    // gate was a stricter-than-necessary restriction that made a Phase 11
+    // partial edit inaudible until the next note-on.
+    // spec.md (seraphis-phase11-ui) FR-033a, SC-028 - SC-030.
+    SECTION("FR-033a ACCEPT: a SOUNDING voice takes the push and does not count") {
         auto v = makeVoice(407u);
-        v->noteOn(kTestNoteHz, 1.0f);
+        v->noteOn(kTestNoteHz, 1.0f);  // hasSounded_ closes here (:516)
         std::vector<float> l(4096, 0.0f);
         std::vector<float> r(4096, 0.0f);
         renderInto(*v, l.data(), r.data(), l.size(), 512);
+        // Sounded and not finished: EXACTLY the state the removed gate rejected.
         REQUIRE_FALSE(v->isFinished());
 
         const int countBefore = v->morph().getStateCount();
+        REQUIRE(countBefore == 2);  // non-vacuity: 3 below is a real change
         const std::uint32_t rejectedBefore = v->getRejectedConfigureTimeCallCount();
 
+        // setState does not move numStates_ (spectral_morph_engine.h:292-314
+        // never writes it), so the counter is the observable here: before the
+        // relaxation this call landed on `++rejectedConfigCalls_; return;`.
         v->setSpectralState(1, Krate::DSP::makeFactoryState(Krate::DSP::SpectralStateId::Bell));
-        REQUIRE(v->morph().getStateCount() == countBefore);
-        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore + 1u);
+        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore);
 
         v->setSpectralStateCount(3);
-        REQUIRE(v->morph().getStateCount() == countBefore);
-        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore + 2u);
+        REQUIRE(v->morph().getStateCount() == 3);
+        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore);
 
-        // setTargetPosition is NOT gated - FR-062's Bloom row drives it live - so
-        // it must not touch the counter.
+        // setTargetPosition was never gated - FR-062's Bloom row drives it live -
+        // so it must not touch the counter either.
         v->setTargetPosition(1.0f);
-        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore + 2u);
+        REQUIRE(v->getRejectedConfigureTimeCallCount() == rejectedBefore);
     }
 
     SECTION("FR-031 ACCEPT again: a retired voice is configurable once more") {

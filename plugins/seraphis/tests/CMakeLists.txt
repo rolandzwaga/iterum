@@ -34,9 +34,36 @@ add_executable(seraphis_tests
     integration/effects_chain_test.cpp
     integration/effects_perf_test.cpp
 
+    # Seraphis Phase 11 (specs/seraphis-phase11-ui): the organism-first editor.
+    # Same rule as Phases 9 and 10 above - this list is ENUMERATED, not globbed,
+    # so an unregistered TU silently drops out of the build and its cases never
+    # run (Catch2 reports "No tests ran" rather than a failure).
+    #
+    # T027 audit: all five Phase 11 TUs are present here EXACTLY ONCE. Verify this
+    # list by the rebuilt `M test cases` count against T001's baseline, never by
+    # the exit code - an unregistered TU exits 0.
+    integration/cloud_frame_test.cpp
+    unit/controller/custom_view_test.cpp
+    integration/partial_edit_test.cpp
+    integration/ui_negative_control_test.cpp
+    # ui_perf_test.cpp carries SC-011's RT-safety arms now and the [.perf] CPU
+    # arms (SC-009/SC-010) later, so it is created BEFORE any baseline is pinned
+    # and must NOT appear in the -fno-fast-math block below - see the note there.
+    integration/ui_perf_test.cpp
+
     # SECOND compilation of every plugin .cpp (needed by the plugin-shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/controller/controller.cpp
+    # Seraphis Phase 11 custom views. The PLUGIN source list carries these too -
+    # that is T027's audit; this entry is what makes the view's cases link and
+    # run inside seraphis_tests. T027 audit: all three .cpp files appear here and
+    # in plugins/seraphis/CMakeLists.txt, exactly once in each. A new plugin .cpp
+    # that is missing HERE fails as an unresolved external from controller.obj
+    # when seraphis_tests links; one missing from the PLUGIN list fails the same
+    # way when Seraphis.vst3 links.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui/cloud_view.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui/drawer_container.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui/edit_sub_controller.cpp
 
     # VST3 SDK sources
     ${vst3sdk_SOURCE_DIR}/public.sdk/source/common/memorystream.cpp
@@ -111,6 +138,33 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # baselines are pinned to.
         integration/effects_chain_test.cpp
         unit/state_v3_test.cpp
+        # Seraphis Phase 11: integration/cloud_frame_test.cpp and
+        # unit/controller/custom_view_test.cpp are DELIBERATELY ABSENT. They
+        # inject no non-finite payloads and measure no per-sample step statistic
+        # - every number they assert is an integer count, a comparison of two
+        # reads of the same live DSP/UI state, or (SC-008) a RELATIVE 1e-5
+        # comparison of two frame sequences the SAME compiled path produced in
+        # the same process, which fast-math contraction reshapes identically on
+        # both sides. integration/ui_perf_test.cpp is ABSENT for the same reason
+        # param_perf_test.cpp and effects_perf_test.cpp are: it carries the
+        # phase's [.perf] CPU arms, and -fno-fast-math would move the figures
+        # their baselines are pinned to. Its RT-safety arms assert integer counts
+        # only and inject no non-finite value. Only
+        # partial_edit_test.cpp and ui_negative_control_test.cpp get the flag in
+        # this phase (plan section 10.3). T027 audit: EXACTLY those two Phase 11
+        # entries are present below, and cloud_frame_test.cpp / ui_perf_test.cpp /
+        # custom_view_test.cpp are confirmed absent.
+        #
+        # partial_edit_test.cpp DOES get it: SC-018 fuzzes Processor::notify with
+        # bit-pattern NaN/Inf EditMessage payloads and asserts on the rejection,
+        # and SC-029 measures a per-chunk step statistic that fast-math
+        # contraction would reshape.
+        integration/partial_edit_test.cpp
+        # ui_negative_control_test.cpp DOES get it: SC-001 compares two renders
+        # per-sample at EXACTLY 0.0f, and fast-math contraction is free to fuse
+        # the two arms' arithmetic differently once anything around the call site
+        # changes.
+        integration/ui_negative_control_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

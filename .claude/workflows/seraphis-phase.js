@@ -124,10 +124,14 @@ verbatim, never paraphrase or invent.
 //   comply, remediate, reverify, and the judgment-lens skeptics.
 // - MECH (sonnet): transcription/reporting/gate roles. Errors here are LOUD
 //   (schema mismatch, red build gate, reviewable diff), so cheaper is safe.
-//   Covers: dispatch, build reporter (effort low), recheck, clarify-gate
-//   (effort low), encode-clarifications, report, and the reality-lens
-//   skeptics (open-header signature cross-checks). These also get
-//   CONTEXT_LITE where the roadmap is irrelevant.
+//   Covers: dispatch, build reporter, recheck, clarify-gate,
+//   encode-clarifications, report, and the reality-lens skeptics
+//   (open-header signature cross-checks). These also get CONTEXT_LITE
+//   where the roadmap is irrelevant.
+//   NEVER add effort:'low' to the build reporter: it produced unfinished-run
+//   and PLACEHOLDER reports in Phase 11, and every junk red report triggers
+//   an Opus fixer round — the false economy costs more than it saves.
+//   If a Sonnet reporter ever emits junk again, pin it back to AUTHOR.
 // - TRIVIAL (haiku): mark-roadmap (one status line, self-contained prompt).
 // Deliberately NOT tiered yet: impl agents (DSP quality; revisit for a
 // mostly-mechanical phase like presets) and all comply lenses (honesty gate).
@@ -232,7 +236,7 @@ const TASKGROUPS_SCHEMA = {
               properties: {
                 id: { type: 'string', description: 'task id from tasks.md, e.g. T003' },
                 title: { type: 'string' },
-                instructions: { type: 'string', description: 'full self-contained instructions copied/expanded from tasks.md: test to write first, exact assertions, then implementation' },
+                instructions: { type: 'string', description: 'ONE-to-THREE sentence orientation summary ONLY (goal + the test that proves it). Do NOT copy the task text — the executor reads its full task section from tasks.md itself. Keeping this short is a hard requirement: the full copy overflows the output-token cap.' },
                 files: { type: 'array', items: { type: 'string' }, description: 'every file this task creates or edits' },
               },
             },
@@ -397,7 +401,7 @@ if (stage === 'plan') {
   // Gate: refuse to plan while the spec still carries unresolved questions.
   const gate = await run(
     `${CONTEXT_LITE}\n\nRead ${SPEC}. Check whether a "## Open Clarifications" section with unresolved questions still exists, and whether any FR/SC still contradicts the "## Clarifications" decisions log (if present). resolved=true only if the spec is clean and self-consistent.`,
-    { label: 'clarify-gate', phase: 'Encode Clarifications', schema: RECHECK_SCHEMA, model: MECH, effort: 'low' },
+    { label: 'clarify-gate', phase: 'Encode Clarifications', schema: RECHECK_SCHEMA, model: MECH },
   )
   if (gate && !gate.resolved) {
     return {
@@ -451,7 +455,7 @@ if (stage === 'plan') {
 // ===========================================================================
 phase('Dispatch')
 const dispatch = await run(
-  `${CONTEXT_LITE}\n\nRead ${SPEC}, ${PLAN}, and ${TASKS}. Convert tasks.md into executable task groups, preserving its group order and [P] parallel markers. Copy each task's instructions VERBATIM-or-expanded (executors see nothing else). Mark a group parallel=true ONLY if every task in it touches disjoint new files. Also list the cmake test targets this phase runs.`,
+  `${CONTEXT_LITE}\n\nRead ${TASKS} (skim ${SPEC}/${PLAN} only if the task list is ambiguous). Convert tasks.md into executable task groups, preserving its group order and [P] parallel markers. For each task emit ONLY: id, title, the file list, and a 1-3 sentence orientation summary — do NOT copy the task body (executors read their own section of tasks.md; a verbatim copy overflows your output limit). Mark a group parallel=true ONLY if every task in it touches disjoint new files. Also list the cmake test targets this phase runs.`,
   { label: 'dispatch', phase: 'Dispatch', schema: TASKGROUPS_SCHEMA, model: MECH },
 )
 if (!dispatch || !dispatch.groups || dispatch.groups.length === 0) throw new Error(`Dispatcher produced no task groups — check ${TASKS} exists (run stages "specify" then "plan" first)`)
@@ -471,7 +475,7 @@ for (const group of dispatch.groups) {
 
   const runTask = (t) => () =>
     run(
-      `${CONTEXT}\n\nExecute this implementation task EXACTLY. Artifacts for reference: ${SPEC}, ${PLAN}. Write the failing test FIRST, then implement. Do NOT build or run tests (a dedicated build agent does that after your group) — but re-read every file you wrote before finishing and fix anything that obviously would not compile. Do not touch any file outside your task's file list. Never commit.\n\nTASK ${t.id}: ${t.title}\nFILES: ${t.files.join(', ')}\n\n${t.instructions}`,
+      `${CONTEXT}\n\nExecute this implementation task EXACTLY. FIRST open ${TASKS} and read the full section for task ${t.id} — that section is your AUTHORITATIVE instruction (the summary below is orientation only). Artifacts for reference: ${SPEC}, ${PLAN}. Write the failing test FIRST, then implement. Do NOT build or run tests (a dedicated build agent does that after your group) — but re-read every file you wrote before finishing and fix anything that obviously would not compile. Do not touch any file outside your task's file list. Never commit.\n\nTASK ${t.id}: ${t.title}\nFILES: ${t.files.join(', ')}\n\nORIENTATION: ${t.instructions}`,
       { label: `impl:${t.id}`, phase: 'Implement', schema: IMPL_RESULT },
     )
 
@@ -491,8 +495,8 @@ for (const group of dispatch.groups) {
   while (attempt < 4) {
     attempt++
     buildLog = await run(
-      `${CONTEXT_LITE}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n(retry-epoch 3: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
-      { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT, model: MECH, effort: 'low' },
+      `${CONTEXT_LITE}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n\nREPORTING CONTRACT (violations poison the whole pipeline):\n- WAIT for every suite to print its final Catch2 summary line, however long it takes (suites can run several minutes; use foreground commands with generous timeouts).\n- An unfinished or timed-out run is NOT a result: re-run that suite to completion before reporting. NEVER report tests_ok=false because a measurement was incomplete.\n- NEVER return placeholder text in any field. summary must contain the real verbatim summary line per target; tests_ok=false REQUIRES the actual failing test names + assertion output in failures.\n- Hidden-tag tests ([.perf] etc.) are excluded from plain suite runs by design — do not run them with wildcard filters and do not count them.\n(retry-epoch 4: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
+      { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT, model: MECH },
     )
     if (!buildLog) throw new Error('Build agent died — aborting to avoid blind fixes')
     if (buildLog.build_ok && buildLog.tests_ok) { log(`Group "${group.name}" green: ${buildLog.summary}`); break }

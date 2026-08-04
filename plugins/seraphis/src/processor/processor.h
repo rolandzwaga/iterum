@@ -23,6 +23,13 @@
 #include "parameters/macro_params.h"
 #include "parameters/morph_params.h"
 
+// Phase 11 C-2 (T006/T008). The DataExchange payload published once per
+// process() call. It is a POD over <cstdint> ONLY and names no processor type,
+// so the controller includes it too - the sanctioned shared-POD exception
+// (plugins/membrum/src/processor/meters_block.h is the precedent), not a
+// cross-boundary include.
+#include "processor/cloud_frame.h"
+
 #include <krate/dsp/core/block_context.h>       // Phase 10 FR-030: SpectralDelay::process's 4th arg
 #include <krate/dsp/core/crossfade_utils.h>     // Phase 10 C-5: equalPowerGains (the azimuth pan law)
 #include <krate/dsp/effects/aether_reverb.h>
@@ -42,6 +49,24 @@
 #include <memory>
 #include <span>
 #include <vector>
+
+// Phase 11 FR-011 (plan 5.2). Forward-declared, exactly as Membrum does
+// (plugins/membrum/src/processor/processor.h:33-34), so this header stays cheap
+// to include; public.sdk/source/vst/utility/dataexchange.h is pulled in by
+// processor.cpp alone. The unique_ptr member below is legal over an incomplete
+// type because ~Processor() is defined out of line (processor.cpp:404).
+namespace Steinberg::Vst {
+class DataExchangeHandler;
+}  // namespace Steinberg::Vst
+
+// Phase 11 C-5 (plan 6.1/6.2, T010). The controller -> processor wire format.
+// FORWARD-DECLARED here and INCLUDED by processor.cpp alone: applyEditMessage
+// takes it by const&, which needs only an incomplete type, and that keeps
+// src/ui/ out of this header's include set even though edit_message.h is a POD
+// over <cstdint> that the processor is expressly allowed to see.
+namespace Seraphis::UI {
+struct EditMessage;
+}  // namespace Seraphis::UI
 
 namespace Seraphis {
 
@@ -232,6 +257,16 @@ static_assert((kFxFifoCapacity & (kFxFifoCapacity - 1u)) == 0u, "the ring index 
 static_assert(kFxFifoCapacity >= kFxSendChunkSamples + kMaxBlockSamples,
               "plan sec. 3.1 bound: one chunk plus one whole slice must fit");
 
+/// Phase 11 C-2 clause 4(b). The level below which a voice that the allocator
+/// already reports Idle no longer holds the cloud view's focus.
+///
+/// SeraphisVoice::getCurrentLevel() (seraphis_voice.h:815) is a linear
+/// amplitude, so this is -80 dBFS: low enough that the whole release tail still
+/// animates, high enough that a decayed slot cannot pin the focus forever once
+/// the envelope has run out. It is a DISPLAY threshold only - nothing audible
+/// keys on it.
+inline constexpr float kCloudFrameSilenceLevel = 1.0e-4f;
+
 namespace detail {
 /// FR-059a. SC-005 positive control (b). DECLARED HERE, DEFINED ONLY BY THE
 /// SC-005 TEST TU (tests/integration/param_continuity_test.cpp).
@@ -274,6 +309,30 @@ struct SeraphisParamSmootherBypassProbe;
 /// ODR swept this session:
 /// `grep -rn "SeraphisEffectsStageBypassProbe" dsp/ plugins/` -> 0 hits.
 struct SeraphisEffectsStageBypassProbe;
+
+/// Phase 11 T008. DECLARED HERE, DEFINED ONLY BY THE CLOUD-FRAME TU
+/// (tests/integration/cloud_frame_test.cpp). Same shape and same rationale as
+/// the two probes above.
+///
+/// SOLE capability: write Processor::partialMaskBits_ /
+/// Processor::partialPanOverrideBits_, the two override bitmasks
+/// publishCloudFrame() mirrors into CloudFrame::maskBits /
+/// CloudFrame::overriddenBits.
+///
+/// WHY IT EXISTS. SC-006 arm (e) asserts that mirroring, but the SHIPPING
+/// writers of those two masks are the C-5 edit channel's kinds 2 and 3
+/// (Processor::notify -> applyEditMessage), which land in T010 - two groups
+/// later. Without a probe, arm (e) could only be written against the default
+/// all-zero state, which asserts nothing about the mirroring. A probe keeps the
+/// criterion observable at T008 WITHOUT growing the shipping seam set: the
+/// library never defines this struct, so no shipping build can name it.
+///
+/// Once T010/T011 land, this probe stays as the direct-write path arm (e) uses;
+/// SC-033 exercises the real message path end to end.
+///
+/// ODR swept this session:
+/// `grep -rn "SeraphisCloudFrameProbe" dsp/ plugins/ tools/` -> 0 hits.
+struct SeraphisCloudFrameProbe;
 }  // namespace detail
 
 class Processor : public Steinberg::Vst::AudioEffect {
@@ -296,6 +355,25 @@ public:
     Steinberg::uint32 PLUGIN_API getLatencySamples() override;
     Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream* state) override;
     Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) override;
+
+    // --- Phase 11 FR-011 (plan 5.2). The DataExchange queue's lifecycle. ------
+    // Shape copied verbatim from Membrum
+    // (plugins/membrum/src/processor/processor.cpp:1136-1164, :1110-1126): the
+    // handler is BUILT in connect() and RELEASED in disconnect(), and the QUEUE
+    // is opened/closed by setActive(), which is already overridden above.
+    Steinberg::tresult PLUGIN_API connect(Steinberg::Vst::IConnectionPoint* other) override;
+    Steinberg::tresult PLUGIN_API disconnect(Steinberg::Vst::IConnectionPoint* other) override;
+
+    // --- Phase 11 C-5 / FR-036 (plan 6.2, T010). THE EDIT CHANNEL. -----------
+    // The processor had no notify() before Phase 11. This one handles exactly
+    // ONE message ID ("SeraphisEdit") carrying exactly ONE binary attribute (a
+    // POD UI::EditMessage); everything else delegates to the SDK base.
+    //
+    // MESSAGE THREAD ONLY - the same thread setState() already writes the
+    // three-buffer staging ring from, which is why the Phase 9 writer interlock
+    // holds unchanged with no second interlock and no lock. It is never reached
+    // from process().
+    Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) override;
 
     // -------------------------------------------------------------------------
     // Test-only read surfaces (NEVER called from process()).
@@ -475,6 +553,154 @@ public:
         effectsStageInstrumented_ = on;
     }
 
+    // =========================================================================
+    // Phase 11 C-2 clause 7 + the frame observable (plan 5.3). Same discipline
+    // as the two blocks above: plain scalars written only from the audio thread
+    // and read only from the test thread between process() calls.
+    // =========================================================================
+
+    /// SC-007, SC-010. Incremented ONCE PER process() CALL that reached
+    /// publishCloudFrame() with the clause-6 gate OPEN - independently of
+    /// whether a DataExchange queue exists at all. The gate is the ONLY
+    /// short-circuit ahead of it (plan 5.3, "the handler is NOT a
+    /// precondition"): ProcessorFixture never calls connect(), so a
+    /// handler-conditioned counter would read 0 in every plugin-side test on a
+    /// CORRECT implementation.
+    [[nodiscard]] std::size_t cloudFramePublishAttemptCountForTest() const noexcept {
+        return cloudFramePublishAttempts_;
+    }
+    /// RECORDED, NEVER GATING (C-2 clause 7). Incremented when an attempt found
+    /// no transport: no handler at all, or getCurrentOrNewBlock() handed back an
+    /// invalid/short block because the host queue is full. At 512/48 kHz the
+    /// ~94 Hz publish rate deliberately outruns the 30 Hz consume rate, so a
+    /// rising count is expected steady-state behaviour, not a fault.
+    [[nodiscard]] std::size_t cloudFrameSkippedBlockCountForTest() const noexcept {
+        return cloudFrameSkippedBlocks_;
+    }
+    /// SC-007's STRICT `>`. renderSlice() invocations - the slice loop
+    /// subdivides on every MIDI event, on the 2048 cap and, while any class-(b)
+    /// smoother is unsettled, on the absolute 64-sample grid, so this must
+    /// exceed the publish-attempt count on any render that carries either.
+    [[nodiscard]] std::size_t renderSliceCountForTest() const noexcept { return renderSlices_; }
+    /// SC-001's negative control. Writes THE SAME atomic the C-5 kind-0
+    /// editor-gate message writes (T010), so both arms of that criterion run in
+    /// one build, one process and one Processor instance with only the gate
+    /// differing - Phase 10's SC-002 shape.
+    void setCloudFrameGateForTest(bool open) noexcept {
+        cloudFrameEnabled_.store(open, std::memory_order_relaxed);
+    }
+    /// SC-006 arm (i), FR-011. TRUE only between connect() and disconnect().
+    [[nodiscard]] bool dataExchangeHandlerLiveForTest() const noexcept {
+        return dataExchangeHandler_ != nullptr;
+    }
+
+    /// SC-006 / SC-008 / SC-014 / SC-017 - THE FRAME OBSERVABLE.
+    ///
+    /// pendingFrame_ is filled on EVERY attempt, BEFORE getCurrentOrNewBlock()
+    /// is consulted (publishCloudFrame()'s normative body order), so it is the
+    /// frame the producer WOULD have published - including on the skipped
+    /// attempts. That is what makes the four content criteria runnable in a
+    /// headless harness that never opens a queue.
+    ///
+    /// It is a const& to a member the AUDIO thread writes: every test must read
+    /// it BETWEEN process() calls, never concurrently. The headless suites are
+    /// single-threaded and already work that way.
+    [[nodiscard]] const CloudFrame& lastPublishedFrameForTest() const noexcept {
+        return pendingFrame_;
+    }
+    [[nodiscard]] std::uint32_t cloudFrameSequenceForTest() const noexcept {
+        return cloudFrameSequence_;
+    }
+
+    /// SC-011's lock-free arm. ANDs is_lock_free() over every Phase 11 atomic
+    /// that crosses the message/audio boundary: the C-2 clause 6 gate, the two
+    /// FR-030 override bitmasks, the release/acquire handshake flag and the
+    /// staged pan array (element 0 stands for all 64 - they are one array of one
+    /// type, so a locking implementation would apply to every element).
+    ///
+    /// The constitution's rule is that only std::atomic_flag is GUARANTEED
+    /// lock-free, so "lock-free on x86-64/arm64" is asserted at runtime by
+    /// tests/integration/ui_perf_test.cpp rather than assumed.
+    [[nodiscard]] bool phase11AtomicsAreLockFreeForTest() const noexcept {
+        return cloudFrameEnabled_.is_lock_free() && partialMaskBits_.is_lock_free()
+               && partialPanOverrideBits_.is_lock_free()
+               && partialOverridesPending_.is_lock_free()
+               && partialPanStaging_[0].is_lock_free();
+    }
+
+    /// SC-009(b) / SC-010(b) stage instrumentation, modelled exactly on Phase
+    /// 10's effectsStageNsForTest() / effectsStageProcessCallsForTest() pair.
+    ///
+    /// The scoped timer opens OUTSIDE the cloudFrameEnabled_ predicate and this
+    /// divisor counts EVERY process() call, not every publish - which is what
+    /// keeps SC-010(b) honest: with the gate closed the measured stage time is
+    /// the cost of TESTING the gate.
+    [[nodiscard]] double cloudFrameStageNsForTest() const noexcept { return cloudFrameStageNs_; }
+    [[nodiscard]] std::size_t cloudFrameStageProcessCallsForTest() const noexcept {
+        return cloudFrameStageProcessCalls_;
+    }
+    /// Per-INSTANCE, default OFF - so no shipping path ever reads the clock, and
+    /// the [.perf] arms that are not measuring this stage pay nothing.
+    void setCloudFrameInstrumentedForTest(bool on) noexcept { cloudFrameInstrumented_ = on; }
+
+    // =========================================================================
+    // Phase 11 C-10 / FR-037..FR-039 (plan section 4, T013) - the COMPOSED
+    // effects targets. SC-021(b)/(c)'s observables.
+    //
+    // WHY THESE THREE AND NOT effectsPushCountForTest() (spec D-2). The push
+    // counter is incremented only inside pushEffectsParams(), whose ID set does
+    // NOT contain 1410 or 1441 - so it provably cannot move for a macro-driven
+    // change to either, and a criterion written against it would fail on a
+    // CORRECT implementation. These read the composition itself instead.
+    //
+    // Same discipline as the two blocks above: plain scalars written only from
+    // the audio thread, read only from the test thread between process() calls.
+    // =========================================================================
+
+    /// SC-021(b)/(c). The composed send level the pre-slice block computed for
+    /// the most recent process() call - i.e. what updateEffectsBypassState()
+    /// actually read, RAW (the consuming clamp is applied at the read site).
+    [[nodiscard]] float composedFxDelaySendForTest() const noexcept;
+    /// SC-021(b)/(c). Likewise for the wander depth read by
+    /// setParamSmootherTargets() and by FR-010's ENGAGE predicate.
+    [[nodiscard]] float composedFxWanderDepthForTest() const noexcept;
+    /// FR-012's cadence witness: incremented EXACTLY ONCE PER process() CALL
+    /// that reached the pre-slice block, never once per renderSlice().
+    [[nodiscard]] std::size_t composedEffectsRecomputeCountForTest() const noexcept;
+
+    // =========================================================================
+    // Phase 11 C-5 - the edit channel's observables (plan 6.2, T010).
+    //
+    // All four are MESSAGE-THREAD state, read by tests between process() calls
+    // on a single-threaded harness. None is reachable from process().
+    // =========================================================================
+
+    /// SC-018. The message-thread mirror of the four morph slots - the array
+    /// stageSlotEdit() seeds the staging buffer from and writes back into.
+    /// Out-of-range slots return slot 0 rather than reading past the end, the
+    /// same shape spectralSlotForTest() uses.
+    [[nodiscard]] const Krate::DSP::SpectralState& spectralAuthoringSlotForTest(
+        int slot) const noexcept {
+        const int s = (slot < 0 || slot >= 4) ? 0 : slot;
+        return spectralSlotsAuthoring_[static_cast<std::size_t>(s)];
+    }
+    /// SC-018's "the ring index is -1 or in [0,3)" arm. A fuzzed notify() must
+    /// never leave a published index outside the ring.
+    [[nodiscard]] int spectralSlotsHandoffForTest() const noexcept {
+        return spectralSlotsHandoff_.load(std::memory_order_acquire);
+    }
+    /// SC-025 arm 3. ACCEPTED stageSlotEdit publishes. A dropped kind-4 (no live
+    /// kind-7 snapshot) and a rejected mutation both leave this unmoved, which is
+    /// what distinguishes "dropped" from "applied and happened to be a no-op".
+    [[nodiscard]] std::size_t editStageWriteCountForTest() const noexcept {
+        return editStageWrites_;
+    }
+    /// C-5 kind 6. Session state, never a ParamID and never serialized.
+    [[nodiscard]] int selectedEditSlotForTest() const noexcept { return selectedEditSlot_; }
+    /// Q2. TRUE only between a kind-7 BlendBegin and the kind-6 / kind-7 that
+    /// ends the gesture.
+    [[nodiscard]] bool blendSnapshotValidForTest() const noexcept { return blendSnapshotValid_; }
+
 private:
     // FR-059a. The ONE seam SC-005's positive control (b) needs. Declared above
     // this class and defined ONLY by the SC-005 test TU, so no shipping build
@@ -485,6 +711,11 @@ private:
     // and defined ONLY by the Phase 10 effects test TU, so no shipping build can
     // name it, let alone call it.
     friend struct detail::SeraphisEffectsStageBypassProbe;
+    // Phase 11 T008. The seam SC-006 arm (e) needs before the C-5 edit channel
+    // (T010) supplies the shipping writer of the two override bitmasks.
+    // Declared above this class and defined ONLY by
+    // tests/integration/cloud_frame_test.cpp.
+    friend struct detail::SeraphisCloudFrameProbe;
 
     void processParameterChanges(Steinberg::Vst::IParameterChanges* changes) noexcept;
     void pushGlobalParams() noexcept;                                    // FR-024 step 0 / FR-024a
@@ -573,7 +804,17 @@ private:
     [[nodiscard]] float baseValueForTarget(
         Krate::DSP::SeraphisMacroTarget target) const noexcept;
     void pushVoiceParams() noexcept;             // FR-042
-    void pushMacroSurfaces() noexcept;           // FR-043
+    void pushMacroSurfaces() noexcept;           // FR-043 (macros + the 27 VP/AE bases)
+    /// Phase 11 C-10 / FR-038 / FR-039. The two Effects-owned MB bases, split out
+    /// of pushMacroSurfaces()' loop because they must be current BEFORE
+    /// `composedEffects_` is computed - the loop runs per SLICE, the composition
+    /// runs once per process() call ABOVE it, and for these two targets the base
+    /// IS the raw deep atomic. Called from the pre-slice block only. See the
+    /// definition's banner for the three Phase 10 properties a lagged deep path
+    /// breaks. Shares lastPushedBase_[] / lastPushedBaseValid_ with that loop, so
+    /// there is still exactly ONE base writer per target and SC-007's counter
+    /// table is unmoved.
+    void pushEffectsMacroBases() noexcept;
     void pushAetherParamsIfDirty() noexcept;     // FR-044
     /// Phase 10 D-2 / FR-021 (plan 2.5.4). Called ONCE per process() call from the
     /// pre-slice block, beside pushAetherParamsIfDirty(). It is the SOLE writer on
@@ -592,6 +833,60 @@ private:
     void pushEffectsParams() noexcept;
     void pushSpectralStatesIfPending() noexcept; // FR-046
     void consumeSpectralSlotHandoff() noexcept;  // FR-041b (plan 3.7 steps 3-4)
+
+    /// Phase 11 FR-030 / FR-043 (plan 6.3, T011). THE ONE CONSUMER of the
+    /// per-partial override table - the AUDIO-THREAD half of the C-5 kinds 2/3
+    /// deferral.
+    ///
+    /// IT WALKS ALL 64 INDICES AND PUSHES BOTH MASK POLARITIES. Walking only the
+    /// SET mask bits is a defect, not an optimisation: kinds 2 and 3 make no
+    /// engine call, so this is the ONLY audio-thread path to
+    /// SeraphisEngine::setPartialMaskAllVoices, and re-issuing `active = false`
+    /// for each set bit means CLEARING a bit produces no engine call at all and
+    /// HarmonicCloud::masked_[i] stays true forever (SC-033's unmask half).
+    /// clearPartialMaskAllVoices() is deliberately NOT on this path - it is the
+    /// FR-033 fan-out surface and would wipe a mask this table still holds.
+    ///
+    /// MASK POLARITY: HarmonicCloud::setPartialMask's body is
+    /// `masked_[index] = !active` (harmonic_cloud.h:1082-1089), so
+    /// `active == true` is AUDIBLE. partialMaskBits_ uses the OPPOSITE, plugin-side
+    /// convention (bit set <=> masked, C-2), hence the `!masked` at the call.
+    ///
+    /// @par Thread ownership: AUDIO THREAD, or the host thread with the audio
+    ///      thread stopped (the two `setActive`/`setupProcessing` sites, legal for
+    ///      the reason setActive's own banner states). NEVER the message thread -
+    ///      the fan-outs write HarmonicCloud state process() reads and writes.
+    ///
+    /// @par Real-Time Safety: allocation-free, lock-free, exception-free. Two
+    ///      relaxed atomic loads plus a bounded 64-iteration fan-out; the mask
+    ///      term is 64 x 16 plain byte stores and the pan term is
+    ///      popcount(panBits) x 16 x 2 trig calls (updatePanGains ->
+    ///      equalPowerGains, crossfade_utils.h:50-53). SC-014 arm 7 measures the
+    ///      64-override worst case in T023.
+    void repushPartialOverrides() noexcept;
+
+    /// Phase 11 C-2 / FR-012 / FR-015 (plan 5.3). THE CLOUD-FRAME PRODUCER.
+    ///
+    /// Called EXACTLY ONCE per process() call, AFTER the slice loop, and NEVER
+    /// from renderSlice(): the slice loop subdivides on every MIDI event, on the
+    /// 2048 cap and - while any class-(b) smoother is unsettled - on the
+    /// absolute 64-sample grid, so a per-slice publish would issue up to 8x the
+    /// frames for one block and exhaust the 4-block queue inside one call. This
+    /// is the same divisor correction Phase 10 made for its stage counter
+    /// (effectsStageProcessCalls_).
+    ///
+    /// BODY ORDER IS NORMATIVE (plan 5.3): gate -> attempt counter -> focus
+    /// voice -> fill pendingFrame_ -> transport. Only the GATE short-circuits; a
+    /// null handler does NOT, it is accounted as a skipped block. See
+    /// lastPublishedFrameForTest() for why.
+    ///
+    /// @par Real-Time Safety: allocation-free, lock-free, exception-free,
+    ///      I/O-free. A bounded <= 64-iteration read loop over const accessors
+    ///      that are array indexes with a bounds test, plus one 808-byte memcpy.
+    ///      NO TRANSCENDENTAL: fundamentalHz is a plain member read
+    ///      (HarmonicCloud::getFundamentalHz(), harmonic_cloud.h:405), not a
+    ///      440 * exp2((note - 69)/12) computation.
+    void publishCloudFrame() noexcept;
     void updateSyncedTravelRate(const Steinberg::Vst::ProcessContext* ctx) noexcept;  // FR-056
     void pushAllSurfaces(SurfaceInvalidation scope) noexcept;                         // FR-047
     /// FR-047. The ONLY thing setState() writes toward the audio thread: a
@@ -600,6 +895,59 @@ private:
     /// Plan 3.7 step 1. The first of {cursor, cursor+1, cursor+2} mod 3 that is
     /// neither published nor being consumed. Message thread only.
     [[nodiscard]] std::size_t pickStagingBuffer() noexcept;
+
+    // --- Phase 11 C-5 (plan 6.2, T010). MESSAGE THREAD ONLY. -----------------
+
+    /// C-5 clause 5 + the per-kind dispatch. Validation FIRST (unknown kind,
+    /// out-of-range slot/index, non-finite a/b - each a silent return), then the
+    /// eight-row table.
+    ///
+    /// KINDS 2 AND 3 MAKE NO ENGINE CALL. Spec C-5 clause 1 (spec.md:656-658)
+    /// says they "call the C-4 fan-outs directly"; that sentence is OVERRULED
+    /// (plan 6.2, scheduled for correction in T026 as D-9 row 9b). The fan-outs
+    /// write HarmonicCloud state process() concurrently reads and writes, so
+    /// calling them from here is a data race - "allocates nothing, blocks
+    /// nothing" answers allocation, not concurrency. They stage into
+    /// partialPanStaging_ / partialMaskBits_ / partialPanOverrideBits_ and
+    /// publish partialOverridesPending_ instead; T011 owns the consuming side.
+    ///
+    /// @par Real-Time Safety: never reached from process(). Allocation-free,
+    ///      lock-free, exception-free regardless; the heaviest operation is one
+    ///      4 x sizeof(SpectralState) = 2160-byte POD copy plus one mutator.
+    void applyEditMessage(const UI::EditMessage& message) noexcept;
+
+    /// Plan 6.2 steps 1-6. THE ONE function that touches the staging ring on
+    /// behalf of the edit channel, reusing setState()'s published sequence
+    /// verbatim (processor.cpp's setState body): pick a buffer that is neither
+    /// published nor being consumed, seed the WHOLE buffer from
+    /// spectralSlotsAuthoring_ so the three unedited slots are not lost, install
+    /// @p edited, and publish with a release store ONLY if the result is valid.
+    ///
+    /// @param edited The already-mutated copy of spectralSlotsAuthoring_[slot].
+    ///        The mutation is performed by the caller rather than by a
+    ///        callback so this stays a plain (non-template) member function; the
+    ///        seed-mutate-publish order plan 6.2 specifies is unchanged, because
+    ///        mutating a copy of the mirror and mutating the freshly-seeded
+    ///        staging slot are the same operation on the same bytes.
+    ///
+    /// SpectralMorphEngine::setState rejects an invalid state wholesale
+    /// (spectral_morph_engine.h:296-298), so publishing one would be a SILENTLY
+    /// INERT edit; the validity gate here turns it into a dropped one, which is
+    /// at least consistent with what the ring contains.
+    void stageSlotEdit(std::size_t slot, const Krate::DSP::SpectralState& edited) noexcept;
+
+    /// Plan 6.2a. Bring spectralSlotsAuthoring_ back in step with the 409-412
+    /// slot dropdowns, MESSAGE-THREAD ONLY.
+    ///
+    /// WHY IT IS NOT DONE IN refreshSpectralSlotFromFactory(). That function runs
+    /// from processParameterChanges(), i.e. ON THE AUDIO THREAD (it writes
+    /// spectralSlots_, the audio-thread-owned array). Writing the
+    /// message-thread-only mirror from there would be exactly the cross-thread
+    /// write the mirror exists to avoid. Instead the mirror is reconciled lazily,
+    /// on the message thread, at the two points that read it - stageSlotEdit()
+    /// and getState() - by comparing the pack's atomic against a
+    /// message-thread-owned copy of what the mirror was last seeded from.
+    void syncAuthoringMirrorFromDropdowns() noexcept;
     // --- FR-059 clause (b): the class-(b) smoother machinery (plan 3.5) -------
     /// Twelve setTarget() calls (smoother.h:170) from the already-clamped
     /// atomics - EXCEPT ID 1410, whose target is fxEffectiveReturnGain_, the
@@ -646,11 +994,14 @@ private:
     /// clause.
     [[nodiscard]] bool anyVoiceClassBSmootherUnsettled() const noexcept;
     /// The five macro knobs (IDs 100-104). Owned by pushMacroSurfaces()' macro
-    /// half, NOT by its 27-base loop.
+    /// half, NOT by its per-base loop.
     [[nodiscard]] bool anyMacroSmootherUnsettled() const noexcept;
-    /// PER-TARGET, never one flag for all 27 (plan 3.5.5). A single global flag
-    /// would push all 27 bases on every chunk of a settling window - up to 756
-    /// increments of setTargetBasePushes_ - and falsify SC-007's own table.
+    /// PER-TARGET, never one flag for all kNumTargets (plan 3.5.5). A single
+    /// global flag would push every base on every chunk of a settling window -
+    /// 27 x 26 increments of setTargetBasePushes_ - and falsify SC-007's own
+    /// table. Answers only for the 27 targets pushMacroSurfaces() owns; the two
+    /// Effects-owned rows are pushEffectsMacroBases()', which has no settling
+    /// clause (its bases are raw atomics, not smoother read-backs).
     [[nodiscard]] bool targetClassBUnsettled(
         Krate::DSP::SeraphisMacroTarget target) const noexcept;
     /// Drives the 64-sample SUBDIVISION only. When this is false the slice
@@ -732,6 +1083,23 @@ private:
     /// process() call. setParamSmootherTargets() targets THIS, not the raw ID
     /// 1410 atomic.
     float fxEffectiveReturnGain_ = 0.0f;
+
+    /// Phase 11 C-10 / FR-037..FR-039 (plan section 4). The macro-composed
+    /// effects targets for THIS process() call: `deep base + the macro rows`,
+    /// computed once in the pre-slice block and read by all three consumers
+    /// (updateEffectsBypassState(), setParamSmootherTargets() and FR-010's
+    /// ENGAGE predicate) INSTEAD of the raw ID 1410 / 1441 atomics.
+    ///
+    /// It is a plain member and not an atomic: only the audio thread writes or
+    /// reads it. Assignment is a two-float copy.
+    ///
+    /// FR-039 is arithmetic, not a special case: at the FR-060 macro neutrals
+    /// every row contributes exactly 0 (seraphis_macro_matrix.h:884-889) and
+    /// baseValueForTarget() maps both targets onto the deep atomic, so the
+    /// composed value is bit-identical to the atomic it replaced.
+    Krate::DSP::SeraphisEffectsTargets composedEffects_{};
+    /// FR-012's cadence counter for the composition above - once per CALL.
+    std::size_t composedEffectsRecomputes_ = 0;
     enum class FxSendState : std::uint8_t { Bypassed, Active, Draining };
     FxSendState fxSendState_ = FxSendState::Bypassed;
     /// FR-008's reset, deferred to the next FILL-CHUNK boundary (plan D-3).
@@ -1075,6 +1443,132 @@ private:
     std::size_t preOutTapCursor_ = 0;   // write position within THIS process() call
     std::size_t preOutTapSize_ = 0;     // samples actually taped by THIS call
     bool preOutTapTruncated_ = false;   // this call delivered > kMaxBlockSamples
+
+    // --- Phase 11 C-2: the cloud-frame producer ------------------------------
+    // Built in connect(), released in disconnect(); the queue is opened and
+    // closed by setActive(). NULL in every plugin-side test, because
+    // ProcessorFixture never calls connect() - which is exactly why
+    // publishCloudFrame() does not treat it as a precondition.
+    std::unique_ptr<Steinberg::Vst::DataExchangeHandler> dataExchangeHandler_;
+
+    /// C-2 clause 6's gate, written from Processor::notify on the MESSAGE
+    /// thread (kind 0, T010) and from setCloudFrameGateForTest, read here on the
+    /// AUDIO thread every process() call. std::atomic<bool>, never a plain bool
+    /// (plan D-6): an unsynchronised cross-thread bool is a data race under the
+    /// C++ memory model however benign the codegen looks. `relaxed` is
+    /// sufficient - the flag publishes no other state.
+    std::atomic<bool> cloudFrameEnabled_{false};
+
+    /// The frame under construction. A MEMBER, not a stack local: it is
+    /// std::memset to zero ONCE in setupProcessing() and only field-assigned
+    /// thereafter, so CloudFrame's 4 interior padding bytes are deterministically
+    /// zero in every published block (a stack local zero-initialised per call
+    /// would also work, but adds an 808-byte memset to every process() call).
+    CloudFrame pendingFrame_{};
+    std::uint32_t cloudFrameSequence_ = 0;  // monotonic; wrap is benign
+
+    // C-2 clause 7's TWO counters. They count different things and no criterion
+    // conflates them - see the two accessors above.
+    std::size_t cloudFramePublishAttempts_ = 0;
+    std::size_t cloudFrameSkippedBlocks_ = 0;
+    std::size_t renderSlices_ = 0;  // SC-007's strict `>` divisor
+
+    // SC-009(b) stage instrumentation. Same shape as Phase 10's trio, and OFF on
+    // every shipping path for the same Constitution II reason.
+    bool cloudFrameInstrumented_ = false;
+    double cloudFrameStageNs_ = 0.0;
+    std::size_t cloudFrameStageProcessCalls_ = 0;
+
+    /// The previous focus slot, C-2 clause 4(b)'s retention state. Audio-thread
+    /// owned; only publishCloudFrame() reads or writes it.
+    std::size_t cloudFrameFocusVoice_ = 0;
+
+    /// FR-030's override table, the half publishCloudFrame() MIRRORS.
+    /// Bit i set <=> partial i is masked / carries an authored pan. The message
+    /// thread writes them (C-5 kinds 2 and 3, T010) and the audio thread reads
+    /// them, so both are atomic; `relaxed` is correct because the ordering that
+    /// matters is partialOverridesPending_'s release/acquire handshake, not
+    /// these loads. T010 added the other two members (partialPanStaging_ and
+    /// partialOverridesPending_, just below) with the kinds 2/3 dispatch that
+    /// writes them; T011 added the CONSUMER, repushPartialOverrides().
+    std::atomic<std::uint64_t> partialMaskBits_{0};
+    std::atomic<std::uint64_t> partialPanOverrideBits_{0};
+
+    /// C-5 kind 2's staged pan values, one per partial. The message thread
+    /// writes, the audio thread reads (T011's repushPartialOverrides()), so
+    /// every entry is atomic; `relaxed` is correct because the ordering that
+    /// matters is partialOverridesPending_'s release/acquire handshake.
+    std::array<std::atomic<float>, Krate::DSP::HarmonicCloud::kMaxPartials> partialPanStaging_{};
+    /// The handshake itself. T010 is the PRODUCER (kinds 2 and 3 store true with
+    /// release); T011 added the CONSUMER - one
+    /// `exchange(false, std::memory_order_acquire)` per process() call, beside
+    /// pushSpectralStatesIfPending(). The acquire on that exchange is what makes
+    /// the relaxed pan/mask writes above visible to repushPartialOverrides()
+    /// before it reads them; consume-and-clear is what makes an edit that arrives
+    /// DURING a fan-out picked up next call rather than lost or applied twice.
+    std::atomic<bool> partialOverridesPending_{false};
+
+    /// Phase 11 FR-030's stereo-spread clearing event, keyed on the COMPOSED
+    /// value and NEVER on ParamID 207.
+    ///
+    /// SeraphisMacroMatrix::apply() pushes CloudStereoSpread through
+    /// SeraphisVoice::setStereoSpread on EVERY slice, and HarmonicCloud::
+    /// setStereoSpread wipes positionOverridden_ on any VALUE change
+    /// (harmonic_cloud.h:535-547). A tracker keyed on the ParamID is blind to the
+    /// macro half - Bloom writes that target with base 0.35 / amount 0.60
+    /// (seraphis_macro_matrix.h) - so a macro-ring sweep with the deep knob held
+    /// still would silently drop every authored pan (SC-014 arm 6).
+    ///
+    /// The tracked quantity is the value the cloud ACTUALLY STORED, read back
+    /// through HarmonicCloud::getStereoSpread() (:549) immediately after
+    /// macros_.apply(). That is exact rather than approximate: setStereoSpread
+    /// clears the overrides IFF its post-clamp value differs from the stored one,
+    /// so comparing the stored value across slices detects exactly the clearing
+    /// events and nothing else. (SeraphisMacroMatrix::at()/evaluateAll() are
+    /// private, so the composed value cannot be read from the matrix directly -
+    /// and the read-back is the stronger observable anyway.)
+    /// The EXTENT of apply()'s loop, tracked beside its value. apply() writes
+    /// voices [0, getPolyphony()) only (seraphis_macro_matrix.h:712-715), so a
+    /// polyphony INCREASE hands the composed spread to slots that never received
+    /// it - clearing their positionOverridden_ - while voice 0's stored value,
+    /// the read-back above, never moves. The value alone is therefore blind to
+    /// exactly the slots that were cleared; the pair is not.
+    float lastPushedComposedSpread_ = 0.0f;
+    std::size_t lastPushedSpreadVoiceCount_ = 0u;
+    bool lastPushedComposedSpreadValid_ = false;
+
+    // --- Phase 11 C-5 (plan 6.2/6.2a, T010): the MESSAGE-THREAD edit state ---
+    //
+    // Not one of these is read or written by process(). They are the second
+    // writer on the staging ring Phase 9 built, and they are deliberately NOT
+    // atomic: the message thread owns them outright.
+
+    /// Plan 6.2a. The message-thread mirror of the four morph slots.
+    /// spectralSlots_ is AUDIO-THREAD-OWNED (see its banner above, and
+    /// getState()'s "IT NEVER READS spectralSlots_"), so stageSlotEdit() may not
+    /// read it either. Seeded in the constructor from the registered slot
+    /// defaults, reconciled with the 409-412 dropdowns by
+    /// syncAuthoringMirrorFromDropdowns(), overwritten wholesale by setState(),
+    /// and mutated in place by every ACCEPTED stageSlotEdit().
+    std::array<Krate::DSP::SpectralState, 4> spectralSlotsAuthoring_{};
+    /// What spectralSlotsAuthoring_[s] was last seeded from. Message-thread
+    /// owned; -1 is never a legal factory index, so a fresh processor reconciles
+    /// on its first read. It is NOT lastPushedSlotStateId_ - that one is the
+    /// AUDIO thread's tracker for the same dropdowns, and sharing it would be a
+    /// cross-thread write.
+    std::array<int, 4> lastAuthoredSlotStateId_{-1, -1, -1, -1};
+
+    /// Q2. The pristine "A" a Blend gesture re-blends from, latched by kind 7 and
+    /// read by every kind 4 until the gesture ends. This is what makes Blend
+    /// ABSOLUTE rather than compounding.
+    Krate::DSP::SpectralState blendSnapshotA_{};
+    bool blendSnapshotValid_ = false;
+    /// C-5 kind 6. UI session state, never a ParamID (Non-goals) and never
+    /// serialized.
+    int selectedEditSlot_ = 0;
+    /// SC-025's seam: accepted-and-published staging writes from the edit
+    /// channel. Message-thread counter, never reset.
+    std::size_t editStageWrites_ = 0;
 
     // FR-028: sized ONCE at setupProcessing(), to the CONSTANT 2048.
     std::vector<float> dryL_, dryR_, wetL_, wetR_;

@@ -45,20 +45,23 @@ using Catch::Approx;
 namespace {
 
 // -----------------------------------------------------------------------------
-// The stream layout. Under the Phase 10 v3 format (plan 5.1) a saved state is
-// 2596 bytes -- Phase 9's 2532-byte v2 stream plus the 64-byte [effects] block
-// -- of which Phase 8's scalar block is a STRICT 36-byte PREFIX. This file
-// asserts over that prefix only, little-endian IBStreamer:
+// The stream layout. Under the v3 format a saved state is 2868 bytes -- Phase
+// 9's 2532-byte v2 stream, plus Phase 10's 64-byte [effects] block, plus Phase
+// 11's 272-byte [partials] block (FR-034a: 64 pan overrides + two uint64
+// masks, appended LAST with the version stamp still 3) -- of which Phase 8's
+// scalar block is a STRICT 36-byte PREFIX. This file asserts over that prefix
+// only, little-endian IBStreamer:
 //
 //   0 int32 version | 4 float masterGain | 8 int32 polyphony |
 //  12 int32 softLimit | 16 dream | 20 bloom | 24 dissolve | 28 gravity |
 //  32 entropy
 //
 // Everything from byte 36 on -- seed, cloud, morph, life, body, atmosphere,
-// aether -- is unit/state_v2_test.cpp's subject, and the [effects] block is
-// unit/state_v3_test.cpp's; neither is this file's.
+// aether -- is unit/state_v2_test.cpp's subject, and the [effects] and
+// [partials] blocks are unit/state_v3_test.cpp's; neither is this file's.
 // -----------------------------------------------------------------------------
-constexpr int32 kStateBytes = 2596;  // plan 5.1: the WHOLE v3 stream (2532 + 64)
+// The WHOLE v3 stream as getState() writes it today: 2532 + 64 + 272.
+constexpr int32 kStateBytes = 2868;
 constexpr int32 kV1StateBytes = 36;  // the strict v1 prefix of a v3 stream
 
 constexpr int32 kOffMasterGain = 4;
@@ -150,7 +153,7 @@ void rewindStream(MemoryStream& s) { s.seek(0, IBStream::kIBSeekSet, nullptr); }
 }
 
 // Decode the 36-byte v1 PREFIX of a complete v3 state stream. The stream must
-// be a whole one (2596 bytes); only its first nine fields are read here.
+// be a whole one (kStateBytes); only its first nine fields are read here.
 [[nodiscard]] StatePayload decodeV1Prefix(MemoryStream& s) {
     REQUIRE(s.getSize() == kStateBytes);
     rewindStream(s);
@@ -323,7 +326,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
                 expected.gravity = seeded.gravity;
             }
             // entropy completes at byte 36 -- the END OF THE V1 PREFIX, not the
-            // end of the 2596-byte v3 stream.
+            // end of the 2868-byte v3 stream.
             if (n >= kV1StateBytes) {
                 expected.entropy = seeded.entropy;
             }

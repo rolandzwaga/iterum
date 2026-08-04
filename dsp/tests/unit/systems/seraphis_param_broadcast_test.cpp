@@ -1134,8 +1134,10 @@ TEST_CASE("SeraphisEngine_ApplyVoiceParams_ReachesAllSixteenSlots")
 
 /// Plan §1.3. All four slots are written on every accepting voice, not `count`
 /// of them, and the bound is kMaxVoices for the same reason applyVoiceParams'
-/// is. The per-voice configure-time gate (seraphis_voice.h:770-783) is the ONLY
-/// guard: applySpectralStates adds none and swallows no rejection.
+/// is. applySpectralStates adds no guard of its own and swallows no rejection.
+/// Phase 11 D-1 / FR-033a removed the per-voice configure-time gate from
+/// setSpectralState/setSpectralStateCount (seraphis_voice.h:787-793), so NO
+/// voice rejects a state push any more - sounding or not.
 TEST_CASE("SeraphisEngine_ApplySpectralStates_WritesAllFourSlotsToAllSixteenVoices")
 {
     auto engine = std::make_unique<SeraphisEngine>();
@@ -1152,27 +1154,27 @@ TEST_CASE("SeraphisEngine_ApplySpectralStates_WritesAllFourSlotsToAllSixteenVoic
         }
     }
 
-    SECTION("a sounding voice rejects exactly five calls and the rest still accept")
+    // Phase 11 D-1 / FR-033a REPLACES Phase 9's "a sounding voice rejects
+    // exactly five calls and the rest still accept". A sounding voice now takes
+    // the push like every other slot; nothing rejects, so the pool converges on
+    // the FIRST application instead of on the first quiescent block.
+    SECTION("FR-033a: a sounding voice accepts too - nothing rejects, all sixteen take it")
     {
         engine->noteOn(std::uint8_t{60}, std::uint8_t{100});
+        // Non-vacuity: one slot really is non-idle, i.e. really is in the state
+        // the removed gate used to reject (hasSounded_ closes in noteOn,
+        // seraphis_voice.h:516).
+        REQUIRE(engine->getActiveVoiceCount() == std::size_t{1});
         const auto before = rejectionCounts(*engine);
 
         engine->applySpectralStates(states.data(), 4);
         const auto after = rejectionCounts(*engine);
 
-        std::size_t rejecting = 0;
         for (std::size_t v = 0; v < SeraphisEngine::kMaxVoices; ++v) {
             INFO("voice slot " << v);
-            const std::uint32_t delta = after[v] - before[v];
-            if (delta != 0u) {
-                // One setSpectralStateCount + four setSpectralState.
-                REQUIRE(delta == 5u);
-                ++rejecting;
-            } else {
-                REQUIRE(engine->getVoice(v).morph().getStateCount() == 4);
-            }
+            REQUIRE(after[v] == before[v]);
+            REQUIRE(engine->getVoice(v).morph().getStateCount() == 4);
         }
-        REQUIRE(rejecting == std::size_t{1});
     }
 
     SECTION("voiceMask selects which slots are written")

@@ -828,6 +828,60 @@ public:
     }
 
     // =========================================================================
+    // Phase 11 (specs/seraphis-phase11-ui, FR-030/FR-031) - the per-partial
+    // authoring fan-outs
+    // =========================================================================
+    //
+    // THESE EXIST BECAUSE getVoice() IS CONST (:955) and the non-const path is
+    // `friend class SeraphisMacroMatrix` (:997), which the plugin cannot use.
+    //
+    // kMaxVoices, NOT getPolyphony() - the same rule applySpectralStates' banner
+    // states (:785-787): a slot the allocator hands out later must ALREADY carry
+    // the override. That discharges FR-030's polyphony-increase clearing event by
+    // construction.
+    //
+    // NO SECOND GUARD: HarmonicCloud already rejects an out-of-range index and a
+    // non-finite position (harmonic_cloud.h:1070-1075, :1085-1087), so these are
+    // pure fan-outs over one-line pass-throughs (seraphis_voice.h).
+    //
+    // MASK POLARITY: `active == true` means AUDIBLE, `active == false` means
+    // SILENCED - HarmonicCloud::setPartialMask's body is `masked_[index] =
+    // !active` (harmonic_cloud.h:1084-1089). clearPartialMaskAllVoices() makes
+    // everything audible on every slot (:1101).
+    //
+    // @par Thread ownership: AUDIO THREAD ONLY (or the host thread with the audio
+    //      thread stopped). All three write HarmonicCloud state that process()
+    //      reads and writes - panPosition_, positionOverridden_, panLeft_/
+    //      panRight_ (harmonic_cloud.h:1069-1079, updatePanGains at :1818-1834)
+    //      and masked_ (:1084-1089). Calling them from the message thread is a
+    //      data race; a plugin-side caller must defer to process().
+    //
+    // @par Layer: 3 (systems/). Dependencies: Layers 0-2 + Layer 3 peers. NO Layer 4.
+    // @par Real-Time Safety: allocation-free, lock-free, exception-free.
+
+    /// @brief FR-031. Place partial `index` at an exact stereo position on EVERY slot.
+    void setPartialPositionAllVoices(std::size_t index, float position) noexcept {
+        for (std::size_t v = 0; v < kMaxVoices; ++v) {
+            voices_[v].setPartialPosition(index, position);
+        }
+    }
+
+    /// @brief FR-031. Mask partial `index` in (`active == true`) or out
+    ///        (`active == false`) on EVERY slot.
+    void setPartialMaskAllVoices(std::size_t index, bool active) noexcept {
+        for (std::size_t v = 0; v < kMaxVoices; ++v) {
+            voices_[v].setPartialMask(index, active);
+        }
+    }
+
+    /// @brief FR-031. Clear every mask on EVERY slot - all partials audible.
+    void clearPartialMaskAllVoices() noexcept {
+        for (std::size_t v = 0; v < kMaxVoices; ++v) {
+            voices_[v].clearPartialMask();
+        }
+    }
+
+    // =========================================================================
     // Layer-4 hand-off surfaces (FR-070, FR-071) - T008
     // =========================================================================
 

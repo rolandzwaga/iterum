@@ -482,4 +482,275 @@ inline constexpr float kFillSpacingFactor = 1.0163049f;
     return s;
 }
 
+// ==============================================================================
+// Authoring mutators (Seraphis Phase 11 FR-031, FR-032, C-6) -- plan section 1
+// ==============================================================================
+// PLACEMENT IS LOAD-BEARING. These three sit AFTER makeFactoryState and not
+// beside normalizeSpectralState (:155): kAuthorSpacing below is initialised from
+// detail::factory::kFillSpacingFactor (:344) and blendStates' tail fill names
+// detail::factory::kFillMaxGrowth (:342) and kFillMaxRatio (:343), all inside a
+// namespace that does not open until :317. Name lookup in a namespace-scope
+// inline constexpr initialiser and in a non-template inline function body is
+// resolved at the point of definition, so an earlier placement is a hard compile
+// error on every leg.
+//
+// The four range constants are SpectralState-SCOPED members (:51-54), never
+// namespace-scope names, so every use below is written SpectralState::kMin... .
+//
+// All three are noexcept, allocation-free, lock-free, exception-free and I/O
+// free, and they add no include -- <algorithm>, <cmath> and db_utils.h are
+// already carried at :26-35. Finiteness is tested with detail::isNaN /
+// detail::isInf (used at :91, :103), NEVER std::isnan: see the -ffast-math
+// banner at :21-23.
+// ==============================================================================
+
+/// @brief The strictly-monotone authoring guard band: 28 cents.
+///
+/// Reuses detail::factory::kFillSpacingFactor (:344) so no new number enters the
+/// file -- an authored partial keeps the same geometric spacing from its
+/// neighbours that the FR-041 continuation already uses.
+inline constexpr float kAuthorSpacing = detail::factory::kFillSpacingFactor; // 1.0163049f
+
+/// @brief Author one partial's ratio and amplitude in place (FR-031, C-6).
+///
+/// PRESERVATION, not repair: a state that already satisfies isValidSpectralState
+/// still does afterwards; a state that does NOT is left BYTE-UNCHANGED. Every
+/// rejection -- whole-state and local -- happens before the first store, so the
+/// no-half-write property is structural rather than tested-in.
+///
+/// No-ops, in evaluation order: @p s is not FR-012-valid; numPartials outside
+/// [0, 64]; @p index at or beyond numPartials; a non-finite @p ratio or
+/// @p amplitude; or a monotone window that has collapsed because the two
+/// neighbours are closer together than kAuthorSpacing^2.
+///
+/// The stored ratio is CLAMPED into (ratios[index-1] * kAuthorSpacing,
+/// ratios[index+1] / kAuthorSpacing) -- neighbours are never swapped -- and the
+/// stored amplitude is clamped into [0, 1]. Nothing but ratios[index] and
+/// amplitudes[index] is written: `name`, `tiltDbPerOct`, `inharmonicity` and
+/// `numPartials` are untouched.
+///
+/// Real-time safe: no allocation, no locks, no exceptions.
+inline void setPartial(SpectralState& s, std::size_t index, float ratio,
+                       float amplitude) noexcept {
+    // (0) The whole-state gate. Load-bearing: steps 1-6 are all LOCAL checks, so
+    // a state that is invalid somewhere OTHER than `index` (an out-of-range
+    // amplitude at slot 5, a non-monotone ratio pair at slot 30, a `name` with
+    // no NUL) passes every one of them and would otherwise be stored into.
+    if (!isValidSpectralState(s)) {
+        return;
+    }
+
+    // (1) The precondition step 2's cast relies on. Subsumed by step 0 in
+    // practice; kept because it costs one predicted branch.
+    if (s.numPartials < 0 || s.numPartials > static_cast<int>(SpectralState::kStatePartials)) {
+        return;
+    }
+    const auto count = static_cast<std::size_t>(s.numPartials);
+
+    // (2)
+    if (index >= count) {
+        return;
+    }
+
+    // (3)
+    if (detail::isNaN(ratio) || detail::isInf(ratio) || detail::isNaN(amplitude)
+        || detail::isInf(amplitude)) {
+        return;
+    }
+
+    // (4) / (5)
+    const float amp = std::clamp(amplitude, 0.0f, 1.0f);
+    float r = std::clamp(ratio, SpectralState::kMinStateRatio, SpectralState::kMaxStateRatio);
+
+    // (6) The monotone window.
+    const float lo =
+        (index > 0) ? s.ratios[index - 1] * kAuthorSpacing : SpectralState::kMinStateRatio;
+    const float hi =
+        (index + 1 < count) ? s.ratios[index + 1] / kAuthorSpacing : SpectralState::kMaxStateRatio;
+    if (lo > hi) {
+        return; // Neighbours closer than kAuthorSpacing^2 -- NO-OP, no write.
+    }
+    r = std::clamp(r, lo, hi);
+
+    // (7) The only two stores in this function.
+    s.ratios[index] = r;
+    s.amplitudes[index] = amp;
+}
+
+/// @brief Convex blend of two morph endpoints (FR-031, FR-032 clause 3).
+///
+/// Returns an UNCONDITIONALLY valid state: if both inputs are invalid the result
+/// is a default-constructed SpectralState (documented valid, :42-43); if exactly
+/// one is invalid the other is returned verbatim; a non-finite @p t returns
+/// @p a; otherwise @p t is clamped into [0, 1].
+///
+/// The exact endpoints are BYTE-IDENTICAL to the inputs: `blendStates(a, b, 0)`
+/// is `a` and `blendStates(a, b, 1)` is `b`, bit for bit. The interior body
+/// cannot reproduce that, for three independent reasons -- it rewrites `name` to
+/// "Blend", it regenerates every slot at or above min(numPartials) from the
+/// FR-041 continuation, and exp2(log2(x)) is a binary32 round trip that is not
+/// the identity -- so the short-circuit below is what makes the rule literally
+/// true rather than approximately true.
+///
+/// Ratios interpolate in log2 and come back through exp2, which is the domain
+/// SpectralMorphEngine itself stores, so a blend and a morph agree about what
+/// "halfway" means. NO CLAMP is applied to them: a convex combination of two
+/// strictly increasing log-ratio sequences is strictly increasing and stays
+/// inside [log2 0.5, log2 128], and a clamp is the one operation that could
+/// flatten two neighbours into equality and break monotonicity.
+///
+/// Returns by value; SpectralState is trivially copyable (:65), so this is a
+/// sizeof(SpectralState) stack copy and not an allocation. (That is 540 bytes --
+/// NOT kSpectralStateBytes (:186), which is the 541-byte SERIALIZED size and a
+/// different quantity.)
+///
+/// Real-time safe: no allocation, no locks, no exceptions.
+[[nodiscard]] inline SpectralState blendStates(const SpectralState& a, const SpectralState& b,
+                                               float t) noexcept {
+    // (1) Select-or-default on validity.
+    const bool validA = isValidSpectralState(a);
+    const bool validB = isValidSpectralState(b);
+    if (!validA && !validB) {
+        return SpectralState{};
+    }
+    if (!validA) {
+        return b;
+    }
+    if (!validB) {
+        return a;
+    }
+
+    // (2)
+    if (detail::isNaN(t) || detail::isInf(t)) {
+        return a;
+    }
+    const float u = std::clamp(t, 0.0f, 1.0f);
+
+    // (2a) The exact-endpoint short-circuit.
+    if (u == 0.0f) {
+        return a;
+    }
+    if (u == 1.0f) {
+        return b;
+    }
+
+    // (3)
+    SpectralState out{};
+    out.numPartials = std::min(a.numPartials, b.numPartials);
+    const auto count = static_cast<std::size_t>(out.numPartials); // >= 0 by validity
+
+    // (4)
+    for (std::size_t i = 0; i < count; ++i) {
+        out.ratios[i] =
+            std::exp2((1.0f - u) * std::log2(a.ratios[i]) + u * std::log2(b.ratios[i]));
+        out.amplitudes[i] = (1.0f - u) * a.amplitudes[i] + u * b.amplitudes[i];
+    }
+
+    // (5) Metadata interpolates linearly. The clamps are NOT a range repair -- a
+    // convex combination of two in-range values is in range in real arithmetic.
+    // They pin the binary32 rounding at the extremes, where (1-u)*x + u*x with
+    // both endpoints sitting exactly on a bound can land an ulp outside it and
+    // cost this function its unconditional-validity guarantee.
+    out.tiltDbPerOct = std::clamp((1.0f - u) * a.tiltDbPerOct + u * b.tiltDbPerOct,
+                                  SpectralState::kMinStateTiltDbPerOct,
+                                  SpectralState::kMaxStateTiltDbPerOct);
+    out.inharmonicity = std::clamp((1.0f - u) * a.inharmonicity + u * b.inharmonicity, 0.0f,
+                                   SpectralState::kMaxStateInharmonicity);
+
+    // (6) The FR-041 geometric continuation over the unauthored slots, identical
+    // to makeFactoryState's (:416-433). The validator does not examine these
+    // (:78-79), but leaving them at 0 would put log2(0) into any consumer that
+    // scans the whole array.
+    for (std::size_t j = count; j < SpectralState::kStatePartials; ++j) {
+        float grown = 0.0f;
+        if (out.numPartials >= 2) {
+            const float lastSpacing = out.ratios[j - 1] / out.ratios[j - 2];
+            const float g = std::clamp(lastSpacing, 1.0f, detail::factory::kFillMaxGrowth);
+            grown = std::min(out.ratios[j - 1] * g, detail::factory::kFillMaxRatio);
+        } else {
+            grown = static_cast<float>(j + 1);
+        }
+        const float floorValue = (j >= 1) ? out.ratios[j - 1] * detail::factory::kFillSpacingFactor
+                                          : static_cast<float>(j + 1);
+        out.ratios[j] = std::max(grown, floorValue);
+    }
+
+    // (7) NUL-padded label; `out.name` is already all-zero, so the copy stops one
+    // byte short of the field and the terminator is guaranteed.
+    const char* label = "Blend";
+    for (std::size_t i = 0; i + 1 < SpectralState::kStateNameBytes && label[i] != '\0'; ++i) {
+        out.name[i] = label[i];
+    }
+
+    // No normalizeSpectralState call: both inputs are already normalised and a
+    // convex combination of two unit-norm vectors has norm <= 1, so amplitudes
+    // stay in range; normalising would additionally rescale the interior, which
+    // the reversibility argument does not want.
+    return out;
+}
+
+/// @brief Set the state's spectral tilt to an ABSOLUTE dB/octave (FR-031, C-6).
+///
+/// The tilt is BAKED into `amplitudes` -- writing the field alone is inaudible,
+/// because the morph engine reads amplitudes, not the label. Absolute, not
+/// relative: `delta = target - s.tiltDbPerOct` undoes whatever tilt the state
+/// already carries before applying the new one, so two consecutive calls with
+/// the same argument are the same as one.
+///
+/// No-ops on a non-finite @p dbPerOct and on a state that is not FR-012-valid,
+/// both leaving @p s BYTE-UNCHANGED. @p dbPerOct is clamped into
+/// [kMinStateTiltDbPerOct, kMaxStateTiltDbPerOct].
+///
+/// std::pow(10.0f, x), NEVER exp10f -- that is a glibc GNU extension, absent on
+/// MSVC (the standing prohibition is recorded at
+/// dsp/include/krate/dsp/systems/continuous_body.h:1643-1645). This site is
+/// configuration-time, where makeFactoryState already evaluates ~200 std::pow
+/// calls, so the portable form is free.
+///
+/// Real-time safe: no allocation, no locks, no exceptions.
+inline void tiltState(SpectralState& s, float dbPerOct) noexcept {
+    // (1) / (2)
+    if (detail::isNaN(dbPerOct) || detail::isInf(dbPerOct)) {
+        return;
+    }
+    if (!isValidSpectralState(s)) {
+        return;
+    }
+
+    // (3)
+    const float target = std::clamp(dbPerOct, SpectralState::kMinStateTiltDbPerOct,
+                                    SpectralState::kMaxStateTiltDbPerOct);
+    const float delta = target - s.tiltDbPerOct;
+
+    // (3a) Already at the target: the bake below is the identity on amplitudes
+    // (10^0 == 1), but normalizeSpectralState is NOT bit-idempotent -- its
+    // sum-of-squares over an already-unit-norm vector lands within an ulp of 1
+    // rather than exactly on it, and the resulting 1/sqrt rescales every
+    // amplitude by one ulp. Short-circuiting is what makes absoluteness a
+    // BYTE-identity instead of an approximate one, exactly as blendStates' step
+    // 2a does for its endpoints.
+    if (delta == 0.0f) {
+        s.tiltDbPerOct = target;
+        return;
+    }
+
+    // (4) An empty state has no amplitudes to bake into; the field is still
+    // assigned so the control's readout is truthful.
+    if (s.numPartials <= 0) {
+        s.tiltDbPerOct = target;
+        return;
+    }
+
+    // (5) ratios[0] >= kMinStateRatio by validity, so the division is safe.
+    const auto count = static_cast<std::size_t>(s.numPartials);
+    for (std::size_t i = 0; i < count; ++i) {
+        const float octaves = std::log2(s.ratios[i] / s.ratios[0]);
+        s.amplitudes[i] *= std::pow(10.0f, (delta / 20.0f) * octaves);
+    }
+
+    // (6) / (7)
+    normalizeSpectralState(s);
+    s.tiltDbPerOct = target;
+}
+
 } // namespace Krate::DSP

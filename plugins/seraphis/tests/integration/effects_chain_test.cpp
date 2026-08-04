@@ -39,6 +39,11 @@
 //         controls - the detector-wiring injection and the capability-3
 //         return-ramp snap
 //
+// PHASE 11 additions to this same TU:
+//   T013  TEST_CASE "Seraphis_MacroDissolve_ReachesEffects"  (SC-021(a)(b)(c),
+//         FR-037-FR-039, C-10) - the Dissolve/Entropy-reach-effects sweeps, the
+//         neutral bit-equality and the composed-recompute cadence
+//
 // WHY THE SINGLE-WRITER SECTION EXISTS (plan D-2, RULED 2026-08-02).
 // SeraphisEngine::setOutputSaturation (seraphis_engine.h:672) had TWO on-change
 // writers before this phase: the prepare-time push (processor.cpp:568-578) and
@@ -4998,6 +5003,388 @@ TEST_CASE("Effects transitions are click-free", "[seraphis][effects]") {
              << snappedStats.maxRef << "); the shipped arm scored " << stats.maxTest
              << " against " << bound);
         CHECK_FALSE(snappedStats.maxTest <= snappedBound);
+    }
+}
+
+// =============================================================================
+// PHASE 11 T013 - SC-021(a)(b)(c), FR-037 .. FR-039: THE COMPOSED EFFECTS SEAM
+// =============================================================================
+// Phase 10 left IDs 1410 and 1441 as the ONLY effects quantities the macros were
+// ever going to reach, and Phase 11 / C-10 adds exactly two rows for them
+// (Dissolve -> FxDelaySend, Entropy -> FxWanderDepth,
+// seraphis_macro_matrix.h:482, :488). The plugin-side half is a SUBSTITUTED
+// READ: updateEffectsBypassState(), setParamSmootherTargets() and the
+// fxWanderRuns_ predicate stop loading the raw deep atomic and read
+// composedEffects_ - the SeraphisEffectsTargets the pre-slice block computed for
+// THIS process() call - instead.
+//
+// WHY THE ONE-BLOCK LAG IS ASSERTED RATHER THAN ENGINEERED AWAY (RULED
+// 2026-08-03). composedEffects_ is computed BEFORE the slice loop, and the slice
+// loop is where pushMacroSurfaces() refreshes the matrix's macro knobs and
+// bases - so a macro written on block N first shows in the composition on block
+// N+1. That is 10.67 ms at 512/48 kHz, well inside the 20 ms class-(b) smoothing
+// both consumers already impose, and moving the composition into the loop is
+// FORBIDDEN (FR-012 pins updateEffectsBypassState at once per process() call and
+// the send's kFxSendChunkSamples chunk machine is not slice-partitionable).
+// Section (c) therefore asserts the lag as DESIGNED BEHAVIOUR - unchanged on the
+// write block, moved on the next one.
+//
+// WHY effectsPushes_ IS NOT ASSERTED ABOUT ANYWHERE IN THIS CASE (spec D-2).
+// effectsPushCountForTest() is incremented only inside pushEffectsParams(),
+// whose ID set does not contain 1410 or 1441 - so a CORRECT implementation never
+// moves it here and an assertion on it would fail on correct code. The
+// replacement observables are the three ForTest() seams this task adds.
+//
+// HOW "THE ISOLATED SEND RETURN" IS MEASURED, and why it is the probe and not a
+// difference against the macro neutral: Dissolve owns seven OTHER (voice-owned)
+// rows and Entropy four, so a render at Dissolve = 1 differs from one at
+// Dissolve = 0 in the cloud, the morph and the atmosphere as well. Pairing each
+// point with a render of ITSELF under FR-040's capability 1 (C-1 steps 4 and 5
+// skipped) isolates exactly the effects stage at that operating point, which is
+// the same construction SC-002 uses - including its reprepare + warm-up dance,
+// for the reason reprepare()'s banner measures (a re-prepare returns the
+// instance to a REPRODUCIBLE state, not a VIRGIN one, and the residue is ~6.5e-3
+// against an EXACT-zero claim at the neutral).
+// =============================================================================
+
+namespace {
+
+/// 120 x 512 = 61 440 samples = 1.28 s at 48 kHz. Long enough that the reported
+/// 1024-sample latency, the accumulator's fixed 512-sample pipeline delay and
+/// five traversals of the shipped 250 ms delay (kFxDelayTimeDefault,
+/// effects_params.h:106) all sit inside the measured window rather than in a
+/// start-up transient.
+constexpr std::size_t kMacroFxRenderBlocks = 120;
+/// The measured window: the last 32 768 samples of the render, i.e. everything
+/// from 0.60 s onward. Both the 20 ms macro smoother and the 20 ms class-(b)
+/// return-gain / wander-depth smoothers are two orders of magnitude inside that.
+constexpr std::size_t kMacroFxWindowFirst = 28672;
+constexpr std::size_t kMacroFxWindowSpan = 32768;
+static_assert(kMacroFxWindowFirst + kMacroFxWindowSpan
+                  == kMacroFxRenderBlocks * kBlockSamples,
+              "the measured window must end exactly at the end of the render");
+
+/// SC-021(a)'s sweep. The neutral is FIRST, because it is the point whose
+/// statistic must be EXACTLY zero and every later point is compared against it.
+constexpr double kMacroFxSweep[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+
+/// NON-VACUITY ONLY - it is not the criterion. The criterion is the strict
+/// monotonicity below; this floor exists so that a build in which the effects
+/// stage did nothing at all (the two arms bit-identical, difference exactly 0)
+/// cannot be reported as "monotonic" by a chain of zeros. It is deliberately far
+/// below any plausible return level rather than tuned to the measured one: a
+/// tuned floor would silently become a second, undeclared threshold.
+constexpr double kMacroFxNonVacuityFloor = 1.0e-9;
+
+/// SC-021(b)'s deep-knob ladder. Both IDs are plain `unit` rows
+/// (effects_params.h:166, :172-174, :236-238), so the raw atomic IS
+/// static_cast<float>(normalized) and the expected value never has to be
+/// transcribed.
+constexpr double kMacroFxDeepLadder[] = {0.0, 0.25, 0.5, 1.0};
+
+/// Blocks rendered after a deep-knob write before the composition is read. Two
+/// would do (the write block, then the block that sees the refreshed base); the
+/// third is slack, and costs nothing because the value is a fixed point.
+constexpr std::size_t kMacroFxSettleBlocks = 3;
+
+/// Mean of the PER-CHANNEL RMS of the difference of two renders - Phase 10
+/// SC-003's isolated-return statistic, taken per channel and averaged rather
+/// than pooled, so a return that lands in one channel only is not diluted.
+[[nodiscard]] double meanChannelDiffRms(const TapRender& a, const TapRender& b,
+                                        std::size_t firstSample, std::size_t numSamples) {
+    const std::size_t end = std::min({a.left.size(), b.left.size(), firstSample + numSamples});
+    if (firstSample >= end) {
+        return 0.0;
+    }
+    double sumL = 0.0;
+    double sumR = 0.0;
+    for (std::size_t i = firstSample; i < end; ++i) {
+        const double dl = static_cast<double>(a.left[i]) - static_cast<double>(b.left[i]);
+        const double dr = static_cast<double>(a.right[i]) - static_cast<double>(b.right[i]);
+        sumL += dl * dl;
+        sumR += dr * dr;
+    }
+    const auto n = static_cast<double>(end - firstSample);
+    return 0.5 * (std::sqrt(sumL / n) + std::sqrt(sumR / n));
+}
+
+/// M/S SIDE RMS of the difference - diffSideEnergy() above, normalised to an
+/// amplitude so the wander sweep is compared in the same units as the send one.
+[[nodiscard]] double diffSideRms(const TapRender& a, const TapRender& b,
+                                 std::size_t firstSample, std::size_t numSamples) {
+    const std::size_t end = std::min({a.left.size(), b.left.size(), firstSample + numSamples});
+    if (firstSample >= end) {
+        return 0.0;
+    }
+    const double energy = diffSideEnergy(a, b, firstSample, numSamples);
+    return std::sqrt(energy / static_cast<double>(end - firstSample));
+}
+
+/// The `.amount` the SHIPPED table carries for `target`, read out of
+/// SeraphisMacroMatrix::kRows rather than transcribed. C-10 clause 1 requires the
+/// measured table to be recorded BESIDE the amount it was measured at, and a
+/// transcribed literal would go stale the moment the row is retuned - printing
+/// the shipped value makes the recorded table self-describing.
+[[nodiscard]] float shippedAmountFor(Krate::DSP::SeraphisMacroTarget target) {
+    for (const Krate::DSP::SeraphisMacroRow& row : Krate::DSP::SeraphisMacroMatrix::kRows) {
+        if (row.target == target) {
+            return row.amount;
+        }
+    }
+    return 0.0f;
+}
+
+struct MacroFxArm {
+    /// The Dissolve sweep's statistic - the send's isolated return.
+    double returnRms = 0.0;
+    /// The Entropy sweep's statistic - the wander's isolated side image.
+    double sideRms = 0.0;
+    /// Cumulative over all three renders of the arm. At the neutral this must be
+    /// zero: composed delaySend 0 => FR-007's exact bypass => no chunk ever runs.
+    std::size_t sendChunks = 0;
+    /// FR-010's raw predicate as the live render left it - the direct witness
+    /// that substitution 3 reached the ENGAGE decision and not only the smoother.
+    bool wanderRunsRaw = false;
+};
+
+/// One sweep point: warm-up, then the capability-1 arm and the live arm, both on
+/// the SAME re-prepared instance (SC-002's construction, and its banner's
+/// reasoning applies verbatim).
+[[nodiscard]] MacroFxArm renderMacroFxArm(Steinberg::Vst::ParamID macroId,
+                                          double macroNormalized) {
+    Fixture fx;
+    REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
+
+    const auto script = [macroId, macroNormalized](std::size_t b, Fixture& f) {
+        if (b != 0) {
+            return;
+        }
+        f.setParam(macroId, macroNormalized);
+        for (const Steinberg::int16 pitch : kEightNoteChord) {
+            f.pushEvent(Steinberg::Vst::Event::kNoteOnEvent, pitch, kChordVelocity, 0);
+        }
+    };
+
+    // --- Warm-up: NOT measured. See reprepare()'s banner. --------------------
+    (void)captureTapRender(fx, kMacroFxRenderBlocks, kBlockSamples, script);
+
+    // --- Arm A: FR-040 capability 1 - C-1 steps 4 and 5 skipped -------------
+    reprepare(fx);
+    TapRender bypassed;
+    {
+        const ScopedEffectsProbe guard(*fx.proc, /*bypassed*/ true, /*afterOutput*/ false,
+                                       /*rampSnap*/ false);
+        bypassed = captureTapRender(fx, kMacroFxRenderBlocks, kBlockSamples, script);
+    }
+
+    // --- Arm B: the SAME instance, re-prepared, the stage LIVE ---------------
+    reprepare(fx);
+    const TapRender live = captureTapRender(fx, kMacroFxRenderBlocks, kBlockSamples, script);
+
+    REQUIRE(live.left.size() == kMacroFxRenderBlocks * kBlockSamples);
+    REQUIRE(bypassed.left.size() == live.left.size());
+    // Non-vacuity: two silences would satisfy every difference bound trivially.
+    REQUIRE(live.outputPeak > 0.0f);
+
+    MacroFxArm out;
+    out.returnRms = meanChannelDiffRms(live, bypassed, kMacroFxWindowFirst, kMacroFxWindowSpan);
+    out.sideRms = diffSideRms(live, bypassed, kMacroFxWindowFirst, kMacroFxWindowSpan);
+    out.sendChunks = fx.proc->sendChunkCountForTest();
+    out.wanderRunsRaw = Probe::wanderRunsRaw(*fx.proc);
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("Seraphis_MacroDissolve_ReachesEffects", "[effects][phase11]") {
+
+    // -------------------------------------------------------------------------
+    // SC-021(a), FR-037: Dissolve reaches the SEND
+    // -------------------------------------------------------------------------
+    // kFxDelayMixId stays at its shipped 0 throughout, so the send is reached by
+    // the macro or not at all. A build that kept the raw-atomic read at
+    // updateEffectsBypassState() leaves the send BYPASSED at every point and the
+    // whole sweep collapses to zero - the RQ-4 defect, seen at its loudest.
+    // -------------------------------------------------------------------------
+    SECTION("(a) Dissolve sweeps the isolated send return from exactly zero") {
+        std::vector<double> returns;
+        returns.reserve(std::size(kMacroFxSweep));
+
+        for (const double point : kMacroFxSweep) {
+            const MacroFxArm arm = renderMacroFxArm(Seraphis::kMacroDissolveId, point);
+            INFO("Dissolve = " << point << ", isolated return RMS = " << arm.returnRms
+                               << ", send chunks = " << arm.sendChunks);
+            if (point == 0.0) {
+                // FR-039: at the macro neutral the composition IS the raw base,
+                // the base is kFxDelayMixDefault = 0, and FR-007's predicate is
+                // an EXACT `!= 0.0f` - so the send never runs and the live arm is
+                // the capability-1 arm, sample for sample.
+                CHECK(arm.sendChunks == std::size_t{0});
+                CHECK(arm.returnRms == 0.0);
+            } else {
+                CHECK(arm.sendChunks > std::size_t{0});
+                CHECK(arm.returnRms > kMacroFxNonVacuityFloor);
+            }
+            returns.push_back(arm.returnRms);
+        }
+
+        for (std::size_t i = 1; i < returns.size(); ++i) {
+            INFO("Dissolve " << kMacroFxSweep[i - 1] << " -> " << kMacroFxSweep[i] << ": "
+                             << returns[i - 1] << " -> " << returns[i]);
+            CHECK(returns[i] > returns[i - 1]);  // STRICTLY monotonic
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SC-021(a), FR-038: Entropy reaches the WANDER
+    // -------------------------------------------------------------------------
+    // Measured as the M/S SIDE RMS of the isolated stage, because the wander's
+    // whole effect is on the stereo image. FR-024a makes the depth a PLUGIN-SIDE
+    // multiply, so the underlying BrownianDrift trajectory is identical at every
+    // point of this sweep and the isolated side image is very nearly linear in
+    // the composed depth - which is why "strictly monotonic" is a fair demand of
+    // a random walk here.
+    //
+    // Substitution 3 is what this arm is really about: with the shipped default
+    // kFxWanderDepthDefault = 0, an Entropy-only move would never set FR-010's
+    // ENGAGE predicate if it kept reading the raw atomic, and the stage would
+    // engage only through the FR-010a disengage latch - a block later, on the
+    // very path this measurement covers.
+    // -------------------------------------------------------------------------
+    SECTION("(a) Entropy sweeps the isolated wander image from exactly zero") {
+        std::vector<double> sides;
+        sides.reserve(std::size(kMacroFxSweep));
+
+        for (const double point : kMacroFxSweep) {
+            const MacroFxArm arm = renderMacroFxArm(Seraphis::kMacroEntropyId, point);
+            INFO("Entropy = " << point << ", isolated side RMS = " << arm.sideRms
+                              << ", wanderRunsRaw = " << arm.wanderRunsRaw);
+            if (point == 0.0) {
+                CHECK_FALSE(arm.wanderRunsRaw);
+                CHECK(arm.sideRms == 0.0);
+            } else {
+                CHECK(arm.wanderRunsRaw);  // the ENGAGE predicate saw the macro
+                CHECK(arm.sideRms > kMacroFxNonVacuityFloor);
+            }
+            // Entropy owns no effects row but FxWanderDepth, so the send must
+            // stay bypassed for the whole sweep.
+            CHECK(arm.sendChunks == std::size_t{0});
+            sides.push_back(arm.sideRms);
+        }
+
+        // OQ-4 / C-10 clause 1's WRITE-BACK MEASUREMENT, always printed on a
+        // PASSING run - via WARN, not INFO, for the same reason SC-017(a) does it
+        // (cloud_frame_test.cpp): a measurement whose whole purpose is to be read
+        // back into the spec must not be invisible exactly when it succeeds.
+        // This is the five-point M/S side-RMS table C-10 clause 1 requires beside
+        // the `Entropy -> FxWanderDepth` `.amount`; the row's acceptance is
+        // STRICT MONOTONICITY (checked immediately below), and if it ever fails
+        // THE `.amount` MOVES, never this criterion.
+        WARN("C-10 clause 1 / FR-037, Entropy -> FxWanderDepth `.amount` = "
+             << shippedAmountFor(Krate::DSP::SeraphisMacroTarget::FxWanderDepth)
+             << ".\n  Isolated M/S SIDE RMS of the effects stage, five-point Entropy sweep:"
+             << "\n  Entropy 0.00  side RMS = " << sides[0] << "\n  Entropy 0.25  side RMS = "
+             << sides[1] << "\n  Entropy 0.50  side RMS = " << sides[2]
+             << "\n  Entropy 0.75  side RMS = " << sides[3] << "\n  Entropy 1.00  side RMS = "
+             << sides[4] << "\n  side RMS(1) / side RMS(0.25) = " << (sides[4] / sides[1])
+             << " (4.0 would be exactly linear in the composed depth)."
+                "\n  RECORDED in spec C-10 clause 1 and in seraphis_macro_matrix.h on"
+                " 2026-08-04; the amount was NOT moved because the sweep is monotone.");
+
+        for (std::size_t i = 1; i < sides.size(); ++i) {
+            INFO("Entropy " << kMacroFxSweep[i - 1] << " -> " << kMacroFxSweep[i] << ": "
+                            << sides[i - 1] << " -> " << sides[i]);
+            CHECK(sides[i] > sides[i - 1]);  // STRICTLY monotonic
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SC-021(b), FR-039: at the macro neutrals the composition is the IDENTITY
+    // -------------------------------------------------------------------------
+    // BIT-equality, not Approx. Both rows carry base 0 and ModCurve::Linear, and
+    // applyModCurve(Linear, 0) == 0 exactly (seraphis_macro_matrix.h:884-889), so
+    // evaluateAll() returns `base + 0.0f` - and the base IS the deep atomic,
+    // because baseValueForTarget() maps both new targets onto it. This is the
+    // arithmetic that keeps SC-001's exact-equality form alive after Phase 11.
+    // -------------------------------------------------------------------------
+    SECTION("(b) at the macro neutrals the composition equals the deep atomic") {
+        Fixture fx;
+        REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
+        // No macro is touched: prepare() snapped all five smoothers onto their
+        // registered defaults, which ARE the FR-060 neutrals.
+
+        for (const double norm : kMacroFxDeepLadder) {
+            fx.setParam(Seraphis::kFxDelayMixId, norm);
+            fx.setParam(Seraphis::kFxWanderDepthId, norm);
+            for (std::size_t b = 0; b < kMacroFxSettleBlocks; ++b) {
+                REQUIRE(fx.processBlock(kBlock) == Steinberg::kResultOk);
+            }
+
+            const auto expected = static_cast<float>(norm);
+            INFO("deep knob normalized = " << norm << ", composed delaySend = "
+                                           << fx.proc->composedFxDelaySendForTest()
+                                           << ", composed wanderDepth = "
+                                           << fx.proc->composedFxWanderDepthForTest());
+            CHECK(fx.proc->composedFxDelaySendForTest() == expected);
+            CHECK(fx.proc->composedFxWanderDepthForTest() == expected);
+        }
+        REQUIRE(fx.checkCanaries());
+    }
+
+    // -------------------------------------------------------------------------
+    // SC-021(c), spec D-2: THE REPLACEMENT OBSERVABLE
+    // -------------------------------------------------------------------------
+    // With BOTH deep knobs held still, a macro move must reach the composition -
+    // and reach it on the NEXT process() call, never on the write block (the
+    // ruled and accepted one-block lag). A build that read the raw deep atomic at
+    // updateEffectsBypassState() / setParamSmootherTargets() leaves both seams
+    // pinned at their defaults for the whole case.
+    // -------------------------------------------------------------------------
+    SECTION("(c) a macro move reaches the composition on the NEXT process() call") {
+        Fixture fx;
+        REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
+
+        std::size_t processCalls = 0;
+        for (std::size_t b = 0; b < kMacroFxSettleBlocks; ++b) {
+            REQUIRE(fx.processBlock(kBlock) == Steinberg::kResultOk);
+            ++processCalls;
+        }
+
+        const float delayBefore = fx.proc->composedFxDelaySendForTest();
+        const float wanderBefore = fx.proc->composedFxWanderDepthForTest();
+        // The deep knobs are untouched for the whole section, so the "before"
+        // values are the shipped defaults and both are exactly 0.
+        REQUIRE(delayBefore == 0.0f);
+        REQUIRE(wanderBefore == 0.0f);
+
+        fx.setParam(Seraphis::kMacroDissolveId, 1.0);
+        fx.setParam(Seraphis::kMacroEntropyId, 1.0);
+
+        // THE WRITE BLOCK. pushMacroSurfaces() refreshes the matrix inside the
+        // slice loop, which runs AFTER the pre-slice composition - so this call
+        // still composes from the pre-write macros.
+        REQUIRE(fx.processBlock(kBlock) == Steinberg::kResultOk);
+        ++processCalls;
+        CHECK(fx.proc->composedFxDelaySendForTest() == delayBefore);
+        CHECK(fx.proc->composedFxWanderDepthForTest() == wanderBefore);
+
+        // THE NEXT CALL. Both seams must have moved.
+        REQUIRE(fx.processBlock(kBlock) == Steinberg::kResultOk);
+        ++processCalls;
+        INFO("after the next call: delaySend = " << fx.proc->composedFxDelaySendForTest()
+                                                 << ", wanderDepth = "
+                                                 << fx.proc->composedFxWanderDepthForTest());
+        CHECK(fx.proc->composedFxDelaySendForTest() > delayBefore);
+        CHECK(fx.proc->composedFxWanderDepthForTest() > wanderBefore);
+
+        // FR-012's cadence: ONCE per process() call, never once per slice. The
+        // bypass-predicate counter is the established per-CALL divisor (FR-041
+        // clause 5), and every call in this section reaches the pre-slice block,
+        // so both readings must also equal the raw call count.
+        CHECK(fx.proc->composedEffectsRecomputeCountForTest() == processCalls);
+        CHECK(fx.proc->composedEffectsRecomputeCountForTest()
+              == fx.proc->bypassPredicateEvalCountForTest());
+        REQUIRE(fx.checkCanaries());
     }
 }
 

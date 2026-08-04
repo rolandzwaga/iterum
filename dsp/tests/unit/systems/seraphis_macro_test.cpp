@@ -2662,3 +2662,230 @@ TEST_CASE("SeraphisEngine_MacroSweepsMoveTheirAxis_Full", "[.slow]") {
         requireTrend("Entropy secondary (partial-frequency variance)", series.freqVariance, +1);
     }
 }
+
+// =============================================================================
+// Phase 11 (spec slug seraphis-phase11-ui), T004 / C-10 - the FOURTH macro-target
+// owner. Every assertion below is about ADDITIVITY: appending two values before
+// SeraphisMacroTarget::Count and two rows to kRows must move NOTHING that already
+// shipped, and the new Effects half must be an EXACT identity at the FR-060
+// neutrals so SC-001 can keep its exact-equality form.
+// =============================================================================
+
+namespace {
+
+/// One grid point of the Aether reference table.
+struct AetherReferencePoint {
+    /// dream, bloom, dissolve, gravity, entropy - in SeraphisMacroValues order.
+    std::array<float, 5> macros;
+    /// The eight SeraphisAetherTargets fields, IN DECLARED FIELD ORDER:
+    /// mix, size, width, shimmerOctaveSend, shimmerFifthSend, bloomSend,
+    /// sizeBreathDepth, dimensionalityTideDepth.
+    std::array<float, 8> aether;
+};
+
+/// THE PRE-PHASE-11 REFERENCE, compared with `==` (T004 clause 1).
+///
+/// WHY EXACT EQUALITY IS LEGITIMATE HERE, and is not the bit-exact float golden
+/// the constitution forbids (dsp/CLAUDE.md, "Never pin a render with a bit-exact
+/// digest"): the forbidden thing is pinning the *result of a long chain of
+/// transcendentals* across toolchains. These eight numbers are each ONE add of
+/// two exactly-representable floats. Every grid point below sets each macro to
+/// 0.0f, 0.5f or 1.0f, so every applyModCurve() result is exactly 0, 0.5 or 1
+/// (Linear is the identity and SCurve x*x*(3-2x) evaluates to 0, 0.5, 1 exactly
+/// at those three points, core/modulation_curves.h:42-50), and every
+/// `amount * curve` product is therefore an exact power-of-two scaling of the
+/// amount - it needs no rounding. That is what makes the value invariant under
+/// FMA contraction (`-ffp-contract=fast` is GCC's default) and under the macOS
+/// leg's -ffast-math reassociation: a fused `fma(amount, curve, base)` and a
+/// separately-rounded `base + (amount * curve)` agree BECAUSE the product is
+/// exact. Only the final add rounds, once, identically on every leg.
+///
+/// The values are the float32 evaluation of evaluateAll() (:782-794) over the
+/// shipped kRows literals - i.e. what the table produced BEFORE this task, which
+/// an additive change cannot move. Each literal carries 9 significant decimal
+/// digits, which round-trips a float32 exactly.
+constexpr std::array<AetherReferencePoint, 10> kAetherReference = {{
+    // neutral (FR-060)
+    {{{0.0f, 0.0f, 0.0f, 0.5f, 0.0f}},
+     {{0.349999994f, 0.500000000f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.200000003f,
+       0.200000003f}}},
+    // Dream alone
+    {{{1.0f, 0.0f, 0.0f, 0.5f, 0.0f}},
+     {{0.699999988f, 0.500000000f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.800000012f,
+       0.800000012f}}},
+    // Bloom alone
+    {{{0.0f, 1.0f, 0.0f, 0.5f, 0.0f}},
+     {{0.349999994f, 0.500000000f, 1.25000000f, 0.600000024f, 0.400000006f, 0.600000024f,
+       0.200000003f, 0.200000003f}}},
+    // Dissolve alone - FR-063 has no Aether rows, so this MUST equal the neutral
+    {{{0.0f, 0.0f, 1.0f, 0.5f, 0.0f}},
+     {{0.349999994f, 0.500000000f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.200000003f,
+       0.200000003f}}},
+    // Gravity - the air half
+    {{{0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+     {{0.349999994f, 0.0500000119f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.200000003f,
+       0.200000003f}}},
+    // Gravity - the stone half
+    {{{0.0f, 0.0f, 0.0f, 1.0f, 0.0f}},
+     {{0.349999994f, 0.949999988f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.200000003f,
+       0.200000003f}}},
+    // Entropy alone - FR-065 has no Aether rows either
+    {{{0.0f, 0.0f, 0.0f, 0.5f, 1.0f}},
+     {{0.349999994f, 0.500000000f, 1.00000000f, 0.00000000f, 0.00000000f, 0.00000000f, 0.200000003f,
+       0.200000003f}}},
+    // every knob half-way
+    {{{0.5f, 0.5f, 0.5f, 0.5f, 0.5f}},
+     {{0.524999976f, 0.500000000f, 1.12500000f, 0.300000012f, 0.200000003f, 0.300000012f,
+       0.500000000f, 0.500000000f}}},
+    // every knob at 1
+    {{{1.0f, 1.0f, 1.0f, 1.0f, 1.0f}},
+     {{0.699999988f, 0.949999988f, 1.25000000f, 0.600000024f, 0.400000006f, 0.600000024f,
+       0.800000012f, 0.800000012f}}},
+    // a mixed corner
+    {{{0.5f, 1.0f, 0.0f, 0.0f, 1.0f}},
+     {{0.524999976f, 0.0500000119f, 1.25000000f, 0.600000024f, 0.400000006f, 0.600000024f,
+       0.500000000f, 0.500000000f}}},
+}};
+
+/// The eight fields of a SeraphisAetherTargets, in declared order.
+[[nodiscard]] std::array<float, 8> aetherFields(const SeraphisAetherTargets& t) {
+    return {{t.mix,
+             t.size,
+             t.width,
+             t.shimmerOctaveSend,
+             t.shimmerFifthSend,
+             t.bloomSend,
+             t.sizeBreathDepth,
+             t.dimensionalityTideDepth}};
+}
+
+/// A matrix with the five knobs parked at one grid point.
+[[nodiscard]] SeraphisMacroMatrix matrixAt(const std::array<float, 5>& m) {
+    SeraphisMacroMatrix matrix;
+    matrix.setMacro(SeraphisMacro::Dream, m[0]);
+    matrix.setMacro(SeraphisMacro::Bloom, m[1]);
+    matrix.setMacro(SeraphisMacro::Dissolve, m[2]);
+    matrix.setMacro(SeraphisMacro::Gravity, m[3]);
+    matrix.setMacro(SeraphisMacro::Entropy, m[4]);
+    return matrix;
+}
+
+}  // namespace
+
+TEST_CASE("SeraphisMacroMatrix_EffectsOwner_IsAdditive", "[seraphis_macro][phase11]") {
+    SECTION("clause 1: the enum append moved no offset - every Aether output is bit-identical") {
+        for (std::size_t p = 0; p < kAetherReference.size(); ++p) {
+            const AetherReferencePoint& point = kAetherReference[p];
+            INFO("grid point " << p << ": dream=" << point.macros[0] << " bloom=" << point.macros[1]
+                               << " dissolve=" << point.macros[2] << " gravity=" << point.macros[3]
+                               << " entropy=" << point.macros[4]);
+            const SeraphisMacroMatrix matrix = matrixAt(point.macros);
+            const std::array<float, 8> got = aetherFields(matrix.computeAetherTargets());
+            for (std::size_t f = 0; f < got.size(); ++f) {
+                INFO("SeraphisAetherTargets field " << f << ": got " << got[f] << ", reference "
+                                                    << point.aether[f]);
+                // Deliberately ==, not Approx: see kAetherReference's banner.
+                REQUIRE(got[f] == point.aether[f]);
+            }
+        }
+
+        // The window aetherFieldIndex() tests is what the bit-identity above is
+        // evidence FOR - state it directly too, so a future append that DOES
+        // move it fails with a comprehensible message.
+        STATIC_REQUIRE(SeraphisMacroMatrix::kFirstAetherTarget
+                       == static_cast<std::size_t>(SeraphisMacroTarget::AetherMix));
+        STATIC_REQUIRE(SeraphisMacroMatrix::kNumAetherTargets == std::size_t{8});
+        STATIC_REQUIRE(SeraphisMacroMatrix::aetherFieldIndex(SeraphisMacroTarget::AetherMix) == 0);
+        STATIC_REQUIRE(
+            SeraphisMacroMatrix::aetherFieldIndex(SeraphisMacroTarget::AetherDimensionalityTideDepth)
+            == 7);
+        // The two new targets are OUTSIDE the Aether window, and inside their own.
+        STATIC_REQUIRE(SeraphisMacroMatrix::aetherFieldIndex(SeraphisMacroTarget::FxDelaySend) < 0);
+        STATIC_REQUIRE(SeraphisMacroMatrix::aetherFieldIndex(SeraphisMacroTarget::FxWanderDepth)
+                       < 0);
+        STATIC_REQUIRE(SeraphisMacroMatrix::effectsFieldIndex(SeraphisMacroTarget::FxDelaySend)
+                       == 0);
+        STATIC_REQUIRE(SeraphisMacroMatrix::effectsFieldIndex(SeraphisMacroTarget::FxWanderDepth)
+                       == 1);
+        STATIC_REQUIRE(SeraphisMacroMatrix::effectsFieldIndex(SeraphisMacroTarget::AetherMix) < 0);
+        STATIC_REQUIRE(SeraphisMacroMatrix::effectsFieldIndex(SeraphisMacroTarget::CloudRichness)
+                       < 0);
+        STATIC_REQUIRE(
+            SeraphisMacroMatrix::everyEffectsRowHasAPodField(SeraphisMacroMatrix::kRows));
+    }
+
+    SECTION("clause 2: computeEffectsTargets() is EXACTLY {0, 0} at the FR-060 neutrals") {
+        const SeraphisMacroMatrix neutral;  // already at the documented neutrals
+        REQUIRE(neutral.getMacro(SeraphisMacro::Dissolve)
+                == SeraphisMacroMatrix::neutralFor(SeraphisMacro::Dissolve));
+        REQUIRE(neutral.getMacro(SeraphisMacro::Entropy)
+                == SeraphisMacroMatrix::neutralFor(SeraphisMacro::Entropy));
+
+        const auto targets = neutral.computeEffectsTargets();
+        // == and not Approx: FR-039 / SC-001 rest on this being an EXACT
+        // identity, so the plugin's composition is a no-op at the shipped
+        // defaults rather than a nearly-no-op.
+        REQUIRE(targets.delaySend == 0.0f);
+        REQUIRE(targets.wanderDepth == 0.0f);
+
+        // The defaults of the POD itself are the shipped parameter defaults
+        // (kFxDelayMixDefault / kFxWanderDepthDefault, both 0.0f).
+        const Krate::DSP::SeraphisEffectsTargets defaults;
+        REQUIRE(defaults.delaySend == 0.0f);
+        REQUIRE(defaults.wanderDepth == 0.0f);
+    }
+
+    SECTION("clause 3: the target and row counts are pinned") {
+        STATIC_REQUIRE(static_cast<std::size_t>(SeraphisMacroTarget::Count) == std::size_t{29});
+        STATIC_REQUIRE(SeraphisMacroMatrix::kNumTargets == std::size_t{29});
+        STATIC_REQUIRE(SeraphisMacroMatrix::kNumRows == std::size_t{32});
+        STATIC_REQUIRE(SeraphisMacroMatrix::kRows.size() == std::size_t{32});
+        STATIC_REQUIRE(SeraphisMacroMatrix::kNumEffectsTargets == std::size_t{2});
+        STATIC_REQUIRE(SeraphisMacroMatrix::kFirstEffectsTarget
+                       == static_cast<std::size_t>(SeraphisMacroTarget::FxDelaySend));
+    }
+
+    SECTION("clause 4: Dissolve moves delaySend ONLY; Entropy moves wanderDepth ONLY") {
+        const SeraphisMacroMatrix neutral;
+        const std::array<float, 8> neutralAether = aetherFields(neutral.computeAetherTargets());
+
+        const SeraphisMacroMatrix dissolved = matrixAt({{0.0f, 0.0f, 1.0f, 0.5f, 0.0f}});
+        const auto dissolvedFx = dissolved.computeEffectsTargets();
+        REQUIRE(dissolvedFx.delaySend > 0.0f);
+        REQUIRE(dissolvedFx.wanderDepth == 0.0f);
+        const std::array<float, 8> dissolvedAether =
+            aetherFields(dissolved.computeAetherTargets());
+        for (std::size_t f = 0; f < dissolvedAether.size(); ++f) {
+            INFO("Dissolve must not reach SeraphisAetherTargets field " << f);
+            REQUIRE(dissolvedAether[f] == neutralAether[f]);
+        }
+
+        const SeraphisMacroMatrix entropic = matrixAt({{0.0f, 0.0f, 0.0f, 0.5f, 1.0f}});
+        const auto entropicFx = entropic.computeEffectsTargets();
+        REQUIRE(entropicFx.wanderDepth > 0.0f);
+        REQUIRE(entropicFx.delaySend == 0.0f);
+        const std::array<float, 8> entropicAether = aetherFields(entropic.computeAetherTargets());
+        for (std::size_t f = 0; f < entropicAether.size(); ++f) {
+            INFO("Entropy must not reach SeraphisAetherTargets field " << f);
+            REQUIRE(entropicAether[f] == neutralAether[f]);
+        }
+
+        // Both rows carry FR-063's / FR-065's normative direction (positive), sit
+        // on the Effects owner, and use a permitted curve.
+        const SeraphisMacroRow* delayRow =
+            findRow(SeraphisMacro::Dissolve, SeraphisMacroTarget::FxDelaySend);
+        REQUIRE(delayRow != nullptr);
+        REQUIRE(delayRow->owner == SeraphisMacroTargetOwner::Effects);
+        REQUIRE(delayRow->amount > 0.0f);
+        REQUIRE(delayRow->base == 0.0f);
+        REQUIRE(delayRow->curve != ModCurve::Stepped);
+
+        const SeraphisMacroRow* wanderRow =
+            findRow(SeraphisMacro::Entropy, SeraphisMacroTarget::FxWanderDepth);
+        REQUIRE(wanderRow != nullptr);
+        REQUIRE(wanderRow->owner == SeraphisMacroTargetOwner::Effects);
+        REQUIRE(wanderRow->amount > 0.0f);
+        REQUIRE(wanderRow->base == 0.0f);
+        REQUIRE(wanderRow->curve != ModCurve::Stepped);
+    }
+}

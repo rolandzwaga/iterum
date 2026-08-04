@@ -12,11 +12,28 @@
 #include "parameters/dropdown_mappings.h"
 #include "plugin_ids.h"
 
+// Phase 11 C-5 (plan 6.1, T010). THE ONE HEADER UNDER src/ui/ THE PROCESSOR MAY
+// SEE, and it is deliberate rather than a boundary violation: edit_message.h
+// declares a POD plus two constexpr strings, includes only <cstdint>, and names
+// no VSTGUI type. It is the WIRE FORMAT, shared by both sides - the same
+// sanctioned shared-POD exception as processor/cloud_frame.h in the other
+// direction.
+#include "ui/edit_message.h"
+
 #include "base/source/fstreamer.h"  // IBStreamer (getState/setState)
 
 #include "pluginterfaces/vst/ivstevents.h"            // IEventList / Vst::Event (FR-025, FR-031)
 #include "pluginterfaces/vst/ivstparameterchanges.h"  // IParameterChanges/IParamValueQueue
 
+// Phase 11 FR-011 (plan 5.2): DataExchangeHandler's definition. processor.h
+// only forward-declares it, so this is the ONE translation unit that sees it.
+#include "public.sdk/source/vst/utility/dataexchange.h"
+
+// Phase 11 C-5 (T010). The DEFINITION site of detail::isNaN (:54) /
+// detail::isInf (:175) - the bit-pattern finiteness tests applyEditMessage()
+// screens EditMessage::a / ::b with. std::isnan is NOT usable: the macOS leg
+// builds with -ffast-math, under which it is optimised away.
+#include <krate/dsp/core/db_utils.h>
 #include <krate/dsp/core/scoped_denormal_mode.h>
 
 #include <algorithm>
@@ -26,6 +43,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>  // Phase 11 C-2: memset/memcpy of the CloudFrame payload
 #include <utility>  // std::cmp_greater (C++20 mixed-sign integer comparison)
 
 namespace Seraphis {
@@ -379,6 +397,97 @@ std::atomic<bool> gDisableRepreparePush{false};
                                            .entropy = smoothers[4].getCurrentValue()};
 }
 
+// ==============================================================================
+// Phase 11 FR-034a (plan 6.4) - the [partials] block
+// ==============================================================================
+// THE FORMAT VERSION DOES NOT MOVE. kCurrentStateVersion stays 3 (plugin_ids.h:
+// 27): this block is APPENDED LAST, after [effects], and read back by the same
+// EOF-safe, version-blind loader chain setState() already documents. A v1, a v2
+// or a Phase-10 v3 stream simply runs out before it and every override stays
+// absent; an older binary reading a Phase-11 stream ignores the tail.
+//
+// Layout, 272 bytes:
+//
+//   | Offset | Size | Field                                        |
+//   |      0 |  256 | 64 x float pan, index order (writeFloat)     |
+//   |    256 |    8 | uint64 panOverrideBits      (writeInt64u)    |
+//   |    264 |    8 | uint64 maskBits             (writeInt64u)    |
+//
+// The 64-BIT ACCESSORS ARE USED BECAUSE THEY EXIST: IBStreamer publicly inherits
+// FStreamer (extern/vst3sdk/base/source/fstreamer.h:202), which declares public
+// writeInt64u(uint64) / readInt64u(uint64&) at :103-104 - already used in this
+// codebase at plugins/disrumpo/src/processor/processor_state.cpp. Splitting each
+// mask into four int32s would be unmotivated work: two 64-bit masks are 16 bytes
+// either way.
+//
+// FR-094 (getState -> setState -> getState is byte-identical) survives by
+// construction: every field here is a STORED VALUE, never an arithmetic result -
+// the same argument Phase 9's [morph] payload uses.
+//
+// BOTH FUNCTIONS ARE MESSAGE-THREAD ONLY, and neither touches the engine. The
+// atomics are the same ones the C-5 edit channel writes (plan 6.2 kinds 2 and 3)
+// and the audio thread reads under partialOverridesPending_'s release/acquire
+// handshake; `relaxed` is correct here for exactly the same reason it is there.
+
+using PartialPanTable =
+    std::array<std::atomic<float>, Krate::DSP::HarmonicCloud::kMaxPartials>;
+
+static_assert(Krate::DSP::HarmonicCloud::kMaxPartials == 64,
+              "FR-034a: the [partials] block is 64 pan floats + two 64-bit masks = 272 "
+              "bytes; a wider cloud changes the block and needs a spec amendment");
+
+void savePartialOverrides(const PartialPanTable& pan, std::uint64_t panOverrideBits,
+                          std::uint64_t maskBits, IBStreamer& streamer) {
+    for (const std::atomic<float>& value : pan) {
+        streamer.writeFloat(value.load(std::memory_order_relaxed));
+    }
+    streamer.writeInt64u(static_cast<uint64>(panOverrideBits));
+    streamer.writeInt64u(static_cast<uint64>(maskBits));
+}
+
+/// @return true only when the WHOLE block was present. A short stream leaves
+///         every field it did not reach untouched and returns false, which is
+///         not an error: it is what makes a pre-Phase-11 stream load with the
+///         overrides absent rather than with garbage.
+///
+/// The pan array is read BEFORE the two masks on purpose: a PARTIALLY truncated
+/// block therefore leaves both masks 0, and every pan value is unreferenced
+/// (repushPartialOverrides() only pushes a pan whose panOverrideBits bit is
+/// set) - absent, not garbage.
+[[nodiscard]] bool loadPartialOverrides(PartialPanTable& pan,
+                                        std::atomic<std::uint64_t>& panOverrideBits,
+                                        std::atomic<std::uint64_t>& maskBits,
+                                        IBStreamer& streamer) {
+    for (std::atomic<float>& slot : pan) {
+        float value = 0.0f;
+        if (!streamer.readFloat(value)) {
+            return false;
+        }
+        // A stream is untrusted input. BIT PATTERN, never std::isnan: the macOS
+        // leg is -ffast-math (applyEditMessage() screens EditMessage::a the same
+        // way). std::clamp of a NaN would propagate it, and HarmonicCloud::
+        // setPartialPosition would then reject the push and leave the two
+        // surfaces disagreeing about what was stored.
+        if (Krate::DSP::detail::isNaN(value) || Krate::DSP::detail::isInf(value)) {
+            value = 0.0f;
+        }
+        slot.store(std::clamp(value, -1.0f, 1.0f), std::memory_order_relaxed);
+    }
+
+    uint64 storedPanBits = 0;
+    if (!streamer.readInt64u(storedPanBits)) {
+        return false;
+    }
+    uint64 storedMaskBits = 0;
+    if (!streamer.readInt64u(storedMaskBits)) {
+        return false;
+    }
+
+    panOverrideBits.store(static_cast<std::uint64_t>(storedPanBits), std::memory_order_relaxed);
+    maskBits.store(static_cast<std::uint64_t>(storedMaskBits), std::memory_order_relaxed);
+    return true;
+}
+
 }  // namespace
 
 Processor::Processor() {
@@ -398,6 +507,18 @@ Processor::Processor() {
     // still refreshes - which costs one 540 B copy and keeps the tracker honest.
     for (std::size_t s = 0; s < spectralSlots_.size(); ++s) {
         spectralSlots_[s] = factoryStates_[clampFactoryIndex(kMorphSlotDefaultIndices[s])];
+    }
+
+    // Phase 11 plan 6.2a. The MESSAGE-THREAD mirror starts on exactly the same
+    // four states, so a kind-7 BlendBegin or a kind-1 edit that arrives before
+    // the host has ever moved a dropdown authors from the registered defaults
+    // rather than from a default-constructed (all-zero) payload. The companion
+    // tracker records what each entry was seeded from, so
+    // syncAuthoringMirrorFromDropdowns() does not re-seed until a dropdown
+    // actually moves and silently discard an edit.
+    for (std::size_t s = 0; s < spectralSlotsAuthoring_.size(); ++s) {
+        spectralSlotsAuthoring_[s] = spectralSlots_[s];
+        lastAuthoredSlotStateId_[s] = kMorphSlotDefaultIndices[s];
     }
 }
 
@@ -787,6 +908,36 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
     }
     controlPhase_ = 0;
 
+    // Phase 11 C-2 (plan 5.1's padding discipline). The frame is zeroed ONCE,
+    // HERE, and only field-assigned thereafter, so CloudFrame's 4 interior
+    // padding bytes are deterministically zero in every block that crosses the
+    // process boundary by memcpy - and two frames may therefore be memcmp'd.
+    std::memset(&pendingFrame_, 0, sizeof(CloudFrame));
+    cloudFrameFocusVoice_ = 0;
+
+    // Phase 11 FR-030 / FR-043 (plan 6.3, T011). CALL SITE 6 of six:
+    // setupProcessing RE-ENTRY, i.e. a sample-rate or block-size change. Step 3b
+    // above reached engine_->prepare(), which reaches HarmonicCloud::reset() and
+    // therefore cleared BOTH override halves (harmonic_cloud.h:331-332). The
+    // authored table is a UI-owned quantity that must outlive a re-prepare -
+    // FR-043's only criterion - so it is pushed back HERE, at the end, after
+    // every component has been prepared.
+    //
+    // HOST THREAD, WITH THE AUDIO THREAD STOPPED - the same per-site exception
+    // setActive's branch takes.
+    //
+    // The composed-spread tracker is SEEDED HERE with what prepare() actually
+    // left in the cloud (SeraphisVoice::prepare pushes its own component default),
+    // and NOT invalidated. Invalidating it would arm the tracker on the first
+    // slice WITHOUT re-pushing, so a configuration whose composed spread differs
+    // from the prepared default would clear the table on that very first apply()
+    // and never restore it. Seeding makes the first slice fire if and only if
+    // apply() genuinely moved the value - which is exactly the clearing event.
+    repushPartialOverrides();
+    lastPushedComposedSpread_ = engine_->getVoice(0).cloud().getStereoSpread();  // :549
+    lastPushedSpreadVoiceCount_ = engine_->getPolyphony();                       // :665
+    lastPushedComposedSpreadValid_ = true;
+
     anySamplesSincePrepare_ = false;
     prepared_ = true;
 
@@ -800,18 +951,65 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
 // which is what makes the deactivate branch legal at all.
 tresult PLUGIN_API Processor::setActive(TBool state) {
     if (state != 0) {
-        // Activation does exactly ONE thing, and it allocates nothing (SC-026
-        // clause 2): re-arm the FR-024a clause 3 seam, so the first process()
-        // after re-activation SNAPS the master-gain smoother to the current
-        // parameter instead of ramping from the pre-deactivation value.
+        // Re-arm the FR-024a clause 3 seam, so the first process() after
+        // re-activation SNAPS the master-gain smoother to the current parameter
+        // instead of ramping from the pre-deactivation value.
         anySamplesSincePrepare_ = false;
+
+        // Phase 11 FR-011 (plan 5.2). Open the DataExchange queue.
+        //
+        // AMENDED COMMENT (Phase 11, plan 5.2). This branch used to say
+        // "Activation does exactly ONE thing, and it allocates nothing (SC-026
+        // clause 2)". That is no longer true and the honest statement is:
+        // ACTIVATION ALLOCATES ONLY IN THE DataExchange QUEUE-OPEN PATH BELOW,
+        // on the HOST thread, inside the window the deactivate branch's own
+        // banner already relies on. In the SDK's fallback path (a host with no
+        // IDataExchangeHandler) onActivate -> Impl::openQueue does make_unique +
+        // Timer::create + aligned_alloc x numBlocks + allocateMessage
+        // (extern/vst3sdk/public.sdk/source/vst/utility/dataexchange.cpp:76-105).
+        // NO AUDIO-THREAD-REACHABLE PATH GAINS AN ALLOCATION - which is what
+        // SC-026 clause 2 is narrowed to, and why
+        // Seraphis_SetActiveDoesNotAllocate (tests/unit/lifecycle_test.cpp)
+        // keeps its exact `== 0u` form: it measures a DISCONNECTED instance,
+        // i.e. exactly the audio-thread-reachable configuration.
+        if (dataExchangeHandler_ != nullptr) {
+            Vst::ProcessSetup setup{};
+            setup.processMode = Vst::kRealtime;
+            setup.symbolicSampleSize = Vst::kSample32;
+            // kMaxBlockSamples, not the host's negotiated block: it is the SAME
+            // constant setupProcessing() prepares both components with
+            // (seraphis_engine_config.h:40), and the queue's own sizing does not
+            // depend on it at all - only blockSize/numBlocks from the config
+            // callback do.
+            setup.maxSamplesPerBlock = static_cast<int32>(kMaxBlockSamples);
+            setup.sampleRate = sampleRate_;
+            dataExchangeHandler_->onActivate(setup);
+        }
     } else {
+        // Phase 11 FR-011. Close the queue before the tails are cleared below,
+        // so no block is handed out across the deactivated window.
+        if (dataExchangeHandler_ != nullptr) {
+            dataExchangeHandler_->onDeactivate();
+        }
+
         // Deactivation must leave no ringing tail (SC-026 clause 1).
         // SeraphisEngine::silence() is documented NOT an audio-thread operation
         // (seraphis_engine.h:306-307; ~32 MiB of capture-ring clearing) - which
         // is correct HERE and only here.
         if (engine_ != nullptr) {
             engine_->silence();
+
+            // Phase 11 FR-030 (plan 6.3, T011). CALL SITE 4 of six: an engine
+            // RESET. silence() runs voices_[v].reset() on every slot
+            // (seraphis_engine.h:414-420), and HarmonicCloud::reset() does
+            // positionOverridden_.fill(false); masked_.fill(false)
+            // (harmonic_cloud.h:331-332) - it clears BOTH halves of the table.
+            //
+            // HOST THREAD, WITH THE AUDIO THREAD STOPPED, which is what makes it
+            // legal here and what makes the exception PER-SITE: any
+            // message-thread path must publish partialOverridesPending_ and let
+            // process() do the fan-out instead.
+            repushPartialOverrides();
         }
         if (reverb_ != nullptr) {
             // Dereferenced form, not `reverb_->reset()`: the arrow spelling is
@@ -954,6 +1152,90 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
     return AudioEffect::setActive(state);
 }
 
+// ==============================================================================
+// Phase 11 FR-011 (plan 5.2) - the DataExchange lifecycle.
+// ==============================================================================
+// Shape copied verbatim from Membrum
+// (plugins/membrum/src/processor/processor.cpp:1136-1164). The handler is built
+// here and released in disconnect(); setActive() opens and closes the queue.
+//
+// A CONNECTED instance is the ONLY configuration in which any of this runs: the
+// headless ProcessorFixture never calls connect(), so dataExchangeHandler_ stays
+// null through every plugin-side test and publishCloudFrame() takes its
+// skipped-block accounting instead. That is by design, not an accident - see
+// publishCloudFrame()'s body-order banner.
+tresult PLUGIN_API Processor::connect(Vst::IConnectionPoint* other) {
+    const tresult result = AudioEffect::connect(other);
+    if (result == kResultTrue) {
+        auto configCallback = [](Vst::DataExchangeHandler::Config& config,
+                                 const Vst::ProcessSetup& /*setup*/) {
+            config.blockSize = static_cast<uint32>(sizeof(CloudFrame));
+            config.numBlocks = 4;
+            config.alignment = 32;
+            config.userContextID = kCloudFrameUserContextId;
+            return true;
+        };
+        dataExchangeHandler_ =
+            std::make_unique<Vst::DataExchangeHandler>(this, configCallback);
+        dataExchangeHandler_->onConnect(other, getHostContext());
+    }
+    return result;
+}
+
+tresult PLUGIN_API Processor::disconnect(Vst::IConnectionPoint* other) {
+    if (dataExchangeHandler_ != nullptr) {
+        dataExchangeHandler_->onDisconnect(other);
+        // RELEASED, not merely idled: dataExchangeHandlerLiveForTest() must go
+        // false and publishCloudFrame() must resume its skipped-block accounting
+        // (SC-006 arm (i)).
+        dataExchangeHandler_.reset();
+    }
+    return AudioEffect::disconnect(other);
+}
+
+// ==============================================================================
+// Phase 11 C-5 / FR-036 (plan 6.2) - the edit channel's entry point.
+// ==============================================================================
+// MESSAGE THREAD. Exactly one message ID is understood; everything else - a null
+// message, a null ID, another plugin-defined ID - delegates to the SDK base,
+// which is what keeps any future channel working.
+//
+// A message is UNTRUSTED INPUT. A malformed payload (no such attribute, a null
+// pointer, a size that is not exactly sizeof(EditMessage)) is DROPPED SILENTLY
+// with kResultOk: the sender is the plugin's own controller, so there is no
+// caller to report to and no recovery to perform, and returning an error would
+// have hosts log a fault for a message the plugin itself chose to ignore.
+//
+// The memcpy into a local is not decorative: `data` points into the host's
+// attribute list with no alignment guarantee for a struct, and reading through a
+// reinterpret_cast<const EditMessage*> would be UB on a strict-alignment target.
+tresult PLUGIN_API Processor::notify(Vst::IMessage* message) {
+    if (message == nullptr) {
+        return AudioEffect::notify(message);
+    }
+    const char* id = message->getMessageID();
+    if (id == nullptr || std::strcmp(id, UI::kSeraphisEditMessageId) != 0) {
+        return AudioEffect::notify(message);
+    }
+
+    Vst::IAttributeList* attributes = message->getAttributes();
+    if (attributes == nullptr) {
+        return kResultOk;  // malformed -> dropped
+    }
+
+    const void* data = nullptr;
+    uint32 size = 0;
+    if (attributes->getBinary(UI::kSeraphisEditAttributeId, data, size) != kResultOk
+        || data == nullptr || size != static_cast<uint32>(sizeof(UI::EditMessage))) {
+        return kResultOk;  // malformed -> dropped (C-5 clause 5)
+    }
+
+    UI::EditMessage edit{};
+    std::memcpy(&edit, data, sizeof(edit));
+    applyEditMessage(edit);
+    return kResultOk;
+}
+
 tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     // FR-029. FTZ/DAZ is PER-THREAD, so it must be armed here, on the audio
     // thread, and not in setupProcessing() (plugins/membrum/src/processor/
@@ -1039,6 +1321,16 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     pushAetherParamsIfDirty();                     // FR-044: the 10 AE values
     pushSpectralStatesIfPending();                 // FR-046: the 5 CFG values
 
+    // Phase 11 FR-030 (plan 6.3, T011). CALL SITE 1 of six: an edit arrived on
+    // the message thread. exchange(false, acquire) is CONSUME-AND-CLEAR - a
+    // message that arrives DURING the fan-out sets the flag again and is picked
+    // up next call, so no edit is lost and none is applied twice in one block -
+    // and its ACQUIRE is what makes the relaxed pan/mask stores in
+    // applyEditMessage() visible to the fan-out below.
+    if (partialOverridesPending_.exchange(false, std::memory_order_acquire)) {
+        repushPartialOverrides();                  // the fan-out, on the AUDIO thread
+    }
+
     // Phase 10 FR-030. ONE BlockContext per process() CALL - never per slice -
     // built from the SAME tempo sample point Phase 9 already uses
     // (updateSyncedTravelRate above), with Phase 9's THREE-PART guard verbatim in
@@ -1079,6 +1371,35 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     // wall-clock quantity, so advancing them per slice would make the bypass
     // age, the drain countdown and the freeze priming window depend on how the
     // host and the MIDI-slice loop happened to partition the block.
+    //
+    // Phase 11 C-10 / FR-037-FR-039 (plan section 4). THE COMPOSED EFFECTS
+    // TARGETS, and this is the ONLY place they are computed.
+    //
+    // ORDER IS NORMATIVE: it sits immediately ABOVE updateEffectsBypassState(),
+    // which is the first of the three consumers, and therefore also above the
+    // FR-010 wander ENGAGE predicate below and above setParamSmootherTargets().
+    // All three read composedEffects_ instead of the raw ID 1410 / 1441 atomics.
+    //
+    // IT DOES NOT MOVE INTO THE SLICE LOOP. FR-012 fixes updateEffectsBypassState
+    // at once per process() call and the send's chunk machine
+    // (kFxSendChunkSamples) is not slice-partitionable. The consequence - a MACRO
+    // written on block N first composes on block N+1, because macros_.setMacros()
+    // is refreshed inside the loop below - is the RULED and ACCEPTED one-block
+    // lag: 10.67 ms at 512/48 kHz, well inside the 20 ms class-(b) smoothing both
+    // consumers already impose.
+    //
+    // THE DEEP HALF IS NOT LAGGED, and must not be: the two Effects-owned bases
+    // ARE the raw ID 1410 / 1441 atomics, and FR-039 requires the send-stage skip
+    // to be taken "on exactly the same blocks" as before the composition existed.
+    // pushEffectsMacroBases() is therefore called HERE, immediately above the
+    // composition and above all three of its consumers - see its banner for the
+    // three shipped Phase 10 properties a block-lagged deep path breaks.
+    //
+    // COST: one evaluateAll() (32 rows x one applyModCurve) per process() call.
+    pushEffectsMacroBases();
+    composedEffects_ = macros_.computeEffectsTargets();
+    ++composedEffectsRecomputes_;
+
     updateEffectsBypassState(total);
 
     pushEffectsParams();                           // Phase 10 D-2 / FR-021
@@ -1122,8 +1443,17 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
         // identity. Spelled as the disjunction of the three "not at identity"
         // tests (De Morgan of that sentence) so clang-tidy's
         // readability-simplify-boolean-expr has nothing to say about it.
+        // Phase 11 FR-038 (plan section 4, substitution 3) - THE ONE THAT DECIDES
+        // WHETHER THE STAGE RUNS AT ALL. With the shipped default
+        // kFxWanderDepthDefault = 0, an Entropy-macro-only move would never set
+        // this predicate if it kept loading the raw ID 1441 atomic: the stage
+        // would engage only through the FR-010a disengage latch below, and
+        // because setParamSmootherTargets() runs LATER in the pre-slice block
+        // than this, engagement would land a further block late. composedEffects_
+        // is assigned above updateEffectsBypassState(), i.e. above this block, so
+        // it is available here.
         fxWanderRuns_ = fxWidthBase_ != Krate::DSP::MidSideProcessor::kDefaultWidth
-                        || effectsParams_.wanderDepth.load(kRelaxed) != 0.0f
+                        || std::clamp(composedEffects_.wanderDepth, 0.0f, 1.0f) != 0.0f
                         || effectsParams_.azimuthDepth.load(kRelaxed) != 0.0f;
         if (fxWanderRuns_) {
             fxWanderSettleRemaining_ = fxWanderSettleSamples_;
@@ -1307,7 +1637,7 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
         // slice, at their existing positions inside renderSlice().
         advanceParamSmoothers(n);
         pushVoiceParams();    // FR-042: the 37 VP values
-        pushMacroSurfaces();  // FR-043: the 27 MB bases
+        pushMacroSurfaces();  // FR-043: macros + the 27 VP/AE bases
         renderSlice(outL + cursor, outR + cursor, n);
         controlPhase_ += n;
         cursor += n;
@@ -1316,6 +1646,14 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
     // FR-024a clause 3: the snap seam is consumed only once samples were
     // actually produced. setActive(true) and setupProcessing() re-arm it.
     anySamplesSincePrepare_ = true;
+
+    // Phase 11 C-2 / FR-012. ONCE PER process() CALL, AFTER the slice loop and
+    // before the silence-flag clause. It sits here, and never inside the loop,
+    // for the reason its own banner states: the loop subdivides on every MIDI
+    // event, on the 2048 cap and on the 64-sample control grid, so a per-slice
+    // publish would issue up to 8x the frames for one block and exhaust the
+    // 4-block queue inside one call.
+    publishCloudFrame();
 
     // FR-024's silence-flag clause. Seraphis writes only the CLEARING half: it
     // never asserts silence, because deciding when the instance is genuinely
@@ -1408,7 +1746,27 @@ tresult PLUGIN_API Processor::setState(IBStream* state) {
     loadAtmosphereParams(atmosParams_, streamer);// [atmos]   68 B
     loadAetherParams(aetherParams_, streamer);   // [aether]  72 B
     // ---- end of a version-2 stream: 2532 B, a STRICT PREFIX of v3 ----
-    loadEffectsParams(effectsParams_, streamer); // [effects] 64 B (v3, LAST)
+    loadEffectsParams(effectsParams_, streamer); // [effects] 64 B (v3)
+    // ---- end of a PHASE 10 stream: 2596 B, a STRICT PREFIX of what Phase 11 --
+    // ---- writes. The version int32 is ALREADY 3 in both (FR-034a).
+    const bool loadedPartialOverrides =                // [partials] 272 B (LAST)
+        loadPartialOverrides(partialPanStaging_, partialPanOverrideBits_, partialMaskBits_,
+                             streamer);
+
+    // Phase 11 plan 6.2a. setState() OVERWRITES the message-thread mirror
+    // wholesale, from the buffer it has just filled - AFTER the load chain, not
+    // at the seeding loop above, so the mirror holds the stream's four payloads
+    // rather than the factory states the seed put there. Both arrays are written
+    // by THIS thread, so no synchronisation is involved.
+    //
+    // The dropdown tracker is re-armed in the same breath: without it the next
+    // stageSlotEdit() would see morphParams_.slot[s] differing from a stale
+    // lastAuthoredSlotStateId_ and re-seed the mirror from the factory table,
+    // silently discarding the payloads this stream just loaded.
+    spectralSlotsAuthoring_ = spectralSlotsStaging_[w];
+    for (std::size_t s = 0; s < lastAuthoredSlotStateId_.size(); ++s) {
+        lastAuthoredSlotStateId_[s] = morphParams_.slot[s].load(std::memory_order_relaxed);
+    }
 
     // Plan 3.7 step 3: publish, then advance the cursor. The store is the ONLY
     // thing that makes the buffer visible to the audio thread, and it happens
@@ -1422,29 +1780,54 @@ tresult PLUGIN_API Processor::setState(IBStream* state) {
     if (!gDisablePresetLoadPush.load(std::memory_order_relaxed)) {
         requestPushAllSurfaces();
     }
+
+    // Phase 11 FR-034a / plan 6.4. A LOADED override reaches the voices the ONE
+    // legal way: the release store the next process() call consumes with
+    // exchange(false, acquire) beside pushSpectralStatesIfPending(). setState()
+    // runs on the MESSAGE thread, and repushPartialOverrides() writes
+    // HarmonicCloud state process() concurrently reads and writes, so calling
+    // the fan-out from here would be a data race - exactly what plan 6.2's
+    // kinds 2 and 3 defer for.
+    //
+    // Published only on a WHOLE block: a stream that carried none leaves the
+    // table exactly as it was, which is what "absent, not garbage" means.
+    if (loadedPartialOverrides) {
+        partialOverridesPending_.store(true, std::memory_order_release);
+    }
     return kResultOk;
 }
 
 // FR-090 / FR-094. Stream layout is FIXED (Phase 10 spec C-8): little-endian,
-// 2596 bytes = the version int32 + 85 floats + 22 int32 + four 541-byte
-// SpectralState payloads, in the block order below. Phase 9's v2 layout was
-// 2532 bytes (73 floats + 18 int32); the [effects] block of 12 floats + 4 int32
-// is APPENDED LAST, which is what keeps a v2 stream a strict byte prefix of a v3
-// one from offset 4 on and lets the EOF-safe loader chain migrate with no
-// version-aware branch.
+// 2868 bytes = the version int32 + 85 floats + 22 int32 + four 541-byte
+// SpectralState payloads (2596 through [effects]) + Phase 11's 272-byte
+// [partials] block. Phase 9's v2 layout was 2532 bytes (73 floats + 18 int32);
+// the [effects] block of 12 floats + 4 int32 is APPENDED after it, and FR-034a's
+// [partials] block is APPENDED after THAT - which is what keeps every older
+// stream a strict byte prefix from offset 4 on and lets the EOF-safe loader
+// chain migrate with no version-aware branch.
+//
+// THE VERSION INT32 STILL READS 3. Phase 11 adds no format version: an append
+// plus an EOF-safe loader is the whole migration (spec Non-goals, FR-034a).
 //
 // IT NEVER READS spectralSlots_. That array is audio-thread-owned (plan 3.7's
 // ownership table) and a message-thread read of it would be a data race whose
 // visible symptom is a TORN SpectralState in the saved preset - exactly what a
 // host that automates a CFG dropdown while saving would hit. The two
 // message-thread-safe sources are used instead: the published staging buffer
-// while a handoff is outstanding, and the immutable factory table otherwise.
+// while a handoff is outstanding, and (Phase 11 plan 6.2a) the message-thread
+// authoring mirror otherwise - which is itself seeded from the immutable factory
+// table, so pre-Phase-11 streams are byte-identical to what this wrote before.
 tresult PLUGIN_API Processor::getState(IBStream* state) {
     if (state == nullptr) {
         return kResultFalse;
     }
 
     IBStreamer streamer(state, kLittleEndian);
+
+    // Phase 11 plan 6.2a. Reconcile the message-thread mirror with the 409-412
+    // dropdowns BEFORE it is read below. getState() runs on the message thread,
+    // exactly like setState() and notify(), so this is the same owner writing.
+    syncAuthoringMirrorFromDropdowns();
 
     streamer.writeInt32(kCurrentStateVersion);   //             4 B
 
@@ -1462,12 +1845,19 @@ tresult PLUGIN_API Processor::getState(IBStream* state) {
     const bool havePublished =
         published >= 0
         && static_cast<std::size_t>(published) < spectralSlotsStaging_.size();
+    //
+    // Phase 11 plan 6.2a. The FALLBACK source moves from the factory table to
+    // spectralSlotsAuthoring_, and that is an EXTENSION of this rule, not a
+    // third source: the mirror is the message thread's own copy of the same four
+    // payloads, kept in step with the dropdowns by the sync above and with the
+    // stream by setState(). Before Phase 11 the two agreed byte for byte (a slot
+    // had no source but its dropdown), so no pre-existing stream changes; with
+    // the edit channel in, this is what stops a partial edit from being lost the
+    // moment the audio thread consumes the handoff and clears it back to -1.
     for (std::size_t s = 0; s < payloads.size(); ++s) {
-        payloads[s] =
-            havePublished
-                ? spectralSlotsStaging_[static_cast<std::size_t>(published)][s]
-                : factoryStates_[clampFactoryIndex(
-                      morphParams_.slot[s].load(std::memory_order_relaxed))];
+        payloads[s] = havePublished
+                          ? spectralSlotsStaging_[static_cast<std::size_t>(published)][s]
+                          : spectralSlotsAuthoring_[s];
     }
     saveSpectralPayloads(payloads, streamer);    // [morph]  2164 B of payload
 
@@ -1475,8 +1865,17 @@ tresult PLUGIN_API Processor::getState(IBStream* state) {
     saveBodyParams(bodyParams_, streamer);       // [body]     52 B
     saveAtmosphereParams(atmosParams_, streamer);// [atmos]    68 B
     saveAetherParams(aetherParams_, streamer);   // [aether]   72 B
-    // ---- v3's ONE addition, and it is LAST (C-8's strict-prefix property) ----
+    // ---- Phase 10's ONE addition (C-8's strict-prefix property) -------------
     saveEffectsParams(effectsParams_, streamer); // [effects]  64 B
+
+    // ---- Phase 11 FR-034a's ONE addition, and it is now LAST ----------------
+    // Same strict-prefix property, same reason: the version int32 does NOT move.
+    // The two bitmasks are read here (relaxed) rather than passed in, so the
+    // block is a snapshot of the message thread's own table at this instant.
+    savePartialOverrides(partialPanStaging_,
+                         partialPanOverrideBits_.load(std::memory_order_relaxed),
+                         partialMaskBits_.load(std::memory_order_relaxed),
+                         streamer);              // [partials] 272 B
 
     return kResultOk;
 }
@@ -1592,6 +1991,21 @@ void Processor::pushGlobalParams() noexcept {
         // will be made against next block.
         lastPushedPolyphony_ = engine_->getPolyphony();  // :665
         ++setPolyphonyCalls_;
+        // Phase 11 FR-030 (plan 6.3, T011). CALL SITE 5 of six: a POLYPHONY
+        // change. The fan-outs already write all kMaxVoices slots
+        // (seraphis_engine.h's "kMaxVoices, NOT getPolyphony()" banner), so a
+        // newly usable slot carries the override the moment it becomes usable -
+        // this re-push is the belt to that braces, and it costs nothing on the
+        // steady-state path because setPolyphony itself is ON CHANGE ONLY.
+        //
+        // IT IS NOT SUFFICIENT ON ITS OWN, and must not be read as if it were:
+        // it runs BEFORE this block's macros_.apply(), and apply() writes only
+        // voices [0, getPolyphony()) - so the slots that just entered that loop
+        // have their positionOverridden_ wiped by the first setStereoSpread they
+        // ever receive, AFTER this call. The repair for that is the extent half
+        // of the composed-spread tracker in renderSlice(), which fires on the
+        // very next slice; see the banner at CALL SITE 2.
+        repushPartialOverrides();
     }
 
     // NO setOutputSaturation BLOCK HERE. Phase 10 D-2 / FR-021 moved it to
@@ -1617,6 +2031,12 @@ void Processor::pushGlobalParams() noexcept {
         reverb_->setSeed(seed);  // aether_reverb.h:2361
         lastPushedSeedIndex_ = seedIndex;
         ++engSeedPushes_;
+        // Phase 11 FR-030 (plan 6.3, T011). CALL SITE 3 of six: the SEED BURST.
+        // HarmonicCloud::setSeed does positionOverridden_.fill(false)
+        // (harmonic_cloud.h:701-706) - it clears the PAN overrides only, masked_
+        // is untouched - so an authored pan would silently revert to the freshly
+        // re-drawn FR-021 scatter. On change only, like the burst itself.
+        repushPartialOverrides();
     }
 
     const bool freeze = atmosParams_.freeze.load(std::memory_order_relaxed);
@@ -1850,12 +2270,61 @@ void Processor::pushEffectsParams() noexcept {
 //      scratch vectors were sized once in setupProcessing() and are indexed
 //      through .data() / operator[], never .at() (which throws).
 void Processor::renderSlice(float* outL, float* outR, std::size_t n) noexcept {
+    // Phase 11 SC-007's strict `>`. ONE increment per SLICE - deliberately the
+    // opposite cadence to effectsStageProcessCalls_ (once per CALL), because the
+    // criterion is precisely that the slice count EXCEEDS the publish-attempt
+    // count on any render carrying MIDI or an unsettled class-(b) smoother.
+    ++renderSlices_;
+
     // 2. Macros -> engine, and the Aether-owned half -> reverb.
     //
     //    Applied EVERY SLICE even at Phase 8's neutral macro defaults (FR-034):
     //    computeAetherTargets() is what pushes the reverb's eight controls, and
     //    "inert" describes the macro VALUES, not the push.
     macros_.apply(*engine_);                                      // macro_matrix.h:623
+
+    // Phase 11 FR-030 (plan 6.3, T011). CALL SITE 2 of six, and the one that
+    // catches the defect this task exists for.
+    //
+    // apply() above just pushed the COMPOSED CloudStereoSpread into every voice,
+    // and HarmonicCloud::setStereoSpread wipes positionOverridden_ on any VALUE
+    // change (harmonic_cloud.h:535-547). The trigger is therefore keyed on the
+    // composed value - read back as the value the cloud actually STORED - and
+    // NOT on ParamID 207: Bloom writes this target through the macro matrix, so
+    // a macro-ring sweep with the deep knob held still clears every authored pan
+    // while a ParamID-keyed tracker sees nothing (SC-014 arm 6). The deep path is
+    // covered too, because 207 is this target's setTargetBase origin.
+    //
+    // The re-push is IMMEDIATE, not deferred through partialOverridesPending_:
+    // the clearing and the render it would corrupt are in this same slice, so a
+    // flag consumed by the NEXT process() call would publish one whole block of
+    // scattered pans. This is the audio thread, which is exactly where the
+    // fan-out belongs.
+    //
+    // THE EXTENT OF apply()'s LOOP IS TRACKED ALONGSIDE ITS VALUE, and that is
+    // load-bearing rather than defensive. apply() writes voices [0, getPolyphony())
+    // only (seraphis_macro_matrix.h:712-715), so a POLYPHONY INCREASE is itself a
+    // clearing event: the slots that just entered the loop are still holding the
+    // spread SeraphisVoice::prepare() left them, and the first apply() to reach
+    // them pushes a DIFFERENT value and wipes their positionOverridden_. Voice 0 -
+    // the read-back below - has been inside the loop all along and does not move,
+    // so a value-only tracker is blind to exactly the slots that were cleared, and
+    // the re-push pushGlobalParams() fires beside engine_->setPolyphony() cannot
+    // help: it runs BEFORE this apply(), i.e. before the clearing it would have to
+    // repair. Comparing the extent as well makes the first slice after the change
+    // re-push, AFTER apply() has written the newly in-range slots.
+    {
+        const std::size_t appliedVoices = engine_->getPolyphony();  // seraphis_engine.h:665
+        const float composedSpread = engine_->getVoice(0).cloud().getStereoSpread();  // :549
+        if (!lastPushedComposedSpreadValid_ || composedSpread != lastPushedComposedSpread_
+            || appliedVoices != lastPushedSpreadVoiceCount_) {
+            lastPushedComposedSpread_ = composedSpread;
+            lastPushedSpreadVoiceCount_ = appliedVoices;
+            lastPushedComposedSpreadValid_ = true;
+            repushPartialOverrides();
+        }
+    }
+
     applyAetherTargets(*reverb_, macros_.computeAetherTargets());  // :667 + FR-034a
 
     // 3. Voice sum only - no reverb, no output stage.
@@ -2339,8 +2808,9 @@ bool Processor::wanderAtIdentity() const noexcept {
 // merely touches zero - and FR-007's predicate is exact `== 0.0f`, so a bipolar
 // LFO crosses it twice per cycle.
 //
-// @par Real-Time Safety: allocation-free, lock-free, exception-free. Two relaxed
-//      atomic loads and integer arithmetic.
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. One relaxed
+//      atomic load (the freeze flag; Phase 11 replaced the ID 1410 load with a
+//      read of composedEffects_) and integer arithmetic.
 void Processor::updateEffectsBypassState(std::size_t blockSamples) noexcept {
     ++bypassPredicateEvals_;  // FR-041 clause 5 - EXACTLY ONCE PER CALL
 
@@ -2348,7 +2818,19 @@ void Processor::updateEffectsBypassState(std::size_t blockSamples) noexcept {
     // whole point of the bypass is that the shipped default configuration costs
     // nothing, and an epsilon would leave a band of "almost off" settings paying
     // for a send nobody can hear.
-    const float mix = effectsParams_.delayMix.load(std::memory_order_relaxed);
+    // Phase 11 FR-037 (plan section 4, substitution 1). THE COMPOSED send level,
+    // not the raw ID 1410 atomic - `deep base + the Dissolve row`. The CLAMP is
+    // required, not defensive: computeEffectsTargets() returns the RAW sum
+    // (range clamping belongs to the consuming setter,
+    // seraphis_macro_matrix.h:662-666) and everything downstream of `mix` here -
+    // the FR-007 predicate, fxEffectiveReturnGain_ and hence
+    // fxReturnGainSm_ - is unit-range. Same rule applyAetherTargets() follows.
+    //
+    // FR-039 falls out arithmetically: at the macro neutrals the composition IS
+    // the atomic bit-for-bit and std::clamp on a value the parameter surface
+    // already produced in [0, 1] is the identity, so this line is `==` to the
+    // load it replaced at every shipped default.
+    const float mix = std::clamp(composedEffects_.delaySend, 0.0f, 1.0f);
     const bool freezeOn = effectsParams_.spectralFreeze.load(std::memory_order_relaxed);
 
     // FR-023a. The freeze FORCES the send active even at mix 0, and lifts the
@@ -2431,6 +2913,25 @@ void Processor::updateEffectsBypassState(std::size_t blockSamples) noexcept {
     }
 
     fxSendRuns_ = (fxSendState_ != FxSendState::Bypassed);
+}
+
+// ==============================================================================
+// Phase 11 C-10 / SC-021(b)(c) - the composed-effects test seams
+// ==============================================================================
+// Out-of-line so nothing in a shipping translation unit can inline them into the
+// render path; none is ever called from process(). They report the RAW composed
+// value - unclamped - because the clamp belongs to each consuming read site and
+// SC-021(b)'s bit-equality is a statement about the composition itself.
+float Processor::composedFxDelaySendForTest() const noexcept {
+    return composedEffects_.delaySend;
+}
+
+float Processor::composedFxWanderDepthForTest() const noexcept {
+    return composedEffects_.wanderDepth;
+}
+
+std::size_t Processor::composedEffectsRecomputeCountForTest() const noexcept {
+    return composedEffectsRecomputes_;
 }
 
 // Plan section 3.1. THE ONE DEFINITION of the accumulator's start state, so the
@@ -2613,9 +3114,10 @@ Krate::DSP::SeraphisVoiceParams Processor::buildVoiceParams() const noexcept {
     return p;
 }
 
-// FR-003. The SINGLE mapping from one of C-6's 27 MB rows to its owning atomic.
+// FR-003. The SINGLE mapping from one of C-6's MB rows to its owning atomic - 27
+// through Phase 10, 29 since Phase 11 / C-10 appended the two Effects-owned rows.
 // FR-055's "never also through SeraphisVoiceParams" is checkable by construction:
-// SeraphisVoiceParams has no field for any of these 27.
+// SeraphisVoiceParams has no field for any of them.
 float Processor::baseValueForTarget(Krate::DSP::SeraphisMacroTarget target) const noexcept {
     using Target = Krate::DSP::SeraphisMacroTarget;
     constexpr auto kRelaxed = std::memory_order_relaxed;
@@ -2660,6 +3162,16 @@ float Processor::baseValueForTarget(Krate::DSP::SeraphisMacroTarget target) cons
             return breathDepthSm_.getCurrentValue();
         case Target::AetherDimensionalityTideDepth:
             return tideDepthSm_.getCurrentValue();
+        // -- Effects-owned (2), Phase 11 C-10 ---------------------------------
+        // The RAW atomics, deliberately - unlike the four class-(b) rows above,
+        // these two are not smoothed on the way IN. Their smoothing happens
+        // DOWNSTREAM of the composition (fxReturnGainSm_ / fxWanderDepthSm_
+        // target the COMPOSED value), so the base has to be the unsmoothed
+        // origin the macros move from or the smoothing would be applied twice.
+        case Target::FxDelaySend:
+            return effectsParams_.delayMix.load(kRelaxed);     // ID 1410
+        case Target::FxWanderDepth:
+            return effectsParams_.wanderDepth.load(kRelaxed);  // ID 1441
         case Target::Count:
         default:
             return 0.0f;
@@ -2689,16 +3201,19 @@ void Processor::pushVoiceParams() noexcept {
     ++applyVoiceParamsCalls_;
 }
 
-// FR-043. The five macro knobs, then the 27 MB bases, each ON CHANGE ONLY.
+// FR-043. The five macro knobs, then the 27 VOICE/AETHER-owned MB bases, each ON
+// CHANGE ONLY. (Phase 11 / C-10's two Effects-owned bases belong to the
+// pre-slice pushEffectsMacroBases() - see its banner for why they cannot live in
+// this loop.)
 //
 // The macro push is its OWN owning push (the macros are route `processor`, not
 // `MB`), so it deliberately does NOT increment setTargetBasePushes_ - which is
-// what keeps SC-007's setTargetBase row exact at "27 at prepare, +1 for a
-// class-(a) MB change".
+// what keeps SC-007's setTargetBase row exact at "kNumTargets at prepare, +1 for
+// a class-(a) MB change".
 //
 // The base change detection is PER-TARGET. A single global settling flag would
-// re-push all 27 targets for one class-(b) MB change, which SC-007's table
-// forbids (it asserts Delta = +1 ... +N on ONE target, the other 26 untouched).
+// re-push all 27 of them for one class-(b) MB change, which SC-007's table
+// forbids (it asserts Delta = +1 ... +N on ONE target, the others untouched).
 //
 // @par Real-Time Safety: allocation-free, lock-free, exception-free. setMacros and
 //      setTargetBase are noexcept scalar stores.
@@ -2728,14 +3243,21 @@ void Processor::pushMacroSurfaces() noexcept {
         lastPushedMacrosValid_ = true;
     }
 
-    // --- the 27 MB bases (FR-003) --------------------------------------------
-    for (std::size_t t = 0; t < Krate::DSP::SeraphisMacroMatrix::kNumTargets; ++t) {
+    // --- the 27 VOICE/AETHER-owned MB bases (FR-003) -------------------------
+    // The loop stops at kFirstEffectsTarget. The two Effects-owned bases are NOT
+    // pushed here: they are owned by pushEffectsMacroBases(), which runs in the
+    // pre-slice block ABOVE the composition so that a deep-knob write reaches
+    // composedEffects_ on the block the host delivered it (FR-039's "on exactly
+    // the same blocks"). Pushing them from inside this loop would put them one
+    // whole block behind the composition that reads them - see that function's
+    // banner. There is still EXACTLY ONE base writer per target.
+    for (std::size_t t = 0; t < Krate::DSP::SeraphisMacroMatrix::kFirstEffectsTarget; ++t) {
         const auto target = static_cast<Krate::DSP::SeraphisMacroTarget>(t);
         const float value = baseValueForTarget(target);
         // PER-TARGET settling (plan 3.5.5), and the macro smoothers are
         // deliberately NOT in this predicate - the macro push above owns them.
         // Exactly ONE target re-pushes per chunk per un-settled class-(b) `MB`
-        // row, so SC-007's Delta is 1 ... N_chunk and the other 26 are untouched.
+        // row, so SC-007's Delta is 1 ... N_chunk and the other 28 are untouched.
         if (lastPushedBaseValid_ && value == lastPushedBase_[t]
             && !targetClassBUnsettled(target)) {
             continue;  // ON CHANGE ONLY
@@ -2745,6 +3267,59 @@ void Processor::pushMacroSurfaces() noexcept {
         ++setTargetBasePushes_;  // INVOCATIONS, for SC-007
     }
     lastPushedBaseValid_ = true;
+}
+
+// Phase 11 C-10 / FR-038 / FR-039. THE TWO EFFECTS-OWNED BASES, and the reason
+// they are not in pushMacroSurfaces()' loop.
+//
+// WHY THIS FUNCTION EXISTS. `composedEffects_ = macros_.computeEffectsTargets()`
+// is evaluated ONCE per process() call, in the pre-slice block, because FR-012
+// fixes updateEffectsBypassState() at that cadence and the send's chunk machine
+// is not slice-partitionable. pushMacroSurfaces() runs INSIDE the slice loop.
+// So a base pushed from that loop is always one whole process() call behind the
+// composition that reads it - and for the two Effects-owned targets the base IS
+// the deep parameter (baseValueForTarget returns the raw ID 1410 / 1441 atomic),
+// so that lag is a lag on the DEEP path, not on the macro path. It would break
+// three shipped Phase 10 properties at once:
+//
+//   * FR-010's RAW wander predicate, which SC-018 takes on the very block the
+//     host writes kFxWanderDepthId = 0 (integration/effects_chain_test.cpp's
+//     "depth never reaches BrownianDrift::setDepth");
+//   * FR-039's own "the send-stage skip is taken on exactly the same blocks",
+//     which is what keeps SC-001 exact;
+//   * SC-017's block-size invariance - a lag measured in BLOCKS moves a
+//     transition to a different SAMPLE in every partition, so the identical
+//     script renders differently at block 1, 512 and 4096.
+//
+// The macro half keeps its ruled one-block lag (spec Clarifications,
+// composition-cadence entry): macros_.setMacros() is still pushed from the slice
+// loop, so a move on IDs 100-104 still composes on the next call. Only the deep
+// origin is made current, which is the half FR-039 pins bit-for-bit.
+//
+// ON CHANGE ONLY, exactly like the loop it was split out of, and sharing
+// lastPushedBase_[] / lastPushedBaseValid_ with it - so SC-007's table is
+// unmoved: kNumTargets invocations at prepare (2 here + 27 there) and +1 for a
+// class-(a) change. There is NO settling clause: unlike the four class-(b) `MB`
+// rows whose base is a smoother read-back, these two bases are raw atomics that
+// STEP, and their class-(b) smoothing (fxReturnGainSm_ / fxWanderDepthSm_)
+// happens DOWNSTREAM of the composition. A settling clause here would re-push an
+// unchanged value on every chunk of every send ramp for no observable at all.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free. Two relaxed
+//      atomic loads and two noexcept scalar stores.
+void Processor::pushEffectsMacroBases() noexcept {
+    using Matrix = Krate::DSP::SeraphisMacroMatrix;
+    for (std::size_t t = Matrix::kFirstEffectsTarget;
+         t < Matrix::kFirstEffectsTarget + Matrix::kNumEffectsTargets; ++t) {
+        const auto target = static_cast<Krate::DSP::SeraphisMacroTarget>(t);
+        const float value = baseValueForTarget(target);
+        if (lastPushedBaseValid_ && value == lastPushedBase_[t]) {
+            continue;  // ON CHANGE ONLY
+        }
+        macros_.setTargetBase(target, value);
+        lastPushedBase_[t] = value;
+        ++setTargetBasePushes_;  // INVOCATIONS, for SC-007
+    }
 }
 
 // FR-044. NO settling clause: no AE ID is class (b).
@@ -2763,13 +3338,18 @@ void Processor::pushAetherParamsIfDirty() noexcept {
 // accepted, then cleared.
 //
 // THE RETRY IS PER-VOICE, NEVER WHOLE-POOL. applySpectralStates writes all four
-// slots to every voice in the mask, and on a QUIESCENT voice the gate passes and
-// SpectralMorphEngine::setState runs isValidSpectralState PLUS buildSanitized - a
-// full 64-entry std::log2 pass (spectral_morph_engine.h:296-301, :537-543) -
-// BEFORE the identity check at :302-304 that would make it a no-op. With one voice
-// held and fifteen idle, a whole-pool retry therefore costs 15 x 4 x 64 ~= 3840
-// std::log2 per block, every block, for the whole of a sustained note plus its
-// release (up to 8000 ms, seraphis_voice.h:359).
+// slots to every voice in the mask, and SpectralMorphEngine::setState runs
+// isValidSpectralState PLUS buildSanitized - a full 64-entry std::log2 pass
+// (spectral_morph_engine.h:296-301, :537-543) - BEFORE the identity check at
+// :302-304 that would make it a no-op. One whole-pool pass therefore costs
+// 16 x 4 x 64 ~= 4096 std::log2.
+//
+// Phase 11 FR-033a (D-1) removed SeraphisVoice's configure-time gate from
+// setSpectralState/setSpectralStateCount, so a SOUNDING voice accepts too: the
+// mask now empties on the FIRST attempt and the loop below is a one-block
+// convergence, not a per-block retry for the length of a held note. The retry
+// machinery is kept because nothing here may assume it - a future rejecting
+// caller would otherwise silently lose the push.
 //
 // THE PARAMETER ATOMICS ARE NEVER TOUCHED IN RESPONSE TO A REJECTION (FR-046
 // clause 4): a rejected write is retried, not rolled back.
@@ -2807,6 +3387,36 @@ void Processor::pushSpectralStatesIfPending() noexcept {
         ++applySpectralStatesCalls_;  // SC-007 counts SUCCESSES
     }
     // else: leave the flag set and retry NEXT BLOCK, to the remaining voices only.
+}
+
+// Phase 11 FR-030 / FR-043 (plan 6.3, T011). THE ONE CONSUMER of the per-partial
+// override table - see the banner on the declaration in processor.h for the
+// thread ownership, the mask polarity and the cost.
+//
+// THE LOOP IS UNCONDITIONAL OVER ALL 64 INDICES AND PUSHES BOTH POLARITIES.
+// Walking only the set bits of partialMaskBits_ would make CLEARING a bit a
+// no-op at the engine - there would be no call at all for the cleared index -
+// and masked_[i] would stay true for the life of the instance. SC-033's unmask
+// half is exactly that observation.
+//
+// The pan half IS conditional, and legitimately so: setPartialPosition RAISES
+// positionOverridden_[i] (harmonic_cloud.h:1069-1079), so pushing an
+// un-authored partial would install an override that the seeded FR-021 scatter
+// never asked for. A partial with no authored pan must be left to the scatter,
+// which is what the panBits test preserves.
+void Processor::repushPartialOverrides() noexcept {
+    const std::uint64_t panBits = partialPanOverrideBits_.load(std::memory_order_relaxed);
+    const std::uint64_t maskBits = partialMaskBits_.load(std::memory_order_relaxed);
+
+    for (std::size_t i = 0; i < Krate::DSP::HarmonicCloud::kMaxPartials; ++i) {
+        const bool masked = ((maskBits >> i) & 1u) != 0u;
+        // `active` is the INVERSE of "masked" (harmonic_cloud.h:1082-1089).
+        engine_->setPartialMaskAllVoices(i, !masked);
+        if (((panBits >> i) & 1u) != 0u) {
+            engine_->setPartialPositionAllVoices(
+                i, partialPanStaging_[i].load(std::memory_order_relaxed));
+        }
+    }
 }
 
 // FR-041b (plan 3.7 steps 3-4). spectralSlotsConsuming_ is stored BEFORE the
@@ -2903,7 +3513,7 @@ void Processor::pushAllSurfaces(SurfaceInvalidation scope) noexcept {
     ++aetherParamGeneration_;
     lastAppliedVoiceParamGeneration_ = kGenerationSentinel;   // cannot compare equal
     lastAppliedAetherParamGeneration_ = kGenerationSentinel;
-    lastPushedBaseValid_ = false;   // forces all 27 setTargetBase pushes
+    lastPushedBaseValid_ = false;   // forces all kNumTargets setTargetBase pushes
     lastPushedMacros_ = Krate::DSP::SeraphisMacroValues{};
     lastPushedMacrosValid_ = false;
     // FR-034. Every effects push tracker is invalidated here, so a setState()
@@ -2996,6 +3606,183 @@ std::size_t Processor::pickStagingBuffer() noexcept {
 }
 
 // ==============================================================================
+// Phase 11 C-5 (plan 6.2, 6.2a) - the edit channel. MESSAGE THREAD ONLY.
+// ==============================================================================
+
+// Plan 6.2a. Lazy, message-thread reconciliation of the authoring mirror with
+// the four slot dropdowns.
+//
+// The audio thread's own tracker for the same four IDs is
+// lastPushedSlotStateId_, written by refreshSpectralSlotFromFactory() from
+// processParameterChanges(); that function is NOT the place to seed this mirror,
+// because it runs on the audio thread and the mirror is message-thread state.
+// Reading morphParams_.slot[] here instead is legal from either thread - it is
+// the pack's std::atomic<int>, which is what every other consumer already reads.
+//
+// factoryStates_ is immutable from the constructor on (see its banner), so the
+// copy below needs no synchronisation either.
+void Processor::syncAuthoringMirrorFromDropdowns() noexcept {
+    for (std::size_t s = 0; s < spectralSlotsAuthoring_.size(); ++s) {
+        const int stateId = morphParams_.slot[s].load(std::memory_order_relaxed);
+        if (stateId == lastAuthoredSlotStateId_[s]) {
+            continue;  // unchanged: an authored edit in this slot SURVIVES
+        }
+        lastAuthoredSlotStateId_[s] = stateId;
+        spectralSlotsAuthoring_[s] = factoryStates_[clampFactoryIndex(stateId)];
+    }
+}
+
+// Plan 6.2 steps 1-6. The second writer on the Phase 9 staging ring, using the
+// identical published sequence: pick, seed, mutate, validity-gate, release-store,
+// advance the cursor. No second interlock and no lock, because this runs on the
+// same message thread setState() writes the ring from.
+void Processor::stageSlotEdit(std::size_t slot,
+                              const Krate::DSP::SpectralState& edited) noexcept {
+    if (slot >= spectralSlotsAuthoring_.size()) {
+        return;  // belt to applyEditMessage()'s braces
+    }
+
+    // (4) FIRST, because it is the only thing that can make this a no-op:
+    // SpectralMorphEngine::setState rejects an invalid state wholesale
+    // (spectral_morph_engine.h:296-298), so publishing one would be a silently
+    // inert edit. Checking here turns it into a DROPPED one, and leaves both the
+    // ring and the mirror untouched.
+    if (!Krate::DSP::isValidSpectralState(edited)) {
+        return;
+    }
+
+    // (1) The existing three-buffer chooser: neither published nor being copied.
+    const std::size_t w = pickStagingBuffer();
+
+    // (2) Seed the WHOLE buffer from the message-thread mirror, so the three
+    // slots this edit does not touch are not lost. NEVER from spectralSlots_,
+    // which is audio-thread-owned.
+    spectralSlotsStaging_[w] = spectralSlotsAuthoring_;
+
+    // (3)
+    spectralSlotsStaging_[w][slot] = edited;
+
+    // (5) Publish, then advance the cursor - plan 3.7 step 3's order exactly.
+    spectralSlotsHandoff_.store(static_cast<int>(w), std::memory_order_release);
+    stagingWriteCursor_ = static_cast<int>((w + 1u) % spectralSlotsStaging_.size());
+
+    ++editStageWrites_;
+
+    // (6) ...and the mirror follows the ring, so the NEXT edit in the same
+    // gesture composes on top of this one rather than on top of a stale slot.
+    spectralSlotsAuthoring_[slot] = edited;
+}
+
+// Plan 6.2. Validation first (C-5 clause 5), then the eight-row dispatch.
+//
+// EVERY rejection is a SILENT return: an EditMessage is untrusted input, and the
+// mutators' own rejection (C-6) is the second line of defence, not the first.
+void Processor::applyEditMessage(const UI::EditMessage& message) noexcept {
+    // --- C-5 clause 5, in order --------------------------------------------
+    if (message.kind >= UI::kEditKindCount) {
+        return;  // unknown kind
+    }
+    const bool namesASlot = (message.kind == 1 || message.kind == 4 || message.kind == 5
+                             || message.kind == 6 || message.kind == 7);
+    if (namesASlot && message.slot > 3u) {
+        return;
+    }
+    const bool namesAPartial = (message.kind == 1 || message.kind == 2 || message.kind == 3);
+    if (namesAPartial
+        && message.index >= static_cast<std::uint16_t>(Krate::DSP::HarmonicCloud::kMaxPartials)) {
+        return;
+    }
+    // BIT PATTERN, never std::isnan: this TU is compiled with the plugin's normal
+    // flags and the macOS leg is -ffast-math (spectral_state.h:21-23 states the
+    // same rule for the mutators themselves).
+    if (Krate::DSP::detail::isNaN(message.a) || Krate::DSP::detail::isInf(message.a)
+        || Krate::DSP::detail::isNaN(message.b) || Krate::DSP::detail::isInf(message.b)) {
+        return;
+    }
+
+    const auto slot = static_cast<std::size_t>(message.slot);
+    const auto partial = static_cast<std::size_t>(message.index);
+
+    switch (message.kind) {
+        case 0: {  // EditorGate - C-2 clause 6's producer gate.
+            cloudFrameEnabled_.store(message.a != 0.0f, std::memory_order_relaxed);
+            return;
+        }
+        case 1: {  // PartialRatioAmp
+            syncAuthoringMirrorFromDropdowns();
+            Krate::DSP::SpectralState edited = spectralSlotsAuthoring_[slot];
+            Krate::DSP::setPartial(edited, partial, message.a, message.b);
+            stageSlotEdit(slot, edited);
+            return;
+        }
+        case 2: {  // PartialPan - STAGED, no engine call (plan 6.2's reversal).
+            partialPanStaging_[partial].store(std::clamp(message.a, -1.0f, 1.0f),
+                                              std::memory_order_relaxed);
+            const std::uint64_t bit = std::uint64_t{1} << partial;
+            partialPanOverrideBits_.fetch_or(bit, std::memory_order_relaxed);
+            partialOverridesPending_.store(true, std::memory_order_release);
+            return;
+        }
+        case 3: {  // PartialMask - STAGED, no engine call.
+            //
+            // `a` is the TOGGLED value the controller computed from
+            // CloudFrame::maskBits (Q5), never an unconditional mask, so both
+            // directions are reachable and a masked partial can be un-masked.
+            const std::uint64_t bit = std::uint64_t{1} << partial;
+            if (message.a != 0.0f) {
+                partialMaskBits_.fetch_or(bit, std::memory_order_relaxed);
+            } else {
+                partialMaskBits_.fetch_and(~bit, std::memory_order_relaxed);
+            }
+            // A mask edit is an override on that partial whichever way it went -
+            // CloudFrame::overriddenBits is "pan AND/OR mask".
+            partialOverridesPending_.store(true, std::memory_order_release);
+            return;
+        }
+        case 4: {  // BlendStates - ABSOLUTE, from the latched pristine A (Q2).
+            if (!blendSnapshotValid_) {
+                return;  // no live kind-7 snapshot for this gesture -> DROPPED
+            }
+            // `b` carries slot B as a float. THE RANGE TEST HAPPENS IN FLOAT,
+            // BEFORE the cast, and that order is load-bearing: `b` is only
+            // screened for finiteness above, so a value like 1e30 is legal input
+            // here, and static_cast<int> of a float outside int's range is
+            // undefined behaviour - a fuzzed message must not be able to reach
+            // it.
+            if (!(message.b >= 0.0f) || !(message.b < 4.0f)) {
+                return;
+            }
+            const auto bIndex = static_cast<std::size_t>(message.b);
+            syncAuthoringMirrorFromDropdowns();
+            const Krate::DSP::SpectralState blended = Krate::DSP::blendStates(
+                blendSnapshotA_, spectralSlotsAuthoring_[bIndex], message.a);
+            stageSlotEdit(slot, blended);
+            return;
+        }
+        case 5: {  // TiltState - `a` is an ABSOLUTE dB/oct (C-6), never a delta.
+            syncAuthoringMirrorFromDropdowns();
+            Krate::DSP::SpectralState edited = spectralSlotsAuthoring_[slot];
+            Krate::DSP::tiltState(edited, message.a);
+            stageSlotEdit(slot, edited);
+            return;
+        }
+        case 6: {  // SlotSelect - a slot change ENDS any gesture.
+            selectedEditSlot_ = static_cast<int>(message.slot);
+            blendSnapshotValid_ = false;
+            return;
+        }
+        case 7: {  // BlendBegin - latches A and writes the ring NOT AT ALL.
+            syncAuthoringMirrorFromDropdowns();
+            blendSnapshotA_ = spectralSlotsAuthoring_[slot];
+            blendSnapshotValid_ = true;
+            return;
+        }
+        default:
+            return;  // unreachable: kind was range-checked above
+    }
+}
+
+// ==============================================================================
 // FR-059 clause (b) - the class-(b) smoother machinery (plan 3.5)
 // ==============================================================================
 
@@ -3019,7 +3806,11 @@ std::array<Krate::DSP::OnePoleSmoother*, 12> Processor::classBSmoothers() noexce
 }
 
 // Twelve setTarget() calls (smoother.h:170) from the already-clamped atomics. The
-// packs denormalize and clamp on the way in, so no clamp is repeated here.
+// packs denormalize and clamp on the way in, so no clamp is repeated here - with
+// TWO exceptions, both of which take a COMPOSED value rather than an atomic: ID
+// 1410, whose target is fxEffectiveReturnGain_, and ID 1441, whose target is the
+// Phase 11 macro composition. computeEffectsTargets() returns the RAW sum, so
+// that one clamp is required (seraphis_macro_matrix.h:662-666).
 //
 // IT DOES NOT CONSUME snapParamSmoothers_. That flag is consumed by
 // advanceParamSmoothers(), which runs AFTER this function - the snap has to
@@ -3049,7 +3840,14 @@ void Processor::setParamSmootherTargets() noexcept {
     // The state machine runs earlier in the same pre-slice block, so the value
     // read here is this call's, never the previous call's.
     fxReturnGainSm_.setTarget(fxEffectiveReturnGain_);                        // ID 1410
-    fxWanderDepthSm_.setTarget(effectsParams_.wanderDepth.load(kRelaxed));    // ID 1441
+    // Phase 11 FR-038 (plan section 4, substitution 2). ID 1441 takes the
+    // COMPOSED depth - `deep base + the Entropy row` - clamped to the unit range
+    // this smoother's consumer (runWanderStage's width multiply) assumes.
+    // fxEffectiveReturnGain_ above needs no second substitution: it is DERIVED
+    // from the already-composed `mix` inside updateEffectsBypassState(), so
+    // substitution 1 carries through to the engage/bypass ramp and to FR-023a's
+    // freeze-forced gain unchanged.
+    fxWanderDepthSm_.setTarget(std::clamp(composedEffects_.wanderDepth, 0.0f, 1.0f));  // ID 1441
     fxAzimuthDepthSm_.setTarget(effectsParams_.azimuthDepth.load(kRelaxed));  // ID 1443
 }
 
@@ -3090,9 +3888,20 @@ bool Processor::anyMacroSmootherUnsettled() const noexcept {
         [](const Krate::DSP::OnePoleSmoother& s) noexcept { return !s.isComplete(); });
 }
 
-// PER-TARGET, never one flag for all 27 - see pushMacroSurfaces()' banner. The
+// PER-TARGET, never one flag for all 29 - see pushMacroSurfaces()' banner. The
 // other 24 targets are class (a): their component smooths, ramps, gates or
 // snapshots the pushed value itself.
+//
+// Phase 11 C-10's two Effects-owned rows are DELIBERATELY ABSENT. IDs 1410 and
+// 1441 are class-(b) IDs on the continuity surface (param_continuity_test.cpp's
+// kContinuityMechanism[] names fxReturnGainSm_ / fxWanderDepthSm_ for them), but
+// this predicate is not about an ID's continuity mechanism - it is about whether
+// the value pushed as a BASE is a smoother read-back that can go quiet before it
+// converges. For the four rows above it is (bodyDampingSm_ etc. are read through
+// getCurrentValue()); for these two it is not - baseValueForTarget() returns the
+// RAW atomic, which steps, and their smoothing happens DOWNSTREAM of the
+// composition. They are also not pushed by pushMacroSurfaces() at all any more
+// (pushEffectsMacroBases() owns them), so a clause here would be unreachable.
 bool Processor::targetClassBUnsettled(Krate::DSP::SeraphisMacroTarget target) const noexcept {
     using Target = Krate::DSP::SeraphisMacroTarget;
     switch (target) {
@@ -3120,6 +3929,172 @@ bool Processor::anyClassBSmootherUnsettled() const noexcept {
            || !breathDepthSm_.isComplete() || !tideDepthSm_.isComplete()
            || anyMacroSmootherUnsettled() || !fxReturnGainSm_.isComplete()
            || !fxWanderDepthSm_.isComplete() || !fxAzimuthDepthSm_.isComplete();
+}
+
+// ==============================================================================
+// Phase 11 C-2 / FR-012 / FR-014 / FR-015 (plan 5.3) - the cloud-frame producer
+// ==============================================================================
+// THE BODY ORDER IS NORMATIVE, and every step of it is load-bearing:
+//
+//   1. the GATE, and it is the ONLY short-circuit;
+//   2. the ATTEMPT counter - incremented whenever the GATE is open,
+//      INDEPENDENTLY of whether a queue exists;
+//   3. the FOCUS voice (C-2 clause 4's three clauses, in order);
+//   4. fill the MEMBER pendingFrame_ field by field;
+//   5. TRANSPORT ONLY FROM HERE DOWN.
+//
+// WHY THE HANDLER IS NOT A PRECONDITION OF THE ATTEMPT. The headless harness
+// this phase's criteria run in - plugins/seraphis/tests/seraphis_test_fixture.h's
+// ProcessorFixture - does initialize(nullptr) -> setupProcessing ->
+// setActive(true) and NEVER calls connect(), so dataExchangeHandler_ is null in
+// every plugin-side test. Returning early on a null handler would leave
+// cloudFramePublishAttemptCountForTest() reading 0 and pendingFrame_ never
+// written, on a CORRECT implementation - i.e. SC-001 arm A, SC-006, SC-007,
+// SC-008, SC-014, SC-017 and SC-026 would all be unrunnable. A null handler is
+// therefore accounted as a SKIPPED BLOCK, which C-2 clause 7 already says is
+// recorded and never gating.
+//
+// @par Real-Time Safety: allocation-free, lock-free, exception-free, I/O-free.
+//      A bounded <= 64-iteration read loop over const accessors that are plain
+//      array indexes with a bounds test (harmonic_cloud.h:950-993), plus one
+//      808-byte memcpy. No transcendental anywhere: fundamentalHz is a member
+//      read (harmonic_cloud.h:405), not a 440 * exp2((note - 69)/12).
+void Processor::publishCloudFrame() noexcept {
+    // SC-009(b)/SC-010(b). The scoped timer opens OUTSIDE the gate predicate and
+    // its divisor counts EVERY process() call, not every publish - that is what
+    // keeps SC-010(b)'s reasoning honest, because with the gate closed the
+    // measured stage time is exactly the cost of TESTING the gate.
+    // Instrumentation is OFF by default, so no shipping path reads the clock.
+    const bool instrumented = cloudFrameInstrumented_;
+    std::chrono::steady_clock::time_point stageStart{};
+    if (instrumented) {
+        stageStart = std::chrono::steady_clock::now();
+        ++cloudFrameStageProcessCalls_;
+    }
+
+    // --- 1. the gate, and it is the ONLY short-circuit --------------------
+    //
+    // Written as a WRAPPING `if` rather than an early return purely so the
+    // instrumentation epilogue below is written once: the semantics are
+    // identical, and the gate is still the only thing that can skip the body.
+    //
+    // There is deliberately NO engine_ null test: process() returns before the
+    // slice loop unless prepared_ && engine_ && reverb_ (see its FR-030
+    // early-outs), and this function is called only from after that loop. A
+    // restated guard here would sit between the gate and the attempt counter and
+    // break the normative body order for a branch that cannot be taken.
+    if (cloudFrameEnabled_.load(std::memory_order_relaxed)) {
+        // --- 2. the ATTEMPT counter ---------------------------------------
+        ++cloudFramePublishAttempts_;
+
+        // --- 3. the focus voice, C-2 clause 4 -----------------------------
+        // (a) among slots the allocator does not report Idle, the one with the
+        //     GREATEST allocation serial. Ties are impossible - the serial is
+        //     documented "strictly increasing across note events"
+        //     (seraphis_engine.h:1020-1031).
+        // (b) else RETAIN the previous focus while its level is still above
+        //     kCloudFrameSilenceLevel, so a release still animates.
+        // (c) else slot 0.
+        //
+        // The loop bound is kMaxVoices, not getPolyphony(): a slot the allocator
+        // has already handed out must not drop off the rule when polyphony
+        // shrinks underneath it. At kPolyphonyId = 1 no slot above 0 is ever
+        // allocated, so every arm degenerates to focus 0 by construction.
+        std::size_t focus = 0;
+        std::uint64_t bestSerial = 0;
+        bool haveNonIdle = false;
+        for (std::size_t v = 0; v < Krate::DSP::SeraphisEngine::kMaxVoices; ++v) {
+            if (engine_->getVoiceState(v) == Krate::DSP::VoiceState::Idle) {
+                continue;
+            }
+            const std::uint64_t serial = engine_->getVoiceAllocationSerial(v);
+            if (!haveNonIdle || serial > bestSerial) {
+                bestSerial = serial;
+                focus = v;
+                haveNonIdle = true;
+            }
+        }
+        if (!haveNonIdle) {
+            const std::size_t previous = cloudFrameFocusVoice_;
+            focus =
+                (engine_->getVoiceLevel(previous) > kCloudFrameSilenceLevel) ? previous : 0u;
+        }
+        cloudFrameFocusVoice_ = focus;
+
+        // --- 4. fill the MEMBER frame, field by field ---------------------
+        const Krate::DSP::HarmonicCloud& cloud = engine_->getVoice(focus).cloud();
+        const std::size_t activeVoices = engine_->getActiveVoiceCount();
+        const std::size_t n =
+            std::min(cloud.getActivePartialCount(), Krate::DSP::HarmonicCloud::kMaxPartials);
+
+        pendingFrame_.sequence = ++cloudFrameSequence_;
+        pendingFrame_.activeVoices = static_cast<std::uint16_t>(activeVoices);
+        pendingFrame_.focusVoice = static_cast<std::uint8_t>(focus);
+        pendingFrame_.partialCount = static_cast<std::uint8_t>(n);
+        // THE UNDETUNED f0, and NEVER frequencyHz[0] - which is drift-inclusive
+        // by C-2 clause 3 and would silently defeat Q6/SC-024's drift-exclusion
+        // guarantee. getFundamentalHz() (harmonic_cloud.h:405) returns the shadow
+        // written only by setFundamentalHz (:383), whose sole caller in the whole
+        // tree is SeraphisVoice::noteOn (seraphis_voice.h:529).
+        //
+        // The 0.0f-with-no-voice branch is DELIBERATE (SC-024 arm B): the shadow
+        // otherwise retains the last note forever and the view's C4 fallback
+        // becomes unreachable.
+        pendingFrame_.fundamentalHz = (activeVoices > 0) ? cloud.getFundamentalHz() : 0.0f;
+        pendingFrame_.voiceLevel = engine_->getVoiceLevel(focus);
+        pendingFrame_.morphTravelPosition =
+            engine_->getVoice(focus).morph().getTravelPosition();
+
+        for (std::size_t i = 0; i < n; ++i) {
+            // DRIFT-INCLUSIVE (C-2 clause 3): getPartialFrequencyHz is the
+            // UNDETUNED synthesized frequency (harmonic_cloud.h:955) and
+            // getPartialDriftDetune is a MULTIPLIER (:991), so the view draws
+            // what is actually sounding.
+            pendingFrame_.frequencyHz[i] =
+                cloud.getPartialFrequencyHz(i) * cloud.getPartialDriftDetune(i);
+            pendingFrame_.amplitude[i] =
+                cloud.getPartialCurrentAmplitude(i) * cloud.getPartialAntiAliasGain(i);
+            pendingFrame_.position[i] = cloud.getPartialPosition(i);  // already [-1, +1]
+        }
+        // NEVER STALE: entries above the active count are zeroed on every
+        // publish, so a cloud that shrank cannot leave a previous frame's
+        // partials on screen.
+        for (std::size_t i = n; i < Krate::DSP::HarmonicCloud::kMaxPartials; ++i) {
+            pendingFrame_.frequencyHz[i] = 0.0f;
+            pendingFrame_.amplitude[i] = 0.0f;
+            pendingFrame_.position[i] = 0.0f;
+        }
+
+        const std::uint64_t maskBits = partialMaskBits_.load(std::memory_order_relaxed);
+        const std::uint64_t panBits = partialPanOverrideBits_.load(std::memory_order_relaxed);
+        pendingFrame_.maskBits = maskBits;
+        // "pan AND/OR mask" - FR-030's per-entry override flag read back out.
+        pendingFrame_.overriddenBits = panBits | maskBits;
+
+        // --- 5. TRANSPORT ONLY FROM HERE DOWN -----------------------------
+        if (dataExchangeHandler_ == nullptr) {
+            ++cloudFrameSkippedBlocks_;  // no queue: same accounting as no block
+        } else {
+            const Vst::DataExchangeBlock block = dataExchangeHandler_->getCurrentOrNewBlock();
+            if (block.blockID == Vst::InvalidDataExchangeBlockID || block.data == nullptr
+                || block.size < sizeof(CloudFrame)) {
+                // RECORDED, never gating (C-2 clause 7): skipped, never retried,
+                // never blocked on. At 512/48 kHz the ~94 Hz publish rate
+                // deliberately outruns the 30 Hz consume rate, so this is
+                // expected steady-state behaviour.
+                ++cloudFrameSkippedBlocks_;
+            } else {
+                std::memcpy(block.data, &pendingFrame_, sizeof(CloudFrame));
+                dataExchangeHandler_->sendCurrentBlock();
+            }
+        }
+    }
+
+    if (instrumented) {
+        cloudFrameStageNs_ += std::chrono::duration<double, std::nano>(
+                                  std::chrono::steady_clock::now() - stageStart)
+                                  .count();
+    }
 }
 
 }  // namespace Seraphis

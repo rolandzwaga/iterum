@@ -24,20 +24,25 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <vector>
 
+using Krate::DSP::blendStates;
 using Krate::DSP::deserializeSpectralState;
 using Krate::DSP::isValidSpectralState;
 using Krate::DSP::kSpectralStateBytes;
 using Krate::DSP::makeFactoryState;
 using Krate::DSP::normalizeSpectralState;
 using Krate::DSP::serializeSpectralState;
+using Krate::DSP::setPartial;
 using Krate::DSP::SpectralState;
 using Krate::DSP::SpectralStateId;
+using Krate::DSP::tiltState;
 using Krate::DSP::Xorshift32;
 
 namespace {
@@ -243,6 +248,261 @@ constexpr std::array<FactoryPin, 5> kFactoryPins{
         s.name[i] = label[i];
     }
     return s;
+}
+
+// --------------------------------------------------------------------------
+// Authoring-mutator helpers (Phase 11 T002, FR-031/FR-032, SC-012)
+// --------------------------------------------------------------------------
+
+/// A valid 4-partial state whose slots 0 and 2 are closer together than
+/// kAuthorSpacing^2, so setPartial's monotone window at index 1 COLLAPSES
+/// (lo > hi) and the call must be a no-op rather than a clamped store.
+[[nodiscard]] SpectralState makeCollapsedWindowState() noexcept {
+    SpectralState s = makeValidState();
+    s.ratios[0] = 1.0f;
+    s.ratios[1] = 1.005f;
+    s.ratios[2] = 1.01f;
+    s.ratios[3] = 4.0f;
+    return s;
+}
+
+/// The three states below are invalid SOMEWHERE OTHER THAN slot 0. They are the
+/// rows that prove setPartial's whole-state gate (plan §1.1 step 0) exists:
+/// every LOCAL check at index 0 passes on all three, so without the gate the
+/// store happens and the byte-unchanged assertion fails.
+[[nodiscard]] SpectralState makeAmplitudeInvalidAtSlot5() noexcept {
+    SpectralState s = makeFactoryState(SpectralStateId::SineStack);
+    s.amplitudes[5] = 1.5f; // > 1 -> isValidSpectralState false (:106-108)
+    return s;
+}
+
+[[nodiscard]] SpectralState makeRatioNonMonotoneAtSlot30() noexcept {
+    SpectralState s = makeFactoryState(SpectralStateId::SineStack);
+    s.ratios[30] = s.ratios[29]; // no longer STRICTLY increasing (:97-99)
+    return s;
+}
+
+[[nodiscard]] SpectralState makeNameWithoutTerminator() noexcept {
+    SpectralState s = makeFactoryState(SpectralStateId::SineStack);
+    s.name.fill('A'); // no NUL anywhere in the field (:118-120)
+    return s;
+}
+
+[[nodiscard]] SpectralState makeStateWithNumPartials(int n) noexcept {
+    SpectralState s = makeValidState();
+    s.numPartials = n;
+    return s;
+}
+
+[[nodiscard]] SpectralState makeRatioBelowMinState() noexcept {
+    SpectralState s = makeValidState();
+    s.ratios[0] = 0.4f; // < kMinStateRatio
+    return s;
+}
+
+[[nodiscard]] SpectralState makeRatioAboveMaxState() noexcept {
+    SpectralState s = makeValidState();
+    s.numPartials = 1;
+    s.ratios[0] = 200.0f; // > kMaxStateRatio
+    return s;
+}
+
+[[nodiscard]] SpectralState makeEqualNeighbourState() noexcept {
+    SpectralState s = makeValidState();
+    s.ratios[1] = s.ratios[0];
+    return s;
+}
+
+[[nodiscard]] SpectralState makeDescendingNeighbourState() noexcept {
+    SpectralState s = makeValidState();
+    s.ratios[1] = s.ratios[0] - 0.1f;
+    return s;
+}
+
+[[nodiscard]] SpectralState makeStateWithPoisonedFloat(std::uint32_t bits, int field) noexcept {
+    SpectralState s = makeValidState();
+    const float bad = floatFromBits(bits);
+    switch (field) {
+    case 0:
+        s.ratios[0] = bad;
+        break;
+    case 1:
+        s.amplitudes[0] = bad;
+        break;
+    default:
+        s.tiltDbPerOct = bad;
+        break;
+    }
+    return s;
+}
+
+[[nodiscard]] SpectralState makeInharmonicityOutOfRangeState() noexcept {
+    SpectralState s = makeValidState();
+    s.inharmonicity = 0.5f; // > kMaxStateInharmonicity (0.1)
+    return s;
+}
+
+/// Which mutator a table row exercises.
+enum class Mutator : std::uint8_t { SetPartial, BlendStates, TiltState };
+
+/// One row of the SC-012 table. `before` is setPartial/tiltState's subject and
+/// blendStates' `a`; `other` is blendStates' `b`.
+struct AuthoringRow {
+    const char* label;
+    Mutator mutator;
+    SpectralState before;
+    SpectralState other;
+    std::size_t index; ///< setPartial only
+    float arg0;        ///< setPartial ratio | blendStates t | tiltState dbPerOct
+    float arg1;        ///< setPartial amplitude
+};
+
+[[nodiscard]] AuthoringRow setPartialRow(const char* label, const SpectralState& before,
+                                         std::size_t index, float ratio, float amplitude) {
+    return AuthoringRow{label, Mutator::SetPartial, before, SpectralState{}, index, ratio,
+                        amplitude};
+}
+
+[[nodiscard]] AuthoringRow tiltRow(const char* label, const SpectralState& before,
+                                   float dbPerOct) {
+    return AuthoringRow{label, Mutator::TiltState, before, SpectralState{}, 0, dbPerOct, 0.0f};
+}
+
+[[nodiscard]] AuthoringRow blendRow(const char* label, const SpectralState& a,
+                                    const SpectralState& b, float t) {
+    return AuthoringRow{label, Mutator::BlendStates, a, b, 0, t, 0.0f};
+}
+
+/// The SC-012 table. Coverage is enumerated in tasks.md T002: out-of-range and
+/// non-monotone ratios, amplitude and t edges, every interesting numPartials and
+/// index, both tilt clamp edges and beyond, non-finite arguments built from bit
+/// patterns, and three states that are invalid AWAY FROM the edited index.
+[[nodiscard]] std::vector<AuthoringRow> makeAuthoringRows() {
+    const SpectralState valid4 = makeValidState();
+    const SpectralState sine64 = makeFactoryState(SpectralStateId::SineStack);
+    const SpectralState bell24 = makeFactoryState(SpectralStateId::Bell);
+    const SpectralState single = makeSinglePartialEdgeState();
+    const SpectralState empty{};
+
+    // Deliberately NOT named `nan` / `inf`: <cmath> declares ::nan and ::inf-like
+    // names at global scope, and a local shadowing them trips -Wshadow.
+    const float nanValue = floatFromBits(kQuietNaNBits);
+    const float posInfValue = floatFromBits(kPosInfBits);
+    const float negInfValue = floatFromBits(kNegInfBits);
+
+    std::vector<AuthoringRow> rows;
+
+    // ---- setPartial, VALID inputs (assertion 1: still valid afterwards) -----
+    rows.push_back(setPartialRow("setPartial: index 0, in-window ratio", valid4, 0, 1.2f, 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: index numPartials-1 (3)", valid4, 3, 10.0f, 0.25f));
+    rows.push_back(
+        setPartialRow("setPartial: ratio < kMinStateRatio (0.1)", valid4, 1, 0.1f, 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: ratio > kMaxStateRatio (500)", valid4, 1, 500.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial: amplitude -0.5f", valid4, 0, 2.0f, -0.5f));
+    rows.push_back(setPartialRow("setPartial: amplitude 1.5f", valid4, 0, 2.0f, 1.5f));
+    rows.push_back(setPartialRow("setPartial: amplitude exactly 0.0f", valid4, 2, 3.0f, 0.0f));
+    rows.push_back(setPartialRow("setPartial: amplitude exactly 1.0f", valid4, 2, 3.0f, 1.0f));
+    rows.push_back(setPartialRow("setPartial: index == numPartials (4)", valid4, 4, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial: index 63 on a 4-partial state", valid4, 63, 2.5f,
+                                 0.5f));
+    rows.push_back(setPartialRow("setPartial: index 64 on a 64-partial state", sine64, 64, 2.5f,
+                                 0.5f));
+    rows.push_back(setPartialRow("setPartial: index SIZE_MAX", valid4, SIZE_MAX, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial: index 63 on a 64-partial state", sine64, 63, 200.0f,
+                                 0.5f));
+    rows.push_back(setPartialRow("setPartial: index 0 at exactly kMinStateRatio", sine64, 0, 0.5f,
+                                 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: single-partial state at kMaxStateRatio", single, 0, 128.0f,
+                      1.0f));
+    rows.push_back(setPartialRow("setPartial: numPartials == 0", empty, 0, 2.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial: collapsed window (neighbours < spacing^2)",
+                                 makeCollapsedWindowState(), 1, 1.5f, 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: NaN ratio (bit pattern)", valid4, 0, nanValue, 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: +Inf ratio (bit pattern)", valid4, 0, posInfValue, 0.5f));
+    rows.push_back(
+        setPartialRow("setPartial: NaN amplitude (bit pattern)", valid4, 0, 2.0f, nanValue));
+    rows.push_back(
+        setPartialRow("setPartial: -Inf amplitude (bit pattern)", valid4, 0, 2.0f, negInfValue));
+
+    // ---- setPartial, INVALID inputs (assertion 2: byte-unchanged) -----------
+    rows.push_back(setPartialRow("setPartial on invalid: ratios[0] < kMinStateRatio",
+                                 makeRatioBelowMinState(), 0, 1.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: ratios[0] > kMaxStateRatio",
+                                 makeRatioAboveMaxState(), 0, 1.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: equal neighbours",
+                                 makeEqualNeighbourState(), 1, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: descending neighbours",
+                                 makeDescendingNeighbourState(), 1, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: numPartials = -1",
+                                 makeStateWithNumPartials(-1), 0, 2.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: numPartials = 65",
+                                 makeStateWithNumPartials(65), 0, 2.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: numPartials = INT_MAX",
+                                 makeStateWithNumPartials(INT_MAX), 0, 2.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: NaN in ratios[0]",
+                                 makeStateWithPoisonedFloat(kQuietNaNBits, 0), 1, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: +Inf in amplitudes[0]",
+                                 makeStateWithPoisonedFloat(kPosInfBits, 1), 1, 2.5f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: -Inf in tiltDbPerOct",
+                                 makeStateWithPoisonedFloat(kNegInfBits, 2), 0, 2.0f, 0.5f));
+    rows.push_back(setPartialRow("setPartial on invalid: inharmonicity 0.5",
+                                 makeInharmonicityOutOfRangeState(), 0, 2.0f, 0.5f));
+    // The three whole-state-gate rows: invalid AWAY FROM the edited index 0.
+    rows.push_back(setPartialRow("setPartial at 0 on state invalid at amplitudes[5]",
+                                 makeAmplitudeInvalidAtSlot5(), 0, 1.1f, 0.5f));
+    rows.push_back(setPartialRow("setPartial at 0 on state invalid at ratios[30]",
+                                 makeRatioNonMonotoneAtSlot30(), 0, 1.1f, 0.5f));
+    rows.push_back(setPartialRow("setPartial at 0 on state with unterminated name",
+                                 makeNameWithoutTerminator(), 0, 1.1f, 0.5f));
+
+    // ---- tiltState ---------------------------------------------------------
+    rows.push_back(tiltRow("tiltState: kMinStateTiltDbPerOct (-12)", valid4,
+                           SpectralState::kMinStateTiltDbPerOct));
+    rows.push_back(tiltRow("tiltState: kMaxStateTiltDbPerOct (+12)", valid4,
+                           SpectralState::kMaxStateTiltDbPerOct));
+    rows.push_back(tiltRow("tiltState: -30 (beyond the low clamp edge)", valid4, -30.0f));
+    rows.push_back(tiltRow("tiltState: +30 (beyond the high clamp edge)", valid4, 30.0f));
+    rows.push_back(tiltRow("tiltState: -6 on a 64-partial state", sine64, -6.0f));
+    rows.push_back(tiltRow("tiltState: +6 on a 64-partial state", sine64, 6.0f));
+    rows.push_back(tiltRow("tiltState: numPartials == 0", empty, 3.0f));
+    rows.push_back(tiltRow("tiltState: single-partial state", single, -12.0f));
+    rows.push_back(tiltRow("tiltState: NaN dbPerOct (bit pattern)", valid4, nanValue));
+    rows.push_back(tiltRow("tiltState: +Inf dbPerOct (bit pattern)", valid4, posInfValue));
+    rows.push_back(
+        tiltRow("tiltState on invalid: numPartials = -1", makeStateWithNumPartials(-1), 3.0f));
+    rows.push_back(
+        tiltRow("tiltState on invalid: equal neighbours", makeEqualNeighbourState(), -6.0f));
+    rows.push_back(
+        tiltRow("tiltState on invalid: unterminated name", makeNameWithoutTerminator(), 6.0f));
+    rows.push_back(tiltRow("tiltState on invalid: amplitudes[5] = 1.5",
+                           makeAmplitudeInvalidAtSlot5(), 0.0f));
+
+    // ---- blendStates (assertion 3: the RETURN is valid on every row) --------
+    rows.push_back(blendRow("blendStates: t = 0.0", valid4, sine64, 0.0f));
+    rows.push_back(blendRow("blendStates: t = 0.5", valid4, sine64, 0.5f));
+    rows.push_back(blendRow("blendStates: t = 1.0", valid4, sine64, 1.0f));
+    rows.push_back(blendRow("blendStates: t = -1.0", valid4, sine64, -1.0f));
+    rows.push_back(blendRow("blendStates: t = 2.0", valid4, sine64, 2.0f));
+    rows.push_back(blendRow("blendStates: t = NaN (bit pattern)", valid4, sine64, nanValue));
+    rows.push_back(blendRow("blendStates: t = +Inf (bit pattern)", valid4, sine64, posInfValue));
+    rows.push_back(blendRow("blendStates: a invalid (numPartials = -1)",
+                            makeStateWithNumPartials(-1), sine64, 0.5f));
+    rows.push_back(
+        blendRow("blendStates: b invalid (unterminated name)", valid4,
+                 makeNameWithoutTerminator(), 0.5f));
+    rows.push_back(blendRow("blendStates: both invalid", makeStateWithNumPartials(65),
+                            makeDescendingNeighbourState(), 0.5f));
+    rows.push_back(blendRow("blendStates: two empty states", empty, empty, 0.5f));
+    rows.push_back(blendRow("blendStates: 1-partial vs 4-partial", single, valid4, 0.25f));
+    rows.push_back(blendRow("blendStates: SineStack vs Bell", sine64, bell24, 0.75f));
+    rows.push_back(blendRow("blendStates: a blended with itself", valid4, valid4, 0.3f));
+
+    return rows;
 }
 
 } // namespace
@@ -930,5 +1190,151 @@ TEST_CASE("SpectralState_SerializationRoundTrips", "[spectral_state][seraphis]")
             std::memcpy(buf.data() + 17, &secondRatio, sizeof(float));
             rejects("non-monotone ratios at offsets 13/17", buf.data(), buf.size());
         }
+    }
+}
+
+// ==============================================================================
+// Phase 11 (specs/seraphis-phase11-ui) T002 - the three authoring mutators
+// ==============================================================================
+// FR-031, FR-032, SC-012. The contract under test is PRESERVATION, not repair:
+//   1. a valid input state is still valid after the call;
+//   2. an INVALID input state is left BYTE-UNCHANGED by setPartial and tiltState
+//      -- there is no half-write, because every rejection (whole-state AND
+//      local) happens before the first store;
+//   3. blendStates' RETURN satisfies isValidSpectralState unconditionally.
+// ==============================================================================
+
+TEST_CASE("SpectralState_AuthoringMutators_PreserveValidity", "[spectral_state][phase11]") {
+    // std::memcmp over the whole struct is a valid bitwise comparison only if
+    // SpectralState has no padding bytes. It has none, and this assertion is
+    // what keeps clause 2 below meaningful.
+    STATIC_REQUIRE(std::is_trivially_copyable_v<SpectralState>);
+    STATIC_REQUIRE(sizeof(SpectralState)
+                   == 2 * SpectralState::kStatePartials * sizeof(float)
+                          + SpectralState::kStateNameBytes + 2 * sizeof(float) + sizeof(int));
+
+    SECTION("The SC-012 table: every row preserves the branch its input selects") {
+        const std::vector<AuthoringRow> rows = makeAuthoringRows();
+        REQUIRE(rows.size() >= 40u); // tasks.md T002: the table is at least 40 rows
+
+        for (const AuthoringRow& row : rows) {
+            INFO(row.label);
+            const bool beforeValid = isValidSpectralState(row.before);
+
+            if (row.mutator == Mutator::BlendStates) {
+                // Clause 3: unconditionally valid, valid inputs or not.
+                const SpectralState result = blendStates(row.before, row.other, row.arg0);
+                CHECK(isValidSpectralState(result));
+                continue;
+            }
+
+            SpectralState after = row.before;
+            if (row.mutator == Mutator::SetPartial) {
+                setPartial(after, row.index, row.arg0, row.arg1);
+            } else {
+                tiltState(after, row.arg0);
+            }
+
+            if (beforeValid) {
+                CHECK(isValidSpectralState(after)); // clause 1
+            } else {
+                // clause 2 -- byte-unchanged, no half-write.
+                // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - intentional bit-exact
+                CHECK(std::memcmp(&row.before, &after, sizeof(SpectralState)) == 0);
+                CHECK(statesBitwiseEqual(row.before, after));
+            }
+        }
+    }
+
+    SECTION("blendStates' endpoints are BYTE-IDENTICAL to the endpoints (SC-025)") {
+        // Two valid states with DIFFERENT name fields and DIFFERENT numPartials:
+        // the interior body cannot reproduce either byte-for-byte (it rewrites
+        // `name` to "Blend", regenerates the tail from the FR-041 continuation,
+        // and exp2(log2(x)) is not the identity), so this is the case that is
+        // red without the exact-endpoint short-circuit.
+        const SpectralState a = makeValidState();                            // "Test", 4
+        const SpectralState b = makeFactoryState(SpectralStateId::SineStack); // "SineStack", 64
+        REQUIRE(isValidSpectralState(a));
+        REQUIRE(isValidSpectralState(b));
+        REQUIRE(a.numPartials != b.numPartials);
+        REQUIRE(std::strcmp(a.name.data(), b.name.data()) != 0);
+
+        const SpectralState atZero = blendStates(a, b, 0.0f);
+        const SpectralState atOne = blendStates(a, b, 1.0f);
+
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - intentional bit-exact
+        CHECK(std::memcmp(&atZero, &a, sizeof(SpectralState)) == 0);
+        CHECK(statesBitwiseEqual(atZero, a));
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - intentional bit-exact
+        CHECK(std::memcmp(&atOne, &b, sizeof(SpectralState)) == 0);
+        CHECK(statesBitwiseEqual(atOne, b));
+
+        // Non-vacuity: the interior really is a different state, so the two
+        // equalities above are not passing because everything is equal anyway.
+        const SpectralState atHalf = blendStates(a, b, 0.5f);
+        CHECK(isValidSpectralState(atHalf));
+        CHECK_FALSE(statesBitwiseEqual(atHalf, a));
+        CHECK_FALSE(statesBitwiseEqual(atHalf, b));
+    }
+
+    SECTION("tiltState is ABSOLUTE: applying it twice equals applying it once") {
+        SpectralState once = makeValidState();
+        tiltState(once, -6.0f);
+        REQUIRE(isValidSpectralState(once));
+        CHECK(once.tiltDbPerOct == -6.0f);
+
+        SpectralState twice = once;
+        tiltState(twice, -6.0f);
+
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - intentional bit-exact
+        CHECK(std::memcmp(&once, &twice, sizeof(SpectralState)) == 0);
+        CHECK(statesBitwiseEqual(once, twice));
+
+        // Non-vacuity: the FIRST application really did move the amplitudes, so
+        // the equality above is about absoluteness and not about a dead mutator.
+        const SpectralState untouched = makeValidState();
+        CHECK_FALSE(statesBitwiseEqual(once, untouched));
+    }
+
+    SECTION("setPartial CLAMPS into the monotone window, it never swaps neighbours") {
+        const SpectralState before = makeValidState(); // ratios 1, 2, 3, 4
+        SpectralState after = before;
+        setPartial(after, 1, 100.0f, 0.5f); // far beyond the window's upper edge
+
+        // The neighbours are untouched and strict monotonicity survives.
+        CHECK(after.ratios[0] == before.ratios[0]);
+        CHECK(after.ratios[2] == before.ratios[2]);
+        CHECK(after.ratios[3] == before.ratios[3]);
+        CHECK(after.ratios[1] > after.ratios[0]);
+        CHECK(after.ratios[1] < after.ratios[2]);
+        CHECK(isValidSpectralState(after));
+
+        // Clamped to exactly the window edge ratios[2] / kAuthorSpacing.
+        CHECK(static_cast<double>(after.ratios[1])
+              == Catch::Approx(static_cast<double>(before.ratios[2])
+                               / static_cast<double>(Krate::DSP::kAuthorSpacing))
+                     .margin(1e-5));
+
+        // Nothing outside ratios[index] / amplitudes[index] moved.
+        CHECK(after.numPartials == before.numPartials);
+        CHECK(after.tiltDbPerOct == before.tiltDbPerOct);
+        CHECK(after.inharmonicity == before.inharmonicity);
+        for (std::size_t i = 0; i < SpectralState::kStateNameBytes; ++i) {
+            CHECK(after.name[i] == before.name[i]);
+        }
+    }
+
+    SECTION("setPartial is a NO-OP when the monotone window collapses") {
+        const SpectralState before = makeCollapsedWindowState();
+        REQUIRE(isValidSpectralState(before));
+
+        SpectralState after = before;
+        setPartial(after, 1, 1.5f, 0.25f);
+
+        // lo = ratios[0] * kAuthorSpacing > hi = ratios[2] / kAuthorSpacing, so
+        // the call must write NOTHING rather than store a clamped value.
+        // NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) - intentional bit-exact
+        CHECK(std::memcmp(&before, &after, sizeof(SpectralState)) == 0);
+        CHECK(statesBitwiseEqual(before, after));
     }
 }

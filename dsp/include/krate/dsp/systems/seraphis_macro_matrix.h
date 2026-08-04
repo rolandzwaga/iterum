@@ -49,7 +49,13 @@ namespace DSP {
 enum class SeraphisMacro : std::uint8_t { Dream = 0, Bloom, Dissolve, Gravity, Entropy, Count };
 
 /// Which surface owns a row's target.
-enum class SeraphisMacroTargetOwner : std::uint8_t { Voice = 0, Engine, Aether };
+///
+/// Phase 11 (seraphis-phase11-ui, C-10) appends `Effects` - a FOURTH owner built
+/// exactly like `Aether`: its rows are READ by the plugin through
+/// computeEffectsTargets() and are never written by apply(), because the effects
+/// stage is Layer 4 and this header may not name a Layer 4 type (:20-21).
+/// Appended last, so `Voice`, `Engine` and `Aether` keep their shipped values.
+enum class SeraphisMacroTargetOwner : std::uint8_t { Voice = 0, Engine, Aether, Effects };
 
 /// Every parameter any macro row may write.
 enum class SeraphisMacroTarget : std::uint8_t {
@@ -85,6 +91,12 @@ enum class SeraphisMacroTarget : std::uint8_t {
     AetherBloomSend,
     AetherSizeBreathDepth,
     AetherDimensionalityTideDepth,
+    // -- Effects-owned (each MUST have a 1:1 field in SeraphisEffectsTargets) --
+    // Phase 11 / C-10. APPENDED IMMEDIATELY BEFORE `Count`, which is what keeps
+    // every existing target's index - and therefore aetherFieldIndex()'s window
+    // and every SeraphisAetherTargets field offset - unchanged.
+    FxDelaySend,
+    FxWanderDepth,
     Count
 };
 
@@ -116,6 +128,21 @@ struct SeraphisAetherTargets {
     float bloomSend = 0.0f;
     float sizeBreathDepth = 0.20f;
     float dimensionalityTideDepth = 0.20f;
+};
+
+/// Phase 11 / C-10. The Effects-owned rows as plain floats - like
+/// SeraphisAetherTargets above, NO Layer 4 type is named (:105's rule); the
+/// caller pushes these into its own effects stage.
+///
+/// Fields are declared IN ENUM ORDER, so effectsFieldIndex() is a pure offset.
+///
+/// Both defaults are the SHIPPED parameter defaults, which is what makes the
+/// composition an exact identity at the FR-060 neutrals:
+///   delaySend   0.0f  kFxDelayMixDefault    - plugins/seraphis/src/parameters/effects_params.h:105
+///   wanderDepth 0.0f  kFxWanderDepthDefault - :117
+struct SeraphisEffectsTargets {
+    float delaySend = 0.0f;
+    float wanderDepth = 0.0f;
 };
 
 /// FR-060 documented neutrals. Gravity is bipolar around 0.5; the rest are 0.
@@ -159,13 +186,18 @@ public:
 
     static constexpr std::size_t kNumMacros = static_cast<std::size_t>(SeraphisMacro::Count);
     static constexpr std::size_t kNumTargets = static_cast<std::size_t>(SeraphisMacroTarget::Count);
-    /// FR-058's table length. 8 Dream + 9 Bloom + 6 Dissolve + 4 Gravity + 3 Entropy.
-    static constexpr std::size_t kNumRows = 30;
+    /// FR-058's table length. 8 Dream + 9 Bloom + 7 Dissolve + 4 Gravity + 4 Entropy.
+    /// Was 30 through Phase 10; Phase 11 / C-10 appends exactly TWO Effects rows.
+    static constexpr std::size_t kNumRows = 32;
     /// First Aether-owned target; SeraphisAetherTargets' fields are declared in
     /// exactly this enum order, which is what everyAetherRowHasAPodField() checks.
     static constexpr std::size_t kFirstAetherTarget =
         static_cast<std::size_t>(SeraphisMacroTarget::AetherMix);
     static constexpr std::size_t kNumAetherTargets = 8;
+    /// Phase 11 / C-10. Same construction, for the Effects half.
+    static constexpr std::size_t kFirstEffectsTarget =
+        static_cast<std::size_t>(SeraphisMacroTarget::FxDelaySend);
+    static constexpr std::size_t kNumEffectsTargets = 2;
 
     // =========================================================================
     // FR-058. THE TABLE.
@@ -431,6 +463,88 @@ public:
          .base = 0.30f,  // :303
          .amount = 0.70f,
          .curve = ModCurve::Linear},  // -> 1.0
+
+        // ---------------------------------------------------------------------
+        // Phase 11 / C-10 - the two EFFECTS-owned rows. Appended, so no row
+        // above moves. Each `base` is the SHIPPED parameter default of the
+        // control it composes into (both 0.0f), which is FR-060's rule and what
+        // makes computeEffectsTargets() an EXACT {0, 0} at the neutrals.
+        //
+        // ModCurve::Linear on both: Stepped is forbidden by
+        // noRowUsesSteppedCurve (:495-503, asserted below the class).
+        //
+        // OQ-4 owns both amounts: they are MEASURED against a ruled acceptance
+        // band and written back into spec C-10 clause 1 in T026 of
+        // specs/seraphis-phase11-ui/tasks.md. Retuning means editing the amount
+        // here - never lowering a criterion. See the T025 STATUS note below for
+        // which of the two is measured and which is not.
+        //
+        // DISSOLVE -> FxDelaySend MOVED 0.35 -> 0.20 IN T013's BUILD PASS, and
+        // the number is MEASURED, not chosen. The pilot 0.35 put SC-005's
+        // ID-102 arm (integration/param_continuity_test.cpp, "no zipper, no
+        // click") over its 1.5x bound. Measured ratio maxTest/maxRef of the
+        // Dissolve automation render against `.amount`, everything else held:
+        //
+        //     .amount   SC-005 ratio (bound 1.5)   isolated return at Dissolve=1
+        //     0.00      1.3532  (pre-Phase-11)     - (send never runs)
+        //     0.12      1.4232                     ~-23.7 dB  OUTSIDE the band
+        //     0.20      1.4665                      -19.3 dB
+        //     0.35      1.5138  FAILS               -14.4 dB
+        //
+        // plan section 10.4's ruled acceptance band is [-20 dB, -6 dB] of the
+        // dry sum at Dissolve = 1, so 0.20 is the LOWEST in-band value and
+        // therefore the one with the most SC-005 headroom. BOTH margins are
+        // thin (2.2 % on SC-005, 0.7 dB inside the band) - T025 owns the final
+        // measurement and MUST re-run both.
+        //
+        // T025 STATUS (2026-08-04). The Dissolve amount is MEASURED and IN
+        // BAND: the four-row table above is the OQ-4 pilot for row 1, and
+        // 0.20 -> -19.3 dB is inside the ruled [-20 dB, -6 dB] with the
+        // five-point sweep monotone (integration/effects_chain_test.cpp,
+        // "Seraphis_MacroDissolve_ReachesEffects", SC-021(a)). It is therefore
+        // NOT a pilot value any more and is not to be re-guessed.
+        //
+        // THE ENTROPY -> FxWanderDepth amount (0.50f) IS ALSO MEASURED NOW
+        // (2026-08-04), and it did NOT move: its acceptance is the same shape as
+        // row 1's - the five-point Entropy sweep must be strictly monotone in
+        // the M/S SIDE RMS, measured over preOutputTapLForTest() /
+        // preOutputTapRForTest() with preOutputTapTruncatedForTest() == false -
+        // and at 0.50f the sweep is monotone and very nearly linear:
+        //
+        //   Entropy  isolated M/S side RMS of the effects stage
+        //   0.00     0            (exact - the ENGAGE predicate never fires)
+        //   0.25     0.000464157
+        //   0.50     0.000928180
+        //   0.75     0.001394900
+        //   1.00     0.001862240
+        //   ratio side(1)/side(0.25) = 4.01208, against 4.0 for exact linearity
+        //
+        // The near-linearity is the expected shape rather than luck: FR-024a
+        // makes the depth a PLUGIN-SIDE multiply, so the underlying BrownianDrift
+        // trajectory is identical at every sweep point. Measured by
+        // integration/effects_chain_test.cpp,
+        // "Seraphis_MacroDissolve_ReachesEffects", SC-021(a) Entropy section,
+        // which prints this table via WARN on a PASSING run. If the sweep ever
+        // stops being monotone THE AMOUNT MOVES, and the band does not.
+        //
+        // The reason the headroom is this
+        // tight is NOT this row: ID 102's SC-005 ratio was already 1.353 before
+        // Phase 11, against ~1.0 for every other in-scope ID (Dream 0.98,
+        // Bloom 1.03, Gravity 0.91, Entropy 1.01, 1410 1.02, 1441 1.12), so
+        // Dissolve's Phase 9 rows leave almost no room for any new audible reach.
+        // ---------------------------------------------------------------------
+        {.macro = SeraphisMacro::Dissolve,
+         .owner = SeraphisMacroTargetOwner::Effects,
+         .target = SeraphisMacroTarget::FxDelaySend,
+         .base = 0.0f,  // kFxDelayMixDefault, effects_params.h:105
+         .amount = 0.20f,
+         .curve = ModCurve::Linear},
+        {.macro = SeraphisMacro::Entropy,
+         .owner = SeraphisMacroTargetOwner::Effects,
+         .target = SeraphisMacroTarget::FxWanderDepth,
+         .base = 0.0f,  // kFxWanderDepthDefault, effects_params.h:117
+         .amount = 0.50f,
+         .curve = ModCurve::Linear},
     }};
 
     // =========================================================================
@@ -451,9 +565,22 @@ public:
         return static_cast<int>(i - kFirstAetherTarget);
     }
 
+    /// Phase 11 / C-10. The POD field index for an Effects-owned target, or -1.
+    /// Mirrors aetherFieldIndex() exactly; SeraphisEffectsTargets' fields are
+    /// declared in enum order, so this is a pure offset.
+    [[nodiscard]] static constexpr int effectsFieldIndex(SeraphisMacroTarget t) noexcept {
+        const auto i = static_cast<std::size_t>(t);
+        if (i < kFirstEffectsTarget || i >= (kFirstEffectsTarget + kNumEffectsTargets)) {
+            return -1;
+        }
+        return static_cast<int>(i - kFirstEffectsTarget);
+    }
+
     /// FR-058: no row may be unreachable. An Aether-owned target MUST carry
     /// owner == Aether and vice versa, or apply() and computeAetherTargets()
-    /// would disagree about who writes it.
+    /// would disagree about who writes it. Phase 11 / C-10 adds the SAME
+    /// BICONDITIONAL for the Effects half, so a row that names an effects target
+    /// with a Voice owner is a compile error rather than a silently dead row.
     [[nodiscard]] static constexpr bool everyRowOwnerIsValid(
         const std::array<SeraphisMacroRow, kNumRows>& rows) noexcept {
         for (const SeraphisMacroRow& row : rows) {
@@ -465,10 +592,15 @@ public:
             }
             const bool isAetherTarget = (aetherFieldIndex(row.target) >= 0);
             const bool isAetherOwner = (row.owner == SeraphisMacroTargetOwner::Aether);
+            const bool isEffectsTarget = (effectsFieldIndex(row.target) >= 0);
+            const bool isEffectsOwner = (row.owner == SeraphisMacroTargetOwner::Effects);
             if (isAetherTarget != isAetherOwner) {
                 return false;
             }
-            if (!isAetherOwner && row.owner != SeraphisMacroTargetOwner::Voice
+            if (isEffectsTarget != isEffectsOwner) {
+                return false;
+            }
+            if (!isAetherOwner && !isEffectsOwner && row.owner != SeraphisMacroTargetOwner::Voice
                 && row.owner != SeraphisMacroTargetOwner::Engine) {
                 return false;
             }
@@ -482,6 +614,19 @@ public:
         for (const SeraphisMacroRow& row : rows) {
             if (row.owner == SeraphisMacroTargetOwner::Aether
                 && aetherFieldIndex(row.target) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Phase 11 / C-10: an Effects row absent from SeraphisEffectsTargets is a
+    /// compile error. Mirrors everyAetherRowHasAPodField above.
+    [[nodiscard]] static constexpr bool everyEffectsRowHasAPodField(
+        const std::array<SeraphisMacroRow, kNumRows>& rows) noexcept {
+        for (const SeraphisMacroRow& row : rows) {
+            if (row.owner == SeraphisMacroTargetOwner::Effects
+                && effectsFieldIndex(row.target) < 0) {
                 return false;
             }
         }
@@ -678,6 +823,24 @@ public:
         return out;
     }
 
+    /// @brief Phase 11 / C-10. Pure function of the knobs and the table; writes
+    ///        nothing. A copy of computeAetherTargets() for the Effects half.
+    ///
+    /// apply(SeraphisEngine&) gains NO line for these: an Effects-owned target is
+    /// READ by the plugin, exactly as the Aether ones are, because the effects
+    /// stage is Layer 4 and this header may not name it.
+    ///
+    /// EXACT at the FR-060 neutrals: both rows carry base = 0 and Linear, and
+    /// applyModCurve(c, 0) == 0, so the return is {0.0f, 0.0f} bit-for-bit and
+    /// the plugin-side composition is a true no-op at the shipped defaults.
+    [[nodiscard]] SeraphisEffectsTargets computeEffectsTargets() const noexcept {
+        const std::array<float, kNumTargets> v = evaluateAll();
+        SeraphisEffectsTargets out{};
+        out.delaySend = at(v, SeraphisMacroTarget::FxDelaySend);
+        out.wanderDepth = at(v, SeraphisMacroTarget::FxWanderDepth);
+        return out;
+    }
+
     // =========================================================================
     // FR-003 / FR-004 (Phase 9, spec slug seraphis-phase9-parameters, plan §1.4)
     //
@@ -823,6 +986,14 @@ static_assert(SeraphisMacroMatrix::everyTargetInFr061to065IsPresent(SeraphisMacr
               "FR-061..FR-065: every enumerated target must be claimed by at least one row");
 static_assert(SeraphisMacroMatrix::everyRowSharesOneBasePerTarget(SeraphisMacroMatrix::kRows),
               "plan §4.3: rows sharing a target must agree on `base`");
+static_assert(SeraphisMacroMatrix::everyEffectsRowHasAPodField(SeraphisMacroMatrix::kRows),
+              "C-10: every Effects row must have a 1:1 SeraphisEffectsTargets field");
+// 27 pre-Phase-11 targets, counted off the enum above: 19 Voice-owned
+// (CloudInharmonicity .. EnvReleaseMs) + 8 Aether-owned (AetherMix ..
+// AetherDimensionalityTideDepth). Phase 11 / C-10 adds EXACTLY two.
+static_assert(static_cast<std::size_t>(SeraphisMacroTarget::Count) == 29,
+              "C-10 / SC-021(d): 27 pre-Phase-11 targets + EXACTLY 2; a third needs a spec "
+              "amendment");
 
 }  // namespace DSP
 }  // namespace Krate

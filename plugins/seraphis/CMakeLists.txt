@@ -26,10 +26,30 @@ smtg_add_vst3plugin(${PLUGIN_NAME}
     # Processor (Audio Thread)
     src/processor/processor.h
     src/processor/processor.cpp
+    src/processor/cloud_frame.h
 
     # Controller (UI Thread)
     src/controller/controller.h
     src/controller/controller.cpp
+
+    # Custom Views (UI Thread) — Seraphis Phase 11 (specs/seraphis-phase11-ui).
+    # This list is ENUMERATED, never globbed: a plugin .cpp that is missing here
+    # still compiles inside seraphis_tests (which lists them a second time) and
+    # fails ONLY at the plugin link step, as unresolved externals from
+    # controller.obj. Every new .cpp must appear in BOTH lists.
+    #
+    # T027 audit (the phase's single authoritative CMake pass): the nine Phase 11
+    # entries — src/processor/cloud_frame.h above, plus the eight below — are each
+    # present EXACTLY ONCE here, and the three .cpp files are each present a second
+    # time in tests/CMakeLists.txt's seraphis_tests list.
+    src/ui/edit_message.h
+    src/ui/cloud_view.h
+    src/ui/cloud_view.cpp
+    src/ui/macro_ring_knob.h
+    src/ui/drawer_container.h
+    src/ui/drawer_container.cpp
+    src/ui/edit_sub_controller.h
+    src/ui/edit_sub_controller.cpp
 
     # Parameter Packs
     src/parameters/global_params.h
