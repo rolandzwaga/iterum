@@ -559,6 +559,21 @@ been the fix.
 engine, not the effects stage, not Phase 11's producer (all three are already inside their own budgets and
 have their own criteria).
 
+**SCOPE RULING 2026-08-04 (phase-owner): WIDENED TO THE ENGINE RENDER PATH.** Step 0 of this phase
+instrumented `process()` itself (eight test-gated stage timers, `processor.h` `DecompStage`; diagnostic
+case `Seraphis_WholeProcess_Decomposition`, `ui_perf_test.cpp`) and **measured the paragraph above to be
+wrong**: at the failing SC-010(b) operating point the engine voice sum is **~91 % of the whole wall time**
+(42.1 % of one core on the measuring machine) while ALL Processor plumbing combined is **0.06 %** static
+and **0.53 %** under a Bloom sweep — the slice loop runs ONE slice per block at the static operating
+point, and the "~9.2-point remainder" was arithmetic between two non-identical test configurations (the
+chain-only subject renders a Metal Plate body at diffusion FFT 4096; the plugin ships FFT 1024), not a
+measured cost. No in-scope work could recover the ~6.7 points the target needs. The phase therefore
+attacks the **engine render path in `dsp/`** (per-component attribution first, then the measured
+hotspots — the per-sample SIMD dispatch in `HarmonicCloud`, the morph pipeline's unconditional `exp2`
+pass, the anti-alias `sqrt` pass, and whatever the attribution ranks above them). Every `dsp/` change is
+pinned by render-behavior tests (aggregate metrics, never bit digests) and the full DSP + plugin suites.
+The exit criteria below are UNCHANGED.
+
 **Phase 12 MUST NOT ship before this phase is green.** Release readiness that ships a 31.7 % instrument
 against a documented 25 % promise is not release readiness; the gate belongs here, ahead of the release
 phase, not inside it.

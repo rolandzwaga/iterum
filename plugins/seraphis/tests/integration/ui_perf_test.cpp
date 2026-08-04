@@ -1871,11 +1871,40 @@ constexpr std::array<const char*, kDecompStageCount> kDecompLabels{
     "Output     (saturator + limiter)       ",
 };
 
+constexpr std::size_t kVoiceStageCount =
+    static_cast<std::size_t>(Krate::DSP::SeraphisVoice::RenderStage::Count);
+
+/// Sub-rows of the Engine row, in SeraphisVoice::RenderStage order - the
+/// Step 0b engine-internal attribution, summed across all voices.
+constexpr std::array<const char*, kVoiceStageCount> kVoiceStageLabels{
+    "  Engine/Morph      (updateChunk+target)",
+    "  Engine/Cloud      (additive bank)     ",
+    "  Engine/Envelope   (per-sample gate)   ",
+    "  Engine/Body       (ContinuousBody)    ",
+    "  Engine/Atmos      (AtmosphereEngine)  ",
+    "  Engine/SpatialMix (sum+spatial+peak)  ",
+};
+
+constexpr std::size_t kAtmosStageCount =
+    static_cast<std::size_t>(Krate::DSP::AtmosphereEngine::ProcessStage::Count);
+
+/// Sub-rows of the Engine/Atmos row, in AtmosphereEngine::ProcessStage order -
+/// the Step 0c atmosphere-internal attribution, summed across all voices.
+constexpr std::array<const char*, kAtmosStageCount> kAtmosStageLabels{
+    "    Atmos/Control (64-grid step)       ",
+    "    Atmos/Grains  (capture+sweep)      ",
+    "    Atmos/Blur    (STFT round-trip)    ",
+    "    Atmos/Freeze  (2 freeze oscs+delay)",
+    "    Atmos/Finish  (xfade+trims+flush)  ",
+};
+
 /// One measured arm: the best-of-N trial's wall figure and that SAME trial's
 /// per-stage accumulator deltas, all normalised to per-block.
 struct DecompSample {
     double wallNs = std::numeric_limits<double>::max();
     std::array<double, kDecompStageCount> stageNs{};
+    std::array<double, kVoiceStageCount> voiceNs{};  ///< Step 0b: inside Engine
+    std::array<double, kAtmosStageCount> atmosNs{};  ///< Step 0c: inside Atmos
     double effectsNs = 0.0;     ///< effectsStageNs_, the Phase 10 timer
     double cloudFrameNs = 0.0;  ///< cloudFrameStageNs_, the Phase 11 timer
     std::size_t calls = 0;      ///< decompProcessCalls_ delta over the best trial
@@ -1898,6 +1927,27 @@ struct DecompSample {
     for (std::size_t i = 0; i < kDecompStageCount; ++i) {
         os << "  " << kDecompLabels[i] << "  : " << s.stageNs[i] << " ns  (" << pct(s.stageNs[i])
            << " %)\n";
+        if (i == static_cast<std::size_t>(Seraphis::Processor::DecompStage::Engine)) {
+            // Step 0b: the Engine row's internal split, summed across voices.
+            // The rows sum to LESS than Engine - the remainder is the engine's
+            // own per-chunk control steps, bus zero/accumulate and carry FIFO.
+            double voiceSum = 0.0;
+            for (std::size_t v = 0; v < kVoiceStageCount; ++v) {
+                os << "  " << kVoiceStageLabels[v] << ": " << s.voiceNs[v] << " ns  ("
+                   << pct(s.voiceNs[v]) << " %)\n";
+                voiceSum += s.voiceNs[v];
+                if (v == static_cast<std::size_t>(
+                        Krate::DSP::SeraphisVoice::RenderStage::Atmos)) {
+                    // Step 0c: the Atmos row's own internal split.
+                    for (std::size_t a = 0; a < kAtmosStageCount; ++a) {
+                        os << "  " << kAtmosStageLabels[a] << ": " << s.atmosNs[a] << " ns  ("
+                           << pct(s.atmosNs[a]) << " %)\n";
+                    }
+                }
+            }
+            os << "    Engine remainder (control/bus/FIFO)    : " << (s.stageNs[i] - voiceSum)
+               << " ns  (" << pct(s.stageNs[i] - voiceSum) << " %)\n";
+        }
     }
     os << "  EffectsStage (Phase 10's own timer)      : " << s.effectsNs << " ns  ("
        << pct(s.effectsNs) << " %)\n"
@@ -1927,6 +1977,8 @@ TEST_CASE("Seraphis_WholeProcess_Decomposition", "[.perf][phase11_5]") {
     // prepare()); the other two are per-case.
     fx->proc->setProcessDecompInstrumentedForTest(true);
     fx->proc->setCloudFrameInstrumentedForTest(true);
+    REQUIRE(fx->proc->engineForTest() != nullptr);
+    fx->proc->engineForTest()->setVoiceRenderInstrumentedForTest(true);  // Step 0b
 
     double audioSink = 0.0;
     const auto renderBlock = [&]() {
@@ -1936,10 +1988,33 @@ TEST_CASE("Seraphis_WholeProcess_Decomposition", "[.perf][phase11_5]") {
     };
 
     using Stage = Seraphis::Processor::DecompStage;
+    using VoiceStage = Krate::DSP::SeraphisVoice::RenderStage;
     const auto readStages = [&]() {
         std::array<double, kDecompStageCount> out{};
         for (std::size_t i = 0; i < kDecompStageCount; ++i) {
             out[i] = fx->proc->decompNsForTest(static_cast<Stage>(i));
+        }
+        return out;
+    };
+    const auto readVoiceStages = [&]() {
+        std::array<double, kVoiceStageCount> out{};
+        for (std::size_t i = 0; i < kVoiceStageCount; ++i) {
+            out[i] = fx->proc->engineForTest()->voiceRenderStageNsForTest(
+                static_cast<VoiceStage>(i));
+        }
+        return out;
+    };
+    using AtmosStage = Krate::DSP::AtmosphereEngine::ProcessStage;
+    const auto readAtmosStages = [&]() {
+        std::array<double, kAtmosStageCount> out{};
+        const auto* engine = fx->proc->engineForTest();
+        for (std::size_t i = 0; i < kAtmosStageCount; ++i) {
+            double sum = 0.0;
+            for (std::size_t v = 0; v < Krate::DSP::SeraphisEngine::kMaxVoices; ++v) {
+                sum += engine->getVoice(v).atmos().processStageNsForTest(
+                    static_cast<AtmosStage>(i));
+            }
+            out[i] = sum;
         }
         return out;
     };
@@ -1952,6 +2027,8 @@ TEST_CASE("Seraphis_WholeProcess_Decomposition", "[.perf][phase11_5]") {
         const auto blocks = static_cast<double>(kPerfBlocksPerTrial);
         for (int trial = 0; trial < kPerfTrials; ++trial) {
             const auto stages0 = readStages();
+            const auto voice0 = readVoiceStages();
+            const auto atmos0 = readAtmosStages();
             const double effects0 = fx->proc->effectsStageNsForTest();
             const double cloud0 = fx->proc->cloudFrameStageNsForTest();
             const std::size_t calls0 = fx->proc->decompProcessCallsForTest();
@@ -1969,6 +2046,14 @@ TEST_CASE("Seraphis_WholeProcess_Decomposition", "[.perf][phase11_5]") {
                 const auto stages1 = readStages();
                 for (std::size_t i = 0; i < kDecompStageCount; ++i) {
                     best.stageNs[i] = (stages1[i] - stages0[i]) / blocks;
+                }
+                const auto voice1 = readVoiceStages();
+                for (std::size_t i = 0; i < kVoiceStageCount; ++i) {
+                    best.voiceNs[i] = (voice1[i] - voice0[i]) / blocks;
+                }
+                const auto atmos1 = readAtmosStages();
+                for (std::size_t i = 0; i < kAtmosStageCount; ++i) {
+                    best.atmosNs[i] = (atmos1[i] - atmos0[i]) / blocks;
                 }
                 best.effectsNs = (fx->proc->effectsStageNsForTest() - effects0) / blocks;
                 best.cloudFrameNs = (fx->proc->cloudFrameStageNsForTest() - cloud0) / blocks;

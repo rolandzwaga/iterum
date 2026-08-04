@@ -1044,6 +1044,26 @@ public:
         return (index < kMaxVoices) ? lastBloomCount_[index] : std::size_t{0};
     }
 
+    // =========================================================================
+    // Phase 11.5 Step 0b - voice render-stage instrumentation passthrough.
+    // Test-only; the gate is FALSE on every shipping path (see
+    // SeraphisVoice::RenderStage). The accessor SUMS across all kMaxVoices so
+    // the caller reads the engine's aggregate per-stage cost directly.
+    // =========================================================================
+    void setVoiceRenderInstrumentedForTest(bool on) noexcept {
+        for (auto& v : voices_) {
+            v.setRenderInstrumentedForTest(on);
+        }
+    }
+    [[nodiscard]] double voiceRenderStageNsForTest(
+        SeraphisVoice::RenderStage stage) const noexcept {
+        double sum = 0.0;
+        for (const auto& v : voices_) {
+            sum += v.renderStageNsForTest(stage);
+        }
+        return sum;
+    }
+
 private:
     /// Plan §4.4: the macro matrix needs NON-const voice access, which FR-085's
     /// const getVoice() deliberately is not. Declared here so T013 never has to

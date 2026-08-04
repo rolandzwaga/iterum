@@ -157,6 +157,7 @@
 #include <array>
 #include <bit>      // std::bit_floor, std::bit_ceil, std::has_single_bit
 #include <cassert>  // prepare()-time sanity only (debug builds); never on the audio path
+#include <chrono>   // Phase 11.5 Step 0c: test-gated stage timers only
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -431,6 +432,13 @@ public:
         //    not from here - see setDensity()/setJitter().
         scheduler_.prepare(sampleRate_);
 
+        // 5b. Phase 11.5 pass-A/pass-B scratch (renderGrainChunk). Sized ONCE
+        //     here: <= kMaxGrains grains active at a chunk start plus
+        //     <= kControlChunkSamples births can retire inside one chunk, and
+        //     kControlChunkSamples == kMaxGrains, so 2 * kMaxGrains bounds both.
+        retiredScratch_.assign(kMaxGrains * 2, RetiredGrainSpan{});
+        dueScratch_.assign(kMaxGrains * 2, DueEntry{});
+
         // 6. Drift lanes.
         driftSmoothCoeff_ =
             calculateOnePolCoefficient(kDriftOutputSmoothMs, static_cast<float>(sampleRate_));
@@ -698,14 +706,29 @@ public:
             const std::size_t toGrid = kControlChunkSamples - phase;
             const std::size_t n = std::min(numSamples - done, toGrid);
 
+            // Phase 11.5 Step 0c. FALSE on every shipping path (see ProcessStage).
+            const bool inst = processInstrumented_;
+            std::chrono::steady_clock::time_point instT{};
+            if (inst) {
+                instT = std::chrono::steady_clock::now();
+            }
+
             // (A) Control step - ONLY on an exact grid boundary.
             if (phase == 0) {
                 runControlStep();
+            }
+            if (inst) {
+                instT = stageLap(processStageNs_[static_cast<std::size_t>(ProcessStage::Control)],
+                                 instT);
             }
 
             // (B) Capture, schedule, birth and per-sample grain accumulation
             //     into busL_ / busR_.
             renderGrainChunk(inLeft + done, inRight + done, n);
+            if (inst) {
+                instT = stageLap(processStageNs_[static_cast<std::size_t>(ProcessStage::Grains)],
+                                 instT);
+            }
 
             // (C) Blur. When enabled the grain sum is routed through the
             //     STFT <-> OverlapAdd stage UNCONDITIONALLY (FR-041), so the path
@@ -724,6 +747,10 @@ public:
                 std::copy(busL_.begin(), busL_.begin() + span, wetL_.begin());
                 std::copy(busR_.begin(), busR_.begin() + span, wetR_.begin());
             }
+            if (inst) {
+                instT = stageLap(processStageNs_[static_cast<std::size_t>(ProcessStage::Blur)],
+                                 instT);
+            }
 
             // (D) The pure-freeze leg (FR-050 ... FR-053), rendered into
             //     freezeL_ / freezeR_. The drone is NEVER routed through the
@@ -732,12 +759,20 @@ public:
             //     blurFftSize_-sample delay, so both crossfade legs share one
             //     layer latency and FR-046 reports a single honest number.
             renderFreezeChunk(n);
+            if (inst) {
+                instT = stageLap(processStageNs_[static_cast<std::size_t>(ProcessStage::Freeze)],
+                                 instT);
+            }
 
             // (E) The FR-052 crossfade, the FR-061 level trim, the FR-007
             //     silence ramp and the FR-064 denormal flush. The result is
             //     FR-062 compliant: the input reaches the output ONLY through
             //     grains and the freeze drone, never as a dry pass-through.
             finishChunk(outLeft + done, outRight + done, n);
+            if (inst) {
+                (void)stageLap(processStageNs_[static_cast<std::size_t>(ProcessStage::Finish)],
+                               instT);
+            }
 
             sampleCounter_ += n;
             done += n;
@@ -984,6 +1019,25 @@ public:
         }
     }
     [[nodiscard]] std::uint32_t getSeed() const noexcept { return seed_; }
+
+    // =========================================================================
+    // Phase 11.5 Step 0c - processStereoBlock() stage instrumentation
+    // (test-only). Same discipline as SeraphisVoice::RenderStage: the gate is
+    // FALSE on every shipping path, so a shipped render pays five always-false
+    // branches per control chunk and never reads a clock.
+    // =========================================================================
+    enum class ProcessStage : std::size_t {
+        Control,  ///< (A) runControlStep on the 64-sample grid
+        Grains,   ///< (B) renderGrainChunk: capture, scheduler, grain sweep
+        Blur,     ///< (C) pumpBlur STFT round-trip (or the copy at blur off)
+        Freeze,   ///< (D) renderFreezeChunk: the two freeze oscillators + delay
+        Finish,   ///< (E) finishChunk: crossfade, trims, silence ramp, flush
+        Count
+    };
+    void setProcessInstrumentedForTest(bool on) noexcept { processInstrumented_ = on; }
+    [[nodiscard]] double processStageNsForTest(ProcessStage stage) const noexcept {
+        return processStageNs_[static_cast<std::size_t>(stage)];
+    }
 
     // =========================================================================
     // Introspection (FR-072). All const, noexcept, allocation-free.
@@ -1753,14 +1807,163 @@ private:
         foldObservedAge(static_cast<float>(birthAge + decorr));
     }
 
+    /// @brief Render ONE grain's contiguous span of chunk samples into the bus.
+    ///        Phase 11.5 pass B's inner kernel - see renderGrainChunk's banner.
+    ///
+    /// Mutates `grain`'s read position and age in REGISTERS and stores them
+    /// back once, which is the restructure's whole point: the former shape
+    /// re-loaded and re-stored every field once per grain per sample.
+    ///
+    /// @param start      first chunk sample the grain sounds on
+    /// @param spanEnd    one past its last sample (<= numSamples)
+    /// @param retires    true iff spanEnd - 1 is the grain's retirement sample
+    ///                   (folds the retirement age exactly as the former shape)
+    /// @param numSamples the chunk length (for the S9.8 edge-fold identity and
+    ///                   the reader rebase offset)
+    /// @param chunkBase  newest absolute index AS OF SAMPLE 0 - every age is
+    ///                   formed relative to EACH SAMPLE's write head
+    ///                   (chunkBase + i) in the integer domain, bit-identical
+    ///                   to the former per-sample expression; the end-of-chunk
+    ///                   reader is index-rebased per sample to match
+    void renderGrainSpan(AtmosphereGrain& grain, std::size_t start, std::size_t spanEnd,
+                         bool retires, std::size_t numSamples,
+                         const RollingCaptureBuffer::LinearReader& reader, const float* envelope,
+                         std::uint64_t chunkBase) noexcept {
+        // Register-resident hot state for the whole span.
+        std::uint64_t readIndexInt = grain.readIndexInt;
+        float readFrac = grain.readFrac;
+        const float ratio = grain.ratio;  // held constant within a chunk (FR-024)
+        const float envPhaseInc = grain.envPhaseInc;
+        const float panL = grain.panL;
+        const float panR = grain.panR;
+        const float decorrAge = grain.decorrAge;
+        std::uint32_t age = grain.ageSamples;
+
+        for (std::size_t i = start; i < spanEnd; ++i) {
+            // The age is formed against THIS SAMPLE's write head (chunkBase +
+            // i) in the integer domain - BIT-IDENTICAL to the former
+            // one-snapshot-per-sample expression, and that is load-bearing:
+            // formed against the END-of-chunk head instead, the float
+            // quantization of a large age becomes a function of where the
+            // chunk boundary fell, and the render stops being
+            // partition-invariant (measured: 3.3e-4 against the 1e-5 partition
+            // bound). The difference is non-negative by construction (read age
+            // >= kMinAgeSamples = 64 >= numSamples - also why pass A's
+            // captures could be hoisted ahead of every read) and bounded by
+            // C - 2 < 2^22, so the int64 -> float conversion is EXACT; the
+            // SIGNED intermediate compiles to one vcvtsi2ss.
+            const float ageNow =
+                static_cast<float>(static_cast<std::int64_t>(
+                    (chunkBase + static_cast<std::uint64_t>(i)) - readIndexInt)) -
+                readFrac;
+
+            // Envelope phase is MULTIPLIED, never accumulated: ageSamples is
+            // exact to 2^24, so this costs one rounding, whereas a
+            // `phase += 1/L'` accumulator over 1.44 M additions drifts by up
+            // to ~4 % of full scale and would retire a grain at envelope
+            // ~0.02 instead of 0 - a click.
+            const float env = GrainEnvelope::lookup(
+                envelope, kEnvelopeTableSize, static_cast<float>(age) * envPhaseInc);
+
+            // The reader snapshot is END-of-chunk; the index is rebased by how
+            // many samples newer than sample i that snapshot is, so position
+            // and interpolation weights match the former per-sample snapshot
+            // bit for bit.
+            const std::size_t newerOffset = numSamples - 1u - i;
+            float grainL = 0.0f;
+            float grainR = 0.0f;
+            reader.readStereoOffset(ageNow, newerOffset, grainL, grainR);
+            if (decorrAge > 0.0f) {
+                // The R channel reads a DIFFERENT point of the ring. Skipped
+                // entirely at decorrelation = 0. readRightOffset() rather than
+                // a second stereo read: the left half of that read was loaded,
+                // interpolated and discarded.
+                grainR = reader.readRightOffset(ageNow + decorrAge, newerOffset);
+            }
+            busL_[i] += env * panL * grainL;
+            busR_[i] += env * panR * grainR;
+
+            // S9.8's age fold: the chunk's first and last sample, plus the
+            // retirement sample (the former `if (!foldNow)` retire fold - the
+            // disjunction below folds each qualifying sample exactly once
+            // either way). ageNow is already the per-sample-head value the
+            // former shape folded.
+            const bool edgeFold = (i == 0) || (i + 1 == numSamples);
+            const bool retireFold = retires && (i + 1 == spanEnd);
+            if (edgeFold || retireFold) {
+                foldObservedAge(ageNow);
+                if (decorrAge > 0.0f) {
+                    foldObservedAge(ageNow + decorrAge);
+                }
+            }
+
+            // Advance: integer + fraction, exact for the whole lifetime at
+            // any rate. TRUNCATION, NOT std::floor: readFrac is non-negative
+            // for the grain's whole life, so truncation toward zero IS the
+            // floor - and std::floor(float) is a CRT call on MSVC's default
+            // /arch. The carry is in [0, 8] because ratio <= 8.
+            readFrac += ratio;
+            const auto carryInt = static_cast<std::int32_t>(readFrac);
+            readIndexInt += static_cast<std::uint64_t>(carryInt);
+            readFrac -= static_cast<float>(carryInt);
+            ++age;
+        }
+
+        grain.readIndexInt = readIndexInt;
+        grain.readFrac = readFrac;
+        grain.ageSamples = age;
+    }
+
     /// @brief Capture, schedule and accumulate ONE control chunk into
     ///        busL_ / busR_ (plan S9.1, S9.2, S9.7, S9.8).
     ///
     /// @param numSamples Always <= kControlChunkSamples, because
     ///        processStereoBlock partitions on the absolute control grid.
+    ///
+    /// PHASE 11.5 GRAIN-SWEEP RESTRUCTURE (2026-08-04). The former shape was
+    /// one per-SAMPLE loop sweeping every active grain: an AoS re-load, an
+    /// envelope lookup, a ring read and a full state store per grain per
+    /// sample, plus a fresh LinearReader snapshot per sample. Whole-process()
+    /// attribution at the Seraphis 8-voice operating point measured that sweep
+    /// at 25.4 % of one core - the single largest cost in the plugin - and the
+    /// kMaxGrains banner's measurement shows the cost is instruction-bound, so
+    /// the win is constant-factor: hold each grain's state in registers across
+    /// the chunk (renderGrainSpan) instead of re-loading it per sample.
+    ///
+    /// THREE PASSES, SAME OBSERVABLE BEHAVIOUR:
+    ///   A (per sample): pending in-chunk retirements (bookkeeping only, so a
+    ///     slot freed at sample r is available to a birth from sample r + 1 -
+    ///     the former availability exactly), then capture write, then
+    ///     scheduler tick + birth. RNG draw order, every admission decision
+    ///     (which reads getAvailableSamples() AS OF THAT SAMPLE) and every
+    ///     counter are sample-exact. Retiring grains are SNAPSHOTTED
+    ///     (RetiredGrainSpan) because a re-birth may overwrite the slot before
+    ///     pass B renders it.
+    ///   B (per grain): render each span into the zeroed bus. VALID because no
+    ///     grain ever reads audio captured in this chunk: read age >=
+    ///     kMinAgeSamples = 64 >= numSamples (FR-014's guard, established at
+    ///     birth and preserved by the advance), so every position any read
+    ///     touches is older than every pass-A write. Grains still active
+    ///     render [birth offset, numSamples) and CANNOT retire here - every
+    ///     in-chunk retirement was consumed by pass A.
+    ///   C (per sample): the FR-028 population gain and the FR-063 poison
+    ///     accumulator, verbatim (the smoother still advances exactly once per
+    ///     output sample).
+    ///
+    /// WHAT IS AND IS NOT PRESERVED. RNG streams, admission decisions, grain
+    /// trajectories, retirement/birth counters, end-of-chunk engine state,
+    /// per-grain sample values (age formed against the PER-SAMPLE write head
+    /// in the integer domain + the index-rebased reader keep position, weights
+    /// and fold ages bit-identical - which is also what keeps the render
+    /// PARTITION-invariant) and FR-071 determinism are EXACT. The one
+    /// non-bit-exact residue: each output sample's contributions accumulate
+    /// grain-by-grain into the bus instead of inside one per-sample register
+    /// chain, so when a mid-chunk retirement re-orders the active list the
+    /// addition ORDER can differ from the former shape - last-ULP rounding,
+    /// inside every render-fingerprint tolerance.
     void renderGrainChunk(const float* inLeft, const float* inRight,
                           std::size_t numSamples) noexcept {
-        // --- Pass 1 of the FR-063 input sanitiser: numSamples adds, NO calls.
+        // --- FR-063 input sanitiser, pass 1: numSamples adds, NO calls.
         //     isFinite() is deliberately non-inlinable (~2 ns), so a per-sample
         //     call would cost several percent of the whole CPU budget on its
         //     own. Nothing can hide from the sum: NaN and +/-Inf both propagate
@@ -1774,15 +1977,65 @@ private:
         }
         const bool chunkClean = isFinite(probe);  // ONE call per chunk
 
-        const float* envelope = activeEnvelope();
+        // --- PASS A: retirements due, capture, scheduler, births -------------
+        // The due list holds every in-chunk retirement, sorted ascending by
+        // retirement sample; equal keys keep activeIdx_ order, mirroring the
+        // former sweep's same-sample retirement order.
+        std::size_t dueCount = 0;
+        for (std::size_t j = 0; j < activeCount_; ++j) {
+            const std::size_t slot = activeIdx_[j];
+            const AtmosphereGrain& g = grains_[slot];
+            const auto remaining = static_cast<std::size_t>(g.lifetime - g.ageSamples);  // >= 1
+            if (remaining <= numSamples) {
+                const auto r = static_cast<std::uint32_t>(remaining - 1);
+                std::size_t k = dueCount;
+                while (k > 0 && dueScratch_[k - 1].r > r) {
+                    dueScratch_[k] = dueScratch_[k - 1];
+                    --k;
+                }
+                dueScratch_[k] = DueEntry{r, static_cast<std::uint8_t>(slot)};
+                ++dueCount;
+            }
+        }
+        std::size_t dueCursor = 0;
+        std::size_t retiredCount = 0;
+
+        // bornAt[slot] = birth offset + 1 within THIS chunk; 0 = active since
+        // chunk start. 256 B of stack, zeroed per chunk.
+        std::array<std::uint32_t, kMaxGrains> bornAt{};
+
+        const auto bookkeepingRetire = [&](std::uint32_t r, std::size_t slot) noexcept {
+            RetiredGrainSpan& e = retiredScratch_[retiredCount];
+            ++retiredCount;
+            e.grain = grains_[slot];
+            e.start = (bornAt[slot] > 0u) ? (bornAt[slot] - 1u) : 0u;
+            e.end = r + 1u;
+            grains_[slot].active = false;
+            // Counted INDEPENDENTLY here rather than derived as (born - active),
+            // so `retired + active == born` is a real assertion instead of the
+            // tautology a STEALING implementation would also satisfy.
+            ++totalRetired_;
+            for (std::size_t j = 0; j < activeCount_; ++j) {
+                if (activeIdx_[j] == slot) {
+                    activeIdx_[j] = activeIdx_[--activeCount_];  // swap-remove
+                    break;
+                }
+            }
+        };
 
         for (std::size_t i = 0; i < numSamples; ++i) {
+            // Retire every grain whose final sample was i - 1: its slot is
+            // available to a birth from THIS sample, the former availability
+            // exactly.
+            while (dueCursor < dueCount && dueScratch_[dueCursor].r + 1u == i) {
+                bookkeepingRetire(dueScratch_[dueCursor].r, dueScratch_[dueCursor].slot);
+                ++dueCursor;
+            }
+
             // --- Capture, BEFORE any ring read for this sample (FR-012). That
-            //     ordering IS the self-granulation the roadmap asks for: a grain
-            //     may legitimately read audio produced in the same block. After
+            //     ordering IS the self-granulation the roadmap asks for. After
             //     the write the newest sample has absolute index
-            //     writeCounter_ - 1 and age 0 - the identity every age
-            //     computation below uses.
+            //     writeCounter_ - 1 and age 0.
             float sampleL = inLeft[i];
             float sampleR = inRight[i];
             if (!chunkClean) {  // rare path: per-sample substitution, ring PRESERVED
@@ -1798,113 +2051,68 @@ private:
                               // saturates at capacity (:119-121) and cannot serve
 
             // --- Scheduling (FR-021). GrainScheduler::process() draws exactly
-            //     one rng value on a trigger (grain_scheduler.h:82).
+            //     one rng value on a trigger (grain_scheduler.h:82). The
+            //     admission tests inside tryBirthGrain() read the capture ring
+            //     AS OF THIS SAMPLE - this pass stays per-sample for exactly
+            //     that reason.
             if (scheduler_.process()) {
+                const std::size_t before = activeCount_;
                 tryBirthGrain();
-            }
-
-            // --- Accumulation (FR-024, FR-026, FR-034). NO per-grain amplitude
-            //     term: it would be identically 1, so it exists neither as a
-            //     field nor as a multiply.
-            const bool foldNow = (i == 0) || (i + 1 == numSamples);
-            const std::uint64_t newest = writeCounter_ - std::uint64_t{1};
-            // ONE ring-state snapshot per OUTPUT SAMPLE, not two per grain
-            // (rolling_capture_buffer.h, LinearReader). The available count, its
-            // float maxAge, the write index, the capacity, the mask and both
-            // data pointers are invariant across the whole grain sweep below -
-            // only the age changes - so re-deriving them 2 x activeCount_ times
-            // per sample was pure setup. Taken AFTER writeStereo(), so age 0 is
-            // this sample, which is FR-012's self-granulation identity.
-            const RollingCaptureBuffer::LinearReader reader = capture_.makeLinearReader();
-            float sumL = 0.0f;
-            float sumR = 0.0f;
-            for (std::size_t j = 0; j < activeCount_;) {
-                AtmosphereGrain& grain = grains_[activeIdx_[j]];
-
-                // newest - readIndexInt is a uint64 difference, non-negative by
-                // construction (ageLo >= 64 > 0, so a grain never reads ahead of
-                // the write head) and bounded by C - 2 < 2^22, so the conversion
-                // to float is EXACT at every sample rate for the whole 30 s
-                // lifetime. A float read position is not: at 30 s and 48 kHz the
-                // position reaches 1 440 000 samples where the float ULP is
-                // 0.125 samples.
-                //
-                // The SIGNED intermediate is a codegen decision: x86-64 has no
-                // unsigned-64 -> float instruction below AVX-512, so a bare
-                // `static_cast<float>(uint64)` expands to a compare, a branch
-                // and a fix-up. The difference is < 2^22 by construction, so
-                // routing it through int64_t is value-identical and compiles to
-                // one vcvtsi2ss.
-                const float ageL =
-                    static_cast<float>(static_cast<std::int64_t>(newest - grain.readIndexInt)) -
-                    grain.readFrac;
-
-                // Envelope phase is MULTIPLIED, never accumulated: ageSamples is
-                // exact to 2^24, so this costs one rounding, whereas a
-                // `phase += 1/L'` accumulator over 1.44 M additions drifts by up
-                // to ~4 % of full scale and would retire a grain at envelope
-                // ~0.02 instead of 0 - a click.
-                const float env =
-                    GrainEnvelope::lookup(envelope, kEnvelopeTableSize,
-                                          static_cast<float>(grain.ageSamples) * grain.envPhaseInc);
-
-                float grainL = 0.0f;
-                float grainR = 0.0f;
-                reader.readStereo(ageL, grainL, grainR);
-                if (grain.decorrAge > 0.0f) {
-                    // The R channel reads a DIFFERENT point of the ring. Skipped
-                    // entirely at decorrelation = 0. readRight() rather than a
-                    // second stereo read: the left half of that read was loaded,
-                    // interpolated and discarded.
-                    grainR = reader.readRight(ageL + grain.decorrAge);
-                }
-                sumL += env * grain.panL * grainL;
-                sumR += env * grain.panR * grainR;
-
-                if (foldNow) {
-                    foldObservedAge(ageL);
-                    if (grain.decorrAge > 0.0f) {
-                        foldObservedAge(ageL + grain.decorrAge);
-                    }
-                }
-
-                // Advance: integer + fraction, exact for the whole lifetime at
-                // any rate. `ratio` is held constant within the chunk, so the
-                // age moves by exactly 1 - r per sample.
-                // TRUNCATION, NOT std::floor: readFrac is non-negative for the
-                // grain's whole life (it starts in [0, 1), gains ratio > 0 and
-                // loses exactly its own integer part), so truncation toward zero
-                // IS the floor - bit-identical, not approximately. std::floor
-                // needs SSE4.1's roundss, which MSVC does not target on the
-                // default /arch, so it compiles to a CRT call; here that call
-                // would run once per grain per output sample. The carry is in
-                // [0, 8] because ratio <= 8 (kMaxAbsGrainSemitones), so int32 is
-                // ample.
-                grain.readFrac += grain.ratio;
-                const auto carryInt = static_cast<std::int32_t>(grain.readFrac);
-                const float carry = static_cast<float>(carryInt);
-                grain.readIndexInt += static_cast<std::uint64_t>(carryInt);
-                grain.readFrac -= carry;
-
-                if (++grain.ageSamples >= grain.lifetime) {  // INTEGER compare
-                    if (!foldNow) {
-                        foldObservedAge(ageL);
-                        if (grain.decorrAge > 0.0f) {
-                            foldObservedAge(ageL + grain.decorrAge);
+                if (activeCount_ > before) {
+                    const std::size_t slot = activeIdx_[activeCount_ - 1];
+                    bornAt[slot] = static_cast<std::uint32_t>(i) + 1u;
+                    // A newborn can retire inside this same chunk (lifetime is
+                    // only bounded below by 2): insert its due entry into the
+                    // unconsumed, still-sorted suffix.
+                    const auto lifetime = static_cast<std::size_t>(grains_[slot].lifetime);
+                    if (i + lifetime <= numSamples) {
+                        const auto r = static_cast<std::uint32_t>(i + lifetime - 1u);
+                        std::size_t k = dueCount;
+                        while (k > dueCursor && dueScratch_[k - 1].r > r) {
+                            dueScratch_[k] = dueScratch_[k - 1];
+                            --k;
                         }
+                        dueScratch_[k] = DueEntry{r, static_cast<std::uint8_t>(slot)};
+                        ++dueCount;
                     }
-                    grain.active = false;
-                    // Counted INDEPENDENTLY here rather than derived as
-                    // (born - active), so `retired + active == born` is a real
-                    // assertion instead of the tautology a STEALING
-                    // implementation would also satisfy.
-                    ++totalRetired_;
-                    activeIdx_[j] = activeIdx_[--activeCount_];  // swap-remove; do NOT ++j
-                } else {
-                    ++j;
                 }
             }
+        }
+        // Retirements landing on the chunk's last sample(s) have no later
+        // sample to be consumed on - drain them so end-of-chunk state matches
+        // the former shape.
+        while (dueCursor < dueCount) {
+            bookkeepingRetire(dueScratch_[dueCursor].r, dueScratch_[dueCursor].slot);
+            ++dueCursor;
+        }
 
+        // --- PASS B: the grain sweep, one grain across its whole span --------
+        std::fill_n(busL_.data(), numSamples, 0.0f);
+        std::fill_n(busR_.data(), numSamples, 0.0f);
+        const float* envelope = activeEnvelope();
+        // ONE ring-state snapshot per CHUNK (rolling_capture_buffer.h,
+        // LinearReader), taken after pass A's final write: every position any
+        // grain reads is >= kMinAgeSamples old and therefore untouched by pass
+        // A's writes.
+        const RollingCaptureBuffer::LinearReader reader = capture_.makeLinearReader();
+        const std::uint64_t chunkBase =
+            (writeCounter_ - std::uint64_t{1}) - static_cast<std::uint64_t>(numSamples - 1);
+
+        for (std::size_t e = 0; e < retiredCount; ++e) {
+            RetiredGrainSpan& span = retiredScratch_[e];
+            renderGrainSpan(span.grain, span.start, span.end, /*retires=*/true, numSamples,
+                            reader, envelope, chunkBase);
+        }
+        for (std::size_t j = 0; j < activeCount_; ++j) {
+            const std::size_t slot = activeIdx_[j];
+            AtmosphereGrain& grain = grains_[slot];
+            const std::size_t start = (bornAt[slot] > 0u) ? (bornAt[slot] - 1u) : 0u;
+            renderGrainSpan(grain, start, numSamples, /*retires=*/false, numSamples, reader,
+                            envelope, chunkBase);
+        }
+
+        // --- PASS C: population gain + poison accumulator --------------------
+        for (std::size_t i = 0; i < numSamples; ++i) {
             // --- FR-028: the 1/sqrt(n) population gain. ONE multiply on the
             //     SUMMED stereo bus, after every live grain has been
             //     accumulated - never captured per grain, which would leave a
@@ -1920,8 +2128,8 @@ private:
             //     lag is not visibly wrong in any single test - which is why
             //     the cadence is stated rather than left to the reader.
             const float populationGain = gainSmoother_.process();
-            const float busSampleL = sumL * populationGain;
-            const float busSampleR = sumR * populationGain;
+            const float busSampleL = busL_[i] * populationGain;
+            const float busSampleR = busR_[i] * populationGain;
             busL_[i] = busSampleL;
             busR_[i] = busSampleR;
 
@@ -2250,6 +2458,16 @@ private:
         }
     }
 
+    /// Phase 11.5 Step 0c. Close one stage-timer region: add the elapsed ns
+    /// since `start` into `slot`, return a fresh start for the next region.
+    /// Only reachable behind the processInstrumented_ gate.
+    [[nodiscard]] static std::chrono::steady_clock::time_point stageLap(
+        double& slot, std::chrono::steady_clock::time_point start) noexcept {
+        const auto now = std::chrono::steady_clock::now();
+        slot += std::chrono::duration<double, std::nano>(now - start).count();
+        return now;
+    }
+
     /// End of the FR-007 ramp: retire every grain and latch. totalRetired_ is
     /// incremented BEFORE activeCount_ is zeroed so FR-072's
     /// `retired + active == born` identity holds through the latch as well as
@@ -2279,6 +2497,26 @@ private:
     std::array<AtmosphereGrain, kMaxGrains> grains_{};
     std::array<std::uint8_t, kMaxGrains> activeIdx_{};  ///< persistent, never rebuilt by scanning
     std::size_t activeCount_ = 0;
+
+    /// Phase 11.5: a grain that retired mid-chunk (renderGrainChunk pass A),
+    /// SNAPSHOTTED for pass B rendering - a snapshot and never a pointer,
+    /// because the freed slot may be re-born within the same chunk and
+    /// grains_[slot] overwritten before pass B runs.
+    struct RetiredGrainSpan {
+        AtmosphereGrain grain{};
+        std::uint32_t start = 0;  ///< first chunk sample the span renders
+        std::uint32_t end = 0;    ///< one past the retirement sample
+    };
+    /// A pending in-chunk retirement: grain in `slot` renders its last sample
+    /// at chunk offset `r`.
+    struct DueEntry {
+        std::uint32_t r = 0;
+        std::uint8_t slot = 0;
+    };
+    // Sized once in prepare() (2 * kMaxGrains each); indexed by count, never
+    // pushed on the audio thread.
+    std::vector<RetiredGrainSpan> retiredScratch_;
+    std::vector<DueEntry> dueScratch_;
     std::size_t nextSlot_ = 0;  ///< FR-020 round-robin cursor
     GrainScheduler scheduler_;
     GrainDriftLanes driftLanes_;
@@ -2388,6 +2626,10 @@ private:
     std::size_t lastBirthSlot_ = 0;
     float lastBirthPanL_ = 1.0f;
     float lastBirthPanR_ = 1.0f;
+
+    // --- Phase 11.5 Step 0c stage timers (test-only; see ProcessStage) --------
+    bool processInstrumented_ = false;
+    std::array<double, static_cast<std::size_t>(ProcessStage::Count)> processStageNs_{};
 };
 
 }  // namespace DSP

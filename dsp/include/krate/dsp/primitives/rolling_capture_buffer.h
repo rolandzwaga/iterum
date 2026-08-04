@@ -224,6 +224,46 @@ public:
             return right_[i0] + frac_ * (right_[i1] - right_[i0]);
         }
 
+        /// @brief Read at `ageSamples` relative to a write head `newerOffset`
+        ///        samples BEFORE this snapshot's.
+        ///
+        /// Exists for AtmosphereEngine's chunk-hoisted grain sweep (Phase
+        /// 11.5): one snapshot serves a whole 64-sample chunk, but each output
+        /// sample's age must stay relative to THAT SAMPLE's write head - the
+        /// former one-snapshot-per-sample identity - or the float quantization
+        /// of a large age becomes a function of where the chunk boundary fell
+        /// and the render is no longer partition-invariant (the measured
+        /// failure mode: 3.3e-4 against a 1e-5 partition bound). Rebasing the
+        /// INDEX by the integer offset while the caller forms the age against
+        /// the per-sample head keeps position and interpolation weights
+        /// bit-identical to a per-sample snapshot.
+        ///
+        /// @pre newerOffset < the number of valid samples this snapshot covers
+        ///      (the atmosphere caller passes numSamples - 1 - i, <= 63).
+        void readStereoOffset(float ageSamples, size_t newerOffset, float& outLeft,
+                              float& outRight) const noexcept {
+            if (!valid_) {
+                outLeft = 0.0f;
+                outRight = 0.0f;
+                return;
+            }
+            const size_t i0 = (index0(ageSamples) - newerOffset) & mask_;
+            const size_t i1 = (i0 + mask_) & mask_;  // one sample OLDER
+            const float frac = frac_;
+            outLeft = left_[i0] + frac * (left_[i1] - left_[i0]);
+            outRight = right_[i0] + frac * (right_[i1] - right_[i0]);
+        }
+
+        /// @brief readRight(), rebased like readStereoOffset().
+        [[nodiscard]] float readRightOffset(float ageSamples, size_t newerOffset) const noexcept {
+            if (!valid_) {
+                return 0.0f;
+            }
+            const size_t i0 = (index0(ageSamples) - newerOffset) & mask_;
+            const size_t i1 = (i0 + mask_) & mask_;
+            return right_[i0] + frac_ * (right_[i1] - right_[i0]);
+        }
+
         /// @brief False when the source buffer held fewer than 2 samples, or was
         ///        not prepared. Every read then yields 0.
         [[nodiscard]] bool isValid() const noexcept { return valid_; }

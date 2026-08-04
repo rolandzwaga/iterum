@@ -68,6 +68,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>  // Phase 11.5 Step 0b: test-gated render-stage timers only
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -860,6 +861,37 @@ public:
     /// parameter and is unreachable without this.
     [[nodiscard]] const GrowthEnvelope& growth() const noexcept { return growth_; }
 
+    // =========================================================================
+    // Phase 11.5 Step 0b - renderOneChunk() stage instrumentation (test-only)
+    //
+    // Per-stage wall-time accumulators over renderOneChunk()'s numbered steps,
+    // so the whole-process() decomposition (Seraphis plugin, ui_perf_test.cpp)
+    // can attribute the engine's cost to sub-components AT THE REAL OPERATING
+    // POINT rather than from single-component benchmarks at other configs.
+    //
+    // Same discipline as the plugin's DecompStage timers (Constitution II): the
+    // gate is FALSE on every shipping path, so a shipped render pays six
+    // always-false branches per chunk and never reads a clock.
+    // =========================================================================
+    enum class RenderStage : std::size_t {
+        Morph,       ///< step 1: morph_.updateChunk + cloud_.setSpectralTarget
+        Cloud,       ///< step 2: cloud_.processStereoBlock (the additive bank)
+        Envelope,    ///< step 3: the per-sample envelope gate
+        Body,        ///< step 4: body_.processStereoBlock
+        Atmos,       ///< step 5: atmos_.processStereoBlock
+        SpatialMix,  ///< steps 6-9: bus sum, spatial stage, fade tail, peak scan
+        Count
+    };
+    void setRenderInstrumentedForTest(bool on) noexcept {
+        renderInstrumented_ = on;
+        // Step 0c: the atmosphere carries its own stage timers one level down.
+        atmos_.setProcessInstrumentedForTest(on);
+    }
+    [[nodiscard]] double renderStageNsForTest(RenderStage stage) const noexcept {
+        return renderStageNs_[static_cast<std::size_t>(stage)];
+    }
+    void resetRenderStageNsForTest() noexcept { renderStageNs_.fill(0.0); }
+
 private:
     /// SC-003 positive control (b) - see the declaration above this class.
     friend struct detail::SeraphisVoiceSilenceRampProbe;
@@ -867,6 +899,16 @@ private:
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /// Phase 11.5 Step 0b. Close one render-stage timer region: add the elapsed
+    /// ns since `start` into `slot`, return a fresh start for the next region.
+    /// Only reachable behind the renderInstrumented_ gate.
+    [[nodiscard]] static std::chrono::steady_clock::time_point renderLap(
+        double& slot, std::chrono::steady_clock::time_point start) noexcept {
+        const auto now = std::chrono::steady_clock::now();
+        slot += std::chrono::duration<double, std::nano>(now - start).count();
+        return now;
+    }
 
     /// Plan §2.12. NEVER std::isnan / std::isinf / std::numeric_limits: the macOS
     /// leg builds with -ffast-math, which licenses the compiler to fold them away.
@@ -995,15 +1037,28 @@ private:
         // 0. Plan D4 rule 2, before any work: step 2 is what consumes freqDirty_.
         renderedSinceNoteOn_ = true;
 
+        // Phase 11.5 Step 0b. FALSE on every shipping path (see RenderStage).
+        const bool inst = renderInstrumented_;
+        std::chrono::steady_clock::time_point instT{};
+        if (inst) {
+            instT = std::chrono::steady_clock::now();
+        }
+
         // 1. morph -> cloud handoff, unconditionally every chunk (FR-012). The
         //    whole-array skip at harmonic_cloud.h:776-786 makes an unchanged
         //    target cheap, so the voice does not duplicate that check.
         morph_.updateChunk(n);  // spectral_morph_engine.h:405
         cloud_.setSpectralTarget(morph_.getOutputRatios(), morph_.getOutputAmplitudes(),
                                  morph_.getOutputCount());  // harmonic_cloud.h:769
+        if (inst) {
+            instT = renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::Morph)], instT);
+        }
 
         // 2. excitation
         cloud_.processStereoBlock(cloudL_.data(), cloudR_.data(), n);  // :878
+        if (inst) {
+            instT = renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::Cloud)], instT);
+        }
 
         // 3. voice envelope, IN PLACE on the cloud - the excitation gate.
         //    Nothing downstream of this point is gated (FR-010).
@@ -1024,14 +1079,24 @@ private:
                 envOutput_ = g;
             }
         }
+        if (inst) {
+            instT =
+                renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::Envelope)], instT);
+        }
 
         // 4. body. NOT in place - "IN-PLACE OPERATION IS NOT SUPPORTED"
         //    (continuous_body.h:1155-1156).
         body_.processStereoBlock(cloudL_.data(), cloudR_.data(), bodyL_.data(), bodyR_.data(), n);
+        if (inst) {
+            instT = renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::Body)], instT);
+        }
 
         // 5. atmosphere tap, reading the POST-BODY signal. Shape identical by
         //    design (atmosphere_engine.h:656-658); output is WET TEXTURE ONLY.
         atmos_.processStereoBlock(bodyL_.data(), bodyR_.data(), atmosL_.data(), atmosR_.data(), n);
+        if (inst) {
+            instT = renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::Atmos)], instT);
+        }
 
         // 6. voice bus = body + atmosphere. A PLAIN SUM, no second gain: the
         //    atmosphere's own trim is already applied inside the component
@@ -1066,6 +1131,10 @@ private:
             chunkPeak = std::max(chunkPeak, std::max(std::fabs(carryL_[s]), std::fabs(carryR_[s])));
         }
         updateLevel(chunkPeak);
+        if (inst) {
+            (void)renderLap(renderStageNs_[static_cast<std::size_t>(RenderStage::SpatialMix)],
+                            instT);
+        }
 
         // 10. lastOut* is NOT assigned here - it is captured at SERVE time.
         carryAvail_ = n;
@@ -1219,6 +1288,10 @@ private:
     bool renderedSinceNoteOn_ = false;
     std::uint32_t seed_ = 1u;
     std::uint32_t rejectedConfigCalls_ = 0u;
+
+    // --- Phase 11.5 Step 0b render-stage timers (test-only; see RenderStage) --
+    bool renderInstrumented_ = false;
+    std::array<double, static_cast<std::size_t>(RenderStage::Count)> renderStageNs_{};
 };
 
 // FR-002's coarse ownership guard and FR-013's heap-free-giant guard.
