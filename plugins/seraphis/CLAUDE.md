@@ -125,8 +125,16 @@ message thread  Processor::notify() → applyEditMessage()
    │            rejection is the second line of defence, never the first.
    ├─ kinds 1/4/5 (ratio+amp, blend, tilt) → stageSlotEdit() → the Phase 9 three-buffer staging ring
    │                                          → spectralSlotsHandoff_ (release) → audio thread
-   └─ kinds 2/3 (pan, mask)                → atomic override table + partialOverridesPending_ (release)
-                                              → audio thread does the fan-out
+   ├─ kinds 2/3 (pan, mask)                → atomic override table + partialOverridesPending_ (release)
+   │                                          → audio thread does the fan-out
+   └─ kind 8 (PresetState, Phase 12 hotfix 2026-08-05) → SECOND binary attribute "state" = a whole
+                                              component-state stream → Processor::setState() on the
+                                              message thread (the project-load path). This is the
+                                              preset browser's LOAD transport: the controller's
+                                              loadComponentStateWithNotify() sends it, then replays
+                                              every param via beginEdit/performEdit/endEdit for the
+                                              host. Save = createComponentStateStream() (IComponent
+                                              query on the handler, Innexus precedent).
    ▼
 audio thread  process(): partialOverridesPending_.exchange(acquire) → repushPartialOverrides()
               → SeraphisEngine::setPartialPositionAllVoices / setPartialMaskAllVoices / clearPartialMaskAllVoices

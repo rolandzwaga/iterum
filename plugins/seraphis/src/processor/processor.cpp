@@ -21,6 +21,7 @@
 #include "ui/edit_message.h"
 
 #include "base/source/fstreamer.h"  // IBStreamer (getState/setState)
+#include "public.sdk/source/common/memorystream.h"  // kind-8 stream wrap (notify)
 
 #include "pluginterfaces/vst/ivstevents.h"            // IEventList / Vst::Event (FR-025, FR-031)
 #include "pluginterfaces/vst/ivstparameterchanges.h"  // IParameterChanges/IParamValueQueue
@@ -46,6 +47,7 @@
 #include <cstring>      // Phase 11 C-2: memset/memcpy of the CloudFrame payload
 #include <type_traits>  // std::is_trivially_copyable_v (the CloudFrame memset guard)
 #include <utility>      // std::cmp_greater (C++20 mixed-sign integer comparison)
+#include <vector>       // kind-8 stream copy (notify, message thread)
 
 namespace Seraphis {
 
@@ -1255,6 +1257,34 @@ tresult PLUGIN_API Processor::notify(Vst::IMessage* message) {
 
     UI::EditMessage edit{};
     std::memcpy(&edit, data, sizeof(edit));
+
+    // Kind 8 (Phase 12 hotfix, 2026-08-05): the preset browser's load path. The
+    // stream rides a SECOND attribute, and it is applied by setState() - which
+    // runs on this very thread on project load, so every rule that function
+    // already enforces (EOF-safe chain, staging-ring publish, authoring-mirror
+    // tracker re-arm, force-push, [partials] bits) applies verbatim. A kind-8
+    // message without the attribute, or with an implausible size, is DROPPED
+    // like every other malformed message; applyEditMessage()'s own switch has
+    // no case 8, so the POD-only path cannot reach state either.
+    if (edit.kind == UI::kEditKindPresetState) {
+        const void* stateData = nullptr;
+        uint32 stateSize = 0;
+        if (attributes->getBinary(UI::kSeraphisStateAttributeId, stateData, stateSize)
+                != kResultOk
+            || stateData == nullptr || stateSize < sizeof(int32)
+            || stateSize > UI::kMaxPresetStateBytes) {
+            return kResultOk;  // malformed -> dropped
+        }
+        // Copy out of the host's attribute memory: MemoryStream has no const
+        // view, and this is the message thread, where a 2.8 KB copy is free.
+        std::vector<char> bytes(static_cast<std::size_t>(stateSize));
+        std::memcpy(bytes.data(), stateData, bytes.size());
+        Steinberg::MemoryStream stream(bytes.data(),
+                                       static_cast<Steinberg::TSize>(stateSize));
+        (void)setState(&stream);
+        return kResultOk;
+    }
+
     applyEditMessage(edit);
     return kResultOk;
 }

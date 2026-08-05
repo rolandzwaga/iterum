@@ -58,6 +58,10 @@ add_executable(seraphis_tests
     # ran" rather than a failure, and the exit code stays 0).
     unit/preset/factory_preset_test.cpp
     integration/preset_render_sweep_test.cpp
+    # Phase 12 hotfix (2026-08-05): the browser double-click -> load-provider
+    # seam, which none of the above drives (they all call Processor::setState
+    # directly). See the TU banner.
+    integration/preset_load_test.cpp
 
     # SECOND compilation of every plugin .cpp (needed by the plugin-shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp

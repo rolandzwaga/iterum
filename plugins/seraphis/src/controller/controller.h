@@ -40,7 +40,13 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <memory>
+
+namespace Steinberg {
+class MemoryStream;
+class IBStreamer;
+}
 
 namespace Krate::Plugins {
 class PresetBrowserView;
@@ -195,6 +201,30 @@ public:
     }
 
     // ==========================================================================
+    // Phase 12 hotfix (2026-08-05) - the preset browser's load/save providers.
+    // ==========================================================================
+    // PresetManager is built with a null component (the processor lives across
+    // the VST3 boundary), so WITHOUT these two callbacks loadPreset()/savePreset()
+    // fail their first guard and the browser's double-click does nothing - the
+    // shipped Phase 12 defect. Public because the preset tests drive them
+    // directly (the Ruinae/Innexus precedent).
+
+    /// The LOAD half. Applies a component-state stream (any version the EOF-safe
+    /// chain accepts) to BOTH sides: the full stream is sent to the processor as
+    /// ONE kind-8 EditMessage (applied there by setState() on the message
+    /// thread - params, payloads, [partials] bits, force-push, exactly the
+    /// project-load path), and every registered parameter is replayed through
+    /// beginEdit/performEdit/endEdit so the HOST sees the change (undo, dirty
+    /// flag, generic editors).
+    bool loadComponentStateWithNotify(Steinberg::IBStream* state);
+
+    /// The SAVE half. The processor's own getState() bytes, obtained through the
+    /// host's component handler (FUnknownPtr<IComponent> - the Innexus
+    /// precedent); null when the host does not expose IComponent there, which
+    /// savePreset() reports as its no-source error. Caller owns the stream.
+    [[nodiscard]] Steinberg::MemoryStream* createComponentStateStream();
+
+    // ==========================================================================
     // Phase 11 - IMessage fallback for hosts without the native DataExchange API
     // ==========================================================================
     Steinberg::tresult PLUGIN_API notify(Steinberg::Vst::IMessage* message) override;
@@ -322,6 +352,19 @@ public:
 private:
     /// FR-046 re-seed source 1's body. `slot` is 0..3; anything else is dropped.
     void reseedSlotMirrorFromDropdown(int slot, Steinberg::Vst::ParamValue value) noexcept;
+
+    // --- Phase 12 hotfix (2026-08-05) -----------------------------------------
+    /// The ONE decode chain (getState order), shared by setComponentState() and
+    /// loadComponentStateWithNotify() so the two can never drift. The version
+    /// int32 has already been read and accepted by the caller.
+    void applyComponentStreamBody(
+        Steinberg::IBStreamer& streamer,
+        const std::function<void(Steinberg::Vst::ParamID, double)>& setParam);
+
+    /// ONE kind-8 EditMessage carrying `size` bytes of component-state stream
+    /// as the kSeraphisStateAttributeId attribute. Headless (no host context):
+    /// recorded like every sendEditMessage() call, delivered nowhere.
+    void sendPresetStateMessage(const void* data, Steinberg::uint32 size);
 
     /// FR-046 clause 3. Apply one authoring gesture value to slotMirror_, using
     /// the SAME Layer 2 mutator Processor::applyEditMessage will apply

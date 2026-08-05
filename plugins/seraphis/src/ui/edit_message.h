@@ -25,6 +25,15 @@ namespace Seraphis::UI {
 inline constexpr const char* kSeraphisEditMessageId   = "SeraphisEdit";
 inline constexpr const char* kSeraphisEditAttributeId = "payload";
 
+/// Kind 8's SECOND binary attribute: a whole component-state stream, verbatim.
+/// (Phase 12 hotfix amendment, 2026-08-05 - see kind 8 in the table below.)
+inline constexpr const char* kSeraphisStateAttributeId = "state";
+
+/// Upper bound on a kind-8 stream attribute. The v3 stream is 2868 bytes; the
+/// cap is generous headroom for future appends, and anything beyond it is not a
+/// Seraphis state and is dropped as malformed.
+inline constexpr std::uint32_t kMaxPresetStateBytes = 65536;
+
 // ------------------------------------------------------------------------------
 // PER-KIND FIELD SEMANTICS (C-5's table -- normative)
 //
@@ -50,6 +59,20 @@ inline constexpr const char* kSeraphisEditAttributeId = "payload";
 //                            for the gesture that follows (Q2); `slot` is the
 //                            destination, unambiguous for kinds 4 and 7 alike.
 //                            `a` unused, reserved 0.
+//   kind 8  PresetState      Phase 12 hotfix amendment (2026-08-05, full-
+//                            fidelity ruling): the preset browser's LOAD path.
+//                            The POD carries no data (`slot`/`index`/`a`/`b`
+//                            reserved 0); the message carries a SECOND binary
+//                            attribute, kSeraphisStateAttributeId, holding a
+//                            whole component-state stream verbatim. The
+//                            processor applies it with its own setState() on
+//                            the message thread -- the project-load path, so
+//                            params, spectral payloads, the [partials] table
+//                            WITH its override bits, the authoring-mirror
+//                            trackers and the force-push all behave exactly as
+//                            on project load. A kind-8 message without the
+//                            attribute (or with a size outside
+//                            [4, kMaxPresetStateBytes]) is dropped silently.
 //
 // Unknown `kind`, out-of-range `slot`/`index`, and non-finite `a`/`b` are
 // dropped silently by Processor::notify (C-5 clause 5, FR-036) -- a message is
@@ -59,14 +82,16 @@ inline constexpr const char* kSeraphisEditAttributeId = "payload";
 
 struct EditMessage {          // POD; moved as ONE binary attribute
     std::uint8_t  kind  = 0;  // 0 EditorGate, 1 PartialRatioAmp, 2 PartialPan, 3 PartialMask,
-                              // 4 BlendStates, 5 TiltState, 6 SlotSelect, 7 BlendBegin
-    std::uint8_t  slot  = 0;  // 0..3 morph slot (ignored by kinds 0, 2, 3)
+                              // 4 BlendStates, 5 TiltState, 6 SlotSelect, 7 BlendBegin,
+                              // 8 PresetState
+    std::uint8_t  slot  = 0;  // 0..3 morph slot (ignored by kinds 0, 2, 3, 8)
     std::uint16_t index = 0;  // partial index 0..63 (kinds 1, 2, 3)
     float         a     = 0.0f;
     float         b     = 0.0f;
 };
 static_assert(sizeof(EditMessage) == 12);
 
-inline constexpr std::uint8_t kEditKindCount = 8;
+inline constexpr std::uint8_t kEditKindPresetState = 8;
+inline constexpr std::uint8_t kEditKindCount = 9;
 
 }  // namespace Seraphis::UI

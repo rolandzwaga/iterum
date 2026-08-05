@@ -27,6 +27,8 @@
 #include "ui/preset_browser_view.h"
 
 #include "base/source/fstreamer.h"
+#include "pluginterfaces/vst/ivstcomponent.h"
+#include "public.sdk/source/common/memorystream.h"
 
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/cpoint.h"
@@ -155,6 +157,17 @@ tresult PLUGIN_API Controller::initialize(FUnknown* context) {
     // FR-050. NO UpdateChecker (FR-052).
     presetManager_ = std::make_unique<Krate::Plugins::PresetManager>(
         makeSeraphisPresetConfig(), nullptr, this);
+    // Phase 12 hotfix (2026-08-05): the two provider callbacks WITHOUT WHICH the
+    // browser is inert - loadPreset()/savePreset() fail their first guard when
+    // the manager has neither a component nor a provider, the browser stays
+    // open on the failed load, and no control moves. Every other plugin in the
+    // monorepo wires both; Seraphis shipped Phase 12 without them.
+    presetManager_->setStateProvider(
+        [this]() -> Steinberg::IBStream* { return createComponentStateStream(); });
+    presetManager_->setLoadProvider(
+        [this](Steinberg::IBStream* stream, const Krate::Plugins::PresetInfo& /*info*/) {
+            return loadComponentStateWithNotify(stream);
+        });
 
     return kResultOk;
 }
@@ -223,10 +236,20 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* state) {
         return kResultFalse;
     }
 
-    const auto setParam = [this](Vst::ParamID id, double value) {
-        setParamNormalized(id, value);
-    };
+    applyComponentStreamBody(streamer,
+                             [this](Vst::ParamID id, double value) {
+                                 setParamNormalized(id, value);
+                             });
 
+    return kResultOk;
+}
+
+// Phase 12 hotfix (2026-08-05): setComponentState()'s decode chain, extracted
+// VERBATIM so loadComponentStateWithNotify() cannot drift from it - the block
+// order below is the third copy of getState()'s write order in the codebase
+// (after the processor's own and the harness's), and it must never become four.
+void Controller::applyComponentStreamBody(
+    IBStreamer& streamer, const std::function<void(Vst::ParamID, double)>& setParam) {
     // Order MUST match Processor::getState EXACTLY (plan 5.1's write order). The
     // seed is its own trio positioned AFTER [macro] (FR-091a, global_params.h:
     // 259-271), and loadMorphParamsToController consumes the four 541-byte
@@ -259,8 +282,112 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* state) {
     // table are session state, never a ParamID - so it takes the cached frame
     // rather than setParam.
     loadPartialOverridesToController(streamer, cachedCloudFrame_);  // [partials] (LAST)
+}
 
-    return kResultOk;
+// ==============================================================================
+// Phase 12 hotfix (2026-08-05) - preset browser load/save providers
+// ==============================================================================
+// Shipped Phase 12 built the PresetManager with a null component and NO
+// callbacks, so loadPreset()/savePreset() failed their first guard and the
+// browser's double-click did nothing. These two are the missing halves; the
+// wiring is in initialize().
+
+bool Controller::loadComponentStateWithNotify(IBStream* state) {
+    if (state == nullptr) {
+        return false;
+    }
+
+    // Read the stream ONCE into a buffer: it is both the kind-8 wire payload
+    // (the processor applies it with setState()) and the local decode source.
+    // The cap mirrors the wire format's own (edit_message.h); a stream past it
+    // is not a Seraphis state.
+    std::vector<char> bytes;
+    bytes.reserve(4096);
+    char chunk[4096];
+    Steinberg::int32 numRead = 0;
+    while (state->read(chunk, static_cast<Steinberg::int32>(sizeof(chunk)), &numRead)
+               == kResultOk
+           && numRead > 0) {
+        bytes.insert(bytes.end(), chunk, chunk + numRead);
+        if (bytes.size() > UI::kMaxPresetStateBytes) {
+            return false;
+        }
+    }
+    if (bytes.size() < sizeof(int32)) {
+        return false;
+    }
+
+    // The SAME version acceptance setState() applies: refuse only the future.
+    Steinberg::MemoryStream wrap(bytes.data(), static_cast<Steinberg::TSize>(bytes.size()));
+    IBStreamer streamer(&wrap, kLittleEndian);
+    int32 version = 0;
+    if (!streamer.readInt32(version)) {
+        return false;
+    }
+    if (version < 1 || version > kCurrentStateVersion) {
+        return false;
+    }
+
+    // (1) THE PROCESSOR, full fidelity, ONE message: setState() over there is
+    // the project-load path, so spectral payloads, the [partials] override
+    // BITS, the authoring-mirror trackers and the force-push all behave exactly
+    // as on project load - things a per-parameter replay can never carry.
+    sendPresetStateMessage(bytes.data(), static_cast<Steinberg::uint32>(bytes.size()));
+
+    // (2) THE HOST AND THIS CONTROLLER: the shared decode chain, with every
+    // parameter replayed through the edit trio so the host records the change
+    // (undo, dirty flag, generic editors, automation touch) - the Ruinae/
+    // Innexus loadComponentStateWithNotify contract. setParamNormalized is the
+    // virtual, so the dropdown re-seed and the payload overwrite inside the
+    // chain behave exactly as in setComponentState().
+    applyComponentStreamBody(streamer, [this](Vst::ParamID id, double value) {
+        const double clamped = std::clamp(value, 0.0, 1.0);
+        setParamNormalized(id, clamped);
+        beginEdit(id);
+        performEdit(id, clamped);
+        endEdit(id);
+    });
+
+    return true;
+}
+
+Steinberg::MemoryStream* Controller::createComponentStateStream() {
+    // The Innexus precedent (controller_presets.cpp:98-111): the host's
+    // component handler is where a single-component host exposes IComponent.
+    // Hosts that do not are answered with null, which savePreset() reports as
+    // its no-source error - honest failure, never a drifted third serializer.
+    Steinberg::FUnknownPtr<Vst::IComponent> component(getComponentHandler());
+    if (!component) {
+        return nullptr;
+    }
+
+    auto* stream = new Steinberg::MemoryStream();
+    if (component->getState(stream) != kResultOk) {
+        stream->release();
+        return nullptr;
+    }
+    stream->seek(0, Steinberg::IBStream::kIBSeekSet, nullptr);
+    return stream;
+}
+
+void Controller::sendPresetStateMessage(const void* data, Steinberg::uint32 size) {
+    UI::EditMessage m{};
+    m.kind = UI::kEditKindPresetState;
+    lastSentEditMessage_ = m;
+    ++editMessagesSent_;
+
+    Steinberg::Vst::IMessage* msg = allocateMessage();
+    if (msg == nullptr) {
+        return;  // no host context (headless): recording already happened
+    }
+    msg->setMessageID(UI::kSeraphisEditMessageId);
+    if (auto* attributes = msg->getAttributes()) {
+        attributes->setBinary(UI::kSeraphisEditAttributeId, &m,
+                              static_cast<Steinberg::uint32>(sizeof(m)));
+        attributes->setBinary(UI::kSeraphisStateAttributeId, data, size);
+    }
+    sendMessage(msg);
+    msg->release();
 }
 
 tresult PLUGIN_API Controller::getParamStringByValue(
