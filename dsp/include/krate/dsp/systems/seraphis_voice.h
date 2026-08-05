@@ -46,6 +46,7 @@
 
 // Layer 0: Core
 #include <krate/dsp/core/crossfade_utils.h>
+#include <krate/dsp/core/db_utils.h>  // detail::isFinite (fast-math-immune)
 #include <krate/dsp/core/env_curve.h>
 #include <krate/dsp/core/random.h>
 
@@ -916,9 +917,10 @@ private:
     /// - NOT the ITERUM_NOINLINE wrapper, whose own header forbids per-sample use
     /// (atmosphere_engine.h:1203-1206).
     [[nodiscard]] static bool isFiniteBits(float v) noexcept {
-        std::uint32_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(bits));
-        return (bits & 0x7F800000u) != 0x7F800000u;
+        // Delegates to the barrier-hardened core check: a plain local
+        // memcpy/bit-mask is foldable under newer fast-math compilers
+        // (Apple Clang / Xcode 26.6) via finite-math value propagation.
+        return detail::isFinite(v);
     }
 
     /// Plan §2.4. GrowthEnvelope::setSeed is a documented no-op

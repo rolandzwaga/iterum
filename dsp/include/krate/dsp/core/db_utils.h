@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 
 namespace Krate {
 namespace DSP {
@@ -38,24 +39,88 @@ inline constexpr float kDenormalThreshold = 1e-15f;
 
 namespace detail {
 
+/// Optimization barrier: the float's bit pattern, laundered so the optimizer
+/// cannot fold classification checks on it.
+///
+/// Under -ffast-math (-ffinite-math-only) the compiler is entitled to assume
+/// no FP value is ever NaN or Inf, and newer compilers (observed: Apple Clang,
+/// Xcode 26.6) propagate that assumption through function arguments (LLVM
+/// `nofpclass`) far enough to fold even a std::bit_cast bit-pattern test to
+/// "finite" — which silently deletes every NaN/Inf guard in the DSP. Routing
+/// the bits through an empty asm with an integer register operand severs all
+/// value-provenance facts: the compiler must test the bits the hardware
+/// actually produced. The asm emits no instructions; the only cost is keeping
+/// the value in a general-purpose register for the test it was about to do
+/// anyway. MSVC has no GNU asm and (as of /fp:fast today) performs no such
+/// folding, so it keeps the plain path.
+[[nodiscard]] inline std::uint32_t opaqueFloatBits(float x) noexcept {
+    auto bits = std::bit_cast<std::uint32_t>(x);
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__("" : "+r"(bits));
+#endif
+    return bits;
+}
+
+// The is_constant_evaluated() branches below are the standard C++20 dual-path
+// idiom; clang's -Wconstant-evaluated / MSVC's C5063 fire whenever the
+// functions are themselves evaluated at compile time (static_assert /
+// constexpr tables), which is expected and harmless — same treatment as
+// -Wnan-infinity-disabled further down.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wconstant-evaluated"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 5063)
+#endif
+
 /// Constexpr-safe NaN check using IEEE 754 bit pattern.
 ///
 /// Uses std::bit_cast to examine the binary representation of the float.
 /// NaN is defined as: exponent = all 1s (0xFF) AND mantissa != 0
 ///
-/// IMPORTANT: The VST3 SDK enables -ffast-math globally, which causes
-/// __builtin_isnan() and std::isnan() to be optimized out (the compiler
-/// assumes NaN doesn't exist). Source files using this function MUST be
-/// compiled with -fno-fast-math. See tests/CMakeLists.txt for the pattern.
-///
-/// This bit manipulation approach works correctly when -ffast-math is
-/// disabled because it operates on integer bits, not floating-point
-/// semantics.
+/// Survives -ffast-math: at runtime the bits are read through the
+/// opaqueFloatBits barrier above, so the finite-math assumption cannot fold
+/// the test (it operates on integer bits with no FP provenance). In constant
+/// evaluation the plain bit_cast path is used — constexpr callers
+/// (constexprLn etc.) are unaffected by -ffast-math anyway.
 constexpr bool isNaN(float x) noexcept {
-    const auto bits = std::bit_cast<std::uint32_t>(x);
     // NaN: exponent = 0xFF (all 1s), mantissa != 0
+    const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
+                                                   : opaqueFloatBits(x);
     return ((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0);
 }
+
+/// Optimization barrier, double flavour (see opaqueFloatBits).
+[[nodiscard]] inline std::uint64_t opaqueDoubleBits(double x) noexcept {
+    auto bits = std::bit_cast<std::uint64_t>(x);
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__("" : "+r"(bits));
+#endif
+    return bits;
+}
+
+/// Fast-math-immune finiteness check (neither NaN nor Inf), one barrier read.
+/// Use this instead of local memcpy/bit-mask clones — a plain bit-pattern
+/// test is exactly what newer fast-math compilers fold away.
+[[nodiscard]] constexpr bool isFinite(float x) noexcept {
+    const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
+                                                   : opaqueFloatBits(x);
+    return (bits & 0x7F800000u) != 0x7F800000u;
+}
+
+/// Fast-math-immune finiteness check, double overload.
+[[nodiscard]] constexpr bool isFinite(double x) noexcept {
+    const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint64_t>(x)
+                                                   : opaqueDoubleBits(x);
+    return (bits & 0x7FF0000000000000ULL) != 0x7FF0000000000000ULL;
+}
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /// Natural log of 10, used in dB conversions
 constexpr float kLn10 = 2.302585093f;
@@ -170,12 +235,26 @@ constexpr float constexprPow10(float x) noexcept {
 }
 
 /// Platform-independent infinity check using bit manipulation.
+/// Survives -ffast-math via the opaqueFloatBits barrier (see isNaN above).
 /// @param x Value to check
 /// @return true if x is positive or negative infinity
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wconstant-evaluated"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 5063)
+#endif
 [[nodiscard]] constexpr bool isInf(float x) noexcept {
-    const auto bits = std::bit_cast<std::uint32_t>(x);
+    const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
+                                                   : opaqueFloatBits(x);
     return (bits & 0x7FFFFFFFu) == 0x7F800000u;
 }
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 } // namespace detail
 

@@ -1615,16 +1615,15 @@ private:
 
     [[nodiscard]] static bool isFiniteBits(float v) noexcept
     {
-        std::uint32_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(bits));
-        return (bits & 0x7F800000u) != 0x7F800000u;
+        // Delegates to the barrier-hardened core check: a plain local
+        // memcpy/bit-mask is foldable under newer fast-math compilers
+        // (Apple Clang / Xcode 26.6) via finite-math value propagation.
+        return detail::isFinite(v);
     }
 
     [[nodiscard]] static bool isFiniteBits(double v) noexcept
     {
-        std::uint64_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(bits));
-        return (bits & 0x7FF0000000000000ULL) != 0x7FF0000000000000ULL;
+        return detail::isFinite(v);
     }
 
     /// FR-038's substitution, as a value: a non-finite sample becomes 0.

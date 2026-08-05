@@ -280,7 +280,15 @@ constexpr float kSingleVelocity = 0.8f;
 // The two arms differ by 24x on L and 163x on R, so a bound of 1.2e-3 - 4x above
 // the shipped figure and 6x below the broken one - discriminates them with
 // headroom on both sides, the same margins the original bound carried.
-constexpr float kSnapSeamFlushBound = 1.2e-3f;
+//
+// RE-MEASURED 2026-08-05, macOS CI (Apple Clang / Xcode 26.6, -ffast-math): the
+// shipped snap arm flushes at peak[0..] = 1.53e-3 on that toolchain - the same
+// output-stage state emptying, at a level the FP schedule moved past the old
+// 1.2e-3 bound. Bound re-derived from the cross-toolchain worst: 1.57x above
+// the macOS shipped figure and 3x below the broken arm's 7.22e-3, so the
+// snap-vs-ramp discrimination survives (narrower than the old 4x/6x margins,
+// still one-sided on both arms).
+constexpr float kSnapSeamFlushBound = 2.4e-3f;
 
 /// 0.5 s at 48 kHz - well past the output stage's flush (measured to be over
 /// within ~2000 samples). From here on the shipped implementation measures

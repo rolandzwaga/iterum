@@ -241,7 +241,7 @@
       "scope": "Krate::DSP::SeraphisEngine",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_engine.h",
-      "line": 292
+      "line": 293
     },
     {
       "name": "BodyMode",
@@ -473,7 +473,7 @@
       "scope": "Krate::DSP::ContinuousBody",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/continuous_body.h",
-      "line": 1697
+      "line": 1696
     },
     {
       "name": "DelayEngine",
@@ -1025,7 +1025,7 @@
       "scope": "Krate::DSP",
       "layer": "processors",
       "header": "dsp/include/krate/dsp/processors/harmonic_oscillator_bank.h",
-      "line": 74
+      "line": 75
     },
     {
       "name": "HarmonicSnapshot",
@@ -2129,7 +2129,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_macro_matrix.h",
-      "line": 122
+      "line": 123
     },
     {
       "name": "SeraphisEffectsTargets",
@@ -2137,7 +2137,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_macro_matrix.h",
-      "line": 143
+      "line": 144
     },
     {
       "name": "SeraphisEngine",
@@ -2145,7 +2145,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_engine.h",
-      "line": 204
+      "line": 205
     },
     {
       "name": "SeraphisEngineConfig",
@@ -2153,7 +2153,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_engine.h",
-      "line": 98
+      "line": 99
     },
     {
       "name": "SeraphisMacroMatrix",
@@ -2161,7 +2161,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_macro_matrix.h",
-      "line": 181
+      "line": 182
     },
     {
       "name": "SeraphisMacroRow",
@@ -2169,7 +2169,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_macro_matrix.h",
-      "line": 158
+      "line": 159
     },
     {
       "name": "SeraphisMacroValues",
@@ -2177,7 +2177,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_macro_matrix.h",
-      "line": 149
+      "line": 150
     },
     {
       "name": "SeraphisVoice",
@@ -2185,7 +2185,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_voice.h",
-      "line": 126
+      "line": 127
     },
     {
       "name": "SeraphisVoiceConfig",
@@ -2193,7 +2193,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_voice.h",
-      "line": 106
+      "line": 107
     },
     {
       "name": "SeraphisVoiceParams",
@@ -2201,7 +2201,7 @@
       "scope": "Krate::DSP",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/seraphis_engine.h",
-      "line": 117
+      "line": 118
     },
     {
       "name": "ShimmerDelay",
@@ -2265,7 +2265,7 @@
       "scope": "Krate::DSP::ContinuousBody",
       "layer": "systems",
       "header": "dsp/include/krate/dsp/systems/continuous_body.h",
-      "line": 1660
+      "line": 1659
     },
     {
       "name": "Slot",

@@ -9,6 +9,7 @@
 add_library(KrateDSP STATIC
     include/krate/dsp/core/dsp_utils.cpp
     include/krate/dsp/core/spectral_simd.cpp
+    include/krate/dsp/processors/spectral_state.cpp
     include/krate/dsp/effects/fdn_reverb_simd.cpp
     include/krate/dsp/processors/arpeggiator_core.cpp
     include/krate/dsp/processors/pitch_shift_processor.cpp
@@ -66,6 +67,10 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
         include/krate/dsp/core/spectral_simd.cpp
+        # makeFactoryState: compiled exactly once so every TU sees the same
+        # factory-state bits, and under IEEE semantics so those bits are the
+        # plain libm results on every toolchain (see spectral_state.cpp).
+        include/krate/dsp/processors/spectral_state.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

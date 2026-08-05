@@ -366,9 +366,20 @@ TEST_CASE("DiffusionNetwork_ZeroModIsBitIdentical", "[diffusion][processors][ser
         renderRange(guarded, in, guardedOut, 0, kRenderLen);
         renderRange(reference, in, referenceOut, 0, kRenderLen);
 
-        // Bit-for-bit over every one of the 4096 samples, both channels. Carried
+        // Per-sample over every one of the 4096 samples, both channels. Carried
         // by one assertion rather than 8192 individual ones so that a divergence
         // reports WHERE it starts and BY HOW MUCH.
+        //
+        // NOT bit-for-bit: that held on MSVC, GCC and Xcode 26.5, but Apple
+        // Clang (Xcode 26.6, -ffast-math) schedules the guarded and unguarded
+        // loops differently and diverges by last-ULP amounts from sample 0
+        // (measured worst |delta| 3.57628e-7 across 3897 of 4096 samples).
+        // Demanding bit-identity between two differently-shaped FP loops is the
+        // same impossible contract as a bit-exact float golden (dsp/CLAUDE.md).
+        // The bound is ~3x the measured schedule noise; a guard that actually
+        // froze or skipped state diverges by whole-sample amounts (clause 2's
+        // frozen-phase scenario measures >1e-2) and still fails loudly.
+        constexpr float kScheduleNoiseBound = 1.0e-6f;
         std::size_t mismatches = 0;
         std::size_t firstMismatch = kRenderLen;
         float worstDelta = 0.0f;
@@ -385,8 +396,8 @@ TEST_CASE("DiffusionNetwork_ZeroModIsBitIdentical", "[diffusion][processors][ser
         }
 
         INFO("first divergence at sample " << firstMismatch << " of " << kRenderLen
-             << ", worst |delta| " << worstDelta);
-        REQUIRE(mismatches == 0u);
+             << ", " << mismatches << " differing samples, worst |delta| " << worstDelta);
+        REQUIRE(worstDelta <= kScheduleNoiseBound);
 
         // Non-triviality: the render must not be silence, or bit-identity is free.
         const auto fp = fingerprintRender(guardedOut.left);

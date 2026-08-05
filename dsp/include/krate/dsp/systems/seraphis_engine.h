@@ -63,6 +63,7 @@
 #pragma once
 
 // Layer 0: Core
+#include <krate/dsp/core/db_utils.h>  // detail::isFinite (fast-math-immune)
 #include <krate/dsp/core/random.h>  // deriveStreamSeed (FR-050)
 
 // Layer 1: Primitives
@@ -1089,9 +1090,10 @@ private:
     /// per-sample use (atmosphere_engine.h:1203-1206) - and NOT SeraphisVoice's
     /// private copy, which is not reachable from here.
     [[nodiscard]] static bool isFiniteBits(float v) noexcept {
-        std::uint32_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(bits));
-        return (bits & 0x7F800000u) != 0x7F800000u;
+        // Delegates to the barrier-hardened core check: a plain local
+        // memcpy/bit-mask is foldable under newer fast-math compilers
+        // (Apple Clang / Xcode 26.6) via finite-math value propagation.
+        return detail::isFinite(v);
     }
 
     /// One-hot mask for slot `v`. kMaxVoices is 16, so the shift is always in

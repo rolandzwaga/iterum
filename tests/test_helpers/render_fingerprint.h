@@ -28,6 +28,15 @@
 // kMetricTolerance ~50x above the measured metric spread. Both remain far
 // tighter than any real DSP change: swapping std::tanh for a Pade approximant
 // moves these metrics by parts in 1e-3 or more, which these bounds reject.
+//
+// 2026-08-05 re-measurement: Apple Clang (Xcode 26.6, -ffast-math) widened the
+// real toolchain spread past the original bounds — the diffusion-network
+// zero-mod and spectral-morph render comparisons measured worst metric
+// relative error 2.0041e-5 and worst sample error 8.96e-5 on the macOS CI
+// leg (previously green on MSVC, GCC and Xcode 26.5). Bounds re-derived from
+// those measurements with the same ~2.5-3x headroom. Still 4+ orders below
+// any real DSP change (the injected stale-sweep-cache bug moves samples by
+// 0.38 against these bounds).
 // ==============================================================================
 #pragma once
 
@@ -46,10 +55,10 @@ namespace TestUtils {
 inline constexpr std::size_t kRenderCheckpoints = 32;
 
 /// Largest absolute per-sample difference treated as toolchain noise.
-inline constexpr float kSampleTolerance = 1.0e-4f;
+inline constexpr float kSampleTolerance = 3.0e-4f;
 
 /// Largest relative aggregate-metric difference treated as toolchain noise.
-inline constexpr double kMetricTolerance = 1.0e-5;
+inline constexpr double kMetricTolerance = 5.0e-5;
 
 struct RenderFingerprint {
     double rms = 0.0;

@@ -30,6 +30,7 @@
 #pragma once
 
 // Layer 0: Core
+#include <krate/dsp/core/db_utils.h>  // detail::isFinite (fast-math-immune)
 #include <krate/dsp/core/modulation_curves.h>
 
 // Layer 3: Systems (peers)
@@ -909,9 +910,10 @@ private:
     /// BIT-PATTERN question here - the same helper SeraphisVoice and
     /// SeraphisEngine carry.
     [[nodiscard]] static bool isFiniteBits(float value) noexcept {
-        std::uint32_t bits = 0;
-        std::memcpy(&bits, &value, sizeof(bits));
-        return (bits & 0x7F800000u) != 0x7F800000u;
+        // Delegates to the barrier-hardened core check: a plain local
+        // memcpy/bit-mask is foldable under newer fast-math compilers
+        // (Apple Clang / Xcode 26.6) via finite-math value propagation.
+        return detail::isFinite(value);
     }
 
     [[nodiscard]] static float at(const std::array<float, kNumTargets>& v,
