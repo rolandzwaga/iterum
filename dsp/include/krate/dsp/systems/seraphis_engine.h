@@ -1359,8 +1359,16 @@ private:
         std::size_t victim = 0;
         float bestLevel = 0.0f;
         bool found = false;
+        // The bound is RE-STATED from polyphony_ (which prepare() and
+        // setPolyphony() already clamp to kMaxVoices, :309 and :428) purely so it
+        // is provable AT THE POINT OF USE: GCC 13 unrolls this doubly-nested loop
+        // and, unable to carry that clamp this far, reports -Warray-bounds for a
+        // subscript of 32 into voices_[16]. std::min changes no behaviour -
+        // polyphony_ is never above kMaxVoices - and costs one compare outside
+        // the loop, on the note-steal path only.
+        const std::size_t voiceCount = std::min(polyphony_, kMaxVoices);
         for (int pass = 0; pass < 3 && !found; ++pass) {
-            for (std::size_t i = 0; i < polyphony_; ++i) {
+            for (std::size_t i = 0; i < voiceCount; ++i) {
                 const VoiceState state = allocator_.getVoiceState(i);  // :424
                 const float level = voices_[i].getCurrentLevel();      // FR-033
                 if (pass == 2) {

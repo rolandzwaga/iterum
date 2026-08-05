@@ -590,6 +590,84 @@ add_custom_target(generate_membrum_presets
 )
 
 # ==============================================================================
+# seraphis_preset_generator — Seraphis Phase 12 factory-preset generator
+# ==============================================================================
+# The target NAME and the run-time output directory are FIXED by the release
+# workflow, not free choices: .github/workflows/release.yml:149-166 maps every
+# non-Iterum plugin to `${PLUGIN}_preset_generator` (the `*` case at :162),
+# builds that target (:167-168), then runs
+# `./build/bin/${PLUGIN}_preset_generator generated-presets` (:170-174) and
+# uploads with `if-no-files-found: error` (:180). Renaming the target, or
+# dropping the RUNTIME_OUTPUT_DIRECTORY below, breaks the release leg —
+# release.yml itself needs NO edit.
+add_executable(seraphis_preset_generator
+    tools/seraphis_preset_generator.cpp
+    # Seraphis has no static core library - plugins/seraphis/CMakeLists.txt:18-67 puts every .cpp inside
+    # one smtg_add_vst3plugin MODULE - so the processor is compiled as an executable source, exactly as
+    # gen_v2_fixtures does for Gradus/Ruinae (root CMakeLists.txt:689-720).
+    plugins/seraphis/src/processor/processor.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/common/memorystream.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/vst/hosting/hostclasses.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/vst/hosting/pluginterfacesupport.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/moduleinit.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/pluginfactory.cpp
+    # GetPluginFactory stub ONLY - this file is 12 lines and defines nothing else
+    # (plugins/seraphis/tests/vstgui_test_stubs.cpp:12). moduleHandle is NOT here; it is defined in
+    # tools/seraphis_preset_generator.cpp (T005).
+    plugins/seraphis/tests/vstgui_test_stubs.cpp
+)
+
+# NO vstgui_support: FR-015 - the generator must not pull VSTGUI in. processor.cpp's only ui/ include is
+# ui/edit_message.h (a POD plus three constexpr strings, no VSTGUI type; processor.cpp:18, :21).
+target_link_libraries(seraphis_preset_generator PRIVATE KrateDSP KratePluginsShared sdk)
+
+target_include_directories(seraphis_preset_generator PRIVATE
+    ${CMAKE_SOURCE_DIR}/plugins/seraphis/src      # "plugin_ids.h", "processor/processor.h", "parameters/..."
+    ${CMAKE_SOURCE_DIR}/plugins/seraphis/tests    # seraphis_test_fixture.h
+    ${CMAKE_SOURCE_DIR}/tests/test_helpers        # <vst_event_list.h> - HEADER ONLY, not the
+                                                  # test_helpers target (it links Catch2 INTERFACE)
+    ${CMAKE_SOURCE_DIR}/tools                     # seraphis_preset_defs.h
+    ${vst3sdk_SOURCE_DIR}
+)
+
+target_compile_features(seraphis_preset_generator PRIVATE cxx_std_20)
+
+set_target_properties(seraphis_preset_generator PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# Warning posture copies gen_v2_fixtures (:762-778). Seraphis additionally needs MSVC /wd4459 for the
+# function-local `kPi` in dsp/include/krate/dsp/systems/timevar_comb_bank.h:915 shadowing the namespace
+# -scope Krate::DSP::kPi - the same suppression plugins/seraphis/CMakeLists.txt:120-135 documents, applied
+# HERE on this target only.
+if(MSVC)
+    target_compile_options(seraphis_preset_generator PRIVATE
+        /W4
+        /permissive-
+        /Zc:__cplusplus
+        /wd4100
+        /wd4458
+        /wd4459
+    )
+else()
+    target_compile_options(seraphis_preset_generator PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wno-unused-parameter
+    )
+endif()
+
+# Custom target to regenerate Seraphis factory presets on demand
+# Usage: cmake --build build --target generate_seraphis_presets
+add_custom_target(generate_seraphis_presets
+    COMMAND seraphis_preset_generator "${CMAKE_SOURCE_DIR}/plugins/seraphis/resources/presets"
+    DEPENDS seraphis_preset_generator
+    COMMENT "Generating Seraphis factory presets (42 presets across 7 categories)"
+    VERBATIM
+)
+
+# ==============================================================================
 # gen_v2_fixtures — Spec 142 migration regression fixture generator
 # ==============================================================================
 # Generates byte-exact v2 state fixtures (.bin) for the Gradus processor and

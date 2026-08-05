@@ -76,6 +76,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <span>
 #include <vector>
 
@@ -1157,4 +1158,111 @@ TEST_CASE("Seraphis_ProcessorCpuOverhead", "[.perf][seraphis]") {
                 "the per-sample master-gain multiply (processor.cpp:625-629), "
                 "processParameterChanges() and the event/slice bookkeeping in process().");
     }
+}
+
+// ==============================================================================
+// REGRESSION - a NoteOn in the SAME block as its configuration must be
+// configured when it arrives (Phase 12 / SC-009)
+// ==============================================================================
+// THE DEFECT THIS PINS. process()' slice loop dispatched every event due at a
+// slice start BEFORE the slice ran pushVoiceParams(), so the very first note of
+// a block reached SeraphisVoice::noteOn() carrying the PREVIOUS block's voice
+// parameters. For 36 of the 37 `VP` rows that is invisible - the push lands
+// before renderSlice(), so no sample is ever rendered on a stale value - but
+// kEnvModeId (700) is read INSIDE noteOn(): `if (envMode_ == Growth)
+// growth_.trigger()` (seraphis_voice.h:533-535). Miss that instant and
+// GrowthEnvelope stays Idle forever, getCurrentValue() reads exactly 0
+// (growth_envelope.h:239-241, "a no-op unless the envelope is Rising"), and the
+// Growth branch's `g = velocity_ * gGrowth * mse_.process()`
+// (seraphis_voice.h:1065-1071) makes the voice EXACTLY silent for the whole
+// note - not quiet, bit-zero.
+//
+// It reached the surface as three silent factory presets in Phase 12's SC-009
+// sweep (Pads/First Light, Cinematic/Approach Vector, Cinematic/Rising Dread -
+// the only three that select Growth), because Processor::setState() raises
+// forcePushAllPending_ and a host that loads a preset and plays a note in the
+// same buffer hits exactly this ordering.
+//
+// WHY BOTH ARMS. Arm 1 alone cannot distinguish "the ordering is fixed" from
+// "Growth mode is broken outright"; arm 2 is the same configuration with the
+// note one block later - the path that always worked - so the case fails
+// differently for the two defects.
+TEST_CASE("Seraphis_GrowthNoteInParameterBlockSounds", "[seraphis][integration]") {
+    // ID 701 is log-mapped over [1, 60] s (growth_envelope.h:96-98), so
+    // ln(2)/ln(60) denormalises to a 2 s rise: short enough that the 4 s render
+    // spends its whole final second at the top of the S-curve.
+    const double kGrowth2sNorm = std::numbers::ln2 / std::log(60.0);
+
+    // Dropdown 700 has 2 labels, so index 1 (Growth) is normalized 1.0
+    // (dropdown_mappings.h's `clamp(int(v * (N - 1) + 0.5), 0, N - 1)`).
+    constexpr double kEnvModeGrowthNorm = 1.0;
+
+    /// Stereo RMS over the half-open window [first, last).
+    const auto rmsOver = [](const std::vector<float>& l, const std::vector<float>& r,
+                            std::size_t first, std::size_t last) {
+        const std::size_t stop = std::min({l.size(), r.size(), last});
+        if (first >= stop) {
+            return 0.0;
+        }
+        double sumSquares = 0.0;
+        for (std::size_t i = first; i < stop; ++i) {
+            sumSquares += static_cast<double>(l[i]) * static_cast<double>(l[i])
+                          + static_cast<double>(r[i]) * static_cast<double>(r[i]);
+        }
+        return std::sqrt(sumSquares / (2.0 * static_cast<double>(stop - first)));
+    };
+
+    /// One 4 s render in Growth mode. `noteBlock` places the NoteOn; the two
+    /// parameter points are always delivered in block 0. The fixture is
+    /// destroyed before this returns, so only one engine is ever alive.
+    const auto renderGrowth = [&](std::size_t noteBlock) {
+        SeraphisTest::ProcessorFixture fx;
+        REQUIRE(fx.prepare(kSampleRate, kBlock) == Steinberg::kResultOk);
+        fx.reserveCapture(kFourSeconds);
+        fx.renderBlocks(kFourSecondBlocks, static_cast<std::size_t>(kBlock),
+                        [&](std::size_t b, Krate::Test::EventList&,
+                            SeraphisTest::ParameterChanges&) {
+                            if (b == 0) {
+                                fx.setParam(Seraphis::kEnvModeId, kEnvModeGrowthNorm);
+                                fx.setParam(Seraphis::kEnvGrowthDurationId, kGrowth2sNorm);
+                            }
+                            if (b == noteBlock) {
+                                fx.pushEvent(Steinberg::Vst::Event::kNoteOnEvent, kSingleNote[0],
+                                             kHostVelocity100, 0);
+                            }
+                        });
+        REQUIRE(fx.checkCanaries());
+        return Render{.left = std::move(fx.capturedL), .right = std::move(fx.capturedR)};
+    };
+
+    // The measurement window: the last second of the render, by which point a
+    // 2 s rise has been at its ceiling for a full second in BOTH arms.
+    const std::size_t windowFirst = static_cast<std::size_t>(kSampleRate) * 3u;
+    const std::size_t windowLast = kFourSeconds;
+
+    const Render sameBlock = renderGrowth(0);
+    const Render nextBlock = renderGrowth(1);
+
+    const double rmsSameBlock = rmsOver(sameBlock.left, sameBlock.right, windowFirst, windowLast);
+    const double rmsNextBlock = rmsOver(nextBlock.left, nextBlock.right, windowFirst, windowLast);
+
+    INFO("stereo RMS over [3 s, 4 s): note in the parameter block = "
+         << rmsSameBlock << ", note one block later = " << rmsNextBlock);
+
+    REQUIRE(allFiniteBits(sameBlock.left));
+    REQUIRE(allFiniteBits(sameBlock.right));
+
+    // -60 dBFS, Phase 12 SC-009's own sustain floor. It is ~24 dB below the
+    // 0.0159 both arms measure here and ~18 decades ABOVE the 3.96e-21 the
+    // broken ordering produced, so it discriminates without being a lever.
+    constexpr double kSustainRmsFloor = 1.0e-3;
+
+    // Arm 2 first: if THIS is below the floor the defect is Growth mode itself,
+    // not the dispatch order, and arm 1 would be a misleading failure.
+    REQUIRE(rmsNextBlock > kSustainRmsFloor);
+    REQUIRE(rmsSameBlock > kSustainRmsFloor);
+
+    // The two arms differ only by 512 samples of note placement, so a second of
+    // settled Growth-mode sustain must measure the same to well inside 2x.
+    REQUIRE(rmsSameBlock > 0.5 * rmsNextBlock);
 }

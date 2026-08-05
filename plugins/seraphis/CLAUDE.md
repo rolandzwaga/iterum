@@ -227,13 +227,33 @@ not clear plugin caches. Phase 9 weighed that and accepted it rather than pre-em
 second controller FUID. **Do not re-litigate this in Phase 13 as a fresh discovery, and do not
 regenerate `kControllerUID` over it.**
 
-### 2. Preset categories are **additive-only**
+### 2. Preset categories are **additive-only** — the shipped set is these SEVEN
 
-Phase 8 seeds exactly one category: **`Textures`**. It is a **seed, not a placeholder** — it is not to be
-renamed, replaced or "cleaned up" when the real category set lands.
+Phase 8 seeded one category (`Textures`); **Phase 12 shipped the full set**. The **order is load-bearing**
+— it is the browser's tab order after `"All"`, built by `makeSeraphisPresetTabLabels()` in
+`src/preset/seraphis_preset_config.h` and handed straight to `PresetBrowserView` by
+`Controller::togglePresetBrowser()` — so this table gets the same
+treatment as the parameter-band table above: read it, never re-derive it.
 
-Phase 12 **EXTENDS** the list and **MUST NOT rename a shipped category.** A rename orphans every preset
-ever saved against the old name: the user's presets still carry the old string and no longer resolve into
+| # | Category | Directory | Factory presets |
+|---|---|---|---|
+| 1 | `Textures` | `resources/presets/Textures/` | 6 |
+| 2 | `Pads` | `resources/presets/Pads/` | 6 |
+| 3 | `Drones` | `resources/presets/Drones/` | 6 |
+| 4 | `Bells` | `resources/presets/Bells/` | 6 |
+| 5 | `Choirs` | `resources/presets/Choirs/` | 6 |
+| 6 | `Motion` | `resources/presets/Motion/` | 6 |
+| 7 | `Cinematic` | `resources/presets/Cinematic/` | 6 |
+
+42 presets, 7 × 6. The code of record is `makeSeraphisPresetConfig()`'s `subcategoryNames`
+(`src/preset/seraphis_preset_config.h:37-38`); this table is the durable prose record and must match it
+**exactly and in order**. `Textures` is first because it keeps Phase 8's byte-exact spelling and its
+existing directory — it was a **seed, not a placeholder**, and was not renamed or "cleaned up" when the
+rest of the set landed.
+
+The list is **additive-only**: a name may be appended, but a shipped category **MUST NOT be renamed**,
+reordered out of existence, or removed. A rename orphans every preset ever saved against the old name:
+the user's presets still carry the old string and no longer resolve into
 any category. This is the Membrum lesson (roadmap line 405) — Membrum's kit categories (`Acoustic`,
 `Electronic`, `Percussive`, `Unnatural`) are fixed for exactly this reason.
 
@@ -246,3 +266,10 @@ The category name is carried in **two** places and they must **always agree**:
 
 Changing one without the other produces presets that exist on disk but never appear in the browser.
 Adding a category means adding it to **both**, in the same change.
+
+Phase 12 added an authoring-side mirror of the same names — `tools/seraphis_preset_defs.h::kCategories`
+(`:93-94`), which is the generator's source for the output subdirectories. It is **checked, not trusted**:
+`Seraphis_FactoryPresets_CategoriesMatchConfig` compares it element-wise and in order against
+`makeSeraphisPresetConfig().subcategoryNames`
+(`plugins/seraphis/tests/unit/preset/factory_preset_test.cpp:390`, `:414-418`), so a divergence fails
+`seraphis_tests` instead of shipping presets the browser cannot see.

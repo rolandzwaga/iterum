@@ -260,14 +260,16 @@ const IMPL_RESULT = {
 }
 
 const BUILD_RESULT = {
+  // 'failures' left OPTIONAL on purpose (2026-08-04): requiring it made a green
+  // reporter omit-and-flail to the StructuredOutput retry cap. Script defaults it.
   type: 'object',
   additionalProperties: false,
-  required: ['build_ok', 'tests_ok', 'summary', 'failures'],
+  required: ['build_ok', 'tests_ok', 'summary'],
   properties: {
     build_ok: { type: 'boolean' },
     tests_ok: { type: 'boolean' },
     summary: { type: 'string', description: 'the actual Catch2 summary line(s) verbatim, one per target' },
-    failures: { type: 'string', description: 'compiler errors / failing test names + assertion output, verbatim excerpts; empty if green' },
+    failures: { type: 'string', description: 'compiler errors / failing test names + assertion output, verbatim excerpts; omit or empty if green' },
   },
 }
 
@@ -491,19 +493,33 @@ for (const group of dispatch.groups) {
 
   // Build + fix loop after every group so errors localize to the group that caused them.
   phase('Build+Test')
+  // Gate-scope narrowing (encoded 2026-08-04 after the Phase 12 fixer loop): a group that
+  // touches only this plugin's surface gates on this plugin's targets; the full roster runs
+  // when the group touches shared/dsp/root-CMake surface, and always on the final group.
+  const isLastGroup = group === dispatch.groups[dispatch.groups.length - 1]
+  const touchesWide = group.tasks.some(t => (t.files || []).some(f => {
+    const p = String(f).replace(/\\/g, '/')
+    return p.includes('dsp/') || p.includes('plugins/shared') || p.includes('tests/test_helpers')
+      || (p.includes('CMakeLists.txt') && !p.includes('plugins/seraphis'))
+  }))
+  const gateTargets = (isLastGroup || touchesWide)
+    ? dispatch.test_targets
+    : dispatch.test_targets.filter(t => /seraphis/i.test(t))
+  if (gateTargets.length < dispatch.test_targets.length) log(`Gate for "${group.name}" narrowed to: ${gateTargets.join(', ')}`)
   let attempt = 0
   while (attempt < 4) {
     attempt++
     buildLog = await run(
-      `${CONTEXT_LITE}\n\nBuild and test the current tree.${BUILD_CMDS(dispatch.test_targets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n\nREPORTING CONTRACT (violations poison the whole pipeline):\n- WAIT for every suite to print its final Catch2 summary line, however long it takes (suites can run several minutes; use foreground commands with generous timeouts).\n- An unfinished or timed-out run is NOT a result: re-run that suite to completion before reporting. NEVER report tests_ok=false because a measurement was incomplete.\n- NEVER return placeholder text in any field. summary must contain the real verbatim summary line per target; tests_ok=false REQUIRES the actual failing test names + assertion output in failures.\n- Hidden-tag tests ([.perf] etc.) are excluded from plain suite runs by design — do not run them with wildcard filters and do not count them.\n(retry-epoch 4: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
+      `${CONTEXT_LITE}\n\nBuild and test the current tree.${BUILD_CMDS(gateTargets)}\nReport verbatim results. Fix NOTHING — you are a reporter.\n\nGATE SEMANTICS — this gate follows group "${group.name}"; later groups are NOT implemented yet (Phase 8/9 lesson, encoded 2026-08-04 after a Phase 12 fixer loop):\n- A requested cmake target that DOES NOT EXIST yet because the tasks.md task that creates it is in a LATER group is NOT a build failure. Skip it, name it in summary as "not yet created (later group)", and do not set build_ok=false over it. build_ok=false is ONLY for a compile/link error in a target that exists.\n- TDD expected-reds: before reporting tests_ok=false, open ${TASKS} and read the sections for the tasks implemented so far (up to and including group "${group.name}"). A failing case that a task section EXPLICITLY documents as expected-red until a later task lands is NOT a failure: count it as green, and record the case name + the tasks.md line you relied on in summary. Any failing case NOT so documented is a real red.\n\nREPORTING CONTRACT (violations poison the whole pipeline):\n- WAIT for every suite to print its final Catch2 summary line, however long it takes (suites can run several minutes; use foreground commands with generous timeouts).\n- An unfinished or timed-out run is NOT a result: re-run that suite to completion before reporting. NEVER report tests_ok=false because a measurement was incomplete.\n- NEVER return placeholder text in any field. summary must contain the real verbatim summary line per target; tests_ok=false REQUIRES the actual failing test names + assertion output in failures.\n- Hidden-tag tests ([.perf] etc.) are excluded from plain suite runs by design — do not run them with wildcard filters and do not count them.\n(retry-epoch 4: the tree may have been repaired outside the workflow since the last attempt — measure fresh, do not assume prior failures still hold.)`,
       { label: `build:${group.name}:a${attempt}`, phase: 'Build+Test', schema: BUILD_RESULT, model: MECH },
     )
     if (!buildLog) throw new Error('Build agent died — aborting to avoid blind fixes')
+    if (buildLog.failures == null) buildLog.failures = ''
     if (buildLog.build_ok && buildLog.tests_ok) { log(`Group "${group.name}" green: ${buildLog.summary}`); break }
     if (attempt >= 4) break
     log(`Group "${group.name}" red (attempt ${attempt}) — dispatching fixer`)
     await run(
-      `${CONTEXT}\n\nThe build/tests are failing after implementing group "${group.name}" of ${TASKS}. Diagnose and fix the ROOT CAUSE. Rules: never weaken or delete a failing test to make it pass unless it demonstrably contradicts ${SPEC} (then say so loudly in your notes); no warnings allowed; fix all failures, not just the first. You MAY build/run tests yourself while iterating.${BUILD_CMDS(dispatch.test_targets)}\n\nFAILURES:\n${buildLog.failures}\n\nTASK NOTES SO FAR:\n${JSON.stringify(implResults, null, 2)}`,
+      `${CONTEXT}\n\nThe build/tests are failing after implementing group "${group.name}" of ${TASKS}. Diagnose and fix the ROOT CAUSE. Rules: never weaken or delete a failing test to make it pass unless it demonstrably contradicts ${SPEC} (then say so loudly in your notes); no warnings allowed; fix all failures, not just the first. NOT failures (do not "fix" these, just note them): targets a LATER tasks.md group creates that don't exist yet, and failing cases a tasks.md section explicitly documents as expected-red until a later task lands. You MAY build/run tests yourself while iterating.${BUILD_CMDS(gateTargets)}\n\nFAILURES:\n${buildLog.failures}\n\nTASK NOTES SO FAR:\n${JSON.stringify(implResults, null, 2)}`,
       { label: `fix:${group.name}:a${attempt}`, phase: 'Build+Test' },
     )
   }

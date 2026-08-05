@@ -43,8 +43,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>  // Phase 11 C-2: memset/memcpy of the CloudFrame payload
-#include <utility>  // std::cmp_greater (C++20 mixed-sign integer comparison)
+#include <cstring>      // Phase 11 C-2: memset/memcpy of the CloudFrame payload
+#include <type_traits>  // std::is_trivially_copyable_v (the CloudFrame memset guard)
+#include <utility>      // std::cmp_greater (C++20 mixed-sign integer comparison)
 
 namespace Seraphis {
 
@@ -923,7 +924,18 @@ tresult PLUGIN_API Processor::setupProcessing(Vst::ProcessSetup& setup) {
     // HERE, and only field-assigned thereafter, so CloudFrame's 4 interior
     // padding bytes are deterministically zero in every block that crosses the
     // process boundary by memcpy - and two frames may therefore be memcmp'd.
-    std::memset(&pendingFrame_, 0, sizeof(CloudFrame));
+    //
+    // THE `void*` CAST IS DELIBERATE AND MUST STAY. CloudFrame carries default
+    // member initializers, which makes its default constructor non-trivial, and
+    // GCC's -Wclass-memaccess fires on the implicit CloudFrame* -> void*
+    // conversion, suggesting "assignment or value-initialization instead". That
+    // suggestion is wrong HERE: `pendingFrame_ = CloudFrame{}` leaves the 4
+    // interior padding bytes indeterminate, which is precisely what this line
+    // exists to prevent. The type IS trivially copyable (asserted below), so the
+    // memset is well-defined; the explicit cast says "yes, on purpose".
+    static_assert(std::is_trivially_copyable_v<CloudFrame>,
+                  "CloudFrame is memset and memcpy'd across the process boundary");
+    std::memset(static_cast<void*>(&pendingFrame_), 0, sizeof(CloudFrame));
     cloudFrameFocusVoice_ = 0;
 
     // Phase 11 FR-030 / FR-043 (plan 6.3, T011). CALL SITE 6 of six:
@@ -1597,40 +1609,54 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
         (data.inputEvents != nullptr) ? data.inputEvents->getEventCount() : 0;
 
     while (cursor < total) {
-        // 1. Dispatch EVERY event due at this slice start. A `while`, NOT an
-        //    `if`: with an `if` the second event at the same offset would
-        //    resolve the next sliceEnd back to `cursor` and a zero-length slice
-        //    would reach processStereoBlock (SC-022 clause 5;
+        // 1. SCAN the events due at this slice start - do NOT dispatch them yet.
+        //    The scan yields both how far they extend (`dueEnd`, consumed by
+        //    step 4) and where the next one lands (`sliceEnd`).
+        //
+        //    THE SPLIT BETWEEN THIS SCAN AND STEP 4's DISPATCH IS A FIX, NOT A
+        //    REFACTOR. SeraphisVoice::noteOn() READS voice configuration at the
+        //    instant it runs - `if (envMode_ == Growth) growth_.trigger()`
+        //    (seraphis_voice.h:533-535) - so dispatching before step 3's
+        //    pushVoiceParams() gated a Growth-mode note on the PREVIOUS block's
+        //    envelope mode. The trigger never fired, GrowthEnvelope held Idle at
+        //    exactly 0 (growth_envelope.h:239-241) and the Growth branch's
+        //    `g = velocity_ * gGrowth * mse_.process()` (seraphis_voice.h:1065-
+        //    1071) made the voice BIT-SILENT for its whole life. A host that
+        //    loads a preset - setState() raises forcePushAllPending_, consumed
+        //    by this call's pre-slice block - or moves ID 700, and plays a note
+        //    in the same buffer, hit it every time. The other 36 `VP` rows never
+        //    showed it: the push still lands before renderSlice(), so no SAMPLE
+        //    was ever rendered on a stale value.
+        //    Regression: Seraphis_GrowthNoteInParameterBlockSounds
+        //    (integration/processor_audio_test.cpp).
+        //
+        //    A `while`, NOT an `if`: with an `if` the second event at the same
+        //    offset would resolve the next sliceEnd back to `cursor` and a
+        //    zero-length slice would reach processStereoBlock (SC-022 clause 5;
         //    tests/test_helpers/seraphis_chain.h:195-198 has the same `while`).
-        while (nextEvent < numEvents) {
-            Vst::Event event{};
-            if (data.inputEvents->getEvent(nextEvent, event) != kResultOk) {
-                ++nextEvent;
-                continue;
-            }
-            if (clampOffset(event.sampleOffset, total) > cursor) {
-                break;  // due later in this block
-            }
-            dispatchEvent(*engine_, event);
-            ++nextEvent;
-        }
-
-        // 2. Slice end = the next event's offset, the block end, or the 2048
+        //
+        //    Slice end = the next event's offset, the block end, or the 2048
         //    bound - whichever comes first. Events are assumed sorted by
         //    sampleOffset (VST3 requires it); the `at > cursor` test keeps the
         //    loop well formed on a malformed list by firing a late-but-earlier
         //    event at the current cursor instead of rewinding it.
+        int32 dueEnd = nextEvent;
         std::size_t sliceEnd = total;
-        if (nextEvent < numEvents) {
+        while (dueEnd < numEvents) {
             Vst::Event event{};
-            if (data.inputEvents->getEvent(nextEvent, event) == kResultOk) {
-                const std::size_t at = clampOffset(event.sampleOffset, total);
-                if (at > cursor && at < sliceEnd) {
-                    sliceEnd = at;
-                }
+            if (data.inputEvents->getEvent(dueEnd, event) != kResultOk) {
+                ++dueEnd;  // unreadable here, and skipped again by step 4
+                continue;
             }
+            const std::size_t at = clampOffset(event.sampleOffset, total);
+            if (at > cursor) {
+                sliceEnd = std::min(sliceEnd, at);
+                break;  // due later in this block
+            }
+            ++dueEnd;
         }
-        // FR-026, and the ONLY slice bound. kMaxBlockSamples is the SAME
+
+        // 2. FR-026, and the ONLY slice bound. kMaxBlockSamples is the SAME
         // constant makeSeraphisEngineConfig()/makeSeraphisReverbConfig() were
         // prepared with (seraphis_engine_config.h:40), so the engine ceiling and
         // the reverb ceiling cannot drift apart. This is the branch a host block
@@ -1660,7 +1686,7 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
             n = std::min(n, kChunk - phase);
         }
 
-        // ORDER IS NORMATIVE: advance BEFORE the pushes, so this sub-slice
+        // 3. ORDER IS NORMATIVE: advance BEFORE the pushes, so this sub-slice
         // carries the value the smoothers just reached. FR-044 is satisfied
         // unchanged - macros_.apply() and applyAetherTargets() still run every
         // slice, at their existing positions inside renderSlice().
@@ -1674,6 +1700,20 @@ tresult PLUGIN_API Processor::process(Vst::ProcessData& data) {
             (void)decompLap(decompNs_[static_cast<std::size_t>(DecompStage::SlicePush)],
                             decompT);
         }
+
+        // 4. Dispatch every event step 1 found due at this slice start, now that
+        //    the surfaces those events read are current (see step 1's banner).
+        //    Outside the SlicePush lap on purpose: the dispatch sat outside every
+        //    Phase 11.5 decomposition row before this reorder too, so no pinned
+        //    figure moves.
+        while (nextEvent < dueEnd) {
+            Vst::Event event{};
+            if (data.inputEvents->getEvent(nextEvent, event) == kResultOk) {
+                dispatchEvent(*engine_, event);
+            }
+            ++nextEvent;
+        }
+
         renderSlice(outL + cursor, outR + cursor, n);
         controlPhase_ += n;
         cursor += n;

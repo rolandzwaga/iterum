@@ -12,6 +12,12 @@
 //       PROCESSOR side. The third parameter is the payloads' destination - a
 //       Processor-owned staging buffer (plan 3.7), never a field here.
 //
+//   loadMorphParams(MorphParams&, IBStreamer&)
+//       The SCALAR HALF of the above, split out so its thirteen-field order
+//       lives in one place. It reads 52 bytes and stops; the caller advances
+//       past the 2164 payload bytes itself. Phase 12's FR-025a typed decode is
+//       the reason it is public - see its banner at :393.
+//
 //   loadMorphParamsToController(IBStreamer&, SetParamFunc,
 //                               std::array<SpectralState,4>& mirror)
 //       CONTROLLER side. PHASE 11 T018 (FR-046 re-seed source 2) gave it the
@@ -390,16 +396,26 @@ inline void saveSpectralPayloads(const std::array<Krate::DSP::SpectralState, 4>&
     }
 }
 
-/// PROCESSOR-side loader. NAMED EXCEPTION to the six-function contract
-/// (plan 2.3.0): @p destination receives the four SpectralState payloads, which
-/// FR-041b forbids storing in MorphParams.
+/// SCALAR-ONLY loader: the THIRTEEN scalars of the [morph] block, 52 bytes, and
+/// not one byte more. The cursor is left at the first payload byte.
 ///
-/// EOF-safe throughout: a short stream leaves every unread scalar at its
-/// registered default and every unread slot of @p destination bitwise untouched,
-/// and returns false - which is not an error, it is what a version-1 stream does.
-inline bool loadMorphParams(MorphParams& params,
-                            Steinberg::IBStreamer& streamer,
-                            std::array<Krate::DSP::SpectralState, 4>& destination) {
+/// This is the exact mirror of saveMorphParams (:346), which also writes the
+/// thirteen scalars only, so the pair cannot drift. The three-argument overload
+/// below calls it and then decodes the payloads, so the scalar order lives in
+/// ONE place.
+///
+/// It exists as a public overload because Seraphis Phase 12's FR-025a requires a
+/// typed decode that reads the scalar packs through the shipped
+/// `load*Params(Params&, IBStreamer&)` free functions while ADVANCING PAST the
+/// four 541-byte payload blocks by their known byte count, rather than decoding
+/// them here - FR-029 clause 5 decodes those separately, through
+/// `deserializeSpectralState`, with its own measured tolerance. A caller that
+/// uses this overload MUST advance the streamer by `4 * kSpectralStateBytes`
+/// itself; every block after [morph] is read from the wrong offset otherwise.
+///
+/// EOF-safe: a short stream leaves every unread scalar at its registered default
+/// and returns false.
+inline bool loadMorphParams(MorphParams& params, Steinberg::IBStreamer& streamer) {
     float fv = 0.0f;
     Steinberg::int32 iv = 0;
 
@@ -438,6 +454,23 @@ inline bool loadMorphParams(MorphParams& params,
             std::clamp(static_cast<int>(iv), 0,
                        static_cast<int>(kSpectralStateLabels.size()) - 1),
             std::memory_order_relaxed);
+    }
+
+    return true;
+}
+
+/// PROCESSOR-side loader. NAMED EXCEPTION to the six-function contract
+/// (plan 2.3.0): @p destination receives the four SpectralState payloads, which
+/// FR-041b forbids storing in MorphParams.
+///
+/// EOF-safe throughout: a short stream leaves every unread scalar at its
+/// registered default and every unread slot of @p destination bitwise untouched,
+/// and returns false - which is not an error, it is what a version-1 stream does.
+inline bool loadMorphParams(MorphParams& params,
+                            Steinberg::IBStreamer& streamer,
+                            std::array<Krate::DSP::SpectralState, 4>& destination) {
+    if (!loadMorphParams(params, streamer)) {
+        return false;
     }
 
     // --- the four payloads (plan 5.4's decoder) ------------------------------

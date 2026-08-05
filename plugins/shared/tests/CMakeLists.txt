@@ -28,6 +28,12 @@ add_executable(shared_tests
     test_update_checker.cpp
     test_shared_display_bridge.cpp
 
+    # Seraphis Phase 12 (T013 / FR-028a). This TU is the SINGLE owner of the
+    # global allocation-operator replacements in shared_tests (it includes
+    # <allocation_operator_overrides.h>); no other file in this list may include
+    # that header, or the binary fails to link on duplicate symbols.
+    test_allocation_detector.cpp
+
     # Stubs for GetPluginFactory and moduleHandle (needed by vstgui_support on Linux)
     vstgui_test_stubs.cpp
     ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/moduleinit.cpp

@@ -5,6 +5,144 @@ All notable changes to Seraphis will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-05
+
+Phase 12 — the library. Every release so far shipped an empty preset browser: one seeded category,
+`Textures`, and nothing in it. This one fills it with **42 factory presets across seven categories**, and
+it does so with a generator that links the shipped processor and asks it for its own state, so a preset can
+never encode a layout the plugin does not write. **No new parameters, no state-format change and no DSP
+change** — the registered surface stays at 107, the project stream stays version 3 at 2868 bytes, and a
+0.4.0 project loads bit-for-bit unchanged. One playing bug found while auditioning the library is fixed.
+
+### Added
+
+- **42 factory presets, six in each of seven categories** — `Textures`, `Pads`, `Drones`, `Bells`,
+  `Choirs`, `Motion` and `Cinematic`. `Textures` keeps its exact spelling and its existing directory: the
+  category list is **additive-only**, because a rename orphans every preset a user has already saved
+  against the old name. Each category is a real directory under the installed preset folder and a real tab
+  in the browser.
+- **The library covers the instrument, not a corner of it** — Every body material (Glass, Strings, Metal
+  Plate, Chamber, Ice), every factory spectrum (Sine Stack, Bell, Choir, Glass, Breath), both travel modes,
+  both envelope modes, morph counts of 2, 3 and 4, and each of the three freeze switches both engaged and
+  disengaged are exercised by at least one preset. The coverage is asserted by the test suite against the
+  decoded preset state — not against the table the presets were authored from.
+- **The presets are audibly different from each other, and that is measured** — All 861 preset pairs are
+  compared on a normalised render of their sustain, and the closest pair sits at **0.0366** against a floor
+  of **0.02**; the median pair is at 0.53. The floor is validated from below by an injected level-only twin
+  of a real preset, which lands at 0.00021 — two orders of magnitude under the floor — so the criterion is
+  known to be able to fail rather than merely observed to pass.
+- **A preset generator that cannot drift from the plugin** — `seraphis_preset_generator` compiles the
+  shipped processor, drives the authored parameter values through a real `process()` call, and writes what
+  `getState()` produces. Nothing about the 2868-byte layout is duplicated in the tool, so there is no second
+  copy of the format to keep in sync and no compatibility test standing in for one. It carries no
+  UI-framework dependency, which is what lets the release pipeline build it on its Linux leg.
+- **Generated presets are reproducible byte-for-byte** — `tools/check-preset-generator-determinism.js`
+  runs the generator into two fresh directories and compares every byte, then runs it a third time over an
+  existing tree and requires nothing changed. No timestamp, path string or random value reaches any preset
+  byte. Measured over the shipped library: 42 files, 0 differing, 0 changed.
+- **Every preset is proved to make sound, and to stay bounded** — Each one is rendered end to end at
+  44 100 Hz and 48 000 Hz on a timeline derived from its own envelope and reverb settings: the sustain is
+  required to be audible, the whole render finite and inside the output ceiling, and the tail is checked
+  against the behaviour the preset's own freeze switches promise — a frozen preset must hold, and an
+  unfrozen one must decay at the RT60 it declares. A four-note chord render of every preset checks the
+  multi-voice sum as well.
+- **Every preset stays inside the CPU promise** — All 42 ship at 8 voices or fewer with the output soft
+  limit engaged, asserted from the saved state rather than from the authoring table, so no preset can
+  quietly buy its sound with polyphony the 25 %-of-one-core budget does not have.
+- **Preset metadata matches where the preset lives** — Each file carries the six-attribute `Info` block the
+  browser reads, its `Name` matches the filename, and its category matches the directory it sits in. A
+  preset that disagrees with its own directory would exist on disk and never appear in the browser; that is
+  now a test failure instead of a silent absence.
+- **A tooltip on every control** — All 110 bound views and the six session controls (mode toggle, drawer
+  handle, Blend, Tilt, the tab bar and the slot bar) carry a short description of what the control does to
+  the sound, rather than a restatement of its name.
+
+### Fixed
+
+> The six editor items below landed **after** the 0.4.0 entry was written and were never recorded against
+> it. They are Phase 11 interface work, listed here because this is the first release entry that covers
+> them.
+
+- **The drawer tabs did nothing visible** — Clicking a tab switched the visibility of pages clipped inside
+  the 30 px collapsed strip without opening the drawer. A tab click now opens it, and the handle keeps its
+  own toggle behaviour.
+- **Three controls were invisible click targets** — The preset button, the mode toggle and the drawer
+  handle were bitmap-less on/off buttons drawn over mouse-disabled labels, with no pressed or active state.
+  All three are real buttons now, and a test fails the build if a bitmap-less on/off button reappears in the
+  interface description.
+- **The constellation was barely visible** — Point radius was linear in amplitude with a zero minimum, so
+  typical normalised amplitudes across 64 partials drew sub-pixel dots. The mapping is perceptual now, the
+  maximum radius is larger, points are drawn with a glow under a solid core, and Edit mode is marked by a
+  border so the mode switch is visible. An amplitude of exactly zero still draws at the minimum radius,
+  which is what keeps a masked partial clickable.
+- **Edit mode showed nothing with no note held** — With no live frame, Edit mode now draws the selected
+  slot's authored partials against a fixed reference pitch, so a spectrum can be seen and dragged in
+  silence. Frames that carry a release tail still draw as frames.
+- **The selected slot never showed whether it was sounding** — When the selected morph slot does not
+  contribute to the current blend, its border is drawn in amber instead of the accent colour.
+- **Toggles read the same on and off** — The off state used a colour nearly as bright as the on state.
+  Toggles now use a dark neutral for off, so on/off is legible at a glance. Segment bars keep their
+  readable label colour for unselected entries, which are text rather than indicators.
+- **A note played in the same buffer as a preset load could be completely silent** — Note events were
+  dispatched at the start of a slice, *before* the block's parameter values reached the voices. A voice
+  started in Growth envelope mode reads its envelope mode at the instant the note begins, so a note that
+  arrived in the same buffer as the preset load (or as a change to the envelope-mode control) triggered
+  against the *previous* block's mode, the growth envelope never started, and the voice was bit-silent for
+  its entire life. Events are now scanned first and dispatched after the parameter push, so a voice always
+  starts against current values. No sample was ever rendered on a stale value by the old order, which is why
+  the other 36 parameter paths never showed it — this failure needed a note-on to read state, and only the
+  envelope mode does.
+
+### Changed
+
+- **Preset categories are seven, and the list is closed to renames** — `Textures` is unchanged in both
+  places the name is carried (the subcategory list and the filesystem directory), and both must always
+  agree. Later phases may add categories beside these seven; none of them may be renamed.
+- **Nothing about the plugin's saved format moved** — State is still version 3 and still 2868 bytes. Every
+  factory preset carries the Phase 11 per-partial override block in its un-edited form: both bitmasks zero,
+  all 64 pans at 0.0. No factory preset ships a per-partial edit, so loading one never has to reconcile an
+  authored override table against the spectrum it came from.
+- **The editor is built from the shared component library** — The eleven toggles, the seven drawer tabs,
+  the four morph-slot buttons and the preset button now use the same shared controls every other Krate
+  plugin uses, instead of stock check boxes and capsule buttons. The tab and slot rows each collapse into a
+  single segmented bar. No new view class was added and no parameter binding changed.
+
+### Performance
+
+- **The instrument's dominant cost was located by measurement, not by guess** — Stage timers inside
+  `process()` (compiled out of every shipping path) attributed the whole-block wall time: the voice sum is
+  ~91 % of it, and all processor plumbing combined is **0.06 %**. Within the voice, the atmosphere grain
+  sweep alone measured **25.4 % of one core** at the 8-voice operating point — about 80 % of the whole
+  overshoot of the 25 % promise. This refutes the earlier assumption that the remainder lived in the
+  plugin-side plumbing, and it is why the optimisation work went where it did.
+- **The atmosphere grain sweep was restructured grain-major** — Instead of re-loading every grain's state
+  once per sample, each grain now renders its whole span with its state in registers, with the per-sample
+  bookkeeping (births, retirements, capture, scheduler) kept sample-exact in its own pass. Read positions,
+  interpolation weights and admission decisions are unchanged; the only difference is the order in which
+  per-sample contributions are summed, which is last-ULP and inside every render tolerance.
+- **The grain span reads through a SIMD gather kernel** — Index arithmetic is computed scalar and
+  bit-identically to the scalar reader; the memory phase gathers, interpolates and accumulates per lane
+  with no cross-lane reduction, so splitting a block differently cannot move any sample. Measured at
+  matched machine state: **8.90–8.96 ns → 8.29 ns per grain-sample**, ~12 % off the sweep.
+- **A settled blur of exactly zero no longer pays for a polar round-trip** — At the shipped default the
+  per-bin phase perturbation is identically zero, so the spectrum is left untouched rather than
+  re-rounded through `atan2`/`sin`/`cos`. The same per-bin random draws are still consumed, so the render
+  stream is unchanged. Any non-zero blur, however small, takes the full path — this is an exact-identity
+  gate, not a threshold. The measured saving is near zero; the earlier "~2.4 %" figure attributed to it was
+  the whole containing row, and that overclaim is corrected here rather than left standing.
+- **The 25 %-of-one-core target is not met yet.** The measurements above are progress against it, not a
+  claim of arrival, and that is why this version's release verdict is deferred.
+- Reported latency is unchanged at 1024 samples.
+
+### Known limitations
+
+- **The release verdict for this version is `DEFERRED`.** The library, the generator and the harness are
+  complete; the release itself waits on the performance gate that precedes it, and no green verdict is
+  recorded until that gate's own measured criteria are met.
+- No MPE or per-note expression. It ships in Phase 13, which is also the release that claims `1.0.0`.
+- The drawer opens and closes instantly; there is no slide animation.
+- The window is a fixed 1000 × 700.
+
 ## [0.4.0] - 2026-08-04
 
 Phase 11 — the interface. Every release so far shipped the placeholder editor from 0.1.0: 107

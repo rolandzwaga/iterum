@@ -214,7 +214,14 @@ TEST_CASE("Seraphis_EditorLifecycle", "[seraphis][controller][ui][lifecycle]") {
         const auto cfg = Seraphis::makeSeraphisPresetConfig();
         REQUIRE(cfg.pluginName == "Seraphis");
 
-        const std::vector<std::string> kExpectedSubcategories{"Textures"};
+        // Phase 12 (FR-001 / C-1) EXTENDED the seed list to the seven shipped
+        // categories, in this order (specs/seraphis-phase12-presets-release/spec.md:188).
+        // This literal is a SECOND, independent copy of the list that
+        // tests/unit/preset/factory_preset_test.cpp:47-48 owns as the FR-001
+        // gate - both are literals so both can fail, and both MUST be moved
+        // together whenever a category is added.
+        const std::vector<std::string> kExpectedSubcategories{
+            "Textures", "Pads", "Drones", "Bells", "Choirs", "Motion", "Cinematic"};
         REQUIRE(cfg.subcategoryNames == kExpectedSubcategories);
 
         const bool processorUidMatches = (cfg.processorUID == Seraphis::kProcessorUID);
@@ -227,7 +234,33 @@ TEST_CASE("Seraphis_EditorLifecycle", "[seraphis][controller][ui][lifecycle]") {
         // Both path overrides stay inside the repo, so nothing touches the
         // machine's real ProgramData/Library preset trees.
         Krate::Plugins::PresetManager pm(cfg, nullptr, nullptr, presetsDir, presetsDir);
-        REQUIRE(pm.scanPresets().empty());  // Phase 8 ships no .vstpreset
+
+        // Phase 8's premise here was "ships no .vstpreset", so this asserted an
+        // EMPTY scan. Phase 12 retires that premise by construction: the
+        // `generate_seraphis_presets` target writes real factory presets into
+        // this very tree (specs/seraphis-phase12-presets-release/tasks.md:416-421)
+        // and they ship as tracked resources, exactly as Iterum's and Membrum's
+        // do. What this section is actually for - the name is
+        // Seraphis_PresetConfigIsLive - is that the config drives the scanner,
+        // so the replacement asserts the property that would break if it did
+        // not: every scanned preset is filed under one of the CONFIGURED
+        // subcategories. A directory that is not in subcategoryNames leaves
+        // `subcategory` empty (preset_manager.cpp:95-103) - the exact Membrum
+        // failure mode spec.md:595-596 calls out - and fails the loop below.
+        //
+        // The 42-entry count is deliberately NOT asserted here. It belongs to
+        // tests/unit/preset/factory_preset_test.cpp, and it would be wrong in
+        // this fixture anyway: both directory overrides point at the SAME
+        // directory, so scanPresets() enumerates the tree twice - once as user,
+        // once as factory (preset_manager.cpp:41-49).
+        const auto scanned = pm.scanPresets();
+        REQUIRE_FALSE(scanned.empty());
+        for (const auto& preset : scanned) {
+            INFO("preset: " << preset.path.string());
+            REQUIRE(std::find(cfg.subcategoryNames.begin(), cfg.subcategoryNames.end(),
+                              preset.subcategory) != cfg.subcategoryNames.end());
+        }
+
         REQUIRE(pm.getConfig().pluginName == "Seraphis");
 
         // Default (un-overridden) factory directory is per-plugin named.

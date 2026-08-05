@@ -51,6 +51,14 @@ add_executable(seraphis_tests
     # and must NOT appear in the -fno-fast-math block below - see the note there.
     integration/ui_perf_test.cpp
 
+    # Seraphis Phase 12 (specs/seraphis-phase12-presets-release): the factory
+    # preset library + release readiness. Same rule as Phases 9, 10 and 11 above
+    # - this list is ENUMERATED, not globbed, so an unregistered TU silently
+    # drops out of the build and its cases never run (Catch2 reports "No tests
+    # ran" rather than a failure, and the exit code stays 0).
+    unit/preset/factory_preset_test.cpp
+    integration/preset_render_sweep_test.cpp
+
     # SECOND compilation of every plugin .cpp (needed by the plugin-shell tests)
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/processor/processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/controller/controller.cpp
@@ -165,6 +173,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # the two arms' arithmetic differently once anything around the call site
         # changes.
         integration/ui_negative_control_test.cpp
+        # Seraphis Phase 12: FR-009 checks stored floats for non-finiteness by
+        # bit pattern.
+        unit/preset/factory_preset_test.cpp
+        # preset_render_sweep_test.cpp DOES get it too: bit-pattern non-finite
+        # checks over every rendered sample and per-second RMS statistics.
+        integration/preset_render_sweep_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()

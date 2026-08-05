@@ -345,6 +345,26 @@ inline constexpr float kFillSpacingFactor = 1.0163049f;
 
 } // namespace detail::factory
 
+namespace detail {
+
+/// Copy a NUL-terminated ASCII @p label into @p s.name, truncating to
+/// `kStateNameBytes - 1` so the already-zeroed field keeps its terminator.
+///
+/// WHY A HELPER AND NOT THE OBVIOUS `label[i] != '\0'` LOOP: GCC 13 unrolls
+/// `for (i; i + 1 < kStateNameBytes && label[i] != '\0'; ++i)` against a
+/// call site whose argument is a shorter string literal, and reports
+/// `-Warray-bounds` for the unrolled iterations it cannot prove the NUL test
+/// kills (subscripts 10-14 of a `const char[10]`). Measuring the length first
+/// makes the bound provable from the literal itself, so the diagnostic goes
+/// away without suppressing anything. Behaviour is identical.
+inline void copyStateName(SpectralState& s, const char* label) noexcept {
+    const std::size_t copyCount =
+        std::min(std::strlen(label), SpectralState::kStateNameBytes - std::size_t{1});
+    std::memcpy(s.name.data(), label, copyCount);
+}
+
+} // namespace detail
+
 /// @brief Build one of the five factory states (FR-021, FR-022).
 ///
 /// Deterministic and stateless, and it CONSUMES NO RNG (FR-023): every value is
@@ -475,9 +495,7 @@ inline constexpr float kFillSpacingFactor = 1.0163049f;
 
     // (5) NUL-padded ASCII label; `name` is already all-zero, so the copy stops
     // one byte short of the field and the terminator is guaranteed.
-    for (std::size_t i = 0; i + 1 < SpectralState::kStateNameBytes && label[i] != '\0'; ++i) {
-        s.name[i] = label[i];
-    }
+    detail::copyStateName(s, label);
 
     return s;
 }
@@ -677,10 +695,7 @@ inline void setPartial(SpectralState& s, std::size_t index, float ratio,
 
     // (7) NUL-padded label; `out.name` is already all-zero, so the copy stops one
     // byte short of the field and the terminator is guaranteed.
-    const char* label = "Blend";
-    for (std::size_t i = 0; i + 1 < SpectralState::kStateNameBytes && label[i] != '\0'; ++i) {
-        out.name[i] = label[i];
-    }
+    detail::copyStateName(out, "Blend");
 
     // No normalizeSpectralState call: both inputs are already normalised and a
     // convex combination of two unit-norm vectors has norm <= 1, so amplitudes

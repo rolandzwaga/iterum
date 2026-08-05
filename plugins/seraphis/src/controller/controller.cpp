@@ -461,12 +461,9 @@ void Controller::togglePresetBrowser() {
 
     // "All" first, then the config's own subcategory list, so the browser's tabs
     // cannot drift from makeSeraphisPresetConfig()'s single source of truth.
-    const Krate::Plugins::PresetManagerConfig config = makeSeraphisPresetConfig();
-    std::vector<std::string> tabLabels;
-    tabLabels.reserve(config.subcategoryNames.size() + 1u);
-    tabLabels.emplace_back("All");
-    tabLabels.insert(tabLabels.end(), config.subcategoryNames.begin(),
-                     config.subcategoryNames.end());
+    // The construction itself lives in seraphis_preset_config.h so that SC-008's
+    // test asserts against THIS vector rather than a re-typed copy of it.
+    std::vector<std::string> tabLabels = makeSeraphisPresetTabLabels();
 
     presetBrowserView_ = new Krate::Plugins::PresetBrowserView(
         frame->getViewSize(), presetManager_.get(), std::move(tabLabels));
