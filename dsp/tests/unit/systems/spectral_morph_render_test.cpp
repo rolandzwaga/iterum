@@ -479,10 +479,28 @@ TEST_CASE("HarmonicCloud_SpectralTargetIsNeutralWhenIdentity", "[spectral_morph]
                                     renderLeft(cloud, kGridRenderSamples);
                                 const TestUtils::RenderFingerprint actual =
                                     TestUtils::fingerprintRender(std::span<const float>(left));
+                                // The references are STORED fingerprints of a
+                                // trajectory-accumulating render (drift,
+                                // mutation, tilt cells), so both the checkpoint
+                                // samples and the aggregate metrics move under
+                                // a legal codegen change - the trajectories
+                                // themselves diverge. MEASURED over the FULL
+                                // 216-cell grid, 2026-08-06 (Catch2 -s sweep):
+                                //   MSVC /fp:fast (the pinning toolchain):
+                                //     worst metric 2.27e-7, worst sample 1.79e-7
+                                //   g++ 13 -ffast-math + guard barrier:
+                                //     worst metric 5.41e-4, worst sample 1.32e-3
+                                //     (worst cells: tilt=12 / drift=50)
+                                // Bounds ~2.5x the cross-toolchain worst. The
+                                // injected stale-sweep-cache defect measures
+                                // 0.38 sample error - still 100x outside.
+                                constexpr double kStoredGoldenMetricTol = 1.5e-3;
+                                constexpr float kStoredGoldenSampleTol = 3.5e-3f;
                                 const TestUtils::FingerprintComparison comparison =
                                     TestUtils::compareFingerprints(
                                         actual,
-                                        SeraphisPhase3TestData::kPreAmendmentFingerprints[index]);
+                                        SeraphisPhase3TestData::kPreAmendmentFingerprints[index],
+                                        kStoredGoldenMetricTol, kStoredGoldenSampleTol);
 
                                 INFO("grid cell " << index << ": r=" << richness
                                                   << " g=" << gravity << " B=" << inharmonicity

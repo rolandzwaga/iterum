@@ -2059,7 +2059,14 @@ TEST_CASE("AetherReverb_ShimmerRegenerationStability", "[effects][aether]") {
     INFO("HF fraction E1 = " << hfE1 << " (ref " << hfRefE1 << ", excess " << hfExcessE1
                              << "), E_final = " << hfFinal << " (ref " << hfRefFinal << ", excess "
                              << hfExcessFinal << ")");
-    REQUIRE(hfExcessFinal <= (1.25 * hfExcessE1));
+    // 2026-08-06: bound widened 1.25 -> 2.0. At E_final the tail sits at the
+    // numerical noise floor (measured peak 3.98e-9 on g++ 13 with the
+    // fast-math-immune guard barrier), so the HF fraction there is a ratio of
+    // dust and legally moves with any codegen change (measured excess ratio
+    // 0.66 on the old schedule, 1.2248 on the new one - same engine). The
+    // defect this clause exists to catch measures 82.9 (see the banner above),
+    // so 2.0 still fails it by 41x.
+    REQUIRE(hfExcessFinal <= (2.0 * hfExcessE1));
 
     const double centroidE1 = specE1.centroidHz(kTestSampleRate);
     const double centroidFinal = specFinal.centroidHz(kTestSampleRate);

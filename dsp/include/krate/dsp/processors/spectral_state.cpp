@@ -27,8 +27,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace Krate {
-namespace DSP {
+namespace Krate::DSP {
 
 [[nodiscard]] SpectralState makeFactoryState(SpectralStateId id) noexcept {
     SpectralState s{};
@@ -77,7 +76,7 @@ namespace DSP {
     // The `count < 2` arm is deviation D9's `j + 1` rule and applies for EVERY
     // j, not only j < 2; no factory state reaches it (the sparsest is Bell at
     // 24), but the recurrence is kept identical to the engine's on purpose.
-    for (std::size_t j = static_cast<std::size_t>(count); j < SpectralState::kStatePartials; ++j) {
+    for (auto j = static_cast<std::size_t>(count); j < SpectralState::kStatePartials; ++j) {
         float grown = 0.0f;
         if (count >= 2) {
             // j >= 2 always holds here: the loop starts at j = count >= 2.
@@ -140,5 +139,4 @@ namespace DSP {
     return s;
 }
 
-} // namespace DSP
-} // namespace Krate
+} // namespace Krate::DSP
