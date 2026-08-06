@@ -1948,27 +1948,36 @@ TEST_CASE("AetherReverb_TailSmoothness", "[effects][aether]") {
 
     // --------------------------------------------------------------------------
     // Clause 2 - the two smear streams are seeded independently (kSmearSaltL /
-    // kSmearSaltR), so more smear means less L/R coherence, never more.
+    // kSmearSaltR), so more smear means less L/R COHERENCE, never more.
     //
-    // Adjacent points get a small estimation-noise allowance: the correlation
-    // is measured over a finite stochastic tail, and Apple Clang (Xcode 26.6,
-    // -ffast-math) re-rolled the FP schedule enough to lift one adjacent step
-    // by +0.00127 (amount 0.25: -0.02977 vs -0.03104 at the previous point)
-    // while the sweep's overall decrease stayed intact. The endpoint
-    // comparison stays strict - a stage that ignores the amount still fails.
+    // Coherence is the MAGNITUDE of the correlation. The amount-0 baseline is
+    // an estimation-noise draw over a finite stochastic tail whose SIGN is
+    // toolchain luck, and destroying a NEGATIVE baseline coherence moves the
+    // signed value UP - so the signed monotone assertion this clause used to
+    // make encoded the baseline's sign and broke the leg whose draw came out
+    // negative. Measured sweeps of the SAME code (amounts 0/0.25/0.5/0.75/1):
+    //   MSVC 19.44            +0.0779 +0.0743 +0.0580 +0.0232 +0.0005
+    //   g++ 13 -O2            +0.0750 +0.0723 +0.0580 +0.0252 +0.0030
+    //   Apple Clang (Xcode 26.6, -ffast-math, CI log 2026-08-05)
+    //                         -0.0310 -0.0298 -0.0220 -0.0042 +0.0050
+    // All three sweeps DECREASE in |corr| at every step except Apple's last
+    // (+0.00076, far inside the 0.005 allowance). Assert |corr|: the physical
+    // claim is independent of which sign the baseline drew.
     // --------------------------------------------------------------------------
-    constexpr double kCorrEstimationNoise = 0.005;  // ~4x the measured violation
+    constexpr double kCorrEstimationNoise = 0.005;
     for (std::size_t i = 1; i < kSc7AmountCount; ++i) {
-        INFO("clause 2: LR corr at amount " << kSc7Amounts[i] << " = " << correlation[i]
-                                            << " must be <= " << correlation[i - 1u]
-                                            << " + " << kCorrEstimationNoise);
-        REQUIRE(correlation[i] <= correlation[i - 1u] + kCorrEstimationNoise);
+        INFO("clause 2: |LR corr| at amount " << kSc7Amounts[i] << " = "
+                                              << std::abs(correlation[i]) << " must be <= "
+                                              << std::abs(correlation[i - 1u]) << " + "
+                                              << kCorrEstimationNoise);
+        REQUIRE(std::abs(correlation[i]) <= std::abs(correlation[i - 1u]) + kCorrEstimationNoise);
     }
     {
-        INFO("clause 2 endpoints: LR corr at amount " << kSc7Amounts[kSc7AmountCount - 1u]
-             << " = " << correlation[kSc7AmountCount - 1u] << " must be <= corr at amount "
-             << kSc7Amounts[0] << " = " << correlation[0]);
-        REQUIRE(correlation[kSc7AmountCount - 1u] <= correlation[0]);
+        INFO("clause 2 endpoints: |LR corr| at amount " << kSc7Amounts[kSc7AmountCount - 1u]
+             << " = " << std::abs(correlation[kSc7AmountCount - 1u])
+             << " must be <= |corr| at amount " << kSc7Amounts[0] << " = "
+             << std::abs(correlation[0]));
+        REQUIRE(std::abs(correlation[kSc7AmountCount - 1u]) <= std::abs(correlation[0]));
     }
 
     // --------------------------------------------------------------------------

@@ -491,18 +491,19 @@ private:
         return !detail::isNaN(v) && !detail::isInf(v);
     }
 
-    /// @brief The same bit-pattern idiom as detail::isNaN / detail::isInf
-    ///        (core/db_utils.h:54, :175), at 64-bit width.
+    /// @brief detail::isFinite's double overload, kept as a named wrapper so the
+    ///        FR-007 rejection site reads as one predicate.
     ///
-    /// Those helpers are float-only, and there are 800+ call sites passing floats,
-    /// so a `double` overload beside them would silently change overload
-    /// resolution across the whole library. Narrowing to float first is not an
-    /// option either: 1e300 is a legal, finite request for a very long interval
-    /// and would become +Inf, turning FR-007's documented CLAMP into a rejection.
-    /// A double is non-finite exactly when its 11-bit exponent field is all ones.
+    /// This USED to be a local bit_cast/exponent-mask clone, and Apple Clang
+    /// (Xcode 26.6, -ffast-math) folded that clone to "always finite" — the
+    /// setWaypointInterval poison calls then ACCEPTED NaN/Inf and all 192
+    /// SC-015 rejection cells leaked on the macOS leg. detail::isFinite reads
+    /// the bits through the opaqueDoubleBits barrier, which is the only form
+    /// that survives (db_utils.h). Narrowing to float first is still not an
+    /// option: 1e300 is a legal, finite request for a very long interval and
+    /// would become +Inf, turning FR-007's documented CLAMP into a rejection.
     [[nodiscard]] static bool isFiniteDouble(double v) noexcept {
-        constexpr std::uint64_t kExponentMask = 0x7FF0000000000000ULL;
-        return (std::bit_cast<std::uint64_t>(v) & kExponentMask) != kExponentMask;
+        return detail::isFinite(v);
     }
 
     // -------------------------------------------------------------------------
