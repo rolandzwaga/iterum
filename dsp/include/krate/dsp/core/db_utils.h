@@ -39,6 +39,18 @@ inline constexpr float kDenormalThreshold = 1e-15f;
 
 namespace detail {
 
+/// Force-inline for the classification helpers below. They sit on per-sample
+/// paths (oscillator sanitize, engine finiteness sweeps), and MSVC's ordinary
+/// inliner declined the extra call layer, roughly doubling the DSP suites'
+/// wall time (measured: dsp_processors_tests 69 s -> 156 s) — which blew CI's
+/// 20-minute all-suites budget. Forcing the inline restores the old codegen:
+/// after inlining the checks are the same integer bit tests they always were.
+#if defined(_MSC_VER)
+#define KRATE_DETAIL_FORCEINLINE __forceinline
+#else
+#define KRATE_DETAIL_FORCEINLINE inline __attribute__((always_inline))
+#endif
+
 /// Optimization barrier: the float's bit pattern, laundered so the optimizer
 /// cannot fold classification checks on it.
 ///
@@ -53,7 +65,7 @@ namespace detail {
 /// the value in a general-purpose register for the test it was about to do
 /// anyway. MSVC has no GNU asm and (as of /fp:fast today) performs no such
 /// folding, so it keeps the plain path.
-[[nodiscard]] inline std::uint32_t opaqueFloatBits(float x) noexcept {
+[[nodiscard]] KRATE_DETAIL_FORCEINLINE std::uint32_t opaqueFloatBits(float x) noexcept {
     auto bits = std::bit_cast<std::uint32_t>(x);
 #if defined(__GNUC__) || defined(__clang__)
     __asm__("" : "+r"(bits));
@@ -84,7 +96,7 @@ namespace detail {
 /// the test (it operates on integer bits with no FP provenance). In constant
 /// evaluation the plain bit_cast path is used — constexpr callers
 /// (constexprLn etc.) are unaffected by -ffast-math anyway.
-constexpr bool isNaN(float x) noexcept {
+KRATE_DETAIL_FORCEINLINE constexpr bool isNaN(float x) noexcept {
     // NaN: exponent = 0xFF (all 1s), mantissa != 0
     const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
                                                    : opaqueFloatBits(x);
@@ -92,7 +104,7 @@ constexpr bool isNaN(float x) noexcept {
 }
 
 /// Optimization barrier, double flavour (see opaqueFloatBits).
-[[nodiscard]] inline std::uint64_t opaqueDoubleBits(double x) noexcept {
+[[nodiscard]] KRATE_DETAIL_FORCEINLINE std::uint64_t opaqueDoubleBits(double x) noexcept {
     auto bits = std::bit_cast<std::uint64_t>(x);
 #if defined(__GNUC__) || defined(__clang__)
     __asm__("" : "+r"(bits));
@@ -103,14 +115,14 @@ constexpr bool isNaN(float x) noexcept {
 /// Fast-math-immune finiteness check (neither NaN nor Inf), one barrier read.
 /// Use this instead of local memcpy/bit-mask clones — a plain bit-pattern
 /// test is exactly what newer fast-math compilers fold away.
-[[nodiscard]] constexpr bool isFinite(float x) noexcept {
+[[nodiscard]] KRATE_DETAIL_FORCEINLINE constexpr bool isFinite(float x) noexcept {
     const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
                                                    : opaqueFloatBits(x);
     return (bits & 0x7F800000u) != 0x7F800000u;
 }
 
 /// Fast-math-immune finiteness check, double overload.
-[[nodiscard]] constexpr bool isFinite(double x) noexcept {
+[[nodiscard]] KRATE_DETAIL_FORCEINLINE constexpr bool isFinite(double x) noexcept {
     const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint64_t>(x)
                                                    : opaqueDoubleBits(x);
     return (bits & 0x7FF0000000000000ULL) != 0x7FF0000000000000ULL;
@@ -245,7 +257,7 @@ constexpr float constexprPow10(float x) noexcept {
 #pragma warning(push)
 #pragma warning(disable : 5063)
 #endif
-[[nodiscard]] constexpr bool isInf(float x) noexcept {
+[[nodiscard]] KRATE_DETAIL_FORCEINLINE constexpr bool isInf(float x) noexcept {
     const auto bits = std::is_constant_evaluated() ? std::bit_cast<std::uint32_t>(x)
                                                    : opaqueFloatBits(x);
     return (bits & 0x7FFFFFFFu) == 0x7F800000u;
