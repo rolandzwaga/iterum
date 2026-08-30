@@ -392,6 +392,15 @@ ctest --test-dir build/windows-x64-release -C Release --output-on-failure
 # `ctest -R <exe>`. catch_discover_tests registers individual Catch2 CASE names, not
 # executable names, so `ctest -R dsp_core_tests` matches nothing and reports success.
 
+# [long] tag convention: multi-minute render cases whose assertions are
+# toolchain-INDEPENDENT (preset sweeps, MIDI goldens, click-free renders) carry
+# the [long] tag. Per-push CI EXCLUDES them (they run nightly on all 3 OSes via
+# long-tests-nightly.yml); local runs include them by default — a full local
+# suite run remains the release-grade check. Tag a new test [long] only if it
+# costs >~15 s AND its failure mode is not toolchain-specific; NEVER tag
+# NaN/Inf-guard, bounded-grid, or state-format tests (those are the cross-
+# platform sentinels and must stay in the per-push lane).
+
 # Debug build (same pattern)
 "$CMAKE" --preset windows-x64-debug
 "$CMAKE" --build build/windows-x64-debug --config Debug

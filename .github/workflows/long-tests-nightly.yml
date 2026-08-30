@@ -1,0 +1,83 @@
+# ============================================================================
+# Long-Tests Nightly - the [long]-tagged heavy renders, on all three OSes
+# ============================================================================
+# The per-push CI lane excludes tests tagged [long]: multi-minute preset
+# sweeps, full-bank MIDI goldens, and click-free automation renders whose
+# assertions are toolchain-independent (product logic that a local Windows
+# run catches just as well). Excluding them keeps the per-push "Run Tests"
+# step inside its timeout budget - the full roster had grown to ~19 minutes
+# on a fast local machine, which no 20-minute CI step can hold.
+#
+# Those renders still have cross-platform canary value (codegen drift shows
+# up in long trajectory-accumulating renders first), so this workflow runs
+# ONLY the [long] cases nightly by calling ci.yml with long-tests: true.
+# Coverage is deferred a day, not lost.
+#
+# Idle-repo skip: same gate as valgrind-nightly.yml - the scheduled run is
+# skipped when nothing has been pushed for 24 h; workflow_dispatch always
+# runs.
+# ============================================================================
+
+name: Long Tests Nightly
+
+on:
+  schedule:
+    # 04:43 UTC daily (off-peak; odd minute avoids the top-of-hour stampede,
+    # and it finishes before valgrind-nightly's 05:17 kicks off).
+    - cron: '43 4 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: long-tests-nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Same idle-repo gate as valgrind-nightly.yml (see the comment there for the
+  # pushed_at semantics and the stricter per-branch alternative).
+  check-activity:
+    name: Check for recent pushes
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Determine whether the repo was pushed to in the last 24 h
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run (${{ github.event_name }}) - activity gate not applied." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          PUSHED_AT="$(gh api "repos/$REPO" --jq '.pushed_at')"
+          PUSHED_EPOCH="$(date -u -d "$PUSHED_AT" +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          AGE_SECONDS=$(( NOW_EPOCH - PUSHED_EPOCH ))
+          AGE_HOURS=$(( AGE_SECONDS / 3600 ))
+
+          if [ "$AGE_SECONDS" -lt 86400 ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Last push $PUSHED_AT (${AGE_HOURS}h ago) - running long tests." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Last push $PUSHED_AT (${AGE_HOURS}h ago) - repository idle for over 24h, skipping long tests." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  long-tests:
+    name: Long tests via CI
+    needs: check-activity
+    if: needs.check-activity.outputs.should_run == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      long-tests: true

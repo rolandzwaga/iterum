@@ -884,7 +884,7 @@ TEST_CASE("Seraphis_ContinuityMechanism_CoversEveryInScopeId",
 // SC-005 - no zipper, no click
 // =============================================================================
 
-TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][continuity]") {
+TEST_CASE("Seraphis_ParameterAutomation_IsClickFree", "[seraphis][params][continuity][long]") {
     // The in-scope set is the table's own; the exempt six carry clause 4 only.
     std::set<ParamID> inScope;
     for (const ContinuityRow& row : kContinuityMechanism) {

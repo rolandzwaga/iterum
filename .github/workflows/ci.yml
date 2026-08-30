@@ -29,6 +29,13 @@ on:
         type: string
         required: false
         default: ''
+      long-tests:
+        # Run ONLY the [long]-tagged tests (heavy renders excluded from the
+        # per-push lane) across every suite on all three OSes. Used by the
+        # nightly workflow; per-push runs leave this false and exclude [long].
+        type: boolean
+        required: false
+        default: false
 
 # Cancel in-progress runs when a new commit is pushed
 concurrency:
@@ -64,7 +71,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Detect file changes
-        if: inputs.plugin == ''
+        # Skipped for release.yml (specific plugin) and for the nightly long-tests
+        # call (runs everything; paths-filter has no diff base on a schedule event).
+        if: inputs.plugin == '' && !inputs.long-tests
         uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -99,7 +108,12 @@ jobs:
         id: set-outputs
         run: |
           PLUGIN="${{ inputs.plugin }}"
-          if [ -n "$PLUGIN" ]; then
+          if [ "${{ inputs.long-tests }}" = "true" ]; then
+            # Nightly long-tests lane: every suite on every OS.
+            for area in dsp shared infra iterum disrumpo ruinae innexus gradus membrum seraphis; do
+              echo "$area=true" >> $GITHUB_OUTPUT
+            done
+          elif [ -n "$PLUGIN" ]; then
             # Specific plugin requested (used by release.yml) — only build that plugin
             echo "dsp=false" >> $GITHUB_OUTPUT
             echo "shared=false" >> $GITHUB_OUTPUT
@@ -299,7 +313,7 @@ jobs:
       # because CTest registers individual Catch2 case names, not executable names.
       - name: Run Tests
         shell: bash
-        timeout-minutes: 20
+        timeout-minutes: ${{ inputs.long-tests && 40 || 20 }}
         run: |
           BIN="build/bin/${{ env.BUILD_TYPE }}"
           DSP="${{ needs.detect-changes.outputs.dsp }}"
@@ -340,11 +354,23 @@ jobs:
             echo "No tests to run"
             exit 0
           fi
-          echo "Running ${#EXES[@]} test executables..."
+          if [ "${{ inputs.long-tests }}" = "true" ]; then
+            # Nightly lane: ONLY the [long]-tagged heavy renders (cross-platform
+            # canary for the cases excluded from the per-push lane). Suites with
+            # no [long] cases exit 0 via --allow-running-no-tests.
+            FILTER='[long]'
+            EXTRA=--allow-running-no-tests
+          else
+            # Per-push lane: everything except perf/benchmark and the [long]
+            # renders (those run nightly here, and always locally on Windows).
+            FILTER='~[performance]~[perf]~[benchmark]~[!benchmark]~[long]'
+            EXTRA=
+          fi
+          echo "Running ${#EXES[@]} test executables (filter: $FILTER)..."
           FAILED=0
           for exe in "${EXES[@]}"; do
             echo "  Running: $(basename $exe)"
-            if ! "$exe" '~[performance]~[perf]~[benchmark]~[!benchmark]' --skip-benchmarks; then
+            if ! "$exe" "$FILTER" --skip-benchmarks $EXTRA; then
               echo "FAILED: $exe"
               FAILED=1
             fi
@@ -559,7 +585,7 @@ jobs:
       # runner causes flaky segfaults when multiple heavy DSP test suites run
       # concurrently (same issue as Windows CI).
       - name: Run Tests
-        timeout-minutes: 20
+        timeout-minutes: ${{ inputs.long-tests && 40 || 20 }}
         run: |
           BIN="build/bin/${{ env.BUILD_TYPE }}"
           DSP="${{ needs.detect-changes.outputs.dsp }}"
@@ -600,11 +626,23 @@ jobs:
             echo "No tests to run"
             exit 0
           fi
-          echo "Running ${#EXES[@]} test executables..."
+          if [ "${{ inputs.long-tests }}" = "true" ]; then
+            # Nightly lane: ONLY the [long]-tagged heavy renders (cross-platform
+            # canary for the cases excluded from the per-push lane). Suites with
+            # no [long] cases exit 0 via --allow-running-no-tests.
+            FILTER='[long]'
+            EXTRA=--allow-running-no-tests
+          else
+            # Per-push lane: everything except perf/benchmark and the [long]
+            # renders (those run nightly here, and always locally on Windows).
+            FILTER='~[performance]~[perf]~[benchmark]~[!benchmark]~[long]'
+            EXTRA=
+          fi
+          echo "Running ${#EXES[@]} test executables (filter: $FILTER)..."
           FAILED=0
           for exe in "${EXES[@]}"; do
             echo "  Running: $(basename $exe)"
-            if ! "$exe" '~[performance]~[perf]~[benchmark]~[!benchmark]' --skip-benchmarks; then
+            if ! "$exe" "$FILTER" --skip-benchmarks $EXTRA; then
               echo "FAILED: $exe"
               FAILED=1
             fi
@@ -972,7 +1010,7 @@ jobs:
       # segfaults on resource-constrained CI runners (2-4 vCPU / 7 GB RAM).
       # Ninja single-config: SDK sets CMAKE_RUNTIME_OUTPUT_DIRECTORY to bin/${CMAKE_BUILD_TYPE}
       - name: Run Tests
-        timeout-minutes: 20
+        timeout-minutes: ${{ inputs.long-tests && 40 || 20 }}
         run: |
           BIN="build/bin/${{ env.BUILD_TYPE }}"
           DSP="${{ needs.detect-changes.outputs.dsp }}"
@@ -1013,11 +1051,23 @@ jobs:
             echo "No tests to run"
             exit 0
           fi
-          echo "Running ${#EXES[@]} test executables..."
+          if [ "${{ inputs.long-tests }}" = "true" ]; then
+            # Nightly lane: ONLY the [long]-tagged heavy renders (cross-platform
+            # canary for the cases excluded from the per-push lane). Suites with
+            # no [long] cases exit 0 via --allow-running-no-tests.
+            FILTER='[long]'
+            EXTRA=--allow-running-no-tests
+          else
+            # Per-push lane: everything except perf/benchmark and the [long]
+            # renders (those run nightly here, and always locally on Windows).
+            FILTER='~[performance]~[perf]~[benchmark]~[!benchmark]~[long]'
+            EXTRA=
+          fi
+          echo "Running ${#EXES[@]} test executables (filter: $FILTER)..."
           FAILED=0
           for exe in "${EXES[@]}"; do
             echo "  Running: $(basename $exe)"
-            if ! "$exe" '~[performance]~[perf]~[benchmark]~[!benchmark]' --skip-benchmarks; then
+            if ! "$exe" "$FILTER" --skip-benchmarks $EXTRA; then
               echo "FAILED: $exe"
               FAILED=1
             fi

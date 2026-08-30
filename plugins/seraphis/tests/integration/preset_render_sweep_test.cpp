@@ -644,7 +644,7 @@ void scanChannel(std::span<const float> samples, SweepRender& out) {
 // legitimately near-silent for seconds (growth duration default 10.0 s,
 // life_mod_params.h:65), so a window opening at t = 0 would fail CORRECT presets.
 // `A` is decoded per preset (C-6.1), never a fixed guess.
-TEST_CASE("Seraphis_PresetSweep_NoSilence", "[seraphis][preset][sweep]") {
+TEST_CASE("Seraphis_PresetSweep_NoSilence", "[seraphis][preset][sweep][long]") {
     const std::vector<SeraphisTest::PresetFile>& files = library();
     INFO("presets root: " << SeraphisTest::factoryPresetRoot().string());
     INFO("presets discovered: " << files.size());
@@ -778,7 +778,7 @@ TEST_CASE("Seraphis_PresetSweep_BoundedAndFinite", "[seraphis][preset][sweep]") 
 //
 // This render is NOT cached: this case is the only consumer of a chord render,
 // so a cache entry would be written once and read by nobody.
-TEST_CASE("Seraphis_PresetSweep_ChordBoundedAndFinite", "[seraphis][preset][sweep]") {
+TEST_CASE("Seraphis_PresetSweep_ChordBoundedAndFinite", "[seraphis][preset][sweep][long]") {
     const std::vector<SeraphisTest::PresetFile>& files = library();
     INFO("presets root: " << SeraphisTest::factoryPresetRoot().string());
     INFO("chord intervals above the stimulus root: +4, +7, +12 semitones");
@@ -1831,7 +1831,7 @@ struct NormalisedSustain {
 // Aether arm uses), so Catch2's `test cases:` count is identical on all three legs
 // and SC-021's delta stays meaningful. Per spec C-9 / CQ-8 Option C this is the
 // second of the two heaviest arms tagged out of macOS/Linux.
-TEST_CASE("Seraphis_PresetSweep_RendersAreReproducible", "[seraphis][preset][sweep]") {
+TEST_CASE("Seraphis_PresetSweep_RendersAreReproducible", "[seraphis][preset][sweep][long]") {
 #ifdef _WIN32
     const std::vector<SeraphisTest::PresetFile>& files = library();
     INFO("presets root: " << SeraphisTest::factoryPresetRoot().string());

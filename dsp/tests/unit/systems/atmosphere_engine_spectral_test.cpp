@@ -576,7 +576,7 @@ struct CellStats {
 // an ACCUMULATED rather than multiplied envelope phase, a stolen grain
 // (FR-023's skip-never-steal), or the 1/sqrt(n) smoother cadence (FR-028).
 //
-TEST_CASE("AtmosphereEngine_NoGrainBoundaryClicks", "[atmosphere]") {
+TEST_CASE("AtmosphereEngine_NoGrainBoundaryClicks", "[atmosphere][long]") {
     using Krate::DSP::AtmosphereEngine;
     using Krate::DSP::GrainEnvelopeType;
 
