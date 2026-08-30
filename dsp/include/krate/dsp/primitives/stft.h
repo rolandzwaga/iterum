@@ -104,12 +104,26 @@ public:
     void pushSamples(const float* input, size_t numSamples) noexcept {
         if (input == nullptr || !isPrepared()) return;
 
-        // Copy samples into circular buffer
-        for (size_t i = 0; i < numSamples; ++i) {
-            inputBuffer_[writeIndex_] = input[i];
-            writeIndex_ = (writeIndex_ + 1) % inputBuffer_.size();
-            ++samplesAvailable_;
+        // Copy samples into circular buffer, in at most two CONTIGUOUS runs.
+        //
+        // The obvious form is a per-sample `writeIndex_ = (writeIndex_ + 1) %
+        // inputBuffer_.size()`, and it is a hardware integer divide per sample:
+        // `%` by a runtime value cannot be strength-reduced, and it does not
+        // vectorise. The ring wraps at most once per call, so splitting the copy
+        // at the wrap point removes every divide and leaves two memcpy-shaped
+        // loops. Exact, and it assumes nothing about the buffer length.
+        const size_t bufSize = inputBuffer_.size();
+        size_t offset = 0;
+        while (offset < numSamples) {
+            const size_t run = std::min(numSamples - offset, bufSize - writeIndex_);
+            std::copy_n(input + offset, run, inputBuffer_.begin() + static_cast<std::ptrdiff_t>(writeIndex_));
+            writeIndex_ += run;
+            if (writeIndex_ == bufSize) {
+                writeIndex_ = 0;
+            }
+            offset += run;
         }
+        samplesAvailable_ += numSamples;
     }
 
     // -------------------------------------------------------------------------
@@ -135,10 +149,19 @@ public:
         const size_t bufSize = inputBuffer_.size();
         size_t readIdx = (writeIndex_ + bufSize - samplesAvailable_) % bufSize;
 
-        // Extract and window the frame
-        for (size_t i = 0; i < fftSize_; ++i) {
-            windowedFrame_[i] = inputBuffer_[readIdx] * window_[i];
-            readIdx = (readIdx + 1) % bufSize;
+        // Extract and window the frame, in at most two CONTIGUOUS runs.
+        //
+        // The per-sample `readIdx = (readIdx + 1) % bufSize` this replaces was a
+        // hardware integer divide per FFT bin-time sample - fftSize_ of them per
+        // analysis frame, and the loop could not vectorise around it. The read
+        // wraps at most once inside one frame (bufSize == 8 * fftSize_), so the
+        // split is exact and assumes nothing about the buffer length.
+        const size_t first = std::min(fftSize_, bufSize - readIdx);
+        for (size_t i = 0; i < first; ++i) {
+            windowedFrame_[i] = inputBuffer_[readIdx + i] * window_[i];
+        }
+        for (size_t i = first; i < fftSize_; ++i) {
+            windowedFrame_[i] = inputBuffer_[i - first] * window_[i];
         }
 
         // Perform FFT
@@ -301,9 +324,22 @@ public:
     /// @param output Destination buffer
     /// @param numSamples Number of samples to extract
     /// @pre numSamples <= samplesAvailable()
+    /// @pre numSamples <= 2 * fftSize() (the accumulator's physical size)
     /// @note Real-time safe, noexcept
     void pullSamples(float* output, size_t numSamples) noexcept {
-        if (output == nullptr || numSamples > samplesReady_) return;
+        // The capacity term is not redundant with samplesReady_: synthesize()
+        // accumulates every frame at offset 0 and only ever ADDS hopSize to
+        // samplesReady_, so a caller that synthesizes several frames without
+        // pulling between them can drive samplesReady_ past outputBuffer_.size().
+        // Honouring such a pull would read past the end and - via the "zero the
+        // freed portion" fill below - write BEFORE the buffer, i.e. corrupt the
+        // heap. Pull one hop per synthesize (see the class docs) and this is
+        // unreachable; the guard exists so that getting it wrong is inert rather
+        // than undefined.
+        if (output == nullptr || numSamples > samplesReady_
+            || numSamples > outputBuffer_.size()) {
+            return;
+        }
 
         // Copy samples to output
         std::copy(outputBuffer_.begin(),

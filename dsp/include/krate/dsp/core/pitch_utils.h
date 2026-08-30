@@ -25,6 +25,48 @@ enum class PitchQuantMode : uint8_t {
     return std::pow(2.0f, semitones / 12.0f);
 }
 
+/// @brief Convert a cent offset to a pitch ratio, accurate over the whole float range.
+/// Deliberately NOT named centsToRatio: that identifier is a local variable at
+/// processors/multi_pitch_detector.h:96. Deliberately NOT HarmonicCloud's
+/// detail::centsToDriftRatio (systems/harmonic_cloud.h:105): that is Layer 3 and is
+/// documented accurate only on [-50, +50] cents (:104).
+[[nodiscard]] inline float centsToPitchRatio(float cents) noexcept {
+    constexpr float kInvCentsPerOctave = 1.0f / 1200.0f;
+    return std::exp2(cents * kInvCentsPerOctave);
+}
+
+/// @brief Cent offset to pitch ratio over a SMALL, BOUNDED cent domain.
+///
+/// The degree-4 Taylor series of `e^u` with `u = cents * ln2 / 1200`, in Horner
+/// form: four fused multiply-adds, no transcendental. Promoted here from
+/// `HarmonicCloud::detail::centsToDriftRatio` (systems/harmonic_cloud.h), which is
+/// now a one-line forward to this function, so both live off ONE definition.
+///
+/// @par Accuracy, and the domain it holds on
+/// On `[-50, +50]` cents `|u| <= 0.0289`, where the truncated term `u^5/120` is
+/// `1.7e-10` relative - under float epsilon - so what is left is Horner rounding.
+/// The bound is MEASURED, not asserted: `HarmonicCloud_CentsToRatioMatchesExp2`
+/// sweeps the whole domain at 20,001 points against a double-precision
+/// `std::exp2(cents/1200)` and records a worst case of **6.15e-08 relative at
+/// 29.25 cents** - 1.06e-4 cent of pitch error. The same case runs a realistic
+/// defect (the `ln(2)` base conversion dropped) through the identical measurement
+/// at 1.29e-02, so the tolerance is not vacuous.
+///
+/// `cents == 0` returns EXACTLY `1.0f` (`u = 0`, so Horner yields 1), which is
+/// what lets a caller's zero-entropy / zero-detune configuration stay bitwise
+/// unperturbed without a separate branch.
+///
+/// OUTSIDE `[-50, +50]` THE ERROR GROWS AS `u^5`: at 1200 cents it is 1.3e-3
+/// relative. Callers whose cent domain is unbounded must use `centsToPitchRatio`.
+///
+/// @param cents Detune in cents; accurate on `[-50, +50]`, degrading outside it
+[[nodiscard]] inline float centsToPitchRatioFast(float cents) noexcept {
+    constexpr float kCentsToNatLog = 0.693147180559945309f / 1200.0f;  // ln(2)/1200
+    const float u = cents * kCentsToNatLog;
+    // e^u = 1 + u(1 + u/2(1 + u/3(1 + u/4)))  -- Horner, 4 fused multiply-adds.
+    return 1.0f + u * (1.0f + u * (0.5f + u * (1.0f / 6.0f + u * (1.0f / 24.0f))));
+}
+
 /// Convert playback rate ratio to semitones
 /// @param ratio Playback rate (e.g., 2.0 for octave up, 0.5 for octave down)
 /// @return Pitch offset in semitones

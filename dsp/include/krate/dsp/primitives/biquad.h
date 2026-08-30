@@ -137,16 +137,16 @@ constexpr float constexprSqrt(float x) noexcept {
 }
 
 /// Check if a float is finite using bit-level check
-/// Works with -ffast-math enabled
+/// Works with -ffast-math enabled: delegates to the barrier-hardened core
+/// check — a plain bit-mask here is foldable under newer fast-math compilers
+/// (Apple Clang / Xcode 26.6) via finite-math value propagation.
 inline bool isFiniteBits(float x) noexcept {
-    const auto bits = std::bit_cast<uint32_t>(x);
-    return (bits & 0x7F800000u) != 0x7F800000u;
+    return detail::isFinite(x);
 }
 
-/// Check if a float is NaN using bit-level check
+/// Check if a float is NaN using bit-level check (fast-math-immune, see above)
 inline bool isNaNBits(float x) noexcept {
-    const auto bits = std::bit_cast<uint32_t>(x);
-    return ((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0);
+    return detail::isNaN(x);
 }
 
 // Note: flushDenormal is defined in dsp/core/db_utils.h (Layer 0)

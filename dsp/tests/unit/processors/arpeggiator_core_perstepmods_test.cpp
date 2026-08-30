@@ -398,7 +398,7 @@ TEST_CASE("Rest_DefensiveBranch_LanesAdvance", "[processors][arpeggiator_core]")
 TEST_CASE("BitIdentical_DefaultModifierLane", "[processors][arpeggiator_core]") {
     // SC-002: Default modifier lane (length=1, step=kStepActive) produces output
     // bit-identical to Phase 4 baseline.
-    const std::string basePath = "dsp/tests/fixtures/";
+    const std::string basePath = std::string(KRATE_DSP_TESTS_DIR) + "/fixtures/";
     const double bpms[] = {120.0, 140.0, 180.0};
     const char* bpmNames[] = {"120", "140", "180"};
 

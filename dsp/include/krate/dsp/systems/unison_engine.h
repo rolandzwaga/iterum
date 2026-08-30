@@ -400,8 +400,9 @@ inline void UnisonEngine::processBlock(float* left, float* right, size_t numSamp
 }
 
 [[nodiscard]] inline float UnisonEngine::sanitize(float x) noexcept {
-    // NaN check via bit manipulation (works with -ffast-math)
-    const auto bits = std::bit_cast<uint32_t>(x);
+    // NaN check via bit manipulation, read through the fast-math barrier
+    // (a plain bit_cast is foldable under newer fast-math compilers)
+    const auto bits = detail::opaqueFloatBits(x);
     const bool isNan = ((bits & 0x7F800000u) == 0x7F800000u) && ((bits & 0x007FFFFFu) != 0);
     x = isNan ? 0.0f : x;
 

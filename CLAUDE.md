@@ -75,7 +75,8 @@ This is a **monorepo** for Krate Audio plugins, featuring:
 - **Ruinae**: Synthesizer plugin at `plugins/ruinae/`
 - **Innexus**: Harmonic analysis/resynthesis instrument at `plugins/innexus/` (AU type: `aumu`)
 - **Gradus**: Standalone step arpeggiator at `plugins/gradus/` (AU type: `aumu`) — extracted from Ruinae's arp section, shares parameter IDs 3000-3372
-- **Membrum**: Physically-modelled drum synthesizer at `plugins/membrum/` (AU type: `aumu`) — the current active-development plugin
+- **Membrum**: Physically-modelled drum synthesizer at `plugins/membrum/` (AU type: `aumu`)
+- **Seraphis**: Spectral-organism synthesizer at `plugins/seraphis/` (AU type: `aumu`, subtype `Srph`) — the current active-development plugin
 - **Shared plugin infrastructure** at `plugins/shared/` (presets, UI components, MIDI, platform)
 - **Steinberg VST3 SDK** (not JUCE or other frameworks)
 - **VSTGUI** for user interface
@@ -86,7 +87,7 @@ This is a **monorepo** for Krate Audio plugins, featuring:
 
 The current roster is whatever lives under `plugins/` — **trust the filesystem, not a hand-maintained
 tree here** (that is exactly where staleness accrues). Plugins today: `iterum`, `disrumpo`, `ruinae`,
-`innexus`, `gradus`, `membrum`, plus `shared`. The shared DSP library is `dsp/` (`Krate::DSP`, 5 layers
+`innexus`, `gradus`, `membrum`, `seraphis`, plus `shared`. The shared DSP library is `dsp/` (`Krate::DSP`, 5 layers
 under `dsp/include/krate/dsp/{core,primitives,processors,systems,effects}/`).
 
 - **Per-area detail** (skeleton, param-ID base, test target, pluginval path): the area `CLAUDE.md` leaf
@@ -101,7 +102,7 @@ This file holds cross-cutting rules. **Area-specific `CLAUDE.md` leaf files auto
 their subtree** — read them for the concrete facts (skeleton, param-ID scheme, test target, pluginval path):
 
 - [`dsp/CLAUDE.md`](dsp/CLAUDE.md) — layer architecture, ODR procedure, header-only/SIMD conventions
-- [`plugins/iterum/CLAUDE.md`](plugins/iterum/CLAUDE.md) · [`disrumpo`](plugins/disrumpo/CLAUDE.md) · [`ruinae`](plugins/ruinae/CLAUDE.md) · [`innexus`](plugins/innexus/CLAUDE.md) · [`gradus`](plugins/gradus/CLAUDE.md) · [`membrum`](plugins/membrum/CLAUDE.md)
+- [`plugins/iterum/CLAUDE.md`](plugins/iterum/CLAUDE.md) · [`disrumpo`](plugins/disrumpo/CLAUDE.md) · [`ruinae`](plugins/ruinae/CLAUDE.md) · [`innexus`](plugins/innexus/CLAUDE.md) · [`gradus`](plugins/gradus/CLAUDE.md) · [`membrum`](plugins/membrum/CLAUDE.md) · [`seraphis`](plugins/seraphis/CLAUDE.md)
 
 ## Critical Rules (Non-Negotiable)
 
@@ -197,43 +198,9 @@ enum { kBypassId = 0, kGainId };   // Parameter IDs: kNameId
 
 ### Parameter ID Naming Convention
 
-All parameter IDs in `plugin_ids.h` MUST follow this pattern:
-
-**Pattern:** `k{Mode}{Parameter}Id`
-
-- `Mode`: The delay mode prefix (Granular, Spectral, Shimmer, Tape, BBD, Digital, PingPong, Reverse, MultiTap, Freeze)
-- `Parameter`: The parameter name in PascalCase
-
-**Standard Parameter Names (use these exact names):**
-
-| Parameter | ID Suffix | Description |
-|-----------|-----------|-------------|
-| Delay Time | `DelayTimeId` | Main delay time in ms |
-| Feedback | `FeedbackId` | Feedback amount (0-120%) |
-| Mix | `MixId` | Dry/Wet mix (NOT "DryWet") |
-| Time Mode | `TimeModeId` | Free/Synced selector |
-| Note Value | `NoteValueId` | Tempo sync note value |
-| Mod Depth | `ModDepthId` | Modulation depth (NOT "ModulationDepth") |
-| Mod Rate | `ModRateId` | Modulation rate (NOT "ModulationRate") |
-| Stereo Width | `StereoWidthId` | Stereo decorrelation amount |
-| Width | `WidthId` | Pan width (use when NOT stereo decorrelation) |
-| Age | `AgeId` | Component aging amount |
-| Era | `EraId` | Era/model selector |
-| Freeze | `FreezeId` | Freeze toggle |
-| Filter Enabled | `FilterEnabledId` | Filter on/off toggle |
-| Filter Cutoff | `FilterCutoffId` | Filter cutoff frequency |
-| Filter Type | `FilterTypeId` | Filter type selector |
-| Diffusion | `DiffusionId` | Diffusion amount |
-
-**Compound Parameters:** Use descriptive sub-component names:
-- `kTapeHead1EnabledId`, `kTapeHead1LevelId`, `kTapeHead1PanId`
-- `kShimmerPitchSemitonesId`, `kShimmerPitchCentsId`
-- `kSpectralFeedbackTiltId`
-
-**AVOID:**
-- Redundant prefixes: `kShimmerShimmerMixId` → `kShimmerMixId`
-- Inconsistent abbreviations: Use `Mod` not `Modulation`
-- Inconsistent terms: Use `Mix` not `DryWet`
+Parameter IDs in `plugin_ids.h` follow `k{Prefix}{Parameter}Id` with canonical parameter
+names (`Mix` not `DryWet`, `Mod` not `Modulation`). The full Iterum delay-mode table lives in
+[`plugins/iterum/CLAUDE.md`](plugins/iterum/CLAUDE.md) and loads when working there.
 
 ### Modern C++ Requirements
 
@@ -343,6 +310,9 @@ tools/pluginval.exe --strictness-level 5 --validate "build/windows-x64-release/V
 
 # Membrum
 tools/pluginval.exe --strictness-level 5 --validate "build/windows-x64-release/VST3/Release/Membrum.vst3"
+
+# Seraphis
+tools/pluginval.exe --strictness-level 5 --validate "build/windows-x64-release/VST3/Release/Seraphis.vst3"
 ```
 
 Skip for docs-only, CI config, or test-only changes.
@@ -407,6 +377,7 @@ for t in dsp_core_tests dsp_primitives_tests dsp_processors_tests dsp_systems_te
 "$CMAKE" --build build/windows-x64-release --config Release --target innexus_tests   # Innexus
 "$CMAKE" --build build/windows-x64-release --config Release --target gradus_tests    # Gradus
 "$CMAKE" --build build/windows-x64-release --config Release --target membrum_tests   # Membrum
+"$CMAKE" --build build/windows-x64-release --config Release --target seraphis_tests  # Seraphis
 "$CMAKE" --build build/windows-x64-release --config Release --target shared_tests    # Shared infra
 
 # Iterum has a SECOND, generically-named test target: `approval_tests` holds the
@@ -421,6 +392,15 @@ ctest --test-dir build/windows-x64-release -C Release --output-on-failure
 # `ctest -R <exe>`. catch_discover_tests registers individual Catch2 CASE names, not
 # executable names, so `ctest -R dsp_core_tests` matches nothing and reports success.
 
+# [long] tag convention: multi-minute render cases whose assertions are
+# toolchain-INDEPENDENT (preset sweeps, MIDI goldens, click-free renders) carry
+# the [long] tag. Per-push CI EXCLUDES them (they run nightly on all 3 OSes via
+# long-tests-nightly.yml); local runs include them by default — a full local
+# suite run remains the release-grade check. Tag a new test [long] only if it
+# costs >~15 s AND its failure mode is not toolchain-specific; NEVER tag
+# NaN/Inf-guard, bounded-grid, or state-format tests (those are the cross-
+# platform sentinels and must stay in the per-push lane).
+
 # Debug build (same pattern)
 "$CMAKE" --preset windows-x64-debug
 "$CMAKE" --build build/windows-x64-debug --config Debug
@@ -433,6 +413,7 @@ ctest --test-dir build/windows-x64-release -C Release --output-on-failure
 - `build/windows-x64-release/VST3/Release/Innexus.vst3/`
 - `build/windows-x64-release/VST3/Release/Gradus.vst3/`
 - `build/windows-x64-release/VST3/Release/Membrum.vst3/`
+- `build/windows-x64-release/VST3/Release/Seraphis.vst3/`
 
 ### AddressSanitizer (ASan)
 
@@ -458,69 +439,16 @@ ctest --test-dir build-asan -C Debug --output-on-failure
 
 ### Clang-Tidy (Static Analysis)
 
-Use clang-tidy for static analysis to catch bugs, performance issues, and style violations before commit.
-
-**One-Time Setup (Windows):**
-
-1. Install LLVM (includes clang-tidy):
-   ```powershell
-   winget install LLVM.LLVM
-   ```
-
-2. Install Ninja (required for compile_commands.json):
-   ```powershell
-   winget install Ninja-build.Ninja
-   ```
-
-3. Generate compile_commands.json (run from VS Developer PowerShell):
-   ```powershell
-   # Open "Developer PowerShell for VS 2022" from Start Menu, then:
-   cd F:\projects\iterum
-   cmake --preset windows-ninja
-   ```
-
-**Running Analysis:**
+Run before every commit (canonical todo list step 6) and after significant refactoring:
 
 ```powershell
-# Analyze all plugin source files
-./tools/run-clang-tidy.ps1 -Target all -BuildDir build/windows-ninja
-
-# Analyze specific targets
-./tools/run-clang-tidy.ps1 -Target dsp -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target iterum -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target disrumpo -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target ruinae -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target innexus -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target gradus -BuildDir build/windows-ninja
-./tools/run-clang-tidy.ps1 -Target membrum -BuildDir build/windows-ninja
-
-# Apply automatic fixes (use with caution, review changes)
-./tools/run-clang-tidy.ps1 -Target all -BuildDir build/windows-ninja -Fix
+./tools/run-clang-tidy.ps1 -Target <all|dsp|shared|iterum|disrumpo|ruinae|innexus|gradus|membrum|seraphis> -BuildDir build/windows-ninja
+# Linux/macOS: ./tools/run-clang-tidy.sh --target <same roster>
 ```
 
-**Linux/macOS:**
-```bash
-cmake --preset linux-release   # or macos-release (generates compile_commands.json)
-./tools/run-clang-tidy.sh --target all
-./tools/run-clang-tidy.sh --target dsp --fix
-```
-
-Valid `--target` values (same roster on both scripts): `all`, `dsp`, `shared`, `iterum`, `disrumpo`,
-`ruinae`, `innexus`, `gradus`, `membrum`. **`all` MUST cover dsp + every plugin** — if you add a plugin,
-add its case to BOTH `run-clang-tidy.ps1` and `run-clang-tidy.sh` (and to their `all`), or the Linux/macOS
-pre-commit lint silently skips it.
-
-**Configuration:** The `.clang-tidy` file configures:
-- Enabled: bugprone, performance, modernize, readability, concurrency, cppcoreguidelines
-- Disabled: magic-numbers, short identifiers (DSP-friendly)
-- Naming conventions matching this style guide
-
-**When to run:**
-- Before every commit (part of canonical todo list step 6)
-- After significant refactoring
-- As pre-commit quality gate in specs (Phase N-1.0)
-
-**Re-run setup when:** CMakeLists.txt changes, new source files added, or compile flags change.
+**`all` MUST cover dsp + every plugin** — a new plugin needs its case added to BOTH scripts, or the
+Linux/macOS pre-commit lint silently skips it. One-time environment setup (LLVM/Ninja install,
+compile_commands.json generation) and the full flag reference: `clang-tidy-setup` skill.
 
 ## Quick Reference
 
@@ -532,6 +460,7 @@ pre-commit lint silently skips it.
 | Add Innexus parameter | plugins/innexus/src/plugin_ids.h → parameters/ → processor → controller → uidesc |
 | Add Gradus parameter | plugins/gradus/src/plugin_ids.h → parameters/ → processor → controller → uidesc |
 | Add Membrum parameter | plugins/membrum/src/plugin_ids.h → processor → controller → uidesc (no `parameters/` dir) |
+| Add Seraphis parameter | plugins/seraphis/src/plugin_ids.h → parameters/ → processor → controller → uidesc |
 | Add DSP component | dsp/include/krate/dsp/{layer}/ → dsp/tests/unit/{layer}/ |
 | Add Iterum test | plugins/iterum/tests/unit/{section}/ |
 | Add Disrumpo test | plugins/disrumpo/tests/ |
@@ -540,11 +469,13 @@ pre-commit lint silently skips it.
 | Add Innexus integration test | plugins/innexus/tests/integration/ |
 | Add Gradus test | plugins/gradus/tests/unit/ |
 | Add Membrum test | plugins/membrum/tests/ |
+| Add Seraphis test | plugins/seraphis/tests/unit/ (or tests/integration/) |
 | Add shared component | plugins/shared/src/{section}/ → plugins/shared/tests/ |
 | Change Iterum UI | plugins/iterum/resources/editor.uidesc |
 | Change Disrumpo UI | plugins/disrumpo/resources/editor.uidesc |
 | Change Gradus UI | plugins/gradus/resources/editor.uidesc |
 | Change Membrum UI | plugins/membrum/resources/editor.uidesc |
+| Change Seraphis UI | plugins/seraphis/resources/editor.uidesc |
 
 | Your Layer | Location | Can Include |
 |------------|----------|-------------|

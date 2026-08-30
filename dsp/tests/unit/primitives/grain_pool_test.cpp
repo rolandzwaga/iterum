@@ -69,9 +69,9 @@ TEST_CASE("GrainPool prepare and reset lifecycle", "[primitives][grain][layer1]"
         pool.prepare(44100.0);
 
         // Acquire some grains
-        pool.acquireGrain(0);
-        pool.acquireGrain(1);
-        pool.acquireGrain(2);
+        (void)pool.acquireGrain(0);
+        (void)pool.acquireGrain(1);
+        (void)pool.acquireGrain(2);
         REQUIRE(pool.activeCount() == 3);
 
         // Reset should clear all
@@ -116,13 +116,13 @@ TEST_CASE("GrainPool acquireGrain allocates grains", "[primitives][grain][layer1
     SECTION("activeCount tracks acquisitions") {
         REQUIRE(pool.activeCount() == 0);
 
-        pool.acquireGrain(0);
+        (void)pool.acquireGrain(0);
         REQUIRE(pool.activeCount() == 1);
 
-        pool.acquireGrain(1);
+        (void)pool.acquireGrain(1);
         REQUIRE(pool.activeCount() == 2);
 
-        pool.acquireGrain(2);
+        (void)pool.acquireGrain(2);
         REQUIRE(pool.activeCount() == 3);
     }
 }
@@ -217,7 +217,7 @@ TEST_CASE("GrainPool voice stealing when exhausted", "[primitives][grain][layer1
     SECTION("voice stealing picks oldest grain") {
         // Acquire 64 grains with different start times
         for (size_t i = 0; i < 64; ++i) {
-            pool.acquireGrain(i * 100);  // 0, 100, 200, ...
+            (void)pool.acquireGrain(i * 100);  // 0, 100, 200, ...
         }
 
         // Request one more at sample 10000
@@ -244,18 +244,18 @@ TEST_CASE("GrainPool activeGrains returns active grains", "[primitives][grain][l
     }
 
     SECTION("returns correct number of active grains") {
-        pool.acquireGrain(0);
-        pool.acquireGrain(1);
-        pool.acquireGrain(2);
+        (void)pool.acquireGrain(0);
+        (void)pool.acquireGrain(1);
+        (void)pool.acquireGrain(2);
 
         auto grains = pool.activeGrains();
         REQUIRE(grains.size() == 3);
     }
 
     SECTION("all returned grains are active") {
-        pool.acquireGrain(0);
-        pool.acquireGrain(1);
-        pool.acquireGrain(2);
+        (void)pool.acquireGrain(0);
+        (void)pool.acquireGrain(1);
+        (void)pool.acquireGrain(2);
 
         for (Grain* grain : pool.activeGrains()) {
             REQUIRE(grain->active == true);
@@ -264,8 +264,8 @@ TEST_CASE("GrainPool activeGrains returns active grains", "[primitives][grain][l
 
     SECTION("released grains are not in active list") {
         Grain* g1 = pool.acquireGrain(0);
-        pool.acquireGrain(1);
-        pool.acquireGrain(2);
+        (void)pool.acquireGrain(1);
+        (void)pool.acquireGrain(2);
 
         pool.releaseGrain(g1);
 

@@ -55,6 +55,14 @@
         "ruinae_tests"
       ],
       "pluginval_bundle": "build/windows-x64-release/VST3/Release/Ruinae.vst3"
+    },
+    {
+      "dir": "plugins/seraphis",
+      "name": "Seraphis",
+      "test_targets": [
+        "seraphis_tests"
+      ],
+      "pluginval_bundle": "build/windows-x64-release/VST3/Release/Seraphis.vst3"
     }
   ],
   "dsp_layers": {
@@ -71,17 +79,17 @@
     "processors": {
       "index": 2,
       "folder": "dsp/include/krate/dsp/processors",
-      "header_count": 96
+      "header_count": 105
     },
     "systems": {
       "index": 3,
       "folder": "dsp/include/krate/dsp/systems",
-      "header_count": 34
+      "header_count": 41
     },
     "effects": {
       "index": 4,
       "folder": "dsp/include/krate/dsp/effects",
-      "header_count": 14
+      "header_count": 15
     }
   },
   "dependencies": [

@@ -241,7 +241,7 @@ TEST_CASE("GrainProcessor processGrain", "[processors][grain-processor][layer2]"
 
         // Process many samples to reach envelope peak
         for (int i = 0; i < 2200; ++i) {  // Half of 4410 samples
-            processor.processGrain(grain, delayL, delayR);
+            (void)processor.processGrain(grain, delayL, delayR);
         }
 
         // At envelope peak, output should be close to input * envelope peak (1.0)
@@ -256,7 +256,7 @@ TEST_CASE("GrainProcessor processGrain", "[processors][grain-processor][layer2]"
         processor.initializeGrain(grain, params);
         float initialPhase = grain.envelopePhase;
 
-        processor.processGrain(grain, delayL, delayR);
+        (void)processor.processGrain(grain, delayL, delayR);
 
         REQUIRE(grain.envelopePhase > initialPhase);
     }
@@ -273,7 +273,7 @@ TEST_CASE("GrainProcessor processGrain", "[processors][grain-processor][layer2]"
         processor.initializeGrain(grain, params);
         float initialPos = grain.readPosition;
 
-        processor.processGrain(grain, delayL, delayR);
+        (void)processor.processGrain(grain, delayL, delayR);
 
         REQUIRE(grain.readPosition > initialPos);
     }
@@ -324,7 +324,7 @@ TEST_CASE("GrainProcessor isGrainComplete", "[processors][grain-processor][layer
 
         // 10ms at 44100 Hz = 441 samples
         for (int i = 0; i < 450; ++i) {
-            processor.processGrain(grain, delayL, delayR);
+            (void)processor.processGrain(grain, delayL, delayR);
         }
 
         REQUIRE(processor.isGrainComplete(grain));

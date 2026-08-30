@@ -11,8 +11,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -1502,4 +1504,201 @@ TEST_CASE("ModalResonatorBank: multi-mode impulse response has harmonic content"
     // Should be clearly audible
     REQUIRE(peak > 0.05f);
     REQUIRE(rms > 0.005f);
+}
+
+// =============================================================================
+// snapCoefficients (Seraphis Phase 4, OQ-E)
+// =============================================================================
+// smoothCoefficients() (:828-836) runs once per processBlock CALL (:384), NOT
+// once per sample, so the coefficient trajectory after a state-preserving
+// updateModes() is a function of how the caller partitions its buffer. That is
+// harmless for a caller that simply hands the bank whatever the host gives it,
+// and fatal for one that must render the same audio for every partitioning of
+// the same samples. snapCoefficients() lets such a caller (the Seraphis
+// ContinuousBody, which retunes on its own 64-sample control grid) apply the
+// targets itself and leave the per-block smoothing an exact no-op.
+// =============================================================================
+
+TEST_CASE("ModalResonatorBank: snapCoefficients applies targets immediately and preserves the ring",
+          "[modal_resonator_bank][coefficient_smoothing]")
+{
+    // A free ring is a decaying sinusoid, so its zero-crossing count over a
+    // fixed window measures the coefficient the bank is ACTUALLY running at -
+    // no FFT needed, and unambiguous with a single mode.
+    constexpr int kRingSamples = 4410;  // 100 ms at 44.1 kHz
+    constexpr float kWindowSec = static_cast<float>(kRingSamples) / 44100.0f;
+
+    auto retunedRingHz = [](bool snap) {
+        Krate::DSP::ModalResonatorBank bank;
+        bank.prepare(kSampleRate);
+        configureSingleMode(bank, 220.0f, 1.0f, 0.5f, 0.5f);
+
+        // Charge the mode, then retune an octave up WITHOUT clearing state.
+        std::array<float, 64> in{};
+        std::array<float, 64> out{};
+        in[0] = 1.0f;
+        bank.processBlock(in.data(), out.data(), 64);
+
+        std::array<float, kMaxModes> freqs{};
+        std::array<float, kMaxModes> amps{};
+        freqs[0] = 440.0f;
+        amps[0] = 1.0f;
+        bank.updateModes(freqs.data(), amps.data(), 1, 0.5f, 0.5f, 0.0f, 0.0f);
+        if (snap)
+            bank.snapCoefficients();
+
+        // ONE processBlock call for the whole window, so the un-snapped bank
+        // gets exactly one smoothing step - 1 - exp(-1/88.2) = 1.13 % of the
+        // remaining delta at 44.1 kHz - and stays essentially at 220 Hz.
+        std::vector<float> silence(kRingSamples, 0.0f);
+        std::vector<float> ring(kRingSamples, 0.0f);
+        bank.processBlock(silence.data(), ring.data(), kRingSamples);
+
+        int crossings = 0;
+        for (int i = 1; i < kRingSamples; ++i)
+        {
+            const bool prevNeg = ring[static_cast<size_t>(i - 1)] < 0.0f;
+            const bool currNeg = ring[static_cast<size_t>(i)] < 0.0f;
+            if (prevNeg != currNeg)
+                ++crossings;
+        }
+        // Two zero crossings per period.
+        return static_cast<float>(crossings) / (2.0f * kWindowSec);
+    };
+
+    SECTION("the retune is realised on the very next block")
+    {
+        const float snapped = retunedRingHz(true);
+        INFO("snapped ring frequency = " << snapped << " Hz (target 440)");
+        REQUIRE(snapped == Approx(440.0f).epsilon(0.02));
+    }
+
+    SECTION("without the snap the same retune is barely applied after one block")
+    {
+        // Non-vacuity for the clause above: if the bank applied targets
+        // immediately on its own, snapCoefficients() would be pointless and the
+        // clause above could not fail.
+        const float unsnapped = retunedRingHz(false);
+        INFO("un-snapped ring frequency = " << unsnapped << " Hz (still near 220)");
+        REQUIRE(unsnapped < 260.0f);
+    }
+
+    SECTION("the ring survives the snap, unlike reset()")
+    {
+        Krate::DSP::ModalResonatorBank bank;
+        bank.prepare(kSampleRate);
+        configureSingleMode(bank, 220.0f, 1.0f, 0.5f, 0.5f);
+
+        std::array<float, 64> in{};
+        std::array<float, 64> out{};
+        in[0] = 1.0f;
+        bank.processBlock(in.data(), out.data(), 64);
+
+        std::array<float, kMaxModes> freqs{};
+        std::array<float, kMaxModes> amps{};
+        freqs[0] = 220.0f;
+        amps[0] = 1.0f;
+        bank.updateModes(freqs.data(), amps.data(), 1, 0.5f, 0.5f, 0.0f, 0.0f);
+        bank.snapCoefficients();
+
+        std::vector<float> silence(kRingSamples, 0.0f);
+        std::vector<float> ring(kRingSamples, 0.0f);
+        bank.processBlock(silence.data(), ring.data(), kRingSamples);
+
+        double sumSq = 0.0;
+        for (float v : ring)
+            sumSq += static_cast<double>(v) * v;
+        const double afterSnapRms = std::sqrt(sumSq / kRingSamples);
+        INFO("ring RMS after snapCoefficients = " << afterSnapRms);
+        REQUIRE(afterSnapRms > 1.0e-3);
+
+        // Contrast: reset() snaps the SAME three arrays and additionally zeroes
+        // sinState_/cosState_, so it kills the ring. That difference is the
+        // whole reason the new method exists.
+        bank.reset();
+        std::fill(ring.begin(), ring.end(), 0.0f);
+        bank.processBlock(silence.data(), ring.data(), kRingSamples);
+        double afterResetSumSq = 0.0;
+        for (float v : ring)
+            afterResetSumSq += static_cast<double>(v) * v;
+        REQUIRE(std::sqrt(afterResetSumSq / kRingSamples) == Approx(0.0).margin(1.0e-12));
+    }
+}
+
+TEST_CASE("ModalResonatorBank: snapCoefficients removes the block-partition dependence",
+          "[modal_resonator_bank][coefficient_smoothing]")
+{
+    constexpr int kNumSamples = 1024;
+
+    // Deterministic excitation - no RNG header needed, and identical on every
+    // toolchain because it is integer arithmetic.
+    std::array<float, kNumSamples> input{};
+    {
+        std::uint32_t state = 0x2545F491u;
+        for (auto& v : input)
+        {
+            state = state * 1664525u + 1013904223u;
+            v = 0.25f * (static_cast<float>(state >> 8) / 8388608.0f - 1.0f);
+        }
+    }
+
+    auto render = [&input](int blockSize, bool snap) {
+        Krate::DSP::ModalResonatorBank bank;
+        bank.prepare(kSampleRate);
+        configureHarmonicModes(bank, 220.0f, 8, 0.5f, 0.5f);
+
+        // A state-preserving retune, so the targets are genuinely IN FLIGHT for
+        // the whole render. With settled coefficients smoothCoefficients() is a
+        // no-op and every partitioning agrees trivially - which is exactly why
+        // the Seraphis SC-011 block-size criterion needed an in-flight sub-case.
+        std::array<float, kMaxModes> freqs{};
+        std::array<float, kMaxModes> amps{};
+        for (int k = 0; k < 8; ++k)
+        {
+            freqs[static_cast<size_t>(k)] = 233.08f * static_cast<float>(k + 1);
+            amps[static_cast<size_t>(k)] = 1.0f / static_cast<float>(k + 1);
+        }
+        bank.updateModes(freqs.data(), amps.data(), 8, 0.5f, 0.5f, 0.0f, 0.0f);
+        if (snap)
+            bank.snapCoefficients();
+
+        std::array<float, kNumSamples> out{};
+        for (int pos = 0; pos < kNumSamples; pos += blockSize)
+            bank.processBlock(input.data() + pos, out.data() + pos, blockSize);
+        return out;
+    };
+
+    auto worstDiff = [](const std::array<float, kNumSamples>& a,
+                        const std::array<float, kNumSamples>& b) {
+        float worst = 0.0f;
+        for (size_t i = 0; i < a.size(); ++i)
+            worst = std::max(worst, std::abs(a[i] - b[i]));
+        return worst;
+    };
+
+    const std::array<float, kNumSamples> oneBlock = render(kNumSamples, true);
+    const std::array<float, kNumSamples> sixteenBlocks = render(64, true);
+    const std::array<float, kNumSamples> sixtyFourBlocks = render(16, true);
+
+    SECTION("with the snap, 1 x 1024, 16 x 64 and 64 x 16 are bit-identical")
+    {
+        REQUIRE(worstDiff(oneBlock, sixteenBlocks) == 0.0f);
+        REQUIRE(worstDiff(oneBlock, sixtyFourBlocks) == 0.0f);
+    }
+
+    SECTION("without the snap they are not - this is what the snap fixes")
+    {
+        // Non-vacuity: proves the clause above asserts the effect of the snap
+        // and not some accident of the render being silent or already settled.
+        const std::array<float, kNumSamples> unsnappedOne = render(kNumSamples, false);
+        const std::array<float, kNumSamples> unsnappedSixteen = render(64, false);
+        const float spread = worstDiff(unsnappedOne, unsnappedSixteen);
+        INFO("un-snapped 1x1024 vs 16x64 worst |d| = " << spread);
+        REQUIRE(spread > 1.0e-4f);
+
+        double sumSq = 0.0;
+        for (float v : oneBlock)
+            sumSq += static_cast<double>(v) * v;
+        REQUIRE(std::sqrt(sumSq / kNumSamples) > 1.0e-3);
+    }
 }

@@ -327,6 +327,43 @@ public:
     /// @note FR-020: NaN/Inf in any comb resets that comb, returns 0 for it
     [[nodiscard]] float process(float input) noexcept;
 
+    /// @brief Block form of `process(float)`.
+    ///
+    /// Output is identical, sample for sample, to `numSamples` successive
+    /// `process()` calls; when nothing is moving it takes a hoisted path that
+    /// lifts the four per-comb smoother steps, the delay-time arithmetic and
+    /// the three per-comb setter calls out of the inner loop. See the banner
+    /// on the implementation for why that is bit-identical rather than an
+    /// approximation, and for the conditions that send it back to the
+    /// per-sample path.
+    ///
+    /// @param input  Source buffer, `numSamples` long
+    /// @param output Destination buffer, `numSamples` long. It must NOT alias
+    ///               `input`: the hoisted path reads the whole input buffer
+    ///               once per comb.
+    /// @param numSamples Sample count
+    void processBlock(const float* input, float* output, size_t numSamples) noexcept;
+
+    /// @brief Snap every per-comb parameter smoother to its target.
+    ///
+    /// The bank's own 20 ms delay/feedback/damping/gain smoothers exist for
+    /// callers that push raw values from a UI thread. A caller that already
+    /// smooths on its own control grid - `ContinuousBody` derives the comb
+    /// fundamental from a 20 ms pitch smoother it advances once per 64-sample
+    /// control chunk - puts a second lag in series with its own, and keeps the
+    /// bank permanently unsettled so `processBlock()` can never take its
+    /// hoisted path. Calling this after each parameter push makes the bank's
+    /// coefficients piecewise-constant over the caller's control chunk;
+    /// continuity is then the caller's own smoother, sampled on its grid.
+    void snapSmoothers() noexcept {
+        for (auto& ch : channels_) {
+            ch.delaySmoother.snapToTarget();
+            ch.feedbackSmoother.snapToTarget();
+            ch.dampingSmoother.snapToTarget();
+            ch.gainSmoother.snapToTarget();
+        }
+    }
+
     /// @brief Process stereo samples in-place.
     ///
     /// @param left Left channel sample (input and output)
@@ -603,6 +640,9 @@ inline float TimeVaryingCombBank::process(float input) noexcept {
 
     float output = 0.0f;
 
+    // Zero-modulation fast path -- see the modActive banner on processStereo().
+    const bool modActive = (modDepth_ > 0.0f);
+
     for (size_t i = 0; i < numCombs_; ++i) {
         auto& ch = channels_[i];
 
@@ -612,15 +652,18 @@ inline float TimeVaryingCombBank::process(float input) noexcept {
         const float smoothedDamping = ch.dampingSmoother.process();
         const float smoothedGain = ch.gainSmoother.process();
 
-        // Calculate modulated delay time
-        const float lfoValue = ch.lfo.process();
+        float modulatedDelayMs = smoothedDelay;
+        if (modActive) {
+            // Calculate modulated delay time
+            const float lfoValue = ch.lfo.process();
 
-        // Random drift (scaled by modDepth and randomModAmount)
-        const float randomValue = ch.rng.nextFloat();  // [-1, 1]
-        const float drift = randomValue * randomModAmount_ * modDepth_ * smoothedDelay;
+            // Random drift (scaled by modDepth and randomModAmount)
+            const float randomValue = ch.rng.nextFloat();  // [-1, 1]
+            const float drift = randomValue * randomModAmount_ * modDepth_ * smoothedDelay;
 
-        // Modulated delay = base * (1 + depth * lfo) + drift
-        float modulatedDelayMs = smoothedDelay * (1.0f + modDepth_ * lfoValue) + drift;
+            // Modulated delay = base * (1 + depth * lfo) + drift
+            modulatedDelayMs = smoothedDelay * (1.0f + modDepth_ * lfoValue) + drift;
+        }
 
         // Clamp modulated delay to valid range
         modulatedDelayMs = std::clamp(modulatedDelayMs, 1.0f, maxDelayMs_);
@@ -650,6 +693,97 @@ inline float TimeVaryingCombBank::process(float input) noexcept {
     return output;
 }
 
+// =============================================================================
+// processBlock - hoisted equivalent of N x process()
+// =============================================================================
+// WHY: `process(float)` re-derives, for every sample and for every comb, four
+// OnePoleSmoother steps, a clamp, a millisecond-to-samples conversion and three
+// setter calls on the FeedbackComb - 24 smoother steps and 18 setter calls per
+// sample at numCombs_ = 6. None of it moves once the smoothers have settled and
+// modulation is off. Measured on this repo's MSVC Release build, 512 samples
+// through a 6-comb bank cost 50,849 ns/block on the per-sample path.
+//
+// BIT-IDENTICAL, not an approximation, under the guard below:
+//   * every smoother is required to report isComplete(). OnePoleSmoother::
+//     process() snaps `current_ = target_` and returns `target_` from that
+//     point on (smoother.h:197-211), so the ONE call made here returns exactly
+//     what each of the numSamples calls would have returned;
+//   * `modDepth_ == 0` makes the LFO and drift terms provably zero - the same
+//     argument as the zero-modulation fast path in processStereo();
+//   * the accumulation order per sample is unchanged. The loops are
+//     interchanged (comb outer, sample inner) but `output[n]` still receives
+//     comb 0's contribution first and comb numCombs_-1's last, starting from
+//     0.0f, so the floating-point sum is formed in the identical order;
+//   * a non-finite INPUT sample makes `process()` reset the whole bank and
+//     return 0, which is a state change the hoisted path cannot express. The
+//     block is scanned first and falls back to the per-sample path in one
+//     piece if any sample is non-finite.
+// =============================================================================
+inline void TimeVaryingCombBank::processBlock(const float* input, float* output,
+                                              size_t numSamples) noexcept {
+    if (input == nullptr || output == nullptr || numSamples == 0) {
+        return;
+    }
+
+    bool hoist = prepared_ && (modDepth_ <= 0.0f);
+    for (size_t i = 0; hoist && i < numCombs_; ++i) {
+        const auto& ch = channels_[i];
+        hoist = ch.delaySmoother.isComplete() && ch.feedbackSmoother.isComplete()
+                && ch.dampingSmoother.isComplete() && ch.gainSmoother.isComplete();
+    }
+    for (size_t n = 0; hoist && n < numSamples; ++n) {
+        hoist = !detail::isNaN(input[n]) && !detail::isInf(input[n]);
+    }
+
+    if (!hoist) {
+        for (size_t n = 0; n < numSamples; ++n) {
+            output[n] = process(input[n]);
+        }
+        return;
+    }
+
+    std::array<float, kMaxCombs> combGain{};
+    for (size_t i = 0; i < numCombs_; ++i) {
+        auto& ch = channels_[i];
+
+        const float smoothedDelay = ch.delaySmoother.process();
+        const float smoothedFeedback = ch.feedbackSmoother.process();
+        const float smoothedDamping = ch.dampingSmoother.process();
+        combGain[i] = ch.gainSmoother.process();
+
+        const float modulatedDelayMs = std::clamp(smoothedDelay, 1.0f, maxDelayMs_);
+        const float delaySamples = modulatedDelayMs * 0.001f * static_cast<float>(sampleRate_);
+        ch.comb.setDelaySamples(delaySamples);
+        ch.comb.setFeedback(smoothedFeedback);
+        ch.comb.setDamping(smoothedDamping);
+    }
+
+    for (size_t n = 0; n < numSamples; ++n) {
+        output[n] = 0.0f;
+    }
+
+    for (size_t i = 0; i < numCombs_; ++i) {
+        auto& ch = channels_[i];
+        const float gain = combGain[i];
+        // The delay is fixed for the whole block on this path, so the read
+        // tap - a clamp, a std::floor, a float-to-index conversion and two
+        // range clamps - is derived once instead of on every sample.
+        const DelayLine::LinearTap tap = ch.comb.makeTap();
+        for (size_t n = 0; n < numSamples; ++n) {
+            float combOutput = ch.comb.process(input[n], tap);
+            if (detail::isNaN(combOutput) || detail::isInf(combOutput)) {
+                ch.comb.reset();
+                combOutput = 0.0f;
+            }
+            output[n] += combOutput * gain;
+        }
+    }
+
+    for (size_t n = 0; n < numSamples; ++n) {
+        output[n] = detail::flushDenormal(output[n]);
+    }
+}
+
 inline void TimeVaryingCombBank::processStereo(float& left, float& right) noexcept {
     if (!prepared_) {
         left = 0.0f;
@@ -671,6 +805,38 @@ inline void TimeVaryingCombBank::processStereo(float& left, float& right) noexce
     float leftOut = 0.0f;
     float rightOut = 0.0f;
 
+    // ====================== ZERO-MODULATION FAST PATH ========================
+    // `LFO::process()` (primitives/lfo.h:116) is a general-purpose generator:
+    // phase wrap in double, optional symmetry warp, wavetable lookup, waveform
+    // crossfade, quantize and a fade-in envelope. At `numCombs_ = 6` it runs SIX
+    // times per sample, plus six `Xorshift32::nextFloat()` calls -- and with
+    // `modDepth_ == 0` (the DEFAULT, `modDepth_ = 0.0f` in the member block)
+    // every one of those results is multiplied by zero.
+    //
+    // BIT-IDENTICAL, not a behaviour change, at modDepth_ == 0:
+    //   drift             = randomValue * randomModAmount_ * 0.0f * smoothedDelay
+    //                     = 0.0f for every finite randomValue;
+    //   modulatedDelayMs  = smoothedDelay * (1.0f + 0.0f*lfoValue) + 0.0f
+    //                     = smoothedDelay * 1.0f
+    //                     = smoothedDelay,
+    // exactly, for every finite lfoValue (`smoothedDelay` is a clamped-positive
+    // delay, so the `+ 0.0f` cannot even flip a signed zero).
+    //
+    // WHAT DOES CHANGE: the per-comb LFO phase and RNG stream no longer advance
+    // while modDepth_ is zero, so a later setModDepth(> 0) resumes on the phase
+    // the bank held when modulation was switched off rather than on a
+    // free-running one. That is deliberately different from DiffusionNetwork's
+    // RA-4 guard, where the phase accumulator sits outside the guarded
+    // expression and could be kept running for free; here the phase lives
+    // inside the call being elided. Nothing observable depends on it: with the
+    // depth at zero the phase is unobservable by construction.
+    //
+    // Measured (dsp_systems_tests, 6 combs, 512-sample block @ 48 kHz):
+    // 74,580 ns/block before, see the SC-005 table in
+    // specs/seraphis-phase4-continuous-body/spec.md.
+    // =========================================================================
+    const bool modActive = (modDepth_ > 0.0f);
+
     for (size_t i = 0; i < numCombs_; ++i) {
         auto& ch = channels_[i];
 
@@ -680,15 +846,18 @@ inline void TimeVaryingCombBank::processStereo(float& left, float& right) noexce
         const float smoothedDamping = ch.dampingSmoother.process();
         const float smoothedGain = ch.gainSmoother.process();
 
-        // Calculate modulated delay time
-        const float lfoValue = ch.lfo.process();
+        float modulatedDelayMs = smoothedDelay;
+        if (modActive) {
+            // Calculate modulated delay time
+            const float lfoValue = ch.lfo.process();
 
-        // Random drift (scaled by modDepth and randomModAmount)
-        const float randomValue = ch.rng.nextFloat();  // [-1, 1]
-        const float drift = randomValue * randomModAmount_ * modDepth_ * smoothedDelay;
+            // Random drift (scaled by modDepth and randomModAmount)
+            const float randomValue = ch.rng.nextFloat();  // [-1, 1]
+            const float drift = randomValue * randomModAmount_ * modDepth_ * smoothedDelay;
 
-        // Modulated delay = base * (1 + depth * lfo) + drift
-        float modulatedDelayMs = smoothedDelay * (1.0f + modDepth_ * lfoValue) + drift;
+            // Modulated delay = base * (1 + depth * lfo) + drift
+            modulatedDelayMs = smoothedDelay * (1.0f + modDepth_ * lfoValue) + drift;
+        }
 
         // Clamp modulated delay to valid range
         modulatedDelayMs = std::clamp(modulatedDelayMs, 1.0f, maxDelayMs_);

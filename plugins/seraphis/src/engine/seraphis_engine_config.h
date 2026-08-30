@@ -1,0 +1,147 @@
+#pragma once
+
+// ==============================================================================
+// Seraphis - Prepare-Time Engine / Reverb Configuration (FR-053, FR-034a)
+// ==============================================================================
+// NO DSP LIVES HERE. This header introduces no new type: it hands back the
+// DSP-owned config structs with Seraphis's shipped values filled in, plus the
+// one control-application helper that process() needs and tests need to call
+// directly.
+// ==============================================================================
+
+#include "parameters/aether_params.h"
+
+#include <krate/dsp/effects/aether_reverb.h>
+#include <krate/dsp/systems/seraphis_engine.h>
+#include <krate/dsp/systems/seraphis_macro_matrix.h>
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+
+namespace Seraphis {
+
+/// FR-053. The one seed the whole plugin uses. NOT a parameter in Phase 8; two
+/// instances in one host therefore share a trajectory (spec, "Seed
+/// determinism"). Phase 9 owns any per-instance seed.
+///
+/// Stated EXPLICITLY rather than inherited from the struct defaults
+/// (seraphis_engine.h:96 / aether_reverb.h:1586), so a future `dsp/` default
+/// change cannot silently move Seraphis's sound.
+inline constexpr std::uint32_t kEngineSeed = 1u;
+inline constexpr std::uint32_t kReverbSeed = 1u;
+
+/// FR-024a clause 3. Master-gain smoothing time. Same 20 ms family as its
+/// sibling `SeraphisEngine::kSumGainSmoothMs = 20.0f`
+/// (dsp/include/krate/dsp/systems/seraphis_engine.h:138). NEVER an unnamed
+/// literal at the use site.
+inline constexpr float kMasterGainSmoothMs = 20.0f;
+
+/// FR-023 clause 1 / FR-026 / FR-028: ONE constant governs the engine config,
+/// the reverb config, the slice bound and the scratch size, so they cannot
+/// drift apart. == 2048 (seraphis_engine.h:134).
+inline constexpr std::size_t kMaxBlockSamples = Krate::DSP::SeraphisEngine::kMaxBlockSamples;
+
+/// @brief Build the shipped SeraphisEngineConfig. Prepare-time only.
+[[nodiscard]] inline Krate::DSP::SeraphisEngineConfig makeSeraphisEngineConfig(
+    std::size_t polyphony,
+    std::uint32_t seed,
+    std::size_t maxBlockSamples) noexcept {
+
+    Krate::DSP::SeraphisEngineConfig cfg{};   // seraphis_engine.h:92-97
+    cfg.voice.captureSeconds  = 4.0f;         // seraphis_voice.h:108  (shipped default)
+    cfg.voice.blurEnabled     = true;         // :110
+    cfg.voice.freezeEnabled   = true;         // :112
+    cfg.voice.blurFftSize     = 1024;         // :114
+    cfg.voice.freezeFftSize   = 2048;         // :116
+    cfg.voice.maxBlockSamples = maxBlockSamples;  // :119
+    cfg.polyphony             = polyphony;    // :95  (SEEDED FROM THE PARAMETER, FR-023 cl.2)
+    cfg.seed                  = seed;         // :96  (explicit, never the struct default)
+    return cfg;
+}
+
+/// @brief Build the shipped AetherReverb::PrepareConfig. Prepare-time only.
+///
+/// `spectralDiffusionEnabled` and `diffusionFftSize` MUST NOT be changed: the
+/// resulting 1024-sample latency is owned by FR-033, not dodged here.
+[[nodiscard]] inline Krate::DSP::AetherReverb::PrepareConfig makeSeraphisReverbConfig(
+    std::size_t maxBlockSamples) noexcept {
+
+    Krate::DSP::AetherReverb::PrepareConfig cfg{};  // aether_reverb.h:1577-1587
+    cfg.numChannels              = 8;               // :1578
+    cfg.maxBlockSamples          = maxBlockSamples;  // :1579  (own clamp [64,8192] at :1619)
+    cfg.maxDelaySeconds          = 0.50f;           // :1580
+    cfg.shimmerEnabled           = true;            // :1581
+    // PitchMode is a NAMESPACE-scope enum in Krate::DSP
+    // (pitch_shift_processor.h:57-63), NOT a member of AetherReverb - qualified
+    // lookup through the class would not find it. Same spelling the DSP tests
+    // use (dsp/tests/unit/effects/aether_reverb_test.cpp:3073).
+    cfg.shimmerMode              = Krate::DSP::PitchMode::Granular;  // :1582
+    cfg.bloomEnabled             = true;            // :1583
+    cfg.spectralDiffusionEnabled = true;            // :1584  MUST stay true (FR-033/FR-053)
+    cfg.diffusionFftSize         = 1024;            // :1585  MUST stay 1024 -> 1024-sample latency
+    cfg.seed                     = kReverbSeed;     // :1586  explicit, never the struct default
+    return cfg;
+}
+
+/// @brief FR-034a. Push the Aether-owned macro targets into the reverb.
+///
+/// A FREE FUNCTION, not a lambda inside process(): the eight targets have no
+/// getter on AetherReverb, so this is the only surface a test can call directly
+/// with non-neutral values.
+///
+/// @par Real-Time Safety: noexcept and allocation-free. Every setter funnels
+///      through AetherReverb::applyControl (aether_reverb.h:2950-2958), a clamp
+///      plus a smoother store.
+inline void applyAetherTargets(Krate::DSP::AetherReverb& reverb,
+                               const Krate::DSP::SeraphisAetherTargets& t) noexcept {
+    reverb.setMix(t.mix);                                          // aether_reverb.h:2336
+    reverb.setSize(t.size);                                        // :2208
+    reverb.setWidth(t.width);                                      // :2333
+    reverb.setShimmerOctaveSend(t.shimmerOctaveSend);              // :2280
+    reverb.setShimmerFifthSend(t.shimmerFifthSend);                // :2285
+    reverb.setBloomSend(t.bloomSend);                              // :2295
+    reverb.setSizeBreathDepth(t.sizeBreathDepth);                  // :2320
+    reverb.setDimensionalityTideDepth(t.dimensionalityTideDepth);  // :2328
+}
+
+/// @brief FR-049. Push the ten NON-macro reverb controls (spec C-6, route `AE`).
+///
+/// A FREE FUNCTION for the same stated reason as applyAetherTargets (:93): the
+/// reverb has no getters for these ten controls, so this is the only surface a
+/// test can drive directly with non-neutral values.
+///
+/// The eight MACRO-owned controls (IDs 1200, 1201, 1210, 1211, 1212, 1215, 1216,
+/// 1217) are applyAetherTargets' (:93-103); the two sets are DISJOINT BY
+/// CONSTRUCTION (spec FR-055), so the two functions never fight over a control.
+/// AetherReverb::setSeed (aether_reverb.h:2361) is NOT here either: it is
+/// ENG-routed and pushed from pushGlobalParams() alongside
+/// SeraphisEngine::setSeed (FR-045).
+///
+/// @par Real-Time Safety: noexcept and allocation-free. FOURTEEN of
+///      AetherReverb's eighteen setters funnel through applyControl (a clamp
+///      plus a smoother store, aether_reverb.h:2950-2958); of the four that do
+///      not, exactly TWO are reached here - setFreeze, a self-guarding latch
+///      (:2230-2237), and setModSmoothness, which loops drift_[j].setSmoothness
+///      over 8 channels (:2268-2273). The other two, setSizeBreathDepth (:2320)
+///      and setDimensionalityTideDepth (:2328), are MB-routed and belong to
+///      applyAetherTargets above (:101-102) - the two sets are disjoint, so the
+///      count here is two and not three. That is exactly why spec C-3 calls this
+///      ON CHANGE ONLY and not every slice.
+inline void applyAetherParams(Krate::DSP::AetherReverb& reverb,
+                              const AetherParams& p) noexcept {
+    constexpr auto kRelaxed = std::memory_order_relaxed;
+
+    reverb.setDensity(p.density.load(kRelaxed));                      // :2211  ID 1202
+    reverb.setDecaySeconds(p.decaySeconds.load(kRelaxed));            // :2214  ID 1203
+    reverb.setFreeze(p.freeze.load(kRelaxed));                        // :2230  ID 1204
+    reverb.setDimensionality(p.dimensionality.load(kRelaxed));        // :2239  ID 1205
+    reverb.setDamping(p.damping.load(kRelaxed));                      // :2244  ID 1206
+    reverb.setPreDelayMs(p.preDelayMs.load(kRelaxed));                // :2247  ID 1207
+    reverb.setModDepth(p.modDepth.load(kRelaxed));                    // :2254  ID 1208
+    reverb.setModSmoothness(p.modSmoothness.load(kRelaxed));          // :2268  ID 1209
+    reverb.setBloomDecay(p.bloomDecay.load(kRelaxed));                // :2301  ID 1213
+    reverb.setSpectralDiffusion(p.spectralDiffusion.load(kRelaxed));  // :2310  ID 1214
+}
+
+}  // namespace Seraphis

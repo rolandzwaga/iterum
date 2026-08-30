@@ -272,6 +272,18 @@ add_executable(dsp_processors_tests
     unit/processors/bow_waveguide_coupling_test.cpp
     unit/processors/body_resonance_tests.cpp
     unit/processors/test_modal_bank_frequency.cpp
+    unit/processors/brownian_drift_test.cpp
+    unit/processors/breathing_modulator_test.cpp
+    unit/processors/tidal_modulator_test.cpp
+    unit/processors/orbit_modulator_test.cpp
+    unit/processors/spline_trajectory_test.cpp
+    unit/processors/growth_envelope_test.cpp
+    unit/processors/life_modulators_perf_test.cpp
+    unit/processors/spectral_state_test.cpp
+    unit/processors/entropy_processor_test.cpp
+    # Seraphis Phase 4 (specs/seraphis-phase4-continuous-body): shared Layer 2 amendments
+    unit/processors/waveguide_string_retune_test.cpp
+    unit/processors/diffusion_network_zeromod_test.cpp
 )
 
 target_link_libraries(dsp_processors_tests
@@ -322,6 +334,52 @@ add_executable(dsp_systems_tests
     unit/systems/harmonizer_engine_test.cpp
     unit/systems/harmonic_model_builder_tests.cpp
     unit/systems/sympathetic_resonance_test.cpp
+    unit/systems/harmonic_cloud_test.cpp
+    unit/systems/harmonic_cloud_spectral_test.cpp
+    unit/systems/harmonic_cloud_perf_test.cpp
+    unit/systems/spectral_morph_engine_test.cpp
+    unit/systems/spectral_morph_render_test.cpp
+    unit/systems/spectral_morph_perf_test.cpp
+    # Seraphis Phase 4 (specs/seraphis-phase4-continuous-body): ContinuousBody
+    unit/systems/continuous_body_test.cpp
+    unit/systems/continuous_body_spectral_test.cpp
+    unit/systems/continuous_body_perf_test.cpp
+    # Seraphis Phase 5 (specs/seraphis-phase5-atmosphere): AtmosphereEngine
+    unit/systems/atmosphere_engine_test.cpp
+    unit/systems/atmosphere_engine_spectral_test.cpp
+    unit/systems/atmosphere_engine_perf_test.cpp
+    unit/systems/atmosphere_engine_nonfinite_test.cpp
+    # Seraphis Phase 7 (specs/seraphis-phase7-voice-engine): SeraphisVoice,
+    # SeraphisEngine, SeraphisMacroMatrix. This list is ENUMERATED, not globbed -
+    # an unregistered TU silently drops out of the build and its cases never run.
+    unit/systems/seraphis_voice_test.cpp
+    unit/systems/seraphis_engine_test.cpp
+    unit/systems/seraphis_macro_test.cpp
+    unit/systems/seraphis_nonfinite_test.cpp
+    unit/systems/seraphis_perf_test.cpp
+    # Seraphis Phase 9 (specs/seraphis-phase9-parameters): the broadcast POD,
+    # applyVoiceParams / applySpectralStates, the macro base overrides, the new
+    # SeraphisVoice forwarders and ContinuousBody accessors.
+    unit/systems/seraphis_param_broadcast_test.cpp
+    # Seraphis Phase 11 (specs/seraphis-phase11-ui): the SeraphisEngine
+    # per-partial fan-outs and their SeraphisVoice pass-throughs (T003).
+    unit/systems/seraphis_partial_fanout_test.cpp
+    # Seraphis Phase 11 (specs/seraphis-phase11-ui): SC-012's acceptance arm and
+    # SC-013's four audibility arms for the SpectralState authoring mutators
+    # (T005). Layer 3 because every arm needs SpectralMorphEngine/HarmonicCloud;
+    # the Layer 2 preservation table stays in
+    # unit/processors/spectral_state_test.cpp. Deliberately NOT in the
+    # -fno-fast-math block below: its non-finite arguments are built from bit
+    # patterns and the mutators' guards are detail::isNaN/isInf, so the file must
+    # build in the FP mode the header actually ships in.
+    #
+    # T027 audit: these are the ONLY two dsp/ TUs Phase 11 adds, both here in
+    # dsp_systems_tests, each exactly once, and neither in the -fno-fast-math
+    # block below. unit/processors/spectral_state_test.cpp (T002's Layer 2
+    # preservation table) was already registered to dsp_processors_tests and stays
+    # there. SC-030 needs NO new TU - it is a re-run of the existing
+    # spectral_morph_* cases in this same executable.
+    unit/systems/spectral_state_authoring_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
@@ -358,6 +416,11 @@ add_executable(dsp_effects_tests
     unit/effects/test_pattern_freeze_mode.cpp
     unit/effects/reverb_test.cpp
     unit/effects/fdn_reverb_test.cpp
+    unit/effects/aether_reverb_test.cpp
+    unit/effects/aether_reverb_matrix_test.cpp
+    unit/effects/aether_reverb_spectral_test.cpp
+    unit/effects/aether_reverb_perf_test.cpp
+    unit/effects/aether_reverb_nonfinite_test.cpp
 )
 
 target_link_libraries(dsp_effects_tests
@@ -367,7 +430,35 @@ target_link_libraries(dsp_effects_tests
         test_helpers
 )
 
+# Seraphis Phase 6: compiles AetherReverb's FR-083 fault-injection hook
+# (injectNonFiniteStateForTest). Target-wide, NOT per-source: the hook changes
+# the class definition, so every TU linked into this executable must see the
+# same one or it is an ODR violation. KrateDSP itself never compiles
+# aether_reverb.h (header-only, no .cpp), and dsp_lint_stub is a separate
+# EXCLUDE_FROM_ALL object library, so no other image sees a differently-defined
+# AetherReverb. The shipping build never defines this.
+target_compile_definitions(dsp_effects_tests PRIVATE KRATE_DSP_AETHER_TEST_HOOKS)
+
 target_compile_features(dsp_effects_tests PRIVATE cxx_std_20)
+
+
+# ==============================================================================
+# Fixture location (must not depend on the launch working directory)
+# ==============================================================================
+# A few tests read/write committed golden fixtures under dsp/tests/ (the
+# ArpeggiatorCore SC-002 baselines and the HarmonizerEngine phase-vocoder
+# golden). They used to build those paths relative to the process working
+# directory, so the fstream only opened when the executable happened to be
+# launched from the repo root: under `ctest` (cwd = the build tree) or from any
+# other directory the open failed silently and the test reported an EMPTY
+# fixture — a "0 >= 1000" failure that looks like a DSP regression but is not.
+# Hand the tests the absolute source path instead, matching the
+# <PLUGIN>_FIXTURES_DIR convention already used by the plugin test targets
+# (e.g. plugins/gradus/tests/CMakeLists.txt:135).
+target_compile_definitions(dsp_processors_tests
+    PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(dsp_systems_tests
+    PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 
 # ==============================================================================
@@ -636,6 +727,40 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/processors/bow_waveguide_coupling_test.cpp
         unit/processors/body_resonance_tests.cpp
         unit/processors/test_modal_bank_frequency.cpp
+        # Seraphis Phase 4: T014 injects NaN/Inf via bit patterns in this TU
+        # (SC-013). Only this one of the five Phase 4 TUs does so - the other
+        # four must NOT be listed here.
+        unit/systems/continuous_body_test.cpp
+        # Seraphis Phase 5: SC-014's clauses (a)-(c) inject NaN/Inf via bit patterns
+        # in this TU and need the FP semantics preserved to assert on them.
+        # ONLY this one of the four Phase 5 TUs is listed. The other three must NOT
+        # be, and for atmosphere_engine_test.cpp that is DELIBERATE AND LOAD-BEARING,
+        # not an omission: SC-014's fourth clause
+        # (AtmosphereEngine_NonFiniteGuardSurvivesFastMath) and SC-012's sub-case 6
+        # live there precisely so the ITERUM_NOINLINE guard and the
+        # ordered-comparison clamp are proved under the /fp:fast + -ffast-math
+        # settings the header actually ships in. Adding it here would silently
+        # disable the only check that has teeth. The perf TU must stay out too:
+        # -fno-fast-math would change the figures the baselines are pinned to.
+        unit/systems/atmosphere_engine_nonfinite_test.cpp
+        # Seraphis Phase 6: SC-014 injects NaN/Inf via bit patterns in this TU and
+        # needs IEEE semantics to assert on them. ONLY this one of the five Phase 6
+        # TUs is listed; the other four must NOT be. For aether_reverb_test.cpp and
+        # aether_reverb_spectral_test.cpp that is DELIBERATE AND LOAD-BEARING, not
+        # an omission: SC-012's non-finite clause, FR-082's input guard and SC-015
+        # live there precisely so the ITERUM_NOINLINE guards are proved in the
+        # /fp:fast + -ffast-math mode the header actually ships in. The perf TU
+        # must stay out too: -fno-fast-math would change the figures its baselines
+        # are pinned to.
+        unit/effects/aether_reverb_nonfinite_test.cpp
+        # Seraphis Phase 7: SC-018 injects NaN/Inf via bit patterns in this TU and
+        # needs IEEE semantics to assert on them. ONLY this one of the five Phase 7
+        # TUs is listed; the other four must NOT be. seraphis_voice_test.cpp,
+        # seraphis_engine_test.cpp and seraphis_macro_test.cpp stay out so the
+        # FR-035/FR-072 guards they exercise are proved in the /fp:fast +
+        # -ffast-math mode the headers actually ship in. The perf TU must stay out
+        # too: -fno-fast-math would change the figures its baselines are pinned to.
+        unit/systems/seraphis_nonfinite_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 
@@ -646,6 +771,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         unit/effects/reverb_test.cpp
         unit/effects/fdn_reverb_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only -O2"
+    )
+
+    # Seraphis Phase 6: same GCC 13+ -O3 reverb pathology as reverb_test.cpp /
+    # fdn_reverb_test.cpp above (an N-channel recirculating delay network), and
+    # B-1's 60 s always-on wall budget is a requirement. -fno-fast-math is
+    # DELIBERATELY ABSENT here: these two TUs must build in the header's shipping
+    # FP mode so the ITERUM_NOINLINE finiteness guards are proved under
+    # -ffast-math on the macOS leg. Only aether_reverb_nonfinite_test.cpp gets
+    # IEEE semantics, and it is listed in the block above -- not here, because
+    # COMPILE_FLAGS is a single string property and a file may appear in only one
+    # set_source_files_properties() call.
+    set_source_files_properties(
+        unit/effects/aether_reverb_test.cpp
+        unit/effects/aether_reverb_spectral_test.cpp
+        PROPERTIES COMPILE_FLAGS "-O2"
     )
 endif()
 

@@ -16,6 +16,7 @@
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/ivstevents.h"
 
+#include <krate/dsp/core/db_utils.h>  // detail::isFinite (fast-math-immune)
 #include <krate/dsp/core/math_constants.h>
 #include <krate/dsp/core/midi_utils.h>
 #include <krate/dsp/core/note_value.h>
@@ -1916,9 +1917,10 @@ Steinberg::tresult PLUGIN_API Processor::process(Steinberg::Vst::ProcessData& da
             // host. Uses a bit test because -ffast-math makes std::isfinite()
             // unreliable on some CI toolchains.
             auto sanitize = [](float x) noexcept -> float {
-                std::uint32_t b = 0;
-                std::memcpy(&b, &x, sizeof(b));
-                return ((b & 0x7F800000u) == 0x7F800000u) ? 0.0f : x; // Inf/NaN -> 0
+                // Krate::DSP::detail::isFinite is the barrier-hardened bit test;
+                // a plain local memcpy/bit-mask is foldable under newer
+                // fast-math compilers (Apple Clang / Xcode 26.6).
+                return Krate::DSP::detail::isFinite(x) ? x : 0.0f; // Inf/NaN -> 0
             };
             auto softLimit = [&sanitize](float x) noexcept -> float {
                 x = sanitize(x);

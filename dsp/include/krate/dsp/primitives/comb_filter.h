@@ -361,6 +361,40 @@ public:
         return output;
     }
 
+    /// @brief Precomputed read tap for the CURRENT delay setting.
+    ///
+    /// `process()` re-derives a clamp, a `std::floor`, a float-to-index
+    /// conversion and two range clamps inside `readLinear` on every sample,
+    /// from a `delaySamples_` that a block-rate caller has already fixed for
+    /// the whole block. `makeTap()` does that arithmetic once; the result is a
+    /// pair of RELATIVE offsets from the write head plus the interpolation
+    /// fraction, so it stays valid across any number of `process` calls made
+    /// at the same delay setting.
+    [[nodiscard]] DelayLine::LinearTap makeTap() const noexcept {
+        return delay_.makeLinearTap(std::max(0.0f, delaySamples_ - 1.0f));
+    }
+
+    /// @brief `process()` with the read tap supplied.
+    ///
+    /// Bit-identical to `process(input)` when `tap` came from `makeTap()` at
+    /// the current delay setting AND `input` is finite. The finiteness check is
+    /// the caller's here: `process()` resets the whole filter on a non-finite
+    /// input, which is a decision a block-rate caller has to take before it
+    /// commits to a hoisted loop.
+    [[nodiscard]] float process(float input, const DelayLine::LinearTap& tap) noexcept {
+        const float delayed = delay_.readLinear(tap);
+
+        const float damped = (1.0f - damping_) * delayed + damping_ * dampingState_;
+        dampingState_ = detail::flushDenormal(damped);
+
+        float output = input + feedback_ * damped;
+        output = detail::flushDenormal(output);
+
+        delay_.write(output);
+
+        return output;
+    }
+
     /// Process a block of samples in-place.
     /// @param buffer Sample buffer (modified in place)
     /// @param numSamples Number of samples to process

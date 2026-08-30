@@ -18,6 +18,7 @@ const PLUGIN_MAP = {
   innexus:  { testTarget: 'innexus_tests',  bundle: 'Innexus.vst3' },
   gradus:   { testTarget: 'gradus_tests',   bundle: 'Gradus.vst3' },
   membrum:  { testTarget: 'membrum_tests',  bundle: 'Membrum.vst3' },
+  seraphis: { testTarget: 'seraphis_tests', bundle: 'Seraphis.vst3' },
 }
 
 const BUILD_DIR = 'build/windows-x64-release'

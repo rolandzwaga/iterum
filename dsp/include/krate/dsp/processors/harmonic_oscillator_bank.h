@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <krate/dsp/core/db_utils.h>  // detail::isFinite (fast-math-immune)
 #include <krate/dsp/processors/harmonic_types.h>
 #include <krate/dsp/processors/harmonic_oscillator_bank_simd.h>
 #include <krate/dsp/primitives/biquad.h>
@@ -620,11 +621,9 @@ public:
     /// Diagnoses MCF divergence (which the output clamp would otherwise hide by
     /// railing at +/-kOutputClamp). Uses a bit test so it holds under -ffast-math.
     [[nodiscard]] bool stateFinite() const noexcept {
-        auto finite = [](float x) noexcept {
-            std::uint32_t b = 0;
-            std::memcpy(&b, &x, sizeof(b));
-            return (b & 0x7F800000u) != 0x7F800000u;
-        };
+        // detail::isFinite is the barrier-hardened core check: a plain local
+        // memcpy/bit-mask is foldable under newer fast-math compilers.
+        auto finite = [](float x) noexcept { return detail::isFinite(x); };
         for (int i = 0; i < activePartials_; ++i) {
             const auto idx = static_cast<size_t>(i);
             if (!finite(sinState_[idx]) || !finite(cosState_[idx])) return false;

@@ -57,7 +57,7 @@
 param(
     [string]$BuildDir = "build/windows-x64-release",
     [switch]$Fix,
-    [ValidateSet("all", "dsp", "dsp-lib", "dsp-tests", "iterum", "disrumpo", "ruinae", "innexus", "gradus", "membrum")]
+    [ValidateSet("all", "dsp", "dsp-lib", "dsp-tests", "iterum", "disrumpo", "ruinae", "innexus", "gradus", "membrum", "seraphis")]
     [string]$Target = "all",
     [switch]$Quiet,
     [int]$Jobs = 0
@@ -193,6 +193,21 @@ switch ($Target) {
         $IncludeDirs += "plugins/membrum/src"
         $IncludeDirs += "extern/vst3sdk"
     }
+    "seraphis" {
+        # The tests tree is listed so this target matches run-clang-tidy.sh's
+        # `seraphis)` case (tools/run-clang-tidy.sh:151-152), which has always
+        # been ("plugins/seraphis/src" "plugins/seraphis/tests"). Without it the
+        # two scripts analyze different file sets and a clean .ps1 run says
+        # nothing about the Linux/macOS pre-commit lint - Seraphis spec
+        # seraphis-phase10-effects SC-015 requires BOTH clean.
+        $SourceDirs += "plugins/seraphis/src"
+        $SourceDirs += "plugins/seraphis/tests"
+        $IncludeDirs += "dsp/include"
+        $IncludeDirs += "plugins/seraphis/src"
+        $IncludeDirs += "plugins/seraphis/tests"
+        $IncludeDirs += "tests"
+        $IncludeDirs += "extern/vst3sdk"
+    }
     "all" {
         $SourceDirs += "dsp/include"
         $SourceDirs += "dsp/tests"
@@ -203,6 +218,7 @@ switch ($Target) {
         $SourceDirs += "plugins/innexus/src"
         $SourceDirs += "plugins/gradus/src"
         $SourceDirs += "plugins/membrum/src"
+        $SourceDirs += "plugins/seraphis/src"
         $IncludeDirs += "dsp/include"
         $IncludeDirs += "plugins/iterum/src"
         $IncludeDirs += "plugins/disrumpo/src"
@@ -210,6 +226,7 @@ switch ($Target) {
         $IncludeDirs += "plugins/innexus/src"
         $IncludeDirs += "plugins/gradus/src"
         $IncludeDirs += "plugins/membrum/src"
+        $IncludeDirs += "plugins/seraphis/src"
         $IncludeDirs += "extern/vst3sdk"
     }
 }

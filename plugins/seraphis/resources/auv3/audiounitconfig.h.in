@@ -1,0 +1,40 @@
+// Seraphis AUv3 Audio Unit Configuration
+// Copyright (c) 2026 Krate Audio. All rights reserved.
+//
+// AUTO-GENERATED FROM audiounitconfig.h.in - DO NOT EDIT THE .h FILE.
+// kAUcomponentVersion is derived from version.json by CMake.
+
+// Effect (aufx), Generator (augn), Instrument (aumu), and Music Effect (aufm)
+#define kAUcomponentType          'aumu'
+#define kAUcomponentType1         aumu
+
+// A subtype code (unique ID), exactly 4 alphanumeric characters
+#define kAUcomponentSubType       'Srph'
+#define kAUcomponentSubType1      Srph
+
+// A manufacturer code, exactly 4 alphanumeric characters
+#define kAUcomponentManufacturer  'KrAt'
+#define kAUcomponentManufacturer1 KrAt
+
+#define kAUcomponentDescription   AUv3WrapperExtension
+#define kAUcomponentName          Krate Audio: Seraphis
+#define kAUcomponentTag           Synthesizer
+
+// @AU_VERSION_COMMENT@
+#define kAUcomponentVersion       @AU_COMPONENT_VERSION@
+
+// Channel capabilities describe ONLY the main output bus (element 0 in
+// AU vocabulary). Seraphis exposes a single stereo output bus and no audio
+// input bus (no sidechain), so exactly one config is declared here.
+//
+// Format: each character is one digit, and digits are consumed in pairs as
+// (inputs, outputs) configs.
+// "02" = one config: 0 in, 2 out (stereo instrument, no sidechain).
+// "0022" would NOT mean "0 in / 2 out" - it parses as (0,0)+(2,2), which
+// declares a stereo audio input the processor does not provide and makes AU
+// host init fail with -10875.
+#define kSupportedNumChannels     02
+
+#define kAUcomponentFlags         0
+#define kAUcomponentFlagsMask     0
+#define kAUapplicationDelegateClassName AppDelegate

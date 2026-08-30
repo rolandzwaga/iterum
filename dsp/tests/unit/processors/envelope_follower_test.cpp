@@ -116,7 +116,7 @@ TEST_CASE("EnvelopeFollower prepare and reset", "[envelope][foundational]") {
         env.prepare(44100.0, 512);
         // Process some samples to change state
         float sample = 1.0f;
-        env.processSample(sample);
+        (void)env.processSample(sample);
         REQUIRE(env.getCurrentValue() > 0.0f);
 
         // Reset should clear state
@@ -186,7 +186,7 @@ TEST_CASE("Amplitude mode attack time accuracy (JUCE-style ~99% settling)", "[en
 
     // Feed step input from 0 to 1.0
     for (size_t i = 0; i < attackSamples; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     // After attack time, should be at ~99% of target (JUCE uses 2π formula)
@@ -207,7 +207,7 @@ TEST_CASE("Amplitude mode release time accuracy (JUCE-style ~99% settling)", "[e
 
     // Build up envelope to 1.0 first
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
     float peakValue = env.getCurrentValue();
     REQUIRE(peakValue > 0.95f);  // Should be near 1.0
@@ -217,7 +217,7 @@ TEST_CASE("Amplitude mode release time accuracy (JUCE-style ~99% settling)", "[e
 
     // Feed silence
     for (size_t i = 0; i < releaseSamples; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     // After release time, should decay to ~1% of peak (JUCE uses 2π formula)
@@ -286,7 +286,7 @@ TEST_CASE("getCurrentValue returns current envelope without advancing", "[envelo
     env.prepare(44100.0, 512);
     env.setMode(DetectionMode::Amplitude);
 
-    env.processSample(1.0f);
+    (void)env.processSample(1.0f);
     float value1 = env.getCurrentValue();
     float value2 = env.getCurrentValue();
     float value3 = env.getCurrentValue();
@@ -313,7 +313,7 @@ TEST_CASE("Time constant scaling across sample rates (JUCE-style)", "[envelope][
         const size_t attackSamples = msToSamples(kAttackMs, sr);
 
         for (size_t i = 0; i < attackSamples; ++i) {
-            env.processSample(kTestInput);
+            (void)env.processSample(kTestInput);
         }
 
         // Should reach ~99% regardless of sample rate (JUCE-style 2π formula)
@@ -336,14 +336,14 @@ TEST_CASE("Envelope settles to zero within 10x release time (SC-006)", "[envelop
 
     // Build up envelope
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
     REQUIRE(env.getCurrentValue() > 0.9f);
 
     // Feed silence for 10x release time
     const size_t decaySamples = msToSamples(kReleaseMs * 10.0f, kSampleRate);
     for (size_t i = 0; i < decaySamples; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     // Should be essentially zero
@@ -370,7 +370,7 @@ TEST_CASE("RMS mode with 0dB sine wave outputs ~0.707 (SC-002)", "[envelope][US2
 
     // Process entire buffer
     for (size_t i = 0; i < kBlockSize; ++i) {
-        env.processSample(buffer[i]);
+        (void)env.processSample(buffer[i]);
     }
 
     // Note: With asymmetric smoothing (fast attack, slow release) optimized for
@@ -397,7 +397,7 @@ TEST_CASE("RMS mode with 0dB square wave outputs ~1.0", "[envelope][US2]") {
 
     // Process entire buffer
     for (size_t i = 0; i < kBlockSize; ++i) {
-        env.processSample(buffer[i]);
+        (void)env.processSample(buffer[i]);
     }
 
     // RMS of square wave = peak = 1.0
@@ -418,7 +418,7 @@ TEST_CASE("RMS mode attack/release behavior", "[envelope][US2]") {
     // Feed constant 1.0 (RMS = 1.0)
     const size_t attackSamples = msToSamples(kAttackMs, kSampleRate);
     for (size_t i = 0; i < attackSamples; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     // Should rise toward 1.0
@@ -454,13 +454,13 @@ TEST_CASE("Peak mode release behavior (JUCE-style)", "[envelope][US3]") {
     env.setReleaseTime(kReleaseMs);
 
     // Capture peak
-    env.processSample(1.0f);
+    (void)env.processSample(1.0f);
     REQUIRE(env.getCurrentValue() > 0.99f);
 
     // Feed silence - should decay
     const size_t releaseSamples = msToSamples(kReleaseMs, kSampleRate);
     for (size_t i = 0; i < releaseSamples; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     // Should have decayed to ~1% (JUCE-style 2π formula = ~99% settling)
@@ -486,7 +486,7 @@ TEST_CASE("Peak mode captures all transients (output >= input magnitude)", "[env
 
         // Add some silence between peaks
         for (int j = 0; j < 100; ++j) {
-            env.processSample(0.0f);
+            (void)env.processSample(0.0f);
         }
     }
 }
@@ -509,7 +509,7 @@ TEST_CASE("Peak mode with configurable attack time (JUCE-style)", "[envelope][US
     // Process for the attack time - should reach ~99%
     const size_t attackSamples = static_cast<size_t>(10.0f * 0.001f * 44100.0f);
     for (size_t i = 1; i < attackSamples; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
     REQUIRE(env.getCurrentValue() >= 0.95f);
 }
@@ -528,7 +528,7 @@ TEST_CASE("Attack time change produces no discontinuity (SC-008)", "[envelope][U
 
     // Build up some envelope
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(0.5f);
+        (void)env.processSample(0.5f);
     }
 
     float beforeChange = env.getCurrentValue();
@@ -553,12 +553,12 @@ TEST_CASE("Release time change produces no discontinuity", "[envelope][US4]") {
 
     // Build up envelope
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     // Start release
     for (size_t i = 0; i < 100; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     float beforeChange = env.getCurrentValue();
@@ -583,7 +583,7 @@ TEST_CASE("Mode change (Amplitude to RMS) produces smooth transition", "[envelop
 
     // Build up envelope
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     float beforeChange = env.getCurrentValue();
@@ -608,7 +608,7 @@ TEST_CASE("Mode change (RMS to Peak) produces smooth transition", "[envelope][US
 
     // Build up envelope
     for (size_t i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     float beforeChange = env.getCurrentValue();
@@ -655,8 +655,8 @@ TEST_CASE("Sidechain filter enabled attenuates bass", "[envelope][US5]") {
 
     // Process with both
     for (size_t i = 0; i < kBlockSize; ++i) {
-        envNoFilter.processSample(buffer[i]);
-        envWithFilter.processSample(buffer[i]);
+        (void)envNoFilter.processSample(buffer[i]);
+        (void)envWithFilter.processSample(buffer[i]);
     }
 
     // Filtered version should have lower envelope (bass attenuated)
@@ -679,7 +679,7 @@ TEST_CASE("Sidechain filter disabled passes all frequencies", "[envelope][US5]")
     generateSine(buffer.data(), kBlockSize, 50.0f, static_cast<float>(kSampleRate), 1.0f);
 
     for (size_t i = 0; i < kBlockSize; ++i) {
-        env.processSample(buffer[i]);
+        (void)env.processSample(buffer[i]);
     }
 
     // Should track full amplitude
@@ -744,12 +744,12 @@ TEST_CASE("Denormalized numbers flushed to zero (SC-007)", "[envelope][edge]") {
 
     // Build up envelope
     for (int i = 0; i < 100; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     // Let it decay for a long time
     for (int i = 0; i < 100000; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     float finalValue = env.getCurrentValue();
@@ -768,14 +768,14 @@ TEST_CASE("Silent input decays to zero and remains stable", "[envelope][edge]") 
 
     // Process silence for a while
     for (int i = 0; i < 10000; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     float value1 = env.getCurrentValue();
 
     // Continue processing silence
     for (int i = 0; i < 1000; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     float value2 = env.getCurrentValue();
@@ -807,13 +807,13 @@ TEST_CASE("Extreme release time (maximum) behavior", "[envelope][edge]") {
 
     // Build up envelope
     for (int i = 0; i < 1000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
     float peakValue = env.getCurrentValue();
 
     // With very long release, decay should be very slow
     for (int i = 0; i < 1000; ++i) {
-        env.processSample(0.0f);
+        (void)env.processSample(0.0f);
     }
 
     // Should still be high
@@ -828,7 +828,7 @@ TEST_CASE("Output range with >0dBFS input (FR-011)", "[envelope][edge]") {
 
     // Process signal >1.0
     for (int i = 0; i < 100; ++i) {
-        env.processSample(2.0f);
+        (void)env.processSample(2.0f);
     }
 
     // Output should exceed 1.0
@@ -847,7 +847,7 @@ TEST_CASE("Output stability (FR-012): no oscillation after step response", "[env
 
     // Step up
     for (int i = 0; i < 5000; ++i) {
-        env.processSample(1.0f);
+        (void)env.processSample(1.0f);
     }
 
     // Collect samples during release to check for monotonic decay

@@ -1,0 +1,582 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vstgui-ui-description version="1">
+  <!-- Seraphis Phase 11 - the organism-first editor (specs/seraphis-phase11-ui,
+       plan section 9, tasks T019). FIXED 1000 x 700 (RQ-3): no zoom factors, no
+       onSize relayout. The Phase 8 placeholder template and its banner are gone.
+
+       THE BINDING BUDGET IS EXACT (C-3, FR-003, SC-002): 110 bound views over
+       107 registered parameters. The three second bindings are the header freeze
+       cluster - AtmosFreeze (1008), AetherFreeze (1204), FxSpectralFreeze (1430)
+       - and they are the COMPLETE duplicate allowlist. Every other registered ID
+       is bound exactly once, and unreachableParams() must come back EMPTY with an
+       EMPTY allowlist. Adding a binding here without moving SC-002's number is a
+       test failure, and the number is not the thing to edit.
+
+       CHILD ORDER IS Z-ORDER. CloudView is child 0 (FR-006) so every ring, the
+       header and the drawer draw OVER it.
+
+       ONE SUB-CONTROLLER, ON THE TEMPLATE ROOT (D-4). That is what makes
+       getViewSize() on the cloud view and on the drawer read in the window's own
+       coordinate space (FR-023 / FR-024), and it is what puts the header preset
+       button inside the sub-controller's sub-tree (FR-045). Tagged controls are
+       unaffected: DelegationController forwards everything it does not claim.
+
+       The session-tag attribute is a CUSTOM one the view factory ignores and
+       SeraphisEditSubController::verifyView turns into setTag() + setListener().
+       It is NEVER a control-tag, so it can never be counted as a binding. -->
+  <colors>
+    <color name="bg"       rgba="#1A1A2Eff"/>
+    <color name="panel"    rgba="#202038ff"/>
+    <color name="text"     rgba="#E0E0F0ff"/>
+    <color name="text-dim" rgba="#9C9CBEff"/>
+    <color name="track"    rgba="#242438ff"/>
+    <color name="accent"   rgba="#8FA8D8ff"/>
+    <color name="toggle-off" rgba="#4A4A64ff"/>
+  </colors>
+  <fonts>
+    <font name="title-font" font-name="Arial" size="16" bold="true"/>
+    <font name="label-font" font-name="Arial" size="11"/>
+    <font name="small-font" font-name="Arial" size="9"/>
+  </fonts>
+  <!-- FR-100 / SC-015: one <control-tag> per REGISTERED parameter, all 107 of
+       them, named after the plugin_ids.h enumerator without the k / Id affixes.
+       CARRIED OVER VERBATIM from Phase 8/9/10 (FR-002): no tag is added, removed,
+       renamed or re-numbered by Phase 11 - the phase adds views, not tags. -->
+  <control-tags>
+    <!-- Global (0-99) -->
+    <control-tag name="MasterGain"    tag="0"/>
+    <control-tag name="Polyphony"     tag="1"/>
+    <control-tag name="SoftLimit"     tag="2"/>
+    <control-tag name="Seed"          tag="3"/>
+    <!-- Macros (100-199) -->
+    <control-tag name="MacroDream"    tag="100"/>
+    <control-tag name="MacroBloom"    tag="101"/>
+    <control-tag name="MacroDissolve" tag="102"/>
+    <control-tag name="MacroGravity"  tag="103"/>
+    <control-tag name="MacroEntropy"  tag="104"/>
+    <!-- Harmonic Cloud (200-399) -->
+    <control-tag name="CloudRichness"        tag="200"/>
+    <control-tag name="CloudInharmonicity"   tag="201"/>
+    <control-tag name="CloudTilt"            tag="202"/>
+    <control-tag name="CloudMutation"        tag="203"/>
+    <control-tag name="CloudGravity"         tag="204"/>
+    <control-tag name="CloudDriftDepth"      tag="205"/>
+    <control-tag name="CloudDriftSmoothness" tag="206"/>
+    <control-tag name="CloudStereoSpread"    tag="207"/>
+    <control-tag name="CloudAttack"          tag="208"/>
+    <control-tag name="CloudDecay"           tag="209"/>
+    <control-tag name="CloudEnvOffsetSpread" tag="210"/>
+    <!-- Spectral Morph / Entropy (400-599) -->
+    <control-tag name="MorphEntropy"          tag="400"/>
+    <control-tag name="MorphBloom"            tag="401"/>
+    <control-tag name="MorphPosition"         tag="402"/>
+    <control-tag name="MorphTravelMode"       tag="403"/>
+    <control-tag name="MorphTravelRate"       tag="404"/>
+    <control-tag name="MorphSync"             tag="405"/>
+    <control-tag name="MorphSyncNote"         tag="406"/>
+    <control-tag name="MorphWaypointInterval" tag="407"/>
+    <control-tag name="MorphStateCount"       tag="408"/>
+    <control-tag name="MorphState0"           tag="409"/>
+    <control-tag name="MorphState1"           tag="410"/>
+    <control-tag name="MorphState2"           tag="411"/>
+    <control-tag name="MorphState3"           tag="412"/>
+    <!-- Life Modulators (600-699) -->
+    <control-tag name="LifeSpatialDepth"    tag="600"/>
+    <control-tag name="LifeSpatialRate"     tag="601"/>
+    <control-tag name="LifeSpatialCoupling" tag="602"/>
+    <control-tag name="LifeSpatialGrowth"   tag="603"/>
+    <control-tag name="LifeVoiceWidth"      tag="604"/>
+    <!-- Voice Envelope (700-799) -->
+    <control-tag name="EnvMode"           tag="700"/>
+    <control-tag name="EnvGrowthDuration" tag="701"/>
+    <control-tag name="EnvStage0Ms"       tag="702"/>
+    <control-tag name="EnvStage1Ms"       tag="703"/>
+    <control-tag name="EnvReleaseMs"      tag="704"/>
+    <!-- Continuous Body (800-999) -->
+    <control-tag name="BodyMaterial"        tag="800"/>
+    <control-tag name="BodyResonance"       tag="801"/>
+    <control-tag name="BodyDamping"         tag="802"/>
+    <control-tag name="BodyKeyTracking"     tag="803"/>
+    <control-tag name="BodyDrive"           tag="804"/>
+    <control-tag name="BodyMix"             tag="805"/>
+    <control-tag name="BodyCloudMix"        tag="806"/>
+    <control-tag name="BodyCloudDecay"      tag="807"/>
+    <control-tag name="BodyCloudSize"       tag="808"/>
+    <control-tag name="BodyCloudDamping"    tag="809"/>
+    <control-tag name="BodyWidth"           tag="810"/>
+    <control-tag name="BodyInputAgc"        tag="811"/>
+    <control-tag name="BodyResonatorBypass" tag="812"/>
+    <!-- Granular Atmosphere (1000-1199) -->
+    <control-tag name="AtmosLevel"           tag="1000"/>
+    <control-tag name="AtmosBlur"            tag="1001"/>
+    <control-tag name="AtmosDensity"         tag="1002"/>
+    <control-tag name="AtmosGrainSeconds"    tag="1003"/>
+    <control-tag name="AtmosDriftDepth"      tag="1004"/>
+    <control-tag name="AtmosPanSpread"       tag="1005"/>
+    <control-tag name="AtmosDecorrelation"   tag="1006"/>
+    <control-tag name="AtmosFreezeMix"       tag="1007"/>
+    <control-tag name="AtmosFreeze"          tag="1008"/>
+    <control-tag name="AtmosDriftSmoothness" tag="1009"/>
+    <control-tag name="AtmosDriftRange"      tag="1010"/>
+    <control-tag name="AtmosJitter"          tag="1011"/>
+    <control-tag name="AtmosPosition"        tag="1012"/>
+    <control-tag name="AtmosPositionSpread"  tag="1013"/>
+    <control-tag name="AtmosPitch"           tag="1014"/>
+    <control-tag name="AtmosPitchSpread"     tag="1015"/>
+    <control-tag name="AtmosGrainEnvelope"   tag="1016"/>
+    <!-- Aether Space (1200-1399) -->
+    <control-tag name="AetherMix"               tag="1200"/>
+    <control-tag name="AetherSize"              tag="1201"/>
+    <control-tag name="AetherDensity"           tag="1202"/>
+    <control-tag name="AetherDecay"             tag="1203"/>
+    <control-tag name="AetherFreeze"            tag="1204"/>
+    <control-tag name="AetherDimensionality"    tag="1205"/>
+    <control-tag name="AetherDamping"           tag="1206"/>
+    <control-tag name="AetherPreDelay"          tag="1207"/>
+    <control-tag name="AetherModDepth"          tag="1208"/>
+    <control-tag name="AetherModSmoothness"     tag="1209"/>
+    <control-tag name="AetherShimmerOctave"     tag="1210"/>
+    <control-tag name="AetherShimmerFifth"      tag="1211"/>
+    <control-tag name="AetherBloomSend"         tag="1212"/>
+    <control-tag name="AetherBloomDecay"        tag="1213"/>
+    <control-tag name="AetherSpectralDiffusion" tag="1214"/>
+    <control-tag name="AetherSizeBreathDepth"   tag="1215"/>
+    <control-tag name="AetherTideDepth"         tag="1216"/>
+    <control-tag name="AetherWidth"             tag="1217"/>
+    <!-- Effects (1400+) -->
+    <control-tag name="FxSaturation"      tag="1400"/>
+    <control-tag name="FxDelayMix"        tag="1410"/>
+    <control-tag name="FxDelayTime"       tag="1411"/>
+    <control-tag name="FxDelaySpread"     tag="1412"/>
+    <control-tag name="FxDelaySpreadDir"  tag="1413"/>
+    <control-tag name="FxDelayFeedback"   tag="1414"/>
+    <control-tag name="FxDelayTilt"       tag="1415"/>
+    <control-tag name="FxDelayDiffusion"  tag="1416"/>
+    <control-tag name="FxDelayWidth"      tag="1417"/>
+    <control-tag name="FxDelaySync"       tag="1418"/>
+    <control-tag name="FxDelaySyncNote"   tag="1419"/>
+    <control-tag name="FxSpectralFreeze"  tag="1430"/>
+    <control-tag name="FxStereoWidth"     tag="1440"/>
+    <control-tag name="FxWanderDepth"     tag="1441"/>
+    <control-tag name="FxWanderRate"      tag="1442"/>
+    <control-tag name="FxAzimuthDepth"    tag="1443"/>
+  </control-tags>
+
+  <template name="editor" class="CViewContainer" size="1000, 700"
+            background-color="bg" background-color-draw-style="filled"
+            sub-controller="SeraphisEdit">
+
+    <!-- ====================================================================
+         1. THE CONSTELLATION - CHILD INDEX 0 (FR-006).
+            Direct child of the root, so getViewSize() == (0, 32, 1000, 670),
+            which is what FR-024 pins and what the drawer must never move.
+         ==================================================================== -->
+    <view class="CView" custom-view-name="CloudView" origin="0, 32" size="1000, 638"/>
+
+    <!-- ====================================================================
+         2. HEADER (0, 0, 1000, 32) - 7 bound views (FR-007).
+            4 header-exclusive globals + the 3 SECOND bindings of the freeze
+            cluster (RQ-2). The SERAPHIS wordmark and the preset button bind
+            nothing and are not counted in the 110.
+         ==================================================================== -->
+    <view class="CTextLabel" title="SERAPHIS" origin="12, 6" size="112, 20"
+          font="title-font" font-color="accent" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+
+    <view class="CTextLabel" title="Gain" origin="130, 9" size="30, 14"
+          font="small-font" font-color="text-dim" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+    <view class="CSlider" control-tag="MasterGain" origin="162, 9" size="110, 14"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent" tooltip="Overall output level of the whole instrument, unity at centre"/>
+
+    <view class="CTextLabel" title="Voices" origin="284, 9" size="40, 14"
+          font="small-font" font-color="text-dim" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+    <view class="COptionMenu" control-tag="Polyphony" origin="326, 7" size="56, 18"
+          font="label-font" font-color="text" frame-color="accent" back-color="track"
+          fill-color="track" frame-width="1" transparent="false"
+          style-3D-in="false" style-3D-out="false" tooltip="Maximum number of simultaneous voices, 1 to 16"/>
+
+    <view class="ToggleButton" control-tag="SoftLimit" origin="394, 7" size="70, 18"
+          title="Limit" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="toggle-off" tooltip="Tape-style output saturation; the peak limiter always stays on"/>
+
+    <view class="CTextLabel" title="Seed" origin="472, 9" size="32, 14"
+          font="small-font" font-color="text-dim" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+    <view class="COptionMenu" control-tag="Seed" origin="506, 7" size="56, 18"
+          font="label-font" font-color="text" frame-color="accent" back-color="track"
+          fill-color="track" frame-width="1" transparent="false"
+          style-3D-in="false" style-3D-out="false" tooltip="Random seed for drift, grains and reverb; re-rolls the texture"/>
+
+    <!-- The freeze cluster: the ONLY three second bindings in the document.
+         Shared ToggleButton (power icon), the same control every other Krate
+         plugin uses for freezes (2026-08-04 consistency pass). -->
+    <view class="ToggleButton" control-tag="AtmosFreeze" origin="578, 7" size="88, 18"
+          title="Atmos Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="toggle-off" tooltip="Suspend the atmosphere on its current material"/>
+    <view class="ToggleButton" control-tag="AetherFreeze" origin="670, 7" size="90, 18"
+          title="Aether Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="toggle-off" tooltip="Hold the reverb tail forever, conserving its energy"/>
+    <view class="ToggleButton" control-tag="FxSpectralFreeze" origin="764, 7" size="88, 18"
+          title="Spec Frz" title-position="right" font="small-font" font-color="text"
+          on-color="accent" off-color="toggle-off" tooltip="Capture and hold the current spectrum indefinitely"/>
+
+    <!-- Preset button: NO control-tag (FR-045 / D-5). The SHARED flat-outline
+         renderer every other plugin's Presets button uses, instantiated by
+         createCustomView("PresetButton") as an OutlineBrowserButton - a
+         CControl, so verifyView() still assigns session tag 9000 + listener.
+         One valueChanged per click. -->
+    <view class="CView" custom-view-name="PresetButton" session-tag="preset"
+          origin="898, 7" size="90, 18"/>
+
+    <!-- ====================================================================
+         3. THE FIVE MACRO RINGS, at C-1's anchors, over the constellation.
+            MacroRingKnob is a registered ViewCreatorAdapter (C-7a), so it takes
+            control-tag and the rest of the CControl attribute set.
+         ==================================================================== -->
+    <view class="MacroRingKnob" control-tag="MacroDream" origin="24, 56" size="96, 96" tooltip="Purifies the harmonics, deepens the reverb and calms entropy"/>
+    <view class="CTextLabel" title="DREAM" origin="24, 154" size="96, 14"
+          font="label-font" font-color="text" transparent="true"
+          text-alignment="center" mouse-enabled="false"/>
+
+    <view class="MacroRingKnob" control-tag="MacroBloom" origin="880, 56" size="96, 96" tooltip="Opens upper partials, shimmer and width; morphs toward brightness"/>
+    <view class="CTextLabel" title="BLOOM" origin="880, 154" size="96, 14"
+          font="label-font" font-color="text" transparent="true"
+          text-alignment="center" mouse-enabled="false"/>
+
+    <view class="MacroRingKnob" control-tag="MacroGravity" origin="24, 518" size="96, 96" tooltip="Air-to-stone axis: partial density, body damping, size and darkness"/>
+    <view class="CTextLabel" title="GRAVITY" origin="24, 616" size="96, 14"
+          font="label-font" font-color="text" transparent="true"
+          text-alignment="center" mouse-enabled="false"/>
+
+    <view class="MacroRingKnob" control-tag="MacroDissolve" origin="880, 518" size="96, 96" tooltip="Melts the tone into granular fog, blur and slower envelopes"/>
+    <view class="CTextLabel" title="DISSOLVE" origin="880, 616" size="96, 14"
+          font="label-font" font-color="text" transparent="true"
+          text-alignment="center" mouse-enabled="false"/>
+
+    <view class="MacroRingKnob" control-tag="MacroEntropy" origin="452, 556" size="96, 96" tooltip="Decays order into jitter, detune and partial death and rebirth"/>
+    <view class="CTextLabel" title="ENTROPY" origin="452, 654" size="96, 14"
+          font="label-font" font-color="text" transparent="true"
+          text-alignment="center" mouse-enabled="false"/>
+
+    <!-- ====================================================================
+         4. EDIT MINI-TOOLBAR - tag-less, session-tagged, the sub-controller
+            listens. None of these three is a parameter binding.
+         ==================================================================== -->
+    <view class="ToggleButton" session-tag="mode" title="EDIT"
+          title-position="right" origin="140, 636" size="76, 22" font="small-font"
+          font-color="text" on-color="accent" off-color="toggle-off" tooltip="Observe the live constellation, or Edit to drag partials directly"/>
+
+    <view class="CTextLabel" title="Blend A to B" origin="224, 622" size="100, 12"
+          font="small-font" font-color="text-dim" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+    <view class="CSlider" session-tag="blend" origin="224, 638" size="100, 16"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent" tooltip="Blend the edited spectral state from slot A toward slot B"/>
+
+    <view class="CTextLabel" title="Tilt dB/oct" origin="332, 622" size="100, 12"
+          font="small-font" font-color="text-dim" transparent="true"
+          text-alignment="left" mouse-enabled="false"/>
+    <view class="CSlider" session-tag="tilt" origin="332, 638" size="100, 16"
+          orientation="horizontal" draw-frame="true" draw-back="true" draw-value="true"
+          frame-color="accent" back-color="track" value-color="accent" tooltip="Tilt the edited spectral state spectrum, in dB per octave"/>
+
+    <!-- ====================================================================
+         5. THE DRAWER - a DIRECT CHILD OF THE ROOT (D-4), declared at its
+            COLLAPSED rect (0, 670) .. (1000, 700). NEVER a
+            UIViewSwitchContainer (R-10): all seven pages are present in the
+            XML, exactly one visible, so every deep ParamID stays reachable.
+
+            DrawerContainer::tabPage() picks out this container's child
+            CViewContainers in document order, so the ONLY containers directly
+            below are the seven pages. The handle and the seven tab buttons are
+            CControls and are therefore never mistaken for a page.
+         ==================================================================== -->
+    <view class="CViewContainer" custom-view-name="DrawerContainer"
+          origin="0, 670" size="1000, 30"
+          background-color="panel" background-color-draw-style="filled">
+
+      <!-- The handle: shared ToggleButton with the chevron icon - up when
+           collapsed (pull me up), down when open (2026-08-04 consistency
+           pass). -->
+      <view class="ToggleButton" session-tag="drawerHandle" title="DEEP"
+            title-position="right" icon-style="chevron"
+            off-orientation="up" on-orientation="down"
+            origin="8, 4" size="80, 22" font="label-font" font-color="text"
+            on-color="accent" off-color="toggle-off" tooltip="Open or close the deep-parameter drawer"/>
+
+      <!-- FR-022's seven tabs, in EXACTLY this order: ONE IconSegmentButton
+           (the Ruinae MainTab idiom - flat, outlined, transparent), replacing
+           the seven capsule CTextButtons (2026-08-04 consistency pass).
+           SC-004 arm 2 reads segment-names back off the built control. -->
+      <view class="IconSegmentButton" session-tag="tabs"
+            origin="100, 4" size="700, 22"
+            segment-names="Cloud,Morph,Body,Atmos,Aether,FX,Life/Env"
+            font="label-font"
+            text-color="text-dim" text-color-highlighted="text"
+            selected-color="accent" unselected-color="text-dim"
+            frame-color="track" round-radius="3" transparent="true" tooltip="Choose which deep-parameter page the drawer shows"/>
+
+      <!-- ==================================================================
+           PAGE 0 - Cloud (200-210, 11 bindings)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Richness" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudRichness" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Number of active partials and how fast they roll off"/>
+        <view class="CTextLabel" title="Inharm" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudInharmonicity" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Stretches partials off the harmonic grid, piano toward bell"/>
+        <view class="CTextLabel" title="Tilt" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudTilt" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Spectral slope in dB per octave: dark below zero, bright above"/>
+        <view class="CTextLabel" title="Mutation" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudMutation" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Rate of slow random re-weighting of the partial amplitudes"/>
+        <view class="CTextLabel" title="Gravity" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudGravity" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Pulls partial ratios toward or away from the pure harmonic grid"/>
+        <view class="CTextLabel" title="Drift" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudDriftDepth" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the per-partial pitch drift, in cents"/>
+        <view class="CTextLabel" title="Drift Smth" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudDriftSmoothness" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="How slow and smooth the per-partial pitch drift is"/>
+        <view class="CTextLabel" title="Spread" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudStereoSpread" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Spreads the individual partials across the stereo field"/>
+        <view class="CTextLabel" title="Attack" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudAttack" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Attack time of each partial, in seconds"/>
+
+        <view class="CTextLabel" title="Decay" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudDecay" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Decay time of each partial, in seconds"/>
+        <view class="CTextLabel" title="Env Spread" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="CloudEnvOffsetSpread" origin="140, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Staggers per-partial attack times so the cloud blooms in"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 1 - Morph (400-412, 13 bindings; 409-412 ARE the four slot
+           selectors of the budget table). The four session-tagged A..D buttons
+           carry no control-tag and are not part of the 110.
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Entropy" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="MorphEntropy" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Decays spectral order: amp jitter, phase smear, then partial death"/>
+        <view class="CTextLabel" title="Bloom" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="MorphBloom" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Delays high partials behind low ones so the morph blooms upward"/>
+        <view class="CTextLabel" title="Position" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="MorphPosition" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Where the sound sits between the spectral slots"/>
+        <view class="CTextLabel" title="Travel" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphTravelMode" origin="343, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="External follows Position; Spline travels its own trajectory"/>
+        <view class="CTextLabel" title="Rate" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="MorphTravelRate" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Speed of autonomous travel, in journeys per second"/>
+        <view class="CTextLabel" title="Sync" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="MorphSync" origin="568, 40" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Lock the morph travel rate to host tempo"/>
+        <view class="CTextLabel" title="Sync Note" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphSyncNote" origin="673, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Length of one journey in bars or beats when Sync is on"/>
+        <view class="CTextLabel" title="Waypoint" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="MorphWaypointInterval" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Seconds between the spline trajectory waypoints"/>
+        <view class="CTextLabel" title="States" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphStateCount" origin="893, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="How many spectral slots the morph travels between, 2 to 4"/>
+
+        <view class="CTextLabel" title="Slot A" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphState0" origin="13, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Factory spectrum loaded into morph slot A"/>
+        <view class="CTextLabel" title="Slot B" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphState1" origin="123, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Factory spectrum loaded into morph slot B"/>
+        <view class="CTextLabel" title="Slot C" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphState2" origin="233, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Factory spectrum loaded into morph slot C"/>
+        <view class="CTextLabel" title="Slot D" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="MorphState3" origin="343, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Factory spectrum loaded into morph slot D"/>
+
+        <view class="CTextLabel" title="Edit slot" origin="448, 130" size="430, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="left" mouse-enabled="false"/>
+        <view class="IconSegmentButton" session-tag="slots"
+              origin="453, 162" size="420, 20"
+              segment-names="A,B,C,D"
+              font="label-font"
+              text-color="text-dim" text-color-highlighted="text"
+              selected-color="accent" unselected-color="text-dim"
+              frame-color="track" round-radius="3" transparent="true" tooltip="Choose which morph slot the cloud editing gestures write to"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 2 - Body (800-812, 13 bindings)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Material" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="BodyMaterial" origin="13, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Resonant body the harmonic cloud speaks through"/>
+        <view class="CTextLabel" title="Resonance" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyResonance" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="How long and how strongly the body rings"/>
+        <view class="CTextLabel" title="Damping" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyDamping" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Damps the body high modes, making it darker and shorter"/>
+        <view class="CTextLabel" title="Key Track" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyKeyTracking" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="How far the body retunes with the played note"/>
+        <view class="CTextLabel" title="Drive" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyDrive" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Excitation level driven into the resonator"/>
+        <view class="CTextLabel" title="Mix" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyMix" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Blend between the dry cloud and the resonated body"/>
+        <view class="CTextLabel" title="Cloud Mix" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyCloudMix" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Amount of the slow decay-cloud wash after the resonator"/>
+        <view class="CTextLabel" title="Cloud Decay" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyCloudDecay" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Decay time of the post-body wash, in seconds"/>
+        <view class="CTextLabel" title="Cloud Size" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyCloudSize" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Size of the diffusion network behind the post-body wash"/>
+
+        <view class="CTextLabel" title="Cloud Damp" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyCloudDamping" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Darkens the post-body wash as it decays"/>
+        <view class="CTextLabel" title="Width" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="BodyWidth" origin="140, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Stereo width of the body output"/>
+        <view class="CTextLabel" title="Input AGC" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="BodyInputAgc" origin="238, 162" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Normalize the level feeding the resonator"/>
+        <view class="CTextLabel" title="Res Bypass" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="BodyResonatorBypass" origin="348, 162" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Bypass the modal resonator and keep only the wash"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 3 - Atmos (1000-1016, 17 bindings; 1008 is the PRIMARY binding
+           of the freeze the header re-binds)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Level" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosLevel" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Level of the granular atmosphere layer"/>
+        <view class="CTextLabel" title="Blur" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosBlur" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Smears grain phase into fog, from material toward mist"/>
+        <view class="CTextLabel" title="Density" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosDensity" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Grains per second; higher overlaps into a solid wash"/>
+        <view class="CTextLabel" title="Grain Sec" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosGrainSeconds" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Length of each grain, in seconds"/>
+        <view class="CTextLabel" title="Drift" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosDriftDepth" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the per-grain pitch drift"/>
+        <view class="CTextLabel" title="Pan Spread" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosPanSpread" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Spreads the grains across the stereo field"/>
+        <view class="CTextLabel" title="Decorr" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosDecorrelation" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Decorrelates the channels for a wider, more diffuse image"/>
+        <view class="CTextLabel" title="Freeze Mix" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosFreezeMix" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Blend of the frozen spectrum into the grain stream"/>
+        <view class="CTextLabel" title="Freeze" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="AtmosFreeze" origin="898, 40" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Suspend the atmosphere on its current material"/>
+
+        <view class="CTextLabel" title="Drift Smth" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosDriftSmoothness" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="How slow and smooth the per-grain pitch drift is"/>
+        <view class="CTextLabel" title="Drift Range" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosDriftRange" origin="140, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Maximum per-grain pitch drift, in semitones"/>
+        <view class="CTextLabel" title="Jitter" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosJitter" origin="250, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Randomizes grain start timing, looser and less rhythmic"/>
+        <view class="CTextLabel" title="Position" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosPosition" origin="360, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="How far back in the capture buffer grains are read, in seconds"/>
+        <view class="CTextLabel" title="Pos Spread" origin="448, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosPositionSpread" origin="470, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Scatters the grain read positions around Position"/>
+        <view class="CTextLabel" title="Pitch" origin="558, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosPitch" origin="580, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Transposes the grains, in semitones"/>
+        <view class="CTextLabel" title="Pitch Spread" origin="668, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AtmosPitchSpread" origin="690, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Random pitch scatter between individual grains"/>
+        <view class="CTextLabel" title="Grain Env" origin="778, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="AtmosGrainEnvelope" origin="783, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Window shape of each grain, from soft to abrupt"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 4 - Aether (1200-1217, 18 bindings; 1204 is the PRIMARY freeze
+           binding the header re-binds)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Mix" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherMix" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Amount of Aether reverb in the output"/>
+        <view class="CTextLabel" title="Size" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherSize" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Size of the space, from small chamber to impossible"/>
+        <view class="CTextLabel" title="Density" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherDensity" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Diffusion density; higher smooths the tail"/>
+        <view class="CTextLabel" title="Decay" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherDecay" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Reverb decay time, 0.5 to 60 seconds"/>
+        <view class="CTextLabel" title="Freeze" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="AetherFreeze" origin="458, 40" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Hold the reverb tail forever, conserving its energy"/>
+        <view class="CTextLabel" title="Dimension" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherDimensionality" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Space character, from flat plate to N-dimensional hall"/>
+        <view class="CTextLabel" title="Damping" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherDamping" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Darkens the reverb tail as it decays"/>
+        <view class="CTextLabel" title="Pre-Delay" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherPreDelay" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Delay before the reverb starts, in milliseconds"/>
+        <view class="CTextLabel" title="Mod Depth" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherModDepth" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the modulation inside the reverb delay lines"/>
+
+        <view class="CTextLabel" title="Mod Smth" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherModSmoothness" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="How slow and smooth the internal reverb modulation is"/>
+        <view class="CTextLabel" title="Shim Oct" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherShimmerOctave" origin="140, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Send into the octave-up shimmer tap inside the tail"/>
+        <view class="CTextLabel" title="Shim 5th" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherShimmerFifth" origin="250, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Send into the fifth-up shimmer tap inside the tail"/>
+        <view class="CTextLabel" title="Bloom Send" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherBloomSend" origin="360, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Send into the bloom stage that reinforces held partials"/>
+        <view class="CTextLabel" title="Bloom Decay" origin="448, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherBloomDecay" origin="470, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="How long the bloom sympathetic resonance sustains"/>
+        <view class="CTextLabel" title="Spec Diff" origin="558, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherSpectralDiffusion" origin="580, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Smears the tail spectrally for an underwater character"/>
+        <view class="CTextLabel" title="Breath" origin="668, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherSizeBreathDepth" origin="690, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the slow breathing of the space size"/>
+        <view class="CTextLabel" title="Tide" origin="778, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherTideDepth" origin="800, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the very slow tidal drift through the space"/>
+        <view class="CTextLabel" title="Width" origin="888, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="AetherWidth" origin="910, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Stereo width of the reverb tail"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 5 - FX (1400-1443, 16 bindings; 1430 is the PRIMARY spectral
+           freeze binding the header re-binds)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Saturation" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxSaturation" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Tape-style saturation on the output, a gentle ceiling"/>
+        <view class="CTextLabel" title="Delay Mix" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayMix" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Amount of the spectral delay send in the output"/>
+        <view class="CTextLabel" title="Delay Time" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayTime" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Delay time in milliseconds when Sync is off"/>
+        <view class="CTextLabel" title="Spread" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelaySpread" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Spreads the delay time across frequency bins, in ms"/>
+        <view class="CTextLabel" title="Spread Dir" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="FxDelaySpreadDir" origin="453, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Direction the per-bin delay spread runs across the spectrum"/>
+        <view class="CTextLabel" title="Feedback" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayFeedback" origin="580, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Delay regeneration, capped to stay stable at any Tilt"/>
+        <view class="CTextLabel" title="Delay Tilt" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayTilt" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Biases the delay feedback toward low or high bins"/>
+        <view class="CTextLabel" title="Diffusion" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayDiffusion" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Smears the delay repeats into a wash"/>
+        <view class="CTextLabel" title="Delay Width" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxDelayWidth" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Stereo width of the delay repeats"/>
+
+        <view class="CTextLabel" title="Delay Sync" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="FxDelaySync" origin="18, 162" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Lock the delay time to host tempo"/>
+        <view class="CTextLabel" title="Sync Note" origin="118, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="FxDelaySyncNote" origin="123, 162" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Delay time as a note division when Sync is on"/>
+        <view class="CTextLabel" title="Spec Freeze" origin="228, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ToggleButton" control-tag="FxSpectralFreeze" origin="238, 162" size="80, 20" on-color="accent" off-color="toggle-off" tooltip="Capture and hold the current spectrum indefinitely"/>
+        <view class="CTextLabel" title="Stereo Width" origin="338, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxStereoWidth" origin="360, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Master stereo width, 0% mono to 200% wide"/>
+        <view class="CTextLabel" title="Wander" origin="448, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxWanderDepth" origin="470, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the slow random wander of the stereo width"/>
+        <view class="CTextLabel" title="Wander Rate" origin="558, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxWanderRate" origin="580, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Smoothness of the stereo wander; higher drifts more slowly"/>
+        <view class="CTextLabel" title="Azimuth" origin="668, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="FxAzimuthDepth" origin="690, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the slow random wander of the stereo position"/>
+      </view>
+
+      <!-- ==================================================================
+           PAGE 6 - Life / Env (600-604 + 700-704, 10 bindings)
+           ================================================================== -->
+      <view class="CViewContainer" origin="0, 30" size="1000, 250" transparent="true">
+        <view class="CTextLabel" title="Orbit Depth" origin="8, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="LifeSpatialDepth" origin="30, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Depth of the per-voice orbital wander across the stereo field"/>
+        <view class="CTextLabel" title="Orbit Rate" origin="118, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="LifeSpatialRate" origin="140, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Speed of the per-voice orbital wander, in Hz"/>
+        <view class="CTextLabel" title="Coupling" origin="228, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="LifeSpatialCoupling" origin="250, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="How tightly the two orbit axes lock together"/>
+        <view class="CTextLabel" title="Growth" origin="338, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="LifeSpatialGrowth" origin="360, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Orbit radius shrinks below zero and expands above"/>
+        <view class="CTextLabel" title="Voice Width" origin="448, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="LifeVoiceWidth" origin="470, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Stereo width of each individual voice, 50% to 150%"/>
+        <view class="CTextLabel" title="Env Mode" origin="558, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="COptionMenu" control-tag="EnvMode" origin="563, 40" size="90, 20" font="label-font" font-color="text" frame-color="accent" back-color="track" fill-color="track" frame-width="1" transparent="false" style-3D-in="false" style-3D-out="false" tooltip="Standard attack, or Growth for a slow logistic rise"/>
+        <view class="CTextLabel" title="Growth Dur" origin="668, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="EnvGrowthDuration" origin="690, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Length of the Growth mode rise, in seconds"/>
+        <view class="CTextLabel" title="Stage 0" origin="778, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="EnvStage0Ms" origin="800, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="First envelope stage time, in milliseconds"/>
+        <view class="CTextLabel" title="Stage 1" origin="888, 8" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="EnvStage1Ms" origin="910, 24" size="56, 56" arc-color="accent" guide-color="track" tooltip="Second envelope stage time, in milliseconds"/>
+
+        <view class="CTextLabel" title="Release" origin="8, 130" size="100, 12" font="small-font" font-color="text-dim" transparent="true" text-alignment="center" mouse-enabled="false"/>
+        <view class="ArcKnob" control-tag="EnvReleaseMs" origin="30, 146" size="56, 56" arc-color="accent" guide-color="track" tooltip="Release time after note off, in milliseconds"/>
+      </view>
+    </view>
+  </template>
+</vstgui-ui-description>

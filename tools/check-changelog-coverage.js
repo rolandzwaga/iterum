@@ -47,7 +47,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const PLUGINS = ['iterum', 'disrumpo', 'ruinae', 'innexus', 'gradus', 'membrum'];
+const PLUGINS = ['iterum', 'disrumpo', 'ruinae', 'innexus', 'gradus', 'membrum', 'seraphis'];
 
 function git(args, { allowFail = false } = {}) {
   try {

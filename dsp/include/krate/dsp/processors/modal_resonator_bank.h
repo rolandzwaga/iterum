@@ -73,6 +73,36 @@ public:
     static constexpr int kMaxModes = 96;
     static constexpr int kNumBowedModes = 8;
 
+    /// Mode-count granularity handed to the Highway kernel.
+    ///
+    /// The kernel's SCALAR TAIL (`modal_resonator_bank_simd.cpp`, the
+    /// `for (; i < count; ++i)` loop) is pathologically expensive relative to
+    /// the vector body: measured on this repo's MSVC/AVX2 Release build,
+    /// 512 samples of an 8-mode bank cost 4,328 ns/block while a 9-mode bank
+    /// — one single scalar iteration more — cost 50,631 ns/block, and every
+    /// count that is a multiple of the lane width came in at 4,300-6,700 ns
+    /// while every count that is not came in at 41,000-58,000 ns. Padding the
+    /// count up to a whole number of vectors removes the tail entirely and
+    /// restores the vector-body figure (11 modes: 51,520 -> 5,582 ns/block,
+    /// with an unchanged output sum).
+    ///
+    /// 16 is the float lane count of AVX-512, so it is a multiple of every
+    /// x86 and NEON lane count Highway can dispatch to here; on a wider
+    /// scalable vector (SVE/RVV) the tail simply survives, which is the
+    /// pre-existing behaviour. `kMaxModes % kSimdModeGranularity == 0`, so the
+    /// padded count is always in bounds.
+    ///
+    /// The padding lanes are NOT free-floating: `computeModeCoefficients`
+    /// zeroes epsilon/radius/inputGain AND the oscillator state above
+    /// `numModes_`, so each padded lane evaluates
+    /// `s_new = 0*(0 + 0*c) + 0*excitation = 0` and contributes exactly 0.0f
+    /// to the mode sum. Only the ORDER of the floating-point accumulation
+    /// changes (the former scalar-tail additions now land inside the vector
+    /// reduction), never the set of non-zero terms.
+    static constexpr int kSimdModeGranularity = 16;
+    static_assert(kMaxModes % kSimdModeGranularity == 0,
+                  "the padded mode count must never index past the state arrays");
+
     /// Direct per-mode damping-law coefficients.
     /// R_k = exp(-(b1 + b3 * f_k^2) / sampleRate).
     /// Phase 8: exposed as first-class params so presets can dial in
@@ -274,6 +304,52 @@ public:
                                 damping.b1, damping.b3, stretch, scatter, false);
     }
 
+    /// Snap the smoothed coefficient arrays (epsilon/radius/inputGain) onto
+    /// their targets WITHOUT touching the resonator states.
+    ///
+    /// This is the state-preserving half of `reset()` (`:199-201` snaps the same
+    /// three arrays but also zeroes `sinState_`/`cosState_`), and the same snap
+    /// `setModes` performs internally (`computeModeCoefficients(..., true)`).
+    ///
+    /// Why it exists: `smoothCoefficients()` runs once per `processBlock` call
+    /// (`:357`), NOT once per sample, so the smoothing trajectory is a function
+    /// of how the caller partitions a buffer -- 16 calls for one 1024-sample
+    /// block, 27 for the same 1024 samples delivered as 100+...+24. A caller
+    /// that already retunes on its own fixed control grid (Seraphis'
+    /// `ContinuousBody`, 64-sample chunks) can call `updateModes()` and then
+    /// this, which leaves `target - current == 0` and makes the per-block
+    /// smoothing an exact no-op, so the render no longer depends on the host's
+    /// block size. Such a caller supplies its own continuity by retuning on a
+    /// fine grid behind a dirty gate.
+    ///
+    /// Strictly additive: no existing call path invokes it, so every current
+    /// consumer is bit-identical.
+    /// Read-only views of the freshly-computed coefficient TARGETS.
+    ///
+    /// `setModes`/`updateModes` leave these holding, per mode, exactly the
+    /// `2 sin(pi f_w / fs)`, `exp(-(b1 + b3 f_w^2)/fs)` and amplitude the bank
+    /// will run - after the stretch and scatter warps, after the amplitude cull
+    /// and after the Nyquist cull (a culled mode reads back as three zeros).
+    /// A caller that needs to reason about the bank's steady-state gain can
+    /// therefore read them instead of re-deriving `f_w` and its transcendentals
+    /// from the frequency table, which is both cheaper and guaranteed to
+    /// describe the same mode set. Valid until the next `setModes`,
+    /// `updateModes` or `updateDampingLaw`. Length is `getNumModes()`.
+    [[nodiscard]] const float* getEpsilonTargets() const noexcept { return epsilonTarget_; }
+    [[nodiscard]] const float* getRadiusTargets() const noexcept { return radiusTarget_; }
+    [[nodiscard]] const float* getInputGainTargets() const noexcept { return inputGainTarget_; }
+
+    void snapCoefficients() noexcept
+    {
+        // Only the lanes the kernel actually advances. Copying all kMaxModes
+        // (96) would be three times as much memory traffic as the mode set
+        // needs, on a path a control-grid caller runs every 64 samples.
+        const auto bytes = static_cast<std::size_t>(numSimdModes_) * sizeof(float);
+        std::memcpy(epsilon_, epsilonTarget_, bytes);
+        std::memcpy(radius_, radiusTarget_, bytes);
+        std::memcpy(inputGain_, inputGainTarget_, bytes);
+    }
+
     /// Re-compute per-mode radii with a new damping law, preserving
     /// currently-configured frequencies, amplitudes, and stretch/scatter.
     /// Phase 8 (#3 + preparation for #7): cheap enough to call block-rate.
@@ -330,7 +406,7 @@ public:
         const float ex = applyTransientEmphasis(excitation);
         float modeSum = processModalBankSampleSIMD(
             sinState_, cosState_, epsilon_, radius_, inputGain_,
-            ex, numModes_);
+            ex, numSimdModes_);
 
         return applyOutputStage(modeSum);
     }
@@ -358,10 +434,12 @@ public:
         for (int i = 0; i < numSamples; ++i) {
             float ex = applyTransientEmphasis(input[i]);
 
-            // SIMD-accelerated mode loop (processes all modes for one sample)
+            // SIMD-accelerated mode loop (processes all modes for one sample).
+            // `numSimdModes_`, not `numModes_`: see the kSimdModeGranularity
+            // banner - the kernel's scalar tail costs ~9x the vector body.
             float modeSum = processModalBankSampleSIMD(
                 sinState_, cosState_, epsilon_, radius_, inputGain_,
-                ex, numModes_);
+                ex, numSimdModes_);
 
             output[i] = applyOutputStage(modeSum);
         }
@@ -590,6 +668,9 @@ private:
 
     int numActiveModes_ = 0;
     int numModes_ = 0;
+    /// `numModes_` rounded up to `kSimdModeGranularity` (see its banner). Only
+    /// the SIMD kernel sees this; every scalar loop still stops at `numModes_`.
+    int numSimdModes_ = 0;
     float sampleRate_ = 44100.0f;
     float smoothCoeff_ = 0.0f;
     float envelopeState_ = 0.0f;
@@ -761,12 +842,36 @@ private:
             inputGainSum_ += std::abs(gain_k);
         }
 
-        // Deactivate and zero coefficients for modes beyond numPartials
+        // Deactivate and zero coefficient TARGETS for modes beyond numPartials.
         for (int k = numPartials; k < kMaxModes; ++k) {
             active_[k] = false;
             epsilonTarget_[k] = 0.0f;
             radiusTarget_[k] = 0.0f;
             inputGainTarget_[k] = 0.0f;
+        }
+
+        // Round the count the SIMD kernel is handed up to a whole number of
+        // vectors (see the `kSimdModeGranularity` banner). Safe for every ISA
+        // whose lane count divides it, and kMaxModes is a multiple of it so the
+        // rounded count can never index past the arrays.
+        numSimdModes_ = std::min(
+            ((numPartials + kSimdModeGranularity - 1) / kSimdModeGranularity)
+                * kSimdModeGranularity,
+            kMaxModes);
+
+        // The PADDING lanes - the ones the SIMD kernel advances but the mode
+        // set does not use - must be genuinely silent, in the CURRENT arrays
+        // and in the oscillator state, not merely in the targets:
+        // `smoothCoefficients()` only walks `k < numModes_`, so a mode set that
+        // shrank would otherwise leave a stale non-zero radius up there and
+        // ring a dead mode back into the sum. Everything at or above
+        // `numSimdModes_` is never read by anything and is left alone.
+        for (int k = numPartials; k < numSimdModes_; ++k) {
+            epsilon_[k] = 0.0f;
+            radius_[k] = 0.0f;
+            inputGain_[k] = 0.0f;
+            sinState_[k] = 0.0f;
+            cosState_[k] = 0.0f;
         }
 
         if (snapSmoothing) {

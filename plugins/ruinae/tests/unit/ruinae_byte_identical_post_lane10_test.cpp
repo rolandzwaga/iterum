@@ -517,7 +517,7 @@ std::vector<std::filesystem::path> enumerateArpPresets()
 // =============================================================================
 
 TEST_CASE("SC-004b: Ruinae factory arp presets produce byte-identical MIDI after kNumLanes 9->10",
-          "[processor][sequencer][SC-004b][regression]")
+          "[processor][sequencer][SC-004b][regression][long]")
 {
     const std::filesystem::path fixturesDir{RUINAE_FIXTURES_DIR};
     auto presets = enumerateArpPresets();

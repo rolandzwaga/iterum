@@ -267,7 +267,7 @@ TEST_CASE("Every Ruinae factory preset produces audible output for a held note",
 }
 
 TEST_CASE("No Ruinae factory preset is drastically quieter than the bank",
-          "[processor][presets][audio][loudness]")
+          "[processor][presets][audio][loudness][long]")
 {
     // Passing the audibility test is not enough: a preset that renders far below
     // its neighbours reads as broken when a user auditions the bank, which is

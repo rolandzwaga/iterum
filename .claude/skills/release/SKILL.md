@@ -12,7 +12,8 @@ without permission). Follow every step; do not skip or reorder.
 
 ## Inputs
 
-- **Plugin** (required): one of `iterum`, `disrumpo`, `ruinae`, `innexus`, `gradus`, `membrum`.
+- **Plugin** (required): one of `iterum`, `disrumpo`, `ruinae`, `innexus`, `gradus`, `membrum`,
+  `seraphis`.
   If not given in the invocation, ask which plugin — do not guess.
 - **New version** (required): `X.Y.Z`. If not given, read the current `plugins/<plugin>/version.json`
   version and ask the user for the target (or confirm the intended semver bump). Do not invent it.
@@ -27,6 +28,7 @@ without permission). Follow every step; do not skip or reorder.
 | innexus | `innexus_tests` | `Innexus.vst3` |
 | gradus | `gradus_tests` | `Gradus.vst3` |
 | membrum | `membrum_tests` | `Membrum.vst3` |
+| seraphis | `seraphis_tests` | `Seraphis.vst3` |
 
 ## Steps (in order)
 

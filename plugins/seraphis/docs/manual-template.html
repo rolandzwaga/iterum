@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seraphis User Manual - Spectral Organism Synthesizer | Krate Audio</title>
+    <meta name="description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin. Covers the harmonic cloud, spectral morphing, life modulators, body, atmosphere, Aether, effects, macros, and presets.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://rolandzwaga.github.io/krate-audio/seraphis/manual.html">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Seraphis User Manual - Spectral Organism Synthesizer">
+    <meta property="og:description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin.">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://rolandzwaga.github.io/krate-audio/seraphis/manual.html">
+    <meta property="og:site_name" content="Krate Audio">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Seraphis User Manual">
+    <meta name="twitter:description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin.">
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Base — matches Seraphis landing page */
+        :root {
+            --color-bg: #0a0a0f;
+            --color-surface: #12121a;
+            --color-border: #2a2a3a;
+            --color-text: #e8e8f0;
+            --color-text-muted: #8888a0;
+            --color-accent: #e0b458;
+            --color-accent-hover: #f0cc78;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        /* Layout */
+        .manual-container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 3rem 2rem 4rem;
+        }
+
+        /* Header */
+        .manual-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .manual-header .breadcrumb {
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .manual-header .breadcrumb a {
+            color: var(--color-text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .manual-header .breadcrumb a:hover {
+            color: var(--color-accent);
+        }
+
+        .manual-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--color-text) 0%, var(--color-accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .manual-header .subtitle {
+            color: var(--color-text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* Table of contents */
+        #TOC {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 3rem;
+        }
+
+        #TOC > ul { list-style: none; }
+        #TOC ul { list-style: none; padding-left: 1.25rem; }
+        #TOC > ul > li { margin-bottom: 0.5rem; }
+        #TOC li { margin-bottom: 0.25rem; }
+
+        #TOC a {
+            color: var(--color-text);
+            text-decoration: none;
+            transition: color 0.2s;
+            font-size: 0.95rem;
+        }
+
+        #TOC a:hover { color: var(--color-accent); }
+        #TOC > ul > li > a { font-weight: 600; }
+
+        /* Headings */
+        h1 { font-size: 2rem; font-weight: 700; margin: 3rem 0 1rem; }
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 3rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text);
+        }
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 2rem 0 0.75rem;
+            color: var(--color-accent-hover);
+        }
+        h4 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+        h5 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: var(--color-text-muted); }
+
+        /* Paragraphs & text */
+        p { margin-bottom: 1rem; }
+        strong { font-weight: 600; }
+
+        a {
+            color: var(--color-accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a:hover { color: var(--color-accent-hover); }
+
+        /* Lists */
+        ul, ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+        }
+        li { margin-bottom: 0.35rem; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: rgba(224, 180, 88, 0.08);
+        }
+
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--color-accent-hover);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        td {
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: top;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        /* Code */
+        code {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85em;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            padding: 0.125rem 0.375rem;
+            border-radius: 4px;
+        }
+
+        pre {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            margin: 1rem 0 1.5rem;
+            display: block;
+        }
+
+        /* Horizontal rules */
+        hr {
+            border: none;
+            border-top: 1px solid var(--color-border);
+            margin: 2.5rem 0;
+        }
+
+        /* Blockquotes (tips) */
+        blockquote {
+            border-left: 3px solid var(--color-accent);
+            padding: 0.75rem 1rem;
+            margin: 1rem 0 1.5rem;
+            background: rgba(224, 180, 88, 0.05);
+            border-radius: 0 8px 8px 0;
+        }
+
+        blockquote p { margin-bottom: 0; }
+
+        /* Footer */
+        .manual-footer {
+            text-align: center;
+            padding-top: 2rem;
+            margin-top: 3rem;
+            border-top: 1px solid var(--color-border);
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+        }
+
+        .manual-footer a {
+            color: var(--color-text);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .manual-footer a:hover { color: var(--color-accent); }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .manual-container { padding: 2rem 1rem; }
+            .manual-header h1 { font-size: 2rem; }
+            h2 { font-size: 1.25rem; }
+            table { font-size: 0.85rem; }
+            th, td { padding: 0.5rem 0.75rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="manual-container">
+        <div class="manual-header">
+            <p class="breadcrumb">
+                <a href="../">Krate Audio</a> / <a href="./">Seraphis</a>
+            </p>
+            <h1>Seraphis — User Manual</h1>
+            <p class="subtitle">Spectral Organism Synthesizer</p>
+        </div>
+
+        $toc$
+        $body$
+
+        <div class="manual-footer">
+            <p>
+                <a href="./">Back to Seraphis</a> |
+                <a href="../">Krate Audio</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

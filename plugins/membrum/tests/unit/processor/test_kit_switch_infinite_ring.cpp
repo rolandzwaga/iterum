@@ -610,20 +610,20 @@ TEST_CASE("Per-pad single hit decays to silence on every Acoustic kit (NoteOn-on
 }
 
 TEST_CASE("Per-pad single hit decays to silence on every Electronic kit (NoteOn-only)",
-          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits]")
+          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits][long]")
 {
     sweepSubcategory("Electronic", 5);
 }
 
 TEST_CASE("Per-pad single hit decays to silence on every Percussive kit (NoteOn-only)",
-          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits]")
+          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits][long]")
 {
     // 5 Percussive kits, 2 of them covered by dedicated cases above.
     sweepSubcategory("Percussive", 3);
 }
 
 TEST_CASE("Per-pad single hit decays to silence on every Unnatural kit (NoteOn-only)",
-          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits]")
+          "[membrum][processor][infinite_ring][regression][factory][per_pad][all_kits][long]")
 {
     sweepSubcategory("Unnatural", 5);
 }

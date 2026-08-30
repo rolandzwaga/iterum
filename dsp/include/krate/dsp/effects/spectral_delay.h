@@ -345,8 +345,35 @@ public:
         stftL_.pushSamples(left, numSamples);
         stftR_.pushSamples(right, numSamples);
 
-        // Process spectral frames
-        while (stftL_.canAnalyze() && stftR_.canAnalyze()) {
+        // Process spectral frames, DRAINING THE ACCUMULATOR AFTER EVERY FRAME.
+        //
+        // OverlapAdd::synthesize always accumulates the new frame at offset 0 and
+        // the accumulator only advances when pullSamples() shifts it
+        // (primitives/stft.h:300-311, :328-347). Synthesizing twice without an
+        // intervening pull therefore (a) stacks the second frame on top of the
+        // first instead of one hop later, and (b) lets samplesReady_ claim more
+        // samples than outputBuffer_ (2 * fftSize) physically holds. A pull of
+        // that size reads past the end AND its "zero the freed portion" fill
+        // writes BEFORE the buffer - heap corruption, reachable from any single
+        // process() call long enough to make three or more frames ready (4096
+        // samples at the 1024-point default produces seven).
+        //
+        // One hop pulled per frame is the contract every other spectral component
+        // in this library already observes: processors/spectral_gate.h:319-330,
+        // processors/spectral_distortion.h:293-305,
+        // processors/spectral_morph_filter.h:290-307 and
+        // effects/aether_reverb.h:4062-4093.
+        //
+        // The `samplesAvailable() < hopSize_` guard closes the remaining door: a
+        // block SHORTER than one hop cannot take a whole hop away, so the loop
+        // must stop analyzing rather than synthesize onto an undrained
+        // accumulator. The unconsumed samples stay in the STFT (whose input ring
+        // is 8 * fftSize, stft.h:78) and are analyzed on a later call, so nothing
+        // is lost and the occupancy stays below 2 * hopSize == fftSize.
+        std::size_t produced = 0;
+        while (stftL_.canAnalyze() && stftR_.canAnalyze()
+               && overlapAddL_.samplesAvailable() < hopSize_
+               && overlapAddR_.samplesAvailable() < hopSize_) {
             // Analyze
             stftL_.analyze(inputSpectrumL_);
             stftR_.analyze(inputSpectrumR_);
@@ -358,16 +385,34 @@ public:
             // Synthesize
             overlapAddL_.synthesize(outputSpectrumL_);
             overlapAddR_.synthesize(outputSpectrumR_);
+
+            const std::size_t ready = std::min(overlapAddL_.samplesAvailable(),
+                                               overlapAddR_.samplesAvailable());
+            if (produced < numSamples && ready > 0) {
+                const std::size_t take = std::min({hopSize_, ready, numSamples - produced});
+                overlapAddL_.pullSamples(tempBufferL_.data() + produced, take);
+                overlapAddR_.pullSamples(tempBufferR_.data() + produced, take);
+                produced += take;
+            }
         }
 
-        // Pull processed samples
-        const std::size_t availableL = overlapAddL_.samplesAvailable();
-        const std::size_t availableR = overlapAddR_.samplesAvailable();
-        const std::size_t toPull = std::min({numSamples, availableL, availableR});
+        // Whatever an earlier call left behind: a block shorter than one hop pulls
+        // only part of a frame, so the remainder is still owed to this stream.
+        if (produced < numSamples) {
+            const std::size_t ready = std::min(overlapAddL_.samplesAvailable(),
+                                               overlapAddR_.samplesAvailable());
+            const std::size_t take = std::min(ready, numSamples - produced);
+            if (take > 0) {
+                overlapAddL_.pullSamples(tempBufferL_.data() + produced, take);
+                overlapAddR_.pullSamples(tempBufferR_.data() + produced, take);
+                produced += take;
+            }
+        }
+
+        const std::size_t toPull = produced;
 
         if (toPull > 0) {
-            overlapAddL_.pullSamples(tempBufferL_.data(), toPull);
-            overlapAddR_.pullSamples(tempBufferR_.data(), toPull);
+            // Already pulled, one hop at a time, by the frame loop above.
 
             // Get smoothed parameters for this block
             const float wetMix = dryWetSmoother_.process();
@@ -711,7 +756,18 @@ private:
             const float binDelayMs = calculateBinDelayMs(bin, numBins, baseDelay, spread);
             const float frameRate = static_cast<float>(sampleRate_) /
                                     static_cast<float>(hopSize_);
-            const float delayFrames = (binDelayMs / 1000.0f) * frameRate;
+            // ONE FRAME of the requested delay is spent by the loop itself. The
+            // read below happens BEFORE this frame's write, and DelayLine::read(0)
+            // returns the most recent write (primitives/delay_line.h:287-300), so
+            // a value written at frame n is read back at frame n + 1 + d: the
+            // realized delay is d + 1 frames, not d. Uncompensated, every echo
+            // lands one hop late - 10.7 ms at the 1024-point default and 42.7 ms
+            // at kMaxFFTSize, which for a TEMPO-SYNCED delay is an audible,
+            // FFT-size-dependent offset from the beat the user selected.
+            // Clamped at zero, so the shortest realizable delay stays the one
+            // frame the loop structurally costs.
+            const float delayFrames =
+                std::max(0.0f, (binDelayMs / 1000.0f) * frameRate - 1.0f);
 
             // Calculate tilted feedback for this bin
             const float binFeedback = calculateTiltedFeedback(bin, numBins,

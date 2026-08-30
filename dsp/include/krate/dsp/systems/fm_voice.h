@@ -663,7 +663,7 @@ private:
     /// @brief Branchless output sanitization (FR-024).
     /// NaN detection via bit manipulation, clamp to [-2.0, 2.0].
     [[nodiscard]] static float sanitize(float x) noexcept {
-        const auto bits = std::bit_cast<uint32_t>(x);
+        const auto bits = detail::opaqueFloatBits(x);  // fast-math-immune read
         const bool isNan = ((bits & 0x7F800000u) == 0x7F800000u) &&
                            ((bits & 0x007FFFFFu) != 0);
         x = isNan ? 0.0f : x;

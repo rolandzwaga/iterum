@@ -159,12 +159,28 @@ public:
         // Smooth parameters and recompute coefficients
         // frequencySmoother_ operates in log2-frequency domain (FR-033)
         float smoothedLogFreq = frequencySmoother_.process();
-        float smoothedFreq = std::exp2(smoothedLogFreq);
         float smoothedDecay = decaySmoother_.process();
         float smoothedBrightness = brightnessSmoother_.process();
 
-        // Recompute loss filter coefficients from smoothed values
-        float rho = computeRho(smoothedFreq, smoothedDecay);
+        // Recompute loss filter coefficients from smoothed values.
+        //
+        // MEMOISED, and bit-identically so: `rho` is a pure function of
+        // (smoothedLogFreq, smoothedDecay) - `std::exp2` then `std::pow` - and
+        // both smoothers return the IDENTICAL float on every call once they
+        // have settled (OnePoleSmoother::process snaps current_ to target_
+        // inside kCompletionThreshold). A sustained string therefore paid two
+        // transcendentals per sample for a constant. The cache is keyed on the
+        // exact float inputs, so any movement of either smoother misses it and
+        // recomputes.
+        if (!rhoCacheValid_ || smoothedLogFreq != cachedLogFreq_
+            || smoothedDecay != cachedDecay_) {
+            const float smoothedFreq = std::exp2(smoothedLogFreq);
+            cachedRho_ = computeRho(smoothedFreq, smoothedDecay);
+            cachedLogFreq_ = smoothedLogFreq;
+            cachedDecay_ = smoothedDecay;
+            rhoCacheValid_ = true;
+        }
+        const float rho = cachedRho_;
         float S = smoothedBrightness * 0.5f; // map [0,1] -> [0,0.5]
 
         // --- Waveguide delay loop (FR-002, FR-004, FR-038) ---
@@ -447,6 +463,102 @@ public:
         }
     }
 
+    /// Retune the loop to a new fundamental WITHOUT clearing state or
+    /// re-exciting it (FR-080, specs/seraphis-phase4-continuous-body).
+    ///
+    /// Recomputes bridgeDelayFloat_ from the loop's exact resonance condition
+    /// and applies noteOn()'s clamp. Deliberately does NOT touch nutSideDelay_,
+    /// bridgeSideDelay_, dcBlocker_, dispersionFilters_, lossState_, the energy
+    /// followers, frozenStiffness_ or frozenPickPosition_ - the loop keeps
+    /// ringing through the retune.
+    ///
+    /// The frozen dispersion cascade is NOT reconfigured (FR-081): re-designing
+    /// those biquads mid-ring would change the meaning of their state and click.
+    ///
+    /// Inert unless called (FR-084): no existing member changes behaviour.
+    ///
+    /// DELAY BUDGET - why this is NOT noteOn()'s expression (FR-080 amended).
+    /// -------------------------------------------------------------------
+    /// A feedback loop resonates where the summed phase delay of every element
+    /// equals the period, so the exact budget is
+    ///     D = period - 1 - dLoss - dDisp - dDC
+    /// with each term evaluated at f0. noteOn() instead uses the empirical
+    ///     D = period - 1 - 0.55*dLoss - 0.96*dDisp        (:321)
+    /// which omits the DC blocker entirely and scales the two filter terms.
+    /// Those factors were calibrated at note onset, where the cascade is
+    /// re-designed for f0 every time, and against a multi-period
+    /// autocorrelation pitch readout. Neither premise survives a retune:
+    ///   - the cascade is frozen (FR-081), so its phase delay stays near its
+    ///     design value (~14.2 samples here) while a matched cascade would
+    ///     range 7.7..27.7 samples over +/-12 semitones. The unmodelled 4 % of
+    ///     dDisp therefore no longer tracks the pitch it was tuned against;
+    ///   - the omitted DC-blocker phase delay grows as 1/f^2 (-0.14 samples at
+    ///     440 Hz, -2.21 at 110 Hz), so it is negligible at the calibration
+    ///     pitch and dominant an octave down.
+    /// Measured with SC-009's FFT first-partial estimator, retuning +/-12
+    /// semitones from noteOn(220) at 48 kHz with the Strings material settings
+    /// (stiffness 0.15, brightness 0.30, decay 8 s, pick 0.22):
+    ///     target Hz | noteOn's expression | exact budget
+    ///        110.00 |       +5.26 cents   |   -1.50 cents
+    ///        155.56 |       +1.89         |   -0.47
+    ///        220.00 |       -0.88         |   -0.32
+    ///        311.13 |       -4.06         |   +0.25
+    ///        440.00 |       -8.18         |   +0.17
+    /// i.e. noteOn()'s expression cannot meet SC-009c's +/-5 cents through a
+    /// frozen cascade, and the exact budget meets it with 3 cents to spare. The
+    /// same comparison holds at 44.1/96 kHz and across the stiffness and
+    /// brightness ranges (worst case 8.2 -> 1.5 cents at 48 kHz, 15.5 -> 1.5 at
+    /// stiffness 1.0). noteOn() itself is left exactly as it was: FR-084 and
+    /// SC-014 require every pre-existing path to be bit-identical, so the two
+    /// entry points differ by 0.56 cents at the same pitch, in the retune's
+    /// favour.
+    void retune(float f0) noexcept
+    {
+        if (!prepared_ || f0 < kMinFrequency)
+            return;
+
+        const float sr = static_cast<float>(sampleRate_);
+        // Same clamp as setFrequency()
+        f0 = std::clamp(f0, kMinFrequency, sr * 0.45f);
+
+        // Stored brightness, mapped exactly as noteOn() maps it.
+        const float S = brightness_ * 0.5f;
+        const float period = sr / f0;
+        const float dLoss = computeLossPhaseDelay(f0, sr, S);
+        // Frozen cascade, evaluated at the NEW f0 (FR-081).
+        const float dDisp = computeDispersionPhaseDelay(f0, sr);
+        // Signed: negative (phase lead) at every audio frequency.
+        const float dDC = computeDcBlockerPhaseDelay(f0, sr);
+        const float D = period - 1.0f - dLoss - dDisp - dDC;
+
+        const float maxD = static_cast<float>(bridgeSideDelay_.maxDelaySamples());
+        bridgeDelayFloat_ = std::clamp(D, static_cast<float>(kMinDelaySamples), maxD);
+
+        const auto bridgeN = static_cast<size_t>(std::round(bridgeDelayFloat_));
+        bridgeDelaySamples_ = std::clamp(bridgeN, kMinDelaySamples,
+                                         bridgeSideDelay_.maxDelaySamples());
+
+        frequency_ = f0;
+        // FR-083: setTarget, not snapTo - noteOn() snaps, a glide must not.
+        frequencySmoother_.setTarget(std::log2(f0));
+    }
+
+    /// @brief Snap the three parameter smoothers to their targets.
+    ///
+    /// For callers that already smooth on their own control grid. `retune()`
+    /// (FR-080) sets `bridgeDelayFloat_` - the PITCH - immediately and only
+    /// re-targets `frequencySmoother_`, which feeds nothing but the loop-loss
+    /// gain `rho`; so snapping here steps a decay gain, never a delay length.
+    /// Leaving the smoothers running instead costs two transcendentals per
+    /// sample for the whole of a glide (see the memoisation note in
+    /// `process()`), which is a large fraction of a per-voice CPU budget.
+    void snapSmoothers() noexcept
+    {
+        frequencySmoother_.snapToTarget();
+        decaySmoother_.snapToTarget();
+        brightnessSmoother_.snapToTarget();
+    }
+
     /// @return true if prepare() has been called
     [[nodiscard]] bool isPrepared() const noexcept { return prepared_; }
 
@@ -727,6 +839,13 @@ private:
     OnePoleSmoother frequencySmoother_;
     OnePoleSmoother decaySmoother_;
     OnePoleSmoother brightnessSmoother_;
+
+    // Memoised loop-loss gain - see process(). Purely a cache; it holds no
+    // state the model depends on and is never serialised.
+    float cachedLogFreq_ = 0.0f;
+    float cachedDecay_ = 0.0f;
+    float cachedRho_ = 0.0f;
+    bool rhoCacheValid_ = false;
 
     // Energy followers (FR-023)
     float controlEnergy_ = 0.0f;

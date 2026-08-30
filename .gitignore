@@ -73,6 +73,9 @@ tools/*.txt
 /plugins/membrum/resources/win32resource.rc
 /plugins/membrum/src/version.h
 /plugins/membrum/resources/auv3/audiounitconfig.h
+/plugins/seraphis/resources/win32resource.rc
+/plugins/seraphis/src/version.h
+/plugins/seraphis/resources/auv3/audiounitconfig.h
 tmpclaude-*
 /compile_commands.json
 .cache/

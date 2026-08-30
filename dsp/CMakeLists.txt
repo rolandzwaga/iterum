@@ -9,9 +9,11 @@
 add_library(KrateDSP STATIC
     include/krate/dsp/core/dsp_utils.cpp
     include/krate/dsp/core/spectral_simd.cpp
+    include/krate/dsp/processors/spectral_state.cpp
     include/krate/dsp/effects/fdn_reverb_simd.cpp
     include/krate/dsp/processors/arpeggiator_core.cpp
     include/krate/dsp/processors/pitch_shift_processor.cpp
+    include/krate/dsp/processors/grain_span_simd.cpp
     include/krate/dsp/processors/harmonic_oscillator_bank_simd.cpp
     include/krate/dsp/processors/modal_resonator_bank_simd.cpp
     include/krate/dsp/systems/sympathetic_resonance_simd.cpp
@@ -65,6 +67,10 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set_source_files_properties(
         include/krate/dsp/core/spectral_simd.cpp
+        # makeFactoryState: compiled exactly once so every TU sees the same
+        # factory-state bits, and under IEEE semantics so those bits are the
+        # plain libm results on every toolchain (see spectral_state.cpp).
+        include/krate/dsp/processors/spectral_state.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 endif()
@@ -143,6 +149,7 @@ set(KRATE_DSP_PROCESSORS_HEADERS
     include/krate/dsp/processors/partial_tracker.h
     include/krate/dsp/processors/multi_pitch_detector.h
     include/krate/dsp/processors/multi_source_sieve.h
+    include/krate/dsp/processors/grain_span_simd.h
     include/krate/dsp/processors/harmonic_oscillator_bank_simd.h
     include/krate/dsp/processors/modal_resonator_bank.h
     include/krate/dsp/processors/modal_resonator_bank_simd.h
@@ -163,10 +170,15 @@ set(KRATE_DSP_SYSTEMS_HEADERS
     include/krate/dsp/systems/synth_voice.h
     include/krate/dsp/systems/poly_synth_engine.h
     include/krate/dsp/systems/harmonizer_engine.h
+    # Seraphis Phase 7 (specs/seraphis-phase7-voice-engine), FR-080
+    include/krate/dsp/systems/seraphis_voice.h
+    include/krate/dsp/systems/seraphis_engine.h
+    include/krate/dsp/systems/seraphis_macro_matrix.h
 )
 
 # Layer 4: Effects
 set(KRATE_DSP_EFFECTS_HEADERS
+    include/krate/dsp/effects/aether_reverb.h
     include/krate/dsp/effects/bbd_delay.h
     include/krate/dsp/effects/digital_delay.h
     include/krate/dsp/effects/ducking_delay.h
