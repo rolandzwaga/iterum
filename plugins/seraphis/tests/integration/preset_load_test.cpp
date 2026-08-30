@@ -354,14 +354,19 @@ TEST_CASE("Seraphis_PresetLoad_OverrideBitsRestoredThenClearedByFactoryPreset",
         REQUIRE((frame.maskBits & (std::uint64_t{1} << 9)) != 0);
     }
 
-    // --- Same pair: a FACTORY preset must CLEAR the stale overrides ----------
-    // Its [partials] block is all-zero (FR-006a branch 1, asserted by the Phase
-    // 12 harness) - and "restored" must mean the BITS too, not just the values:
-    // kind 2 can only set a pan-override bit, so a load path built from the
-    // per-partial kinds would leave bit 7 stuck forever.
-    const auto files = SeraphisTest::allPresetFiles();
-    REQUIRE_FALSE(files.empty());
-    REQUIRE(manager->loadPreset(infoFor(files.front())));
+    // --- Same pair: a partials-free FACTORY preset must CLEAR the overrides --
+    // FR-006a (OQ-4 re-ratified YES 2026-08-30): a factory preset's [partials]
+    // block equals its DEFINITION, so factory presets may now carry live masks
+    // and pans - this section therefore loads a NAMED partials-free preset
+    // (Bronze Halo authors no partials), never allPresetFiles().front(), whose
+    // sorted-first identity can land on an authored one. "Restored" must mean
+    // the BITS too, not just the values: kind 2 can only set a pan-override
+    // bit, so a load path built from the per-partial kinds would leave bit 7
+    // stuck forever.
+    const std::filesystem::path partialsFree =
+        SeraphisTest::factoryPresetRoot() / "Bells" / "Bronze Halo.vstpreset";
+    REQUIRE(std::filesystem::exists(partialsFree));
+    REQUIRE(manager->loadPreset(infoFor(partialsFree)));
     REQUIRE(pair.fx.processBlock(512) == Steinberg::kResultOk);
     {
         const auto& frame = pair.fx.proc->lastPublishedFrameForTest();

@@ -228,7 +228,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
 
         // Byte-level: version prefix and the gravity slot, by offset.
         CHECK(int32AtOffset(*s, 0) == Seraphis::kCurrentStateVersion);
-        CHECK(int32AtOffset(*s, 0) == 3);  // Phase 10 FR-031: v2 -> v3
+        CHECK(int32AtOffset(*s, 0) == 4);  // Palette widening: v3 -> v4
         CHECK(floatAtOffset(*s, kOffGravity) == 0.5f);
 
         // ...and the whole payload, field by field.
@@ -251,7 +251,7 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
         // NON-VACUITY: A must carry the SEEDED values, not the defaults. This
         // is what stops a no-op setState()/constant getState() from passing the
         // byte-identity check below.
-        CHECK(int32AtOffset(*a, 0) == 3);  // Phase 10 FR-031: v2 -> v3
+        CHECK(int32AtOffset(*a, 0) == 4);  // Palette widening: v3 -> v4
         CHECK(floatAtOffset(*a, kOffMasterGain) == seeded.masterGain);
         CHECK(int32AtOffset(*a, kOffPolyphony) == seeded.polyphony);
         CHECK(int32AtOffset(*a, kOffSoftLimit) == seeded.softLimit);
@@ -341,8 +341,8 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
     // -------------------------------------------------------------------------
     SECTION("A future state version is rejected and applies nothing") {
         StatePayload future = nonDefaultPayload();
-        future.version = Seraphis::kCurrentStateVersion + 1;  // == 4
-        REQUIRE(future.version == 4);
+        future.version = Seraphis::kCurrentStateVersion + 1;  // == 5
+        REQUIRE(future.version == 5);
 
         Seraphis::Processor proc;
         StreamPtr s = makeStateStream(future);
@@ -414,8 +414,8 @@ TEST_CASE("Seraphis_StateRoundTrip", "[seraphis][state]") {
 
     SECTION("Controller::setComponentState rejects a future state version") {
         StatePayload future = nonDefaultPayload();
-        future.version = Seraphis::kCurrentStateVersion + 1;  // == 4
-        REQUIRE(future.version == 4);
+        future.version = Seraphis::kCurrentStateVersion + 1;  // == 5
+        REQUIRE(future.version == 5);
 
         Seraphis::Controller controller;
         REQUIRE(controller.initialize(nullptr) == kResultOk);

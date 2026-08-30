@@ -501,9 +501,11 @@ TEST_CASE("SpectralMorph_EndpointsAreExact", "[spectral_morph][seraphis]") {
     // at p = 1 exactly the segment is degenerate (A == B) and u restarts at 0.
     constexpr float kJoinU = 0.99999f;
 
-    const std::array<SpectralStateId, 5> ids{SpectralStateId::SineStack, SpectralStateId::Bell,
-                                             SpectralStateId::Choir, SpectralStateId::Glass,
-                                             SpectralStateId::Breath};
+    const std::array<SpectralStateId, 10> ids{
+        SpectralStateId::SineStack, SpectralStateId::Bell,   SpectralStateId::Choir,
+        SpectralStateId::Glass,     SpectralStateId::Breath, SpectralStateId::Hollow,
+        SpectralStateId::Metal,     SpectralStateId::Organ,  SpectralStateId::Vowel,
+        SpectralStateId::Shimmer};
     const std::array<float, 2> blooms{0.0f, 1.0f};
 
     std::uint32_t worstBloomRepair = 0;

@@ -142,10 +142,10 @@ constexpr SurfaceRow kSurface[] = {
     {.id = Seraphis::kMorphSyncNoteId, .kind = Kind::L, .entries = 8},
     {.id = Seraphis::kMorphWaypointIntervalId, .kind = Kind::R, .entries = 0},
     {.id = Seraphis::kMorphStateCountId, .kind = Kind::L, .entries = 3},
-    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 10},
 
     // --- Life Modulators (600-699) + Voice Envelope (700-799) ---------------
     {.id = Seraphis::kLifeSpatialDepthId, .kind = Kind::R, .entries = 0},

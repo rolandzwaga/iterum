@@ -24,7 +24,11 @@ namespace Seraphis {
 /// is what lets the EOF-safe loader chain migrate with no version-aware branch.
 constexpr Steinberg::int32 kStateVersion1       = 1;  ///< Phase 8's 36-byte layout.
 constexpr Steinberg::int32 kStateVersion2       = 2;  ///< Phase 9 (spec C-8), 2532 bytes.
-constexpr Steinberg::int32 kCurrentStateVersion = 3;  ///< Phase 10: + the 16 effects fields.
+constexpr Steinberg::int32 kStateVersion3       = 3;  ///< Phase 10: + the 16 effects fields.
+constexpr Steinberg::int32 kCurrentStateVersion = 4;  ///< Palette widening: 10 factory
+    ///< states + authored factory [partials]. Layout is BYTE-IDENTICAL to v3 (2868 B);
+    ///< the bump exists so pre-widening binaries refuse the stream instead of clamping
+    ///< slot indices 5-9 to Breath.
 
 /// FR-011. Freshly generated (v4 GUID), never reused, never changed
 /// post-release. Processor component ID - the audio processing component

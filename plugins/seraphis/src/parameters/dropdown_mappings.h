@@ -173,11 +173,14 @@ static_assert(kStateCountLabels.size()
 // ==============================================================================
 // IDs 409-412 - kMorphState0Id .. kMorphState3Id
 // ==============================================================================
-// Declaration order of SpectralStateId (spectral_state.h:313):
-// SineStack = 0, Bell, Choir, Glass, Breath.
-inline constexpr std::array<const Steinberg::Vst::TChar*, 5> kSpectralStateLabels = {
+// Declaration order of SpectralStateId (spectral_state.h:318):
+// SineStack = 0, Bell, Choir, Glass, Breath, Hollow, Metal, Organ, Vowel,
+// Shimmer. APPEND-ONLY: the stored slot values (IDs 409-412) are raw indices
+// into this order, so reordering silently re-means every saved project.
+inline constexpr std::array<const Steinberg::Vst::TChar*, 10> kSpectralStateLabels = {
     STR16("Sine Stack"), STR16("Bell"), STR16("Choir"),
-    STR16("Glass"), STR16("Breath")};
+    STR16("Glass"), STR16("Breath"), STR16("Hollow"),
+    STR16("Metal"), STR16("Organ"), STR16("Vowel"), STR16("Shimmer")};
 
 static_assert(kSpectralStateLabels.size() == Krate::DSP::kSpectralStateCount,
               "FR-015: one label per factory spectral state (spectral_state.h:315)");

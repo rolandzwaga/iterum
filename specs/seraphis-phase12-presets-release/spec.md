@@ -96,9 +96,11 @@ roadmap names.
   `SpectralState` payloads are compared structurally (`numPartials` exact, `isValidSpectralState` true,
   ratios/amplitudes within their own separately measured, looser tolerance) — never one asserted-without-
   measurement number covering both classes. [FR-029, FR-029a, SC-017]
-- **Q4 — Does any factory preset exercise the `[partials]` override block (OQ-4)?** Decided: **no**. Every
-  preset's two bitmasks are all-zero and all 64 pans are 0.0f, asserted by the harness; the generator has
-  no `IMessage`/`HostApplication`/`notify()` drive surface. OQ-4 closed. [FR-006a, FR-016, FR-016a]
+- **Q4 — Does any factory preset exercise the `[partials]` override block (OQ-4)?** Decided: **no**
+  (2026-08-04); **re-ratified YES 2026-08-30** (palette-widening amendment): the generator MAY drive the
+  `[partials]` block for presets whose definition authors it, via the shipped `Processor::notify()`
+  EditMessage surface (kinds 2/3). Presets without authored partials keep the all-zero block.
+  [FR-006a, FR-016, FR-016a]
 - **Q5 — Category names and library size (OQ-1 + OQ-2).** Decided: adopt the proposal as-is — Textures /
   Pads / Drones / Bells / Choirs / Motion / Cinematic, 42 presets = 7 × 6, ≥ 5 per category floor, C-2's
   coverage matrix. If SC-027's budget is exceeded, Q8's levers are the response — never cutting presets.
@@ -222,7 +224,7 @@ in **at least one** preset (FR-007):
 | Surface | Values that must each appear | Source of the enumeration |
 |---|---|---|
 | Body material (ID 800) | Glass, Strings, Metal Plate, Chamber, Ice (all 5) | `dropdown_mappings.h:198-200` |
-| Factory spectral state (IDs 409–412) | Sine Stack, Bell, Choir, Glass, Breath (all 5) | `dropdown_mappings.h:178-180` |
+| Factory spectral state (IDs 409–412) | Sine Stack, Bell, Choir, Glass, Breath, Hollow, Metal, Organ, Vowel, Shimmer (all 10 — palette-widening amendment 2026-08-30) | `dropdown_mappings.h:180-183` |
 | Morph state count (ID 408) | 2, 3 and 4 | `dropdown_mappings.h:165-166` |
 | Travel mode (ID 403) | both values | `dropdown_mappings.h:118` |
 | Envelope mode (ID 700) | Standard **and** Growth | `dropdown_mappings.h:190-191` |
@@ -230,6 +232,7 @@ in **at least one** preset (FR-007):
 | Freeze toggles (1008 / 1204 / 1430) | each ON in ≥ 1 preset, each OFF in ≥ 1 preset | `plugin_ids.h:1008`, `:1204`, `:1430` |
 | Delay sync (1418) | ON and OFF | `plugin_ids.h:1418` |
 | Body resonator bypass (812) / input AGC (811) | each ON and OFF | `plugin_ids.h:811-812` |
+| Authored `[partials]` (mask, pan) | mask authored in ≥ 1 preset, pan authored in ≥ 1 preset (each polarity — owners per the palette-widening design §4: mask → Bell Garden, pan → Sea Glass) | FR-006a, OQ-4 re-ratified yes 2026-08-30 |
 
 ### C-3 — The generator reuses the shipped serializers; there is **no** `seraphis_preset_format.h`
 
@@ -491,12 +494,11 @@ different mechanisms, deliberately not one:
   `kCurrentStateVersion` (== 3, `plugin_ids.h:27`) and total length equals the shipped **2868 bytes**
   (`processor.cpp:1836-1843`). No preset may be a truncated (v1/v2-prefix) stream, even though the loader
   would accept one (`processor.cpp:1762-1790`).
-- **FR-006a** **OQ-4 ratified NO (Q4 / CQ-4 Option A, 2026-08-04 Clarifications).** No factory preset
-  exercises the Phase 11 `[partials]` override block. Every preset's two `[partials]` bitmasks
-  (`partialPanOverrideBits_`, `partialMaskBits_`, written at `processor.cpp:1911-1914`) MUST be
-  **all-zero**, and all 64 pan floats MUST be 0.0f — asserted by the harness rather than assumed. The
-  generator has **no** `IMessage`/`HostApplication`/`notify()` drive surface; it stays a single parameter
-  fan-out (C-4).
+- **FR-006a** **OQ-4 re-ratified YES (2026-08-30, palette-widening amendment).** A preset's `[partials]`
+  block MUST equal its definition: `panOverrideBits` = the OR of the definition's authored pan indices,
+  `maskBits` = the definition's `partialMaskBits`, each authored pan float byte-exact, every unauthored
+  pan 0.0f. A definition with no partials field yields the all-zero block. Asserted by
+  `Seraphis_FactoryPresets_PartialsBlockMatchesDefs`.
 - **FR-007** The library MUST satisfy the C-2 coverage matrix in full.
 - **FR-008** Every preset MUST store `polyphony ≤ 8` and `softLimit` ON (C-5).
 - **FR-008a** **Envelope-timing authoring ceiling (Q8 / CQ-8 Option B, 2026-08-04 Clarifications).** Every
@@ -537,19 +539,19 @@ different mechanisms, deliberately not one:
   `ui/edit_message.h`, whose banner states it carries *"no VSTGUI type"*, `processor.cpp:18`, `:21`), and
   the parameter packs reach only `public.sdk/source/vst/vstparameters.h` through
   `plugins/shared/src/ui/parameter_helpers.h:11-15`.
-- **FR-016** Preset definitions MUST be expressed as `{ParamID, normalizedValue}` pairs plus name /
-  category / description, so that no denormalization arithmetic is duplicated outside the shipped
-  `handle*ParamChange` functions. **OQ-4 is ratified NO (Q4 / CQ-4 Option A, 2026-08-04 Clarifications):**
-  the `[partials]` block — not reachable through any ParamID, written only from `partialPanStaging_` /
-  `partialPanOverrideBits_` / `partialMaskBits_` (`processor.cpp:1911-1914`) via `applyEditMessage` off
-  `Processor::notify()` — is **never** driven by the generator. No preset definition carries an
-  `EditMessage` list, the generator never calls `Processor::notify()`, and FR-006a's all-zero rule applies
-  to every preset without exception.
+- **FR-016** Preset definitions MUST be expressed as `{ParamID, normalizedValue}` pairs **plus an
+  optional partials authoring block** (sparse pan list + 64-bit mask) plus name / category / description,
+  so that no denormalization arithmetic is duplicated outside the shipped `handle*ParamChange` functions.
+  **OQ-4 re-ratified YES (2026-08-30, palette-widening amendment):** the generator drives authored
+  partials through `Processor::notify()` with `SeraphisEdit` messages (kind 3 per set mask bit, kind 2
+  per authored pan) — the shipped message-thread path — so the `Comp` chunk written by
+  `Processor::getState()` remains the single authority; no second serializer exists.
 - **FR-016a** The preset definition table MUST live in a **header shared by the generator TU and the
   FR-029 test TU** (`tools/seraphis_preset_defs.h`, data only — names, categories, descriptions,
   `{ParamID, normalizedValue}` pairs, and an **optional per-preset audition-stimulus override** (MIDI note
   number, normalized velocity — Q2 / CQ-2 Option B, FR-024a)). It MUST contain no state layout and no
-  serialization code (C-3 is unchanged); it carries **no** `EditMessage` list (FR-016, OQ-4 ratified no).
+  serialization code (C-3 is unchanged); the shared defs header carries the optional
+  `partialPans`/`partialMaskBits` fields (FR-016, OQ-4 re-ratified yes 2026-08-30).
   Sharing the *definitions* is what lets FR-029's comparison be performed in-process on every CI leg
   without shelling out to the generator binary.
 
@@ -1093,9 +1095,9 @@ answer; the phase owner ratifies or overrides before planning.
   recorded explicitly as `DEFERRED` until Phase 11.5 is green (FR-030). **1.0.0** is reserved for the
   release that includes Phase 13 (per-note expression).
 - **OQ-4 — Do factory presets exercise the Phase 11 `[partials]` override block?**
-  **RESOLVED (2026-08-04 Clarifications, Q4 / CQ-4 Option A) — no.** Every preset carries the 272-byte
-  block (FR-006), but ships it with both masks all-zero and all 64 pans 0.0f, asserted by the harness
-  (FR-006a). The generator has no `IMessage`/`HostApplication`/`notify()` drive surface (FR-016).
+  **RESOLVED no (2026-08-04 Clarifications, Q4 / CQ-4 Option A); RE-RATIFIED YES 2026-08-30**
+  (palette-widening amendment): authored presets ship non-zero `[partials]`, driven through the shipped
+  notify()/EditMessage surface; unauthored presets ship the all-zero block (FR-006a, FR-016).
 
 ---
 

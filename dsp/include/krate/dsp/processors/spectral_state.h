@@ -309,18 +309,34 @@ static_assert(std::endian::native == std::endian::little,
 // Factory states (FR-021 - FR-023) -- plan section 3.4
 // ==============================================================================
 
-/// @brief The five factory morph endpoints (FR-021).
-enum class SpectralStateId : std::uint8_t { SineStack = 0, Bell, Choir, Glass, Breath };
+/// @brief The ten factory morph endpoints (FR-021).
+///
+/// APPEND-ONLY: the numeric values are stored as raw indices in saved plugin
+/// state, so reordering or inserting mid-enum silently re-means every stored
+/// selection. New archetypes go at the END, and kSpectralStateCount follows.
+enum class SpectralStateId : std::uint8_t {
+    SineStack = 0,
+    Bell,
+    Choir,
+    Glass,
+    Breath,
+    Hollow,  // 5 -- odd-harmonics-only (clarinet/square family)
+    Metal,   // 6 -- dense stretched metallic, every-3rd-partial comb
+    Organ,   // 7 -- drawbar registration, authored ratio/amp tables
+    Vowel,   // 8 -- darker second formant set (centres 2/5/14 vs Choir's 3/8/17)
+    Shimmer  // 9 -- faint fundamental anchor + stretched sparse-high cluster
+};
 
-inline constexpr std::size_t kSpectralStateCount = 5;
+inline constexpr std::size_t kSpectralStateCount = 10;
 
 namespace detail::factory {
 
 // Every constant below is PINNED by plan section 3.4 against SC-008's a-priori
 // distance threshold and FR-022's rho <= 0.92 constraint. They are not taste:
-// changing one moves the ten pairwise distances, which spectral_state_test.cpp
-// asserts within 2 %. Bell's B in particular is pinned by FR-012 arithmetic --
-// at B = 0.06 the law breaches kMaxStateRatio two slots early.
+// changing one moves the forty-five pairwise distances, which
+// spectral_state_test.cpp asserts within 2 %. Bell's B in particular is pinned
+// by FR-012 arithmetic -- at B = 0.06 the law breaches kMaxStateRatio two
+// slots early.
 inline constexpr float kBellB = 0.04f;
 
 inline constexpr float kChoirFloor = 0.12f;
@@ -333,6 +349,50 @@ inline constexpr float kGlassEvenAtten = 0.35f;
 
 inline constexpr float kBreathLowDepth = 0.9f;
 inline constexpr float kBreathLowScale = 3.0f;
+
+// Hollow: odd harmonics 2k-1, amp (2k-1)^-kHollowExp. 0.4, not the design's
+// first-choice 0.5: measured amplitude-cosine vs SineStack was 0.9329 at 0.5
+// (> the 0.92 ceiling), so the sanctioned fallback knob was applied (design
+// doc section 1.7) and re-measured.
+inline constexpr float kHollowExp = 0.4f;
+
+// Metal: dense mild stretch ratio_n = n*sqrt(1 + kMetalB*n^2) over 64 partials
+// (ratio_64 ~ 125.86 < kMaxStateRatio), inverted comb with every THIRD partial
+// dominant -- non-multiples of 3 attenuate to kMetalCombAtten.
+inline constexpr float kMetalB = 0.0007f;
+inline constexpr float kMetalCombAtten = 0.35f;
+
+// Organ (drawbar footages 16',8',5-1/3',4',2-2/3',2',1-3/5',1-1/3',1' rel. 8').
+// 0.5 is legal: the FR-012 ratio bound is INCLUSIVE at kMinStateRatio.
+inline constexpr std::array<float, 9> kOrganRatios{0.5f, 1.0f, 1.5f, 2.0f, 3.0f,
+                                                   4.0f, 5.0f, 6.0f, 8.0f};
+inline constexpr std::array<float, 9> kOrganAmps{0.70f, 1.00f, 0.50f, 0.85f, 0.40f,
+                                                 0.60f, 0.25f, 0.30f, 0.45f};
+
+// Vowel: harmonic ratios, amp n^-0.9 * (floor + 3 Gaussian formant bumps).
+// MEASURED-THEN-PINNED deviations from the design's first-choice constants
+// (floor 0.08, centres {2,5,12}, sigmas {1,1.5,2.5}), per the section 1.7
+// measure loop ("never relax the 0.92 threshold"):
+//   - first-choice constants: SineStack<->Vowel d = 0.3215 < 0.4 (rho 0.9483);
+//   - named knob floor 0.08 -> 0.05: still d = 0.3335 (rho 0.9444);
+//   - named knob centre 12 -> 14: still rho 0.9422 -- the named knobs are
+//     measurably insufficient, because Vowel's F1 bump at n = 2 over the
+//     n^-0.9 base reproduces SineStack's 1/n envelope;
+//   - narrowing the first two formants (sigmas 1.0 -> 0.7, 1.5 -> 1.0)
+//     decorrelates BOTH constrained harmonic pairs with real margin:
+//     SineStack<->Vowel rho 0.8830 (d 0.4838), Choir<->Vowel rho 0.8817
+//     (d 0.4864). Final constants below.
+inline constexpr float kVowelFloor = 0.05f;
+inline constexpr std::array<float, 3> kVowelCentres{2.0f, 5.0f, 14.0f};
+inline constexpr std::array<float, 3> kVowelSigmas{0.7f, 1.0f, 2.5f};
+inline constexpr std::array<float, 3> kVowelGains{1.0f, 0.9f, 0.35f};
+
+// Shimmer: ratio_1 = 1 (faint anchor, amp kShimmerAnchorAmp); for k >= 2,
+// m = kShimmerStep*k and ratio_k = m*(1 + kShimmerStretch*m), amp m^-kShimmerExp.
+inline constexpr float kShimmerStep = 4.0f;
+inline constexpr float kShimmerStretch = 0.002f;
+inline constexpr float kShimmerAnchorAmp = 0.30f;
+inline constexpr float kShimmerExp = 0.35f;
 
 // The FR-041 geometric continuation, IDENTICAL to SpectralMorphEngine's rule
 // (plan section 5.4). Duplicated as literals here rather than included, because
@@ -365,7 +425,7 @@ inline void copyStateName(SpectralState& s, const char* label) noexcept {
 
 } // namespace detail
 
-/// @brief Build one of the five factory states (FR-021, FR-022).
+/// @brief Build one of the ten factory states (FR-021, FR-022).
 ///
 /// Deterministic and stateless, and it CONSUMES NO RNG (FR-023): every value is
 /// a closed-form function of the partial index, so two calls with the same id
@@ -380,13 +440,19 @@ inline void copyStateName(SpectralState& s, const char* label) noexcept {
 ///   4. `normalizeSpectralState` (FR-014);
 ///   5. the NUL-padded ASCII label.
 ///
-/// Laws, with 1-based `n = i + 1`:
+/// Laws, with 1-based `n = i + 1` (Hollow/Shimmer use the authored index `k = i + 1`):
 ///   | Id        | numPartials | ratio_n                     | amp_n (pre-norm)                    |
 ///   | SineStack | 64          | n                           | n^-1                                |
 ///   | Bell      | 24          | n*sqrt(1 + kBellB*n^2)      | n^-1.4                              |
 ///   | Choir     | 64          | n                           | n^-0.8 * (floor + 3 Gaussian bumps) |
 ///   | Glass     | 64          | n*(1 + kGlassStretch*n)     | n^-0.5 * (even ? atten : 1)         |
 ///   | Breath    | 64          | n                           | n^-0.25 * (1 - depth*exp(-(n-1)/s)) |
+///   | Hollow    | 32          | 2k - 1                      | (2k-1)^-kHollowExp                  |
+///   | Metal     | 64          | n*sqrt(1 + kMetalB*n^2)     | n^-0.5 * (n%3==0 ? 1 : combAtten)   |
+///   | Organ     | 9           | kOrganRatios[k-1]           | kOrganAmps[k-1]                     |
+///   | Vowel     | 64          | n                           | n^-0.9 * (floor + 3 Gaussian bumps) |
+///   | Shimmer   | 16          | k==1 ? 1 : m*(1+stretch*m)  | k==1 ? anchorAmp : m^-kShimmerExp   |
+///                               (m = kShimmerStep*k)
 ///
 /// CONFIGURATION-TIME, not audio-thread: allocation-free, lock-free and
 /// exception-free, but it evaluates ~200 `std::pow`/`std::exp` calls.
