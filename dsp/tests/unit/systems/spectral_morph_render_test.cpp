@@ -484,18 +484,27 @@ TEST_CASE("HarmonicCloud_SpectralTargetIsNeutralWhenIdentity", "[spectral_morph]
                                 // mutation, tilt cells), so both the checkpoint
                                 // samples and the aggregate metrics move under
                                 // a legal codegen change - the trajectories
-                                // themselves diverge. MEASURED over the FULL
-                                // 216-cell grid, 2026-08-06 (Catch2 -s sweep):
-                                //   MSVC /fp:fast (the pinning toolchain):
-                                //     worst metric 2.27e-7, worst sample 1.79e-7
-                                //   g++ 13 -ffast-math + guard barrier:
-                                //     worst metric 5.41e-4, worst sample 1.32e-3
-                                //     (worst cells: tilt=12 / drift=50)
-                                // Bounds ~2.5x the cross-toolchain worst. The
-                                // injected stale-sweep-cache defect measures
-                                // 0.38 sample error - still 100x outside.
-                                constexpr double kStoredGoldenMetricTol = 1.5e-3;
-                                constexpr float kStoredGoldenSampleTol = 3.5e-3f;
+                                // themselves diverge. MEASURED worst errors over
+                                // the FULL 216-cell grid, per toolchain:
+                                //   local MSVC /fp:fast (pinning toolchain,
+                                //     2026-08-06 -s sweep):   metric 2.27e-7, sample 1.79e-7
+                                //   g++ 13 -ffast-math (same sweep):
+                                //                             metric 5.41e-4, sample 1.32e-3
+                                //   CI MSVC (windows-2022 runner patch level,
+                                //     2026-08-30 CI log):     metric 1.77e-3 (cell 153,
+                                //                             tilt=12 drift=50)
+                                //   Apple Clang (Xcode 26.6 -ffast-math,
+                                //     2026-08-30 CI log):     sample 4.49e-3 (cell 160,
+                                //                             B=0.05)
+                                // Every MSVC patch release and Apple toolchain
+                                // is a NEW codegen variant; bounds sit ~3x above
+                                // the worst measured one. The injected
+                                // stale-sweep-cache defect measures 0.38 sample
+                                // error - still 25x outside the sample bound,
+                                // and its total-variation shift is orders above
+                                // the metric bound.
+                                constexpr double kStoredGoldenMetricTol = 6.0e-3;
+                                constexpr float kStoredGoldenSampleTol = 1.5e-2f;
                                 const TestUtils::FingerprintComparison comparison =
                                     TestUtils::compareFingerprints(
                                         actual,
