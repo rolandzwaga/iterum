@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0f"/>
+      <stop offset="100%" stop-color="#12121a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="60" height="60" rx="12" ry="12" fill="url(#bg)" stroke="#2a2a3a" stroke-width="1"/>
+
+  <!-- Stylized K: vertical stem -->
+  <rect x="15" y="14" width="6" height="36" rx="2" fill="url(#accent)"/>
+
+  <!-- Upper arm: staggered bars (spectrum/EQ motif) -->
+  <rect x="24" y="14" width="5" height="14" rx="2" fill="#6366f1" opacity="0.95"/>
+  <rect x="32" y="11" width="5" height="12" rx="2" fill="#818cf8" opacity="0.7"/>
+  <rect x="40" y="14" width="5" height="8"  rx="2" fill="#a5b4fc" opacity="0.45"/>
+
+  <!-- Lower arm: mirrored bars -->
+  <rect x="24" y="36" width="5" height="14" rx="2" fill="#6366f1" opacity="0.95"/>
+  <rect x="32" y="41" width="5" height="12" rx="2" fill="#818cf8" opacity="0.7"/>
+  <rect x="40" y="42" width="5" height="8"  rx="2" fill="#a5b4fc" opacity="0.45"/>
+</svg>

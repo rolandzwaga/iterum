@@ -1,0 +1,1927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seraphis User Manual - Spectral Organism Synthesizer | Krate Audio</title>
+    <meta name="description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin. Covers the harmonic cloud, spectral morphing, life modulators, body, atmosphere, Aether, effects, macros, and presets.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://rolandzwaga.github.io/krate-audio/seraphis/manual.html">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Seraphis User Manual - Spectral Organism Synthesizer">
+    <meta property="og:description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin.">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://rolandzwaga.github.io/krate-audio/seraphis/manual.html">
+    <meta property="og:site_name" content="Krate Audio">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Seraphis User Manual">
+    <meta name="twitter:description" content="Complete user manual for Seraphis, a free open-source spectral organism synthesizer VST3 plugin.">
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Base — matches Seraphis landing page */
+        :root {
+            --color-bg: #0a0a0f;
+            --color-surface: #12121a;
+            --color-border: #2a2a3a;
+            --color-text: #e8e8f0;
+            --color-text-muted: #8888a0;
+            --color-accent: #e0b458;
+            --color-accent-hover: #f0cc78;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+
+        /* Layout */
+        .manual-container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 3rem 2rem 4rem;
+        }
+
+        /* Header */
+        .manual-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .manual-header .breadcrumb {
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .manual-header .breadcrumb a {
+            color: var(--color-text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .manual-header .breadcrumb a:hover {
+            color: var(--color-accent);
+        }
+
+        .manual-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--color-text) 0%, var(--color-accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .manual-header .subtitle {
+            color: var(--color-text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* Table of contents */
+        #TOC {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 3rem;
+        }
+
+        #TOC > ul { list-style: none; }
+        #TOC ul { list-style: none; padding-left: 1.25rem; }
+        #TOC > ul > li { margin-bottom: 0.5rem; }
+        #TOC li { margin-bottom: 0.25rem; }
+
+        #TOC a {
+            color: var(--color-text);
+            text-decoration: none;
+            transition: color 0.2s;
+            font-size: 0.95rem;
+        }
+
+        #TOC a:hover { color: var(--color-accent); }
+        #TOC > ul > li > a { font-weight: 600; }
+
+        /* Headings */
+        h1 { font-size: 2rem; font-weight: 700; margin: 3rem 0 1rem; }
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 3rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text);
+        }
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 2rem 0 0.75rem;
+            color: var(--color-accent-hover);
+        }
+        h4 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+        h5 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: var(--color-text-muted); }
+
+        /* Paragraphs & text */
+        p { margin-bottom: 1rem; }
+        strong { font-weight: 600; }
+
+        a {
+            color: var(--color-accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a:hover { color: var(--color-accent-hover); }
+
+        /* Lists */
+        ul, ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+        }
+        li { margin-bottom: 0.35rem; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: rgba(224, 180, 88, 0.08);
+        }
+
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--color-accent-hover);
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        td {
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: top;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        /* Code */
+        code {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85em;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            padding: 0.125rem 0.375rem;
+            border-radius: 4px;
+        }
+
+        pre {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        /* Images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            margin: 1rem 0 1.5rem;
+            display: block;
+        }
+
+        /* Horizontal rules */
+        hr {
+            border: none;
+            border-top: 1px solid var(--color-border);
+            margin: 2.5rem 0;
+        }
+
+        /* Blockquotes (tips) */
+        blockquote {
+            border-left: 3px solid var(--color-accent);
+            padding: 0.75rem 1rem;
+            margin: 1rem 0 1.5rem;
+            background: rgba(224, 180, 88, 0.05);
+            border-radius: 0 8px 8px 0;
+        }
+
+        blockquote p { margin-bottom: 0; }
+
+        /* Footer */
+        .manual-footer {
+            text-align: center;
+            padding-top: 2rem;
+            margin-top: 3rem;
+            border-top: 1px solid var(--color-border);
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+        }
+
+        .manual-footer a {
+            color: var(--color-text);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .manual-footer a:hover { color: var(--color-accent); }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .manual-container { padding: 2rem 1rem; }
+            .manual-header h1 { font-size: 2rem; }
+            h2 { font-size: 1.25rem; }
+            table { font-size: 0.85rem; }
+            th, td { padding: 0.5rem 0.75rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="manual-container">
+        <div class="manual-header">
+            <p class="breadcrumb">
+                <a href="../">Krate Audio</a> / <a href="./">Seraphis</a>
+            </p>
+            <h1>Seraphis — User Manual</h1>
+            <p class="subtitle">Spectral Organism Synthesizer</p>
+        </div>
+
+        <ul>
+        <li><a href="#introduction"
+        id="toc-introduction">Introduction</a></li>
+        <li><a href="#signal-flow" id="toc-signal-flow">Signal
+        Flow</a></li>
+        <li><a href="#interface-overview"
+        id="toc-interface-overview">Interface Overview</a></li>
+        <li><a href="#the-cloud-view" id="toc-the-cloud-view">The Cloud
+        View</a>
+        <ul>
+        <li><a href="#observe-mode" id="toc-observe-mode">Observe
+        mode</a></li>
+        <li><a href="#edit-mode-editing-partials"
+        id="toc-edit-mode-editing-partials">Edit mode — editing
+        partials</a></li>
+        </ul></li>
+        <li><a href="#macros" id="toc-macros">Macros</a>
+        <ul>
+        <li><a
+        href="#dream-purifies-the-harmonics-deepens-the-reverb-and-calms-entropy"
+        id="toc-dream-purifies-the-harmonics-deepens-the-reverb-and-calms-entropy">Dream
+        — <em>“Purifies the harmonics, deepens the reverb and calms
+        entropy”</em></a></li>
+        <li><a
+        href="#bloom-opens-upper-partials-shimmer-and-width-morphs-toward-brightness"
+        id="toc-bloom-opens-upper-partials-shimmer-and-width-morphs-toward-brightness">Bloom
+        — <em>“Opens upper partials, shimmer and width; morphs toward
+        brightness”</em></a></li>
+        <li><a
+        href="#dissolve-melts-the-tone-into-granular-fog-blur-and-slower-envelopes"
+        id="toc-dissolve-melts-the-tone-into-granular-fog-blur-and-slower-envelopes">Dissolve
+        — <em>“Melts the tone into granular fog, blur and slower
+        envelopes”</em></a></li>
+        <li><a href="#gravity-air-to-stone-axis-bipolar"
+        id="toc-gravity-air-to-stone-axis-bipolar">Gravity —
+        <em>“Air-to-stone axis”</em> (bipolar)</a></li>
+        <li><a
+        href="#entropy-decays-order-into-jitter-detune-and-partial-death-and-rebirth"
+        id="toc-entropy-decays-order-into-jitter-detune-and-partial-death-and-rebirth">Entropy
+        — <em>“Decays order into jitter, detune and partial death and
+        rebirth”</em></a></li>
+        </ul></li>
+        <li><a href="#header-controls" id="toc-header-controls">Header
+        Controls</a></li>
+        <li><a href="#the-drawer-cloud-tab"
+        id="toc-the-drawer-cloud-tab">The Drawer: Cloud Tab</a></li>
+        <li><a href="#the-drawer-morph-tab"
+        id="toc-the-drawer-morph-tab">The Drawer: Morph Tab</a></li>
+        <li><a href="#the-drawer-body-tab"
+        id="toc-the-drawer-body-tab">The Drawer: Body Tab</a></li>
+        <li><a href="#the-drawer-atmos-tab"
+        id="toc-the-drawer-atmos-tab">The Drawer: Atmos Tab</a></li>
+        <li><a href="#the-drawer-aether-tab"
+        id="toc-the-drawer-aether-tab">The Drawer: Aether Tab</a></li>
+        <li><a href="#the-drawer-fx-tab" id="toc-the-drawer-fx-tab">The
+        Drawer: FX Tab</a></li>
+        <li><a href="#the-drawer-lifeenv-tab"
+        id="toc-the-drawer-lifeenv-tab">The Drawer: Life/Env
+        Tab</a></li>
+        <li><a href="#presets" id="toc-presets">Presets</a>
+        <ul>
+        <li><a href="#factory-library" id="toc-factory-library">Factory
+        Library</a></li>
+        </ul></li>
+        <li><a href="#performance-notes"
+        id="toc-performance-notes">Performance Notes</a></li>
+        <li><a href="#cross-platform"
+        id="toc-cross-platform">Cross-Platform</a></li>
+        <li><a href="#tips-tricks" id="toc-tips-tricks">Tips &amp;
+        Tricks</a></li>
+        </ul>
+        <h2 id="introduction">Introduction</h2>
+        <p>Seraphis is a <strong>spectral organism synthesizer</strong>.
+        Each voice is a cloud of 64 harmonic partials driven by a
+        spectral-evolution layer, resonated through a continuous modal
+        body, with a parallel granular atmosphere breathing alongside
+        it. A family of slow autonomous <em>life modulators</em> —
+        Brownian drift, breathing, tides, orbits — animates all of it,
+        so nothing you play is ever static. The integrated
+        <strong>Aether</strong> space engine (an infinite-tail reverb
+        with shimmer, bloom, and spectral diffusion) sits
+        <em>inside</em> the signal path rather than behind it: the space
+        is part of the instrument, not an effect appended to it.</p>
+        <p>Seraphis is the ethereal counterpart to Ruinae. Where Ruinae
+        is instability, chaos and aggression, Seraphis is emergence,
+        resonance and weightlessness. It is built for textures, pads,
+        drones, bells, choirs and cinematic atmospheres — sounds that
+        move on their own and never quite repeat.</p>
+        <p><strong>Formats:</strong> VST3 (Windows, macOS, Linux) and
+        Audio Unit (macOS). One MIDI input, one stereo output.</p>
+        <h2 id="signal-flow">Signal Flow</h2>
+        <pre><code>MIDI in
+  │
+  ▼
+Harmonic Cloud ──── 64 additive partials per voice
+  │                 (richness, inharmonicity, tilt, mutation, drift, per-partial envelopes)
+  ▼
+Spectral Morph ──── travels between up to 4 spectral states
+  │                 (entropy, bloom, external position or autonomous spline travel)
+  ▼
+Continuous Body ─── modal resonator (Glass / Strings / Metal Plate / Chamber / Ice)
+  │                 + a slow post-body decay cloud wash
+  ▼
+Granular Atmosphere (parallel layer: grains fed from the voice, blur, freeze)
+  │
+  ▼
+Aether ──────────── the space engine, in the path: infinite FDN reverb,
+  │                 shimmer taps, bloom stage, spectral diffusion, breath &amp; tide
+  ▼
+Effects ─────────── tape saturation → spectral delay → spectral freeze → stereo stage
+  │                 (width, wander, azimuth)
+  ▼
+Output ──────────── master gain → true-peak limiter (always on)</code></pre>
+        <p>The five <strong>macros</strong> — Dream, Bloom, Dissolve,
+        Gravity, Entropy — reach across every stage of this chain at
+        once, and the <strong>life modulators</strong> run underneath it
+        continuously. Both are described in their own sections
+        below.</p>
+        <h2 id="interface-overview">Interface Overview</h2>
+        <p>The editor is a fixed 1000 × 700 window built
+        <em>organism-first</em>: the entire window is a live view of the
+        sound, and the controls orbit it.</p>
+        <ul>
+        <li><strong>The constellation</strong> — the whole central area
+        is the <strong>cloud view</strong>: one point per partial of the
+        loudest sounding voice, drawn live at 30 Hz. Horizontal position
+        is the partial’s stereo placement, vertical position is its
+        frequency on a fixed 20 Hz – 20 kHz log axis, and point size is
+        its amplitude. You watch drift, mutation, morphing and masking
+        actually happen.</li>
+        <li><strong>Five macro rings</strong> — large ring knobs
+        anchored in the corners and bottom-centre: Dream (top-left),
+        Bloom (top-right), Gravity (bottom-left), Dissolve
+        (bottom-right), Entropy (bottom-centre).</li>
+        <li><strong>The header bar</strong> — master gain, polyphony,
+        soft-limit toggle, seed selector, three freeze switches
+        (Atmosphere, Aether, Spectral), and the preset browser
+        button.</li>
+        <li><strong>The drawer</strong> — a pull-up panel along the
+        bottom edge holding every deep parameter across seven tabs:
+        <strong>Cloud, Morph, Body, Atmos, Aether, FX,
+        Life/Env</strong>. Click the <strong>DEEP</strong> handle
+        (chevron) to open or close it. Every parameter stays automatable
+        from the host whether or not the drawer is open.</li>
+        <li><strong>Observe | Edit</strong> — a mode toggle at the
+        bottom-left of the constellation. In Observe mode the cloud view
+        is a display; in Edit mode it becomes an instrument panel (see
+        <em>Editing Partials</em>).</li>
+        </ul>
+        <p>Every control in the editor carries a tooltip — hover over
+        anything to get a one-line description.</p>
+        <h2 id="the-cloud-view">The Cloud View</h2>
+        <h3 id="observe-mode">Observe mode</h3>
+        <p>The default. The constellation shows the loudest
+        currently-sounding voice: partials rise and fall with their
+        envelopes, drift sideways as the stereo field moves, brighten
+        and dim with mutation, and travel vertically as morphing retunes
+        them. With no note held, the view shows the selected morph
+        slot’s spectrum at a reference pitch, so the display is never
+        empty.</p>
+        <h3 id="edit-mode-editing-partials">Edit mode — editing
+        partials</h3>
+        <p>Flip the toggle to <strong>EDIT</strong> and the
+        constellation becomes editable:</p>
+        <ul>
+        <li><strong>Drag a partial</strong> vertically to change its
+        frequency ratio, horizontally to change its stereo position;
+        drag its size to reshape amplitude.</li>
+        <li><strong>Click a partial</strong> to mask or unmask it. A
+        masked partial keeps drawing as a hollow ring so it remains a
+        click target.</li>
+        <li><strong>Blend A to B</strong> — a slider that blends the
+        edited spectral state from slot A toward slot B.</li>
+        <li><strong>Tilt dB/oct</strong> — a slider that tilts the whole
+        edited spectrum in dB per octave.</li>
+        <li>On the Morph tab, the <strong>Edit slot</strong> selector
+        (A/B/C/D) chooses which morph slot your gestures write to.</li>
+        </ul>
+        <p>Editing works with or without a note held — with no note
+        sounding, authoring uses a fixed reference pitch. Edits reach an
+        already-sounding voice immediately, absorbed through the morph
+        engine’s own fade so there is never a click. Your authored
+        states are saved with the project and with presets, and restored
+        exactly.</p>
+        <h2 id="macros">Macros</h2>
+        <p>The five macro rings are the intended playing surface of
+        Seraphis. Each macro sweeps a curated set of targets across the
+        whole engine — voice, space and effects at once. Two things are
+        worth knowing about how they work:</p>
+        <ol type="1">
+        <li><strong>The deep parameters set the origin the macros travel
+        from.</strong> Moving a drawer parameter moves the <em>base</em>
+        a macro’s sweep starts at; the macro then adds its travel on
+        top. The two never fight over a value.</li>
+        <li><strong>All macros default to neutral</strong> (0 for all,
+        centre for Gravity). At neutral a macro contributes exactly
+        nothing — the drawer parameters alone describe the sound.</li>
+        </ol>
+        <h3
+        id="dream-purifies-the-harmonics-deepens-the-reverb-and-calms-entropy">Dream
+        — <em>“Purifies the harmonics, deepens the reverb and calms
+        entropy”</em></h3>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Target</th>
+        <th>Travel at full Dream</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Cloud Inharmonicity</td>
+        <td>→ 0 (pure harmonic grid)</td>
+        </tr>
+        <tr class="even">
+        <td>Cloud Gravity</td>
+        <td>→ 0</td>
+        </tr>
+        <tr class="odd">
+        <td>Cloud Mutation</td>
+        <td>→ 0</td>
+        </tr>
+        <tr class="even">
+        <td>Morph Entropy</td>
+        <td>→ 0</td>
+        </tr>
+        <tr class="odd">
+        <td>Orbit Depth</td>
+        <td>→ maximum</td>
+        </tr>
+        <tr class="even">
+        <td>Aether Mix</td>
+        <td>0.35 → 0.70</td>
+        </tr>
+        <tr class="odd">
+        <td>Aether Size Breath</td>
+        <td>→ 0.80</td>
+        </tr>
+        <tr class="even">
+        <td>Aether Tide Depth</td>
+        <td>→ 0.80</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>Dream removes disorder from the spectrum while deepening the
+        space and its slow breathing: at full Dream the cloud is a pure,
+        weightless harmonic stack inside a living reverb.</p>
+        <h3
+        id="bloom-opens-upper-partials-shimmer-and-width-morphs-toward-brightness">Bloom
+        — <em>“Opens upper partials, shimmer and width; morphs toward
+        brightness”</em></h3>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Target</th>
+        <th>Travel at full Bloom</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Cloud Tilt</td>
+        <td>+9 dB/oct</td>
+        </tr>
+        <tr class="even">
+        <td>Cloud Richness</td>
+        <td>→ 1.0</td>
+        </tr>
+        <tr class="odd">
+        <td>Cloud Stereo Spread</td>
+        <td>→ 0.95</td>
+        </tr>
+        <tr class="even">
+        <td>Voice Width</td>
+        <td>+30 %</td>
+        </tr>
+        <tr class="odd">
+        <td>Morph Position</td>
+        <td>→ slot B</td>
+        </tr>
+        <tr class="even">
+        <td>Aether Shimmer Octave</td>
+        <td>→ 0.60</td>
+        </tr>
+        <tr class="odd">
+        <td>Aether Shimmer Fifth</td>
+        <td>→ 0.40</td>
+        </tr>
+        <tr class="even">
+        <td>Aether Bloom Send</td>
+        <td>→ 0.60</td>
+        </tr>
+        <tr class="odd">
+        <td>Aether Width</td>
+        <td>→ maximum</td>
+        </tr>
+        </tbody>
+        </table>
+        <h3
+        id="dissolve-melts-the-tone-into-granular-fog-blur-and-slower-envelopes">Dissolve
+        — <em>“Melts the tone into granular fog, blur and slower
+        envelopes”</em></h3>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Target</th>
+        <th>Travel at full Dissolve</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Atmosphere Level</td>
+        <td>→ maximum</td>
+        </tr>
+        <tr class="even">
+        <td>Atmosphere Blur</td>
+        <td>→ 0.40</td>
+        </tr>
+        <tr class="odd">
+        <td>Cloud Attack</td>
+        <td>0.05 s → 2 s</td>
+        </tr>
+        <tr class="even">
+        <td>Envelope Stage 0</td>
+        <td>2 s → 6 s</td>
+        </tr>
+        <tr class="odd">
+        <td>Envelope Stage 1</td>
+        <td>4 s → 9 s</td>
+        </tr>
+        <tr class="even">
+        <td>Envelope Release</td>
+        <td>8 s → 10 s</td>
+        </tr>
+        <tr class="odd">
+        <td>Spectral Delay Mix</td>
+        <td>→ 0.20</td>
+        </tr>
+        </tbody>
+        </table>
+        <h3 id="gravity-air-to-stone-axis-bipolar">Gravity —
+        <em>“Air-to-stone axis”</em> (bipolar)</h3>
+        <p>Gravity is the one <strong>bipolar</strong> macro: its centre
+        is neutral, turning it <em>down</em> moves toward
+        <strong>air</strong>, up toward <strong>stone</strong>.</p>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Target</th>
+        <th>Air (full down)</th>
+        <th>Stone (full up)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Cloud Richness</td>
+        <td>0.95</td>
+        <td>0.25</td>
+        </tr>
+        <tr class="even">
+        <td>Body Damping</td>
+        <td>0.0</td>
+        <td>0.50</td>
+        </tr>
+        <tr class="odd">
+        <td>Cloud Tilt</td>
+        <td>+8 dB/oct</td>
+        <td>−8 dB/oct</td>
+        </tr>
+        <tr class="even">
+        <td>Aether Size</td>
+        <td>0.05</td>
+        <td>0.95</td>
+        </tr>
+        </tbody>
+        </table>
+        <h3
+        id="entropy-decays-order-into-jitter-detune-and-partial-death-and-rebirth">Entropy
+        — <em>“Decays order into jitter, detune and partial death and
+        rebirth”</em></h3>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Target</th>
+        <th>Travel at full Entropy</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Morph Entropy</td>
+        <td>0.20 → 0.50</td>
+        </tr>
+        <tr class="even">
+        <td>Cloud Drift Depth</td>
+        <td>→ 50 cents</td>
+        </tr>
+        <tr class="odd">
+        <td>Atmosphere Drift Depth</td>
+        <td>→ maximum</td>
+        </tr>
+        <tr class="even">
+        <td>Stereo Wander Depth</td>
+        <td>→ 0.50</td>
+        </tr>
+        </tbody>
+        </table>
+        <h2 id="header-controls">Header Controls</h2>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Control</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Notes</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Gain</strong></td>
+        <td>0 – 200 % (−80 dB … +6 dB)</td>
+        <td>unity (centre)</td>
+        <td>Overall output level of the whole instrument</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Voices</strong></td>
+        <td>1 – 16</td>
+        <td>8</td>
+        <td>Maximum simultaneous voices</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Limit</strong></td>
+        <td>on/off</td>
+        <td>on</td>
+        <td>Tape-style output saturation. <strong>The true-peak limiter
+        always stays on</strong> — this toggle only adds or removes the
+        tape colouration in front of it</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Seed</strong></td>
+        <td>Seed 1 – Seed 16</td>
+        <td>Seed 1</td>
+        <td>Random seed for drift, grains and reverb modulation;
+        changing it re-rolls the texture without changing any
+        parameter</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Atmos Frz</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Suspend the atmosphere on its current material</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Aether Frz</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Hold the reverb tail forever, conserving its energy</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Spec Frz</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Capture and hold the current spectrum indefinitely</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Presets</strong></td>
+        <td>—</td>
+        <td>—</td>
+        <td>Opens the preset browser</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>The three freeze switches in the header are duplicates of the
+        same parameters on the Atmos, Aether and FX tabs, placed within
+        reach while performing.</p>
+        <h2 id="the-drawer-cloud-tab">The Drawer: Cloud Tab</h2>
+        <p>The harmonic cloud is the additive core — 64 partials per
+        voice.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Richness</strong></td>
+        <td>0 – 100 %</td>
+        <td>60 %</td>
+        <td>Number of active partials and how fast they roll off</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Inharm</strong></td>
+        <td>0 – 0.1</td>
+        <td>0.03</td>
+        <td>Stretches partials off the harmonic grid, piano toward
+        bell</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Tilt</strong></td>
+        <td>−12 – +12 dB/oct</td>
+        <td>0</td>
+        <td>Spectral slope: dark below zero, bright above</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Mutation</strong></td>
+        <td>0 – 100 %</td>
+        <td>25 %</td>
+        <td>Rate of slow random re-weighting of partial amplitudes</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Gravity</strong></td>
+        <td>−1 – +1</td>
+        <td>+0.2</td>
+        <td>Pulls partial ratios toward (or pushes away from) the pure
+        harmonic grid</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Drift</strong></td>
+        <td>0 – 50 ct</td>
+        <td>0</td>
+        <td>Depth of the per-partial pitch drift, in cents</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Drift Smth</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>How slow and smooth the per-partial drift is</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Spread</strong></td>
+        <td>0 – 100 %</td>
+        <td>35 %</td>
+        <td>Spreads the individual partials across the stereo field</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Attack</strong></td>
+        <td>0.05 – 30 s (log)</td>
+        <td>0.05 s</td>
+        <td>Attack of each partial’s own envelope</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Decay</strong></td>
+        <td>0.05 – 60 s (log)</td>
+        <td>0.5 s</td>
+        <td>Decay of each partial’s own envelope</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Env Spread</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Staggers per-partial attack times so the cloud blooms
+        in</td>
+        </tr>
+        </tbody>
+        </table>
+        <blockquote>
+        <p><strong>Tip:</strong> <em>Env Spread</em> is what makes a
+        chord “assemble” — with a slow attack and full spread, the
+        partials enter one after another and the note builds itself in
+        front of you (hear <em>Bell Garden</em>).</p>
+        </blockquote>
+        <h2 id="the-drawer-morph-tab">The Drawer: Morph Tab</h2>
+        <p>The morph engine travels the cloud between up to four
+        <strong>spectral states</strong> — factory spectra loaded into
+        slots A–D, or your own states authored in Edit mode.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Entropy</strong></td>
+        <td>0 – 100 %</td>
+        <td>20 %</td>
+        <td>Decays spectral order: amplitude jitter, phase smear, then
+        partial death</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Bloom</strong></td>
+        <td>0 – 0.6</td>
+        <td>0</td>
+        <td>Delays high partials behind low ones so a morph blooms
+        upward</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Position</strong></td>
+        <td>0 – 3</td>
+        <td>0</td>
+        <td>Where the sound sits between the spectral slots (0 = A, 3 =
+        D)</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Travel</strong></td>
+        <td>External / Spline</td>
+        <td>External</td>
+        <td>External follows the Position knob; Spline travels its own
+        trajectory</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Rate</strong></td>
+        <td>0.0017 – 1 j/s (log)</td>
+        <td>0.0017</td>
+        <td>Speed of autonomous travel, in journeys per second</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Sync</strong></td>
+        <td>Free / Synced</td>
+        <td>Free</td>
+        <td>Lock the morph travel rate to host tempo</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Sync Note</strong></td>
+        <td>1/16 … 8 Bars</td>
+        <td>1 Bar</td>
+        <td>Length of one journey when Sync is on</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Waypoint</strong></td>
+        <td>0.5 – 30 s (log)</td>
+        <td>2 s</td>
+        <td>Seconds between spline trajectory waypoints</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>States</strong></td>
+        <td>2 / 3 / 4</td>
+        <td>2</td>
+        <td>How many slots the morph travels between</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Slot A–D</strong></td>
+        <td>Sine Stack / Bell / Choir / Glass / Breath</td>
+        <td>A: Sine Stack, B: Glass</td>
+        <td>Factory spectrum loaded into each slot</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Edit slot</strong></td>
+        <td>A / B / C / D</td>
+        <td>A</td>
+        <td>Which slot the cloud-view editing gestures write to</td>
+        </tr>
+        </tbody>
+        </table>
+        <p><strong>Position always spans 0–3</strong> regardless of the
+        States count. The five factory spectra are starting material —
+        any slot can be overwritten by hand in Edit mode, and authored
+        slots survive saving and preset load exactly.</p>
+        <h2 id="the-drawer-body-tab">The Drawer: Body Tab</h2>
+        <p>The cloud speaks through a <strong>continuous modal
+        body</strong> — a physical resonator that can morph between
+        materials.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Material</strong></td>
+        <td>Glass / Strings / Metal Plate / Chamber / Ice</td>
+        <td>Glass</td>
+        <td>Resonant body the cloud speaks through</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Resonance</strong></td>
+        <td>0 – 100 %</td>
+        <td>70 %</td>
+        <td>How long and how strongly the body rings</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Damping</strong></td>
+        <td>0 – 100 %</td>
+        <td>25 %</td>
+        <td>Damps the body’s high modes, darker and shorter</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Key Track</strong></td>
+        <td>0 – 100 %</td>
+        <td>100 %</td>
+        <td>How far the body retunes with the played note</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Drive</strong></td>
+        <td>0 – 4</td>
+        <td>1.0</td>
+        <td>Excitation level driven into the resonator</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Mix</strong></td>
+        <td>0 – 100 %</td>
+        <td>100 %</td>
+        <td>Blend between the dry cloud and the resonated body</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Cloud Mix</strong></td>
+        <td>0 – 100 %</td>
+        <td>25 %</td>
+        <td>Amount of the slow decay-cloud wash after the resonator</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Cloud Decay</strong></td>
+        <td>0.1 – 30 s (log)</td>
+        <td>4 s</td>
+        <td>Decay time of the post-body wash</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Cloud Size</strong></td>
+        <td>0 – 100 %</td>
+        <td>100 %</td>
+        <td>Size of the diffusion network behind the wash</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Cloud Damp</strong></td>
+        <td>0 – 100 %</td>
+        <td>30 %</td>
+        <td>Darkens the post-body wash as it decays</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Width</strong></td>
+        <td>0 – 100 %</td>
+        <td>100 %</td>
+        <td>Stereo width of the body output</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Input AGC</strong></td>
+        <td>on/off</td>
+        <td>on</td>
+        <td>Normalizes the level feeding the resonator</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Res Bypass</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Bypasses the modal resonator, keeping only the wash</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>Note that <strong>Mix defaults to 100 %</strong> — by default
+        you hear the instrument <em>through</em> the Glass body. Turn
+        Mix down for the raw additive cloud. <em>Res Bypass</em> with
+        some Cloud Mix gives a body-less diffuse wash (hear <em>Warm
+        Static</em>); turning <strong>Input AGC off</strong> lets the
+        Drive knob genuinely overload the resonator (hear <em>Iron
+        Lung</em>).</p>
+        <h2 id="the-drawer-atmos-tab">The Drawer: Atmos Tab</h2>
+        <p>A granular layer running in parallel with the voice: grains
+        are captured from the sound itself and re-scattered.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Level</strong></td>
+        <td>0 – 2</td>
+        <td>0.5</td>
+        <td>Level of the granular atmosphere layer</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Blur</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Smears grain phase into fog, from material toward mist</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Density</strong></td>
+        <td>0.1 – 20 gr/s (log)</td>
+        <td>4</td>
+        <td>Grains per second; higher overlaps into a solid wash</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Grain Sec</strong></td>
+        <td>0.05 – 30 s (log)</td>
+        <td>4 s</td>
+        <td>Length of each grain</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Drift</strong></td>
+        <td>0 – 100 %</td>
+        <td>30 %</td>
+        <td>Depth of the per-grain pitch drift</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Pan Spread</strong></td>
+        <td>0 – 100 %</td>
+        <td>70 %</td>
+        <td>Spreads the grains across the stereo field</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Decorr</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>Decorrelates the channels for a wider, more diffuse
+        image</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Freeze Mix</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Blend of the frozen spectrum into the grain stream</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Freeze</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Suspend the atmosphere on its current material</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Drift Smth</strong></td>
+        <td>0 – 100 %</td>
+        <td>70 %</td>
+        <td>How slow and smooth the per-grain pitch drift is</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Drift Range</strong></td>
+        <td>0 – 12 st</td>
+        <td>2 st</td>
+        <td>Maximum per-grain pitch drift</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Jitter</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>Randomizes grain start timing, looser and less rhythmic</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Position</strong></td>
+        <td>0 – 30 s</td>
+        <td>1 s</td>
+        <td>How far back in the capture buffer grains are read</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Pos Spread</strong></td>
+        <td>0 – 100 %</td>
+        <td>30 %</td>
+        <td>Scatters the grain read positions around Position</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Pitch</strong></td>
+        <td>−24 – +24 st</td>
+        <td>0</td>
+        <td>Transposes the grains</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Pitch Spread</strong></td>
+        <td>0 – 100 %</td>
+        <td>15 %</td>
+        <td>Random pitch scatter between individual grains</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Grain Env</strong></td>
+        <td>Hann / Trapezoid / Sine / Blackman / Linear /
+        Exponential</td>
+        <td>Hann</td>
+        <td>Window shape of each grain, from soft to abrupt</td>
+        </tr>
+        </tbody>
+        </table>
+        <blockquote>
+        <p><strong>Tip:</strong> Position at 0 reads grains right at the
+        write head — the atmosphere shadows the voice almost live. Long
+        positions with wide Pos Spread turn the buffer into a memory the
+        instrument keeps digging through (hear <em>Aftermath</em>).</p>
+        </blockquote>
+        <h2 id="the-drawer-aether-tab">The Drawer: Aether Tab</h2>
+        <p>The space engine. Aether sits inside the signal path —
+        freezing it, breathing it and blooming it are part of playing
+        the instrument.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Mix</strong></td>
+        <td>0 – 100 %</td>
+        <td>35 %</td>
+        <td>Amount of Aether reverb in the output</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Size</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>Size of the space, from small chamber to impossible</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Density</strong></td>
+        <td>0 – 100 %</td>
+        <td>70 %</td>
+        <td>Diffusion density; higher smooths the tail</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Decay</strong></td>
+        <td>0.5 – 60 s (log)</td>
+        <td>4 s</td>
+        <td>Reverb decay time</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Freeze</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Hold the tail forever, conserving its energy</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Dimension</strong></td>
+        <td>0 – 100 %</td>
+        <td>35 %</td>
+        <td>Space character, from flat plate to N-dimensional hall</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Damping</strong></td>
+        <td>0 – 100 %</td>
+        <td>40 %</td>
+        <td>Darkens the reverb tail as it decays</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Pre-Delay</strong></td>
+        <td>0 – 200 ms</td>
+        <td>0</td>
+        <td>Delay before the reverb starts</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Mod Depth</strong></td>
+        <td>0 – 100 %</td>
+        <td>25 %</td>
+        <td>Depth of modulation inside the reverb delay lines</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Mod Smth</strong></td>
+        <td>0 – 100 %</td>
+        <td>60 %</td>
+        <td>How slow and smooth the internal modulation is</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Shim Oct</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Send into the octave-up shimmer tap inside the tail</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Shim 5th</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Send into the fifth-up shimmer tap</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Bloom Send</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Send into the bloom stage that reinforces held partials</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Bloom Decay</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>How long the bloom sympathetic resonance sustains</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Spec Diff</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Smears the tail spectrally for an underwater character</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Breath</strong></td>
+        <td>0 – 100 %</td>
+        <td>20 %</td>
+        <td>Depth of the slow breathing of the space size</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Tide</strong></td>
+        <td>0 – 100 %</td>
+        <td>20 %</td>
+        <td>Depth of the very slow tidal drift through the space</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Width</strong></td>
+        <td>0 – 100 %</td>
+        <td>100 %</td>
+        <td>Stereo width of the reverb tail</td>
+        </tr>
+        </tbody>
+        </table>
+        <h2 id="the-drawer-fx-tab">The Drawer: FX Tab</h2>
+        <p>The final stage: saturation, a spectral delay, spectral
+        freeze, and the stereo stage.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Saturation</strong></td>
+        <td>0 – 100 %</td>
+        <td>15 %</td>
+        <td>Tape-style saturation on the output, a gentle ceiling</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Delay Mix</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Amount of the spectral delay send in the output</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Delay Time</strong></td>
+        <td>0 – 2000 ms</td>
+        <td>250 ms</td>
+        <td>Delay time when Sync is off</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Spread</strong></td>
+        <td>0 – 2000 ms</td>
+        <td>0</td>
+        <td>Spreads the delay time across frequency bins</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Spread Dir</strong></td>
+        <td>Low → High / High → Low / Center → Out</td>
+        <td>Low → High</td>
+        <td>Direction the per-bin spread runs across the spectrum</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Feedback</strong></td>
+        <td>0 – 95 %</td>
+        <td>35 %</td>
+        <td>Delay regeneration, internally compensated to stay stable at
+        any Tilt</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Delay Tilt</strong></td>
+        <td>−1 – +1</td>
+        <td>0</td>
+        <td>Biases the delay feedback toward low or high bins</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Diffusion</strong></td>
+        <td>0 – 100 %</td>
+        <td>30 %</td>
+        <td>Smears the delay repeats into a wash</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Delay Width</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>Stereo width of the delay repeats</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Delay Sync</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Lock the delay time to host tempo</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Sync Note</strong></td>
+        <td>1/64T … 1/8T</td>
+        <td>1/16</td>
+        <td>Delay time as a note division when Sync is on</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Spec Freeze</strong></td>
+        <td>on/off</td>
+        <td>off</td>
+        <td>Capture and hold the current spectrum indefinitely</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Stereo Width</strong></td>
+        <td>0 – 200 %</td>
+        <td>100 %</td>
+        <td>Master stereo width, mono to super-wide</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Wander</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Depth of the slow random wander of the stereo width</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Wander Rate</strong></td>
+        <td>0 – 100 %</td>
+        <td>50 %</td>
+        <td>Smoothness of the wander; <em>higher drifts more
+        slowly</em></td>
+        </tr>
+        <tr class="even">
+        <td><strong>Azimuth</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>Depth of the slow random wander of the stereo position</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>The spectral delay delays each frequency bin independently —
+        with <strong>Spread</strong> up, lows and highs repeat at
+        different times, and <strong>Delay Tilt</strong> feeds back the
+        top or bottom of the spectrum harder. Feedback is internally
+        reduced as Tilt increases, so the loop stays bounded at every
+        setting.</p>
+        <h2 id="the-drawer-lifeenv-tab">The Drawer: Life/Env Tab</h2>
+        <p>The per-voice life modulators and the voice envelope.</p>
+        <table>
+        <colgroup>
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        <col style="width: 25%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Parameter</th>
+        <th>Range</th>
+        <th>Default</th>
+        <th>Description</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td><strong>Orbit Depth</strong></td>
+        <td>0 – 100 %</td>
+        <td>35 %</td>
+        <td>Depth of the per-voice orbital wander across the stereo
+        field</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Orbit Rate</strong></td>
+        <td>0.01 – 0.5 Hz (log)</td>
+        <td>0.1 Hz</td>
+        <td>Speed of the orbital wander (100 s to 2 s per cycle)</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Coupling</strong></td>
+        <td>0 – 100 %</td>
+        <td>0 %</td>
+        <td>How tightly the two orbit axes lock together</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Growth</strong></td>
+        <td>−1 – +1</td>
+        <td>0</td>
+        <td>Orbit radius shrinks below zero, expands above</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Voice Width</strong></td>
+        <td>50 – 150 %</td>
+        <td>100 %</td>
+        <td>Stereo width of each individual voice</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Env Mode</strong></td>
+        <td>Standard / Growth</td>
+        <td>Standard</td>
+        <td>Standard attack, or Growth for a slow logistic rise</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Growth Dur</strong></td>
+        <td>1 – 60 s (log)</td>
+        <td>10 s</td>
+        <td>Length of the Growth-mode rise</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Stage 0</strong></td>
+        <td>1 – 10000 ms (log)</td>
+        <td>2000 ms</td>
+        <td>First envelope stage time</td>
+        </tr>
+        <tr class="odd">
+        <td><strong>Stage 1</strong></td>
+        <td>1 – 10000 ms (log)</td>
+        <td>4000 ms</td>
+        <td>Second envelope stage time</td>
+        </tr>
+        <tr class="even">
+        <td><strong>Release</strong></td>
+        <td>1 – 10000 ms (log)</td>
+        <td>8000 ms</td>
+        <td>Release time after note off</td>
+        </tr>
+        </tbody>
+        </table>
+        <p><strong>Growth mode</strong> replaces the standard attack
+        with a slow logistic swell — the note <em>arrives</em> rather
+        than starting. It is the engine behind <em>First Light</em>,
+        <em>Approach Vector</em> and <em>Rising Dread</em>.</p>
+        <h2 id="presets">Presets</h2>
+        <p>Click <strong>Presets</strong> in the header to open the
+        browser. Categories appear as tabs; double-click a preset to
+        load it. Loading restores everything — every parameter, and any
+        spectral states you authored by hand. <strong>Save</strong>
+        writes the complete current state, authored slots included, into
+        your user preset folder:</p>
+        <ul>
+        <li><strong>Windows:</strong>
+        <code>C:\ProgramData\Krate Audio\Seraphis\{Category}\</code></li>
+        <li><strong>macOS:</strong>
+        <code>/Library/Application Support/Krate Audio/Seraphis/{Category}/</code></li>
+        <li><strong>Linux:</strong>
+        <code>~/.local/share/Krate Audio/Seraphis/{Category}/</code></li>
+        </ul>
+        <h3 id="factory-library">Factory Library</h3>
+        <p>42 presets ship with the plugin, six in each of seven
+        categories. Every one is rendered and verified during the build
+        — each is proven to make sound, stay bounded, and be measurably
+        distinct from all 41 others.</p>
+        <h4 id="textures">Textures</h4>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Vellum</td>
+        <td>Thin, papery two-state morph with a soft upper tilt</td>
+        </tr>
+        <tr class="even">
+        <td>Sea Glass</td>
+        <td>Bright glass body, barely damped, over a sparse cloud</td>
+        </tr>
+        <tr class="odd">
+        <td>Slow Snow</td>
+        <td>Sparse Blackman grains falling through a quiet cloud</td>
+        </tr>
+        <tr class="even">
+        <td>Paper Sky</td>
+        <td>Wide, downward-tilted wash with a slow partial drift</td>
+        </tr>
+        <tr class="odd">
+        <td>Rust Bloom</td>
+        <td>Saturated, inharmonic and slowly mutating</td>
+        </tr>
+        <tr class="even">
+        <td>Quiet Machine</td>
+        <td>Dense short trapezoid grains, jittered into a hum</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="pads">Pads</h4>
+        <table>
+        <colgroup>
+        <col style="width: 50%" />
+        <col style="width: 50%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>First Light</td>
+        <td>Sine-stack pad that grows in over eight seconds</td>
+        </tr>
+        <tr class="even">
+        <td>Long Exhale</td>
+        <td>Standard envelope stretched to the ceiling: 8 s attack, 9 s
+        release</td>
+        </tr>
+        <tr class="odd">
+        <td>Cathedral Moss</td>
+        <td>Chamber body inside a large, soft Aether space</td>
+        </tr>
+        <tr class="even">
+        <td>Warm Static</td>
+        <td>Resonator bypassed — saturation and decorrelated grain
+        only</td>
+        </tr>
+        <tr class="odd">
+        <td>Distant Choir</td>
+        <td>Choral second state, pre-delayed and set well back</td>
+        </tr>
+        <tr class="even">
+        <td>Blue Hour</td>
+        <td>Dim, slowly orbiting pad with a wide grain bed</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="drones">Drones</h4>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Deep Well</td>
+        <td>Low, unlit drone with a twenty-second Aether tail</td>
+        </tr>
+        <tr class="even">
+        <td>Stone Circle</td>
+        <td>Very slow onset into a thirty-second room</td>
+        </tr>
+        <tr class="odd">
+        <td>Tectonic</td>
+        <td>Heavy low tilt, inharmonic and driven hard</td>
+        </tr>
+        <tr class="even">
+        <td>Iron Lung</td>
+        <td>Body input AGC off — the resonator takes the full drive</td>
+        </tr>
+        <tr class="odd">
+        <td>Continuum</td>
+        <td>Strings body, almost undamped, held indefinitely</td>
+        </tr>
+        <tr class="even">
+        <td>Undertow</td>
+        <td>Tidal Aether motion under a detuning cloud</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="bells">Bells</h4>
+        <table>
+        <colgroup>
+        <col style="width: 50%" />
+        <col style="width: 50%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Frost Bell</td>
+        <td>Bell state, thin and cold, with a six-second cloud
+        decay</td>
+        </tr>
+        <tr class="even">
+        <td>Temple Rim</td>
+        <td>Long struck rim, nearly harmonic, in a twelve-second
+        room</td>
+        </tr>
+        <tr class="odd">
+        <td>Glass Carillon</td>
+        <td>Parked on the glass state, struck and left to ring</td>
+        </tr>
+        <tr class="even">
+        <td>Struck Ice</td>
+        <td>Ice body, high resonance, almost no damping</td>
+        </tr>
+        <tr class="odd">
+        <td>Bronze Halo</td>
+        <td>Metal plate, driven, ringing well past the note</td>
+        </tr>
+        <tr class="even">
+        <td>Bell Garden</td>
+        <td>Partials entering at staggered times, spread hard across the
+        field</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="choirs">Choirs</h4>
+        <table>
+        <colgroup>
+        <col style="width: 50%" />
+        <col style="width: 50%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Vowel Field</td>
+        <td>The choir state held open, tilted down and blurred</td>
+        </tr>
+        <tr class="even">
+        <td>Breath Chorus</td>
+        <td>Breath into choir — the airiest pair in the library</td>
+        </tr>
+        <tr class="odd">
+        <td>Ghost Choir</td>
+        <td>Atmosphere frozen: the grain bed stops moving and hangs</td>
+        </tr>
+        <tr class="even">
+        <td>Aeolian Voices</td>
+        <td>Wind-detuned voices, wide and never quite still</td>
+        </tr>
+        <tr class="odd">
+        <td>Whispered Mass</td>
+        <td>Almost all grain: decorrelated, pitch-spread, barely
+        pitched</td>
+        </tr>
+        <tr class="even">
+        <td>Angelic Drift</td>
+        <td>Shimmer octave and fifth folded back into the tail</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="motion">Motion</h4>
+        <table>
+        <colgroup>
+        <col style="width: 50%" />
+        <col style="width: 50%" />
+        </colgroup>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Orbit Study</td>
+        <td>External travel driving a fast spatial orbit</td>
+        </tr>
+        <tr class="even">
+        <td>Tide Pool</td>
+        <td>Three states, crawling between them while the space
+        breathes</td>
+        </tr>
+        <tr class="odd">
+        <td>Wander Lamp</td>
+        <td>Spline travel with four-second waypoints and a wandering
+        image</td>
+        </tr>
+        <tr class="even">
+        <td>Restless</td>
+        <td>Tempo-synced spectral delay feeding a mutating cloud</td>
+        </tr>
+        <tr class="odd">
+        <td>Spiral Arms</td>
+        <td>Coupled orbits sweeping the azimuth at the edge of the
+        field</td>
+        </tr>
+        <tr class="even">
+        <td>Slow Weather</td>
+        <td>All four states in play, crossed at a geological rate</td>
+        </tr>
+        </tbody>
+        </table>
+        <h4 id="cinematic">Cinematic</h4>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Preset</th>
+        <th>Character</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Approach Vector</td>
+        <td>Growth envelope closing in over nine seconds</td>
+        </tr>
+        <tr class="even">
+        <td>Event Horizon</td>
+        <td>Aether frozen at maximum size — the note never lands</td>
+        </tr>
+        <tr class="odd">
+        <td>Signal Lost</td>
+        <td>Spectral freeze over a saturated, inharmonic bed</td>
+        </tr>
+        <tr class="even">
+        <td>Rising Dread</td>
+        <td>Ten-second growth under a heavy downward tilt</td>
+        </tr>
+        <tr class="odd">
+        <td>Vast</td>
+        <td>Frozen Aether at full width — scale without motion</td>
+        </tr>
+        <tr class="even">
+        <td>Aftermath</td>
+        <td>Exponential grains scattered late across a wide buffer</td>
+        </tr>
+        </tbody>
+        </table>
+        <h2 id="performance-notes">Performance Notes</h2>
+        <ul>
+        <li><strong>Latency:</strong> Seraphis reports a constant 1024
+        samples of latency in every state — it never changes with
+        settings, so the host compensates once and stays correct.</li>
+        <li>The audio path allocates no memory, takes no locks and
+        performs no I/O while running; everything is sized up-front when
+        the host prepares the plugin.</li>
+        <li>With the editor closed, the visualization pipeline costs
+        effectively nothing (a single flag check per block). The
+        constellation only consumes CPU while you are looking at
+        it.</li>
+        <li>Voice count is the main CPU lever: the default is 8 voices;
+        long-release pads hold voices for a long time, so reduce
+        <strong>Voices</strong> if you are stacking instances.</li>
+        <li>The output stage always ends in a true-peak limiter. The
+        <strong>Limit</strong> toggle adds or removes tape saturation in
+        front of it but never removes the safety ceiling.</li>
+        </ul>
+        <h2 id="cross-platform">Cross-Platform</h2>
+        <table>
+        <thead>
+        <tr class="header">
+        <th>Platform</th>
+        <th>Formats</th>
+        <th>Notes</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="odd">
+        <td>Windows 10+</td>
+        <td>VST3</td>
+        <td>64-bit</td>
+        </tr>
+        <tr class="even">
+        <td>macOS 12+</td>
+        <td>VST3, Audio Unit</td>
+        <td>Universal (Intel + Apple Silicon)</td>
+        </tr>
+        <tr class="odd">
+        <td>Linux</td>
+        <td>VST3</td>
+        <td>x86-64</td>
+        </tr>
+        </tbody>
+        </table>
+        <p>State saved on any platform loads identically on the
+        others.</p>
+        <h2 id="tips-tricks">Tips &amp; Tricks</h2>
+        <ul>
+        <li><strong>Start from neutral.</strong> With all five macros at
+        rest, the drawer describes the sound. Design the patch there,
+        then use the macros as the performance surface on top — they
+        always travel <em>from</em> what you set.</li>
+        <li><strong>Seed is a free variation knob.</strong> Same patch,
+        different seed — a genuinely different take on the same texture,
+        without moving a single parameter. Automate it between song
+        sections.</li>
+        <li><strong>Freeze is an instrument.</strong> Hold a chord,
+        engage <strong>Aether Frz</strong>, release — the space holds
+        the chord forever while you play something new over it.
+        <strong>Spec Frz</strong> does the same for the voice itself,
+        and <em>Freeze Mix</em> on the Atmos tab lets the frozen
+        spectrum bleed into the moving grain stream instead of replacing
+        it.</li>
+        <li><strong>Draw your own spectra.</strong> Set the morph slot
+        count to 2, author slot A by hand in Edit mode, pick a factory
+        Bell for slot B, then ride <strong>Position</strong> — you are
+        morphing between your drawing and a bell.</li>
+        <li><strong>Masking is subtractive synthesis.</strong> In Edit
+        mode, click away every even partial and you built a hollow
+        square-ish tone; mask everything above the 8th and you have a
+        soft sub-tone — all without a filter.</li>
+        <li><strong>The body is half the identity.</strong> Before
+        reaching for the Aether, try the same patch through each of the
+        five materials — Glass to Ice is a bigger timbral distance than
+        most filter sweeps.</li>
+        <li><strong>Bipolar knobs rest at centre:</strong> the Gravity
+        macro, Cloud Gravity, Growth (orbit) and Delay Tilt all sit
+        neutral at 12 o’clock — automation that “does nothing” is
+        usually sitting on one of these centres.</li>
+        <li><strong>Wander Rate is inverted from what you may
+        expect:</strong> higher values drift <em>more slowly</em>. Set
+        it high for tectonic stereo motion, low for restless
+        movement.</li>
+        <li><strong>Long tails stack.</strong> Envelope release (up to
+        10 s), body cloud decay (30 s), Aether decay (60 s) and the
+        spectral delay all overlap; when a patch turns to mud, shorten
+        one stage at a time, starting with the body wash.</li>
+        </ul>
+        <hr />
+        <p><em>Seraphis is free and open-source software from Krate
+        Audio, released under the MIT license.</em></p>
+
+        <div class="manual-footer">
+            <p>
+                <a href="./">Back to Seraphis</a> |
+                <a href="../">Krate Audio</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
