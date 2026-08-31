@@ -30,6 +30,11 @@
       "version": "0.12.2",
       "download_url": "https://rolandzwaga.github.io/krate-audio/ruinae/",
       "release_notes": ""
+    },
+    "Seraphis": {
+      "version": "1.0.0",
+      "download_url": "https://rolandzwaga.github.io/krate-audio/seraphis/",
+      "release_notes": ""
     }
   }
 }

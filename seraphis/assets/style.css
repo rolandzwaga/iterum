@@ -1,4 +1,4 @@
-/* Krate Audio Root Landing Page Styles */
+/* Seraphis Landing Page Styles */
 
 :root {
     --color-bg: #0a0a0f;
@@ -6,8 +6,11 @@
     --color-border: #2a2a3a;
     --color-text: #e8e8f0;
     --color-text-muted: #8888a0;
-    --color-accent: #6366f1;
-    --color-accent-hover: #818cf8;
+    --color-accent: #e0b458;
+    --color-accent-hover: #f0cc78;
+    --color-windows: #0078d4;
+    --color-macos: #a3aaae;
+    --color-linux: #f5a623;
 }
 
 * {
@@ -36,6 +39,21 @@ header {
     margin-bottom: 4rem;
 }
 
+header .breadcrumb {
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+}
+
+header .breadcrumb a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+header .breadcrumb a:hover {
+    color: var(--color-accent);
+}
+
 header h1 {
     font-size: 3.5rem;
     font-weight: 700;
@@ -50,6 +68,18 @@ header h1 {
 header .tagline {
     font-size: 1.25rem;
     color: var(--color-text-muted);
+    margin-bottom: 1rem;
+}
+
+header .version {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    color: var(--color-accent);
+    font-weight: 500;
 }
 
 /* Sections */
@@ -62,56 +92,164 @@ section h2 {
     font-weight: 600;
     margin-bottom: 1.5rem;
     color: var(--color-text);
+}
+
+/* Downloads */
+.downloads {
     text-align: center;
 }
 
-/* Plugin Grid */
-.plugin-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
+.downloads .instructions {
+    color: var(--color-text-muted);
+    margin-bottom: 2rem;
 }
 
-.plugin-card {
-    display: block;
-    padding: 2rem;
+.download-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.download-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1.5rem 2rem;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 12px;
     text-decoration: none;
     color: var(--color-text);
     transition: all 0.2s ease;
+    min-width: 180px;
 }
 
-.plugin-card:hover {
+.download-btn:hover {
     border-color: var(--color-accent);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 8px 24px rgba(200, 120, 80, 0.15);
 }
 
-.plugin-card h2 {
-    font-size: 1.75rem;
-    font-weight: 700;
-    margin-bottom: 0.75rem;
-    text-align: left;
+.download-btn .icon {
+    width: 32px;
+    height: 32px;
 }
 
-.plugin-card .description {
+.download-btn.windows .icon { color: var(--color-windows); }
+.download-btn.macos .icon { color: var(--color-macos); }
+.download-btn.linux .icon { color: var(--color-linux); }
+
+.download-btn .platform {
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+.download-btn .format {
+    font-size: 0.75rem;
     color: var(--color-text-muted);
-    font-size: 0.95rem;
-    margin-bottom: 1rem;
-    line-height: 1.5;
 }
 
-.plugin-card .version {
+/* Features */
+.features + .features {
+    margin-top: -2.5rem;
+}
+
+.features ul {
+    list-style: none;
+    display: grid;
+    gap: 1rem;
+}
+
+.features li {
+    padding: 1rem 1.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding-left: 3rem;
+    position: relative;
+}
+
+.features li::before {
+    content: "";
+    position: absolute;
+    left: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    background: var(--color-accent);
+    border-radius: 50%;
+}
+
+/* Signal Flow */
+.signal-flow-link {
     display: inline-block;
-    padding: 0.2rem 0.6rem;
+    padding: 0.75rem 1.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-accent);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.signal-flow-link:hover {
+    border-color: var(--color-accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(200, 120, 80, 0.15);
+}
+
+/* Installation */
+.install-instructions {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.platform-install {
+    padding: 1.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+}
+
+.platform-install h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--color-accent);
+}
+
+.platform-install p {
+    color: var(--color-text-muted);
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.platform-install code,
+code {
+    display: block;
+    padding: 0.75rem 1rem;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: 9999px;
-    font-size: 0.8rem;
-    color: var(--color-accent);
-    font-weight: 500;
+    border-radius: 6px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+}
+
+p code {
+    display: inline;
+    padding: 0.125rem 0.375rem;
+}
+
+/* Overview */
+.overview p {
+    color: var(--color-text-muted);
+    font-size: 1.05rem;
+    margin-bottom: 1rem;
 }
 
 /* Footer */
@@ -147,7 +285,12 @@ footer .copyright {
         font-size: 2.5rem;
     }
 
-    .plugin-grid {
-        grid-template-columns: 1fr;
+    .download-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .download-btn {
+        min-width: auto;
     }
 }

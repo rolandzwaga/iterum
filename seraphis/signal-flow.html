@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seraphis - Signal Flow Diagram</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-bg: #0a0a0f;
+            --color-surface: #12121a;
+            --color-border: #2a2a3a;
+            --color-text: #e8e8f0;
+            --color-text-muted: #8888a0;
+            --color-accent: #a855f7;
+            --color-accent-hover: #c084fc;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .breadcrumb {
+            font-size: 0.875rem;
+        }
+
+        .breadcrumb a {
+            color: var(--color-text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .breadcrumb a:hover {
+            color: var(--color-accent);
+        }
+
+        .breadcrumb .separator {
+            color: var(--color-border);
+            margin: 0 0.5rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--color-text) 0%, var(--color-accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .toolbar {
+            padding: 0.75rem 2rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: var(--color-surface);
+            flex-shrink: 0;
+        }
+
+        .toolbar button {
+            padding: 0.375rem 0.75rem;
+            background: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            color: var(--color-text);
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toolbar button:hover {
+            border-color: var(--color-accent);
+            color: var(--color-accent);
+        }
+
+        .toolbar .zoom-info {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            margin-left: auto;
+        }
+
+        #diagram-container {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            cursor: grab;
+        }
+
+        #diagram-container.grabbing {
+            cursor: grabbing;
+        }
+
+        #diagram {
+            position: absolute;
+            transform-origin: 0 0;
+        }
+
+        #diagram svg {
+            display: block;
+        }
+
+        #loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--color-text-muted);
+            font-size: 1.1rem;
+        }
+
+        #error {
+            display: none;
+            padding: 2rem;
+            color: #f87171;
+            text-align: center;
+        }
+
+        @media (max-width: 640px) {
+            .header { padding: 1rem; gap: 1rem; }
+            .toolbar { padding: 0.5rem 1rem; }
+            h1 { font-size: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <nav class="breadcrumb">
+            <a href="./">Seraphis</a>
+            <span class="separator">/</span>
+        </nav>
+        <h1>Signal Flow Diagram</h1>
+    </div>
+
+    <div class="toolbar">
+        <button id="zoom-in" title="Zoom in">+</button>
+        <button id="zoom-out" title="Zoom out">&minus;</button>
+        <button id="zoom-fit" title="Fit to screen">Fit</button>
+        <button id="zoom-reset" title="Reset to 100%">1:1</button>
+        <span class="zoom-info" id="zoom-level">100%</span>
+    </div>
+
+    <div id="diagram-container">
+        <div id="loading">Loading diagram&hellip;</div>
+        <div id="error"></div>
+        <div id="diagram"></div>
+    </div>
+
+    <script type="module">
+        import { instance } from "https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/+esm";
+
+        const dotSource = `digraph SeraphisSignalFlow {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=11;
+    node [fontname="Helvetica", fontsize=10, style=filled];
+    edge [fontname="Helvetica", fontsize=8];
+    compound=true;
+    newrank=true;
+
+    // =========================================================================
+    // COLOR LEGEND
+    // =========================================================================
+    subgraph cluster_legend {
+        label="Legend";
+        style=rounded;
+        color="#888888";
+        fontsize=12;
+        fontcolor="#444444";
+        bgcolor="#FAFAFA";
+
+        node [shape=plaintext, fillcolor="#FAFAFA"];
+        leg [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+            <TR><TD BGCOLOR="#4A90D9" WIDTH="20"> </TD><TD ALIGN="LEFT">Audio signal path</TD></TR>
+            <TR><TD BGCOLOR="#E8A838" WIDTH="20"> </TD><TD ALIGN="LEFT">Life modulators (autonomous, never repeating)</TD></TR>
+            <TR><TD BGCOLOR="#6BBF6B" WIDTH="20"> </TD><TD ALIGN="LEFT">Macro matrix routing</TD></TR>
+            <TR><TD BGCOLOR="#9B6BBF" WIDTH="20"> </TD><TD ALIGN="LEFT">Aether space &amp; effects</TD></TR>
+            <TR><TD BGCOLOR="#AAAAAA" WIDTH="20"> </TD><TD ALIGN="LEFT">Host tempo / seed (control)</TD></TR>
+            <TR><TD>───▶</TD><TD ALIGN="LEFT">Audio flow</TD></TR>
+            <TR><TD>- - ▶</TD><TD ALIGN="LEFT">Modulation / control</TD></TR>
+            </TABLE>
+        >];
+    }
+
+    // =========================================================================
+    // INPUT SOURCES
+    // =========================================================================
+    subgraph cluster_input {
+        label="Input";
+        style=rounded;
+        color="#666666";
+        bgcolor="#F0F0F0";
+
+        midi_in [label="MIDI\\n(Notes, Velocity)", shape=house, fillcolor="#CCDDEE"];
+        host_tempo [label="Host Tempo\\n(BPM, Transport)", shape=house, fillcolor="#CCDDEE"];
+        seed [label="Seed (1-16)\\nreseeds every RNG:\\ncloud, morph, body, atmos,\\norbit, Aether, delay, wander", shape=house, fillcolor="#CCDDEE"];
+    }
+
+    // =========================================================================
+    // VOICE MANAGEMENT
+    // =========================================================================
+    voice_alloc [label="Voice Allocation\\n(1-16 voices, default 8)\\nsilent voices keep their\\nlife modulators running", shape=octagon, fillcolor="#7BAFD4"];
+
+    midi_in -> voice_alloc [penwidth=2, label="note on/off"];
+
+    // =========================================================================
+    // PER-VOICE PROCESSING (x16)
+    // =========================================================================
+    subgraph cluster_voice {
+        label="SeraphisVoice (x16)  —  64-Sample Control Chunks";
+        style=rounded;
+        color="#4A90D9";
+        bgcolor="#EDF4FC";
+        fontsize=13;
+        fontcolor="#2A5080";
+        penwidth=2;
+
+        // --- Spectral evolution layer (control-rate, no audio) ---
+        subgraph cluster_morph {
+            label="Spectral Morph Engine (control-rate — processes no audio)";
+            style=dashed;
+            color="#E8A838";
+            bgcolor="#FDF3E0";
+
+            morph_states [label="Spectral States\\n4 slots (A-D)\\nfactory: Sine Stack, Bell, Choir,\\nGlass, Breath, Hollow, Metal,\\nOrgan, Vowel, Shimmer\\nor hand-authored spectra", shape=box, fillcolor="#F5C878"];
+            morph_engine [label="Morph Travel\\nExternal position or\\nautonomous spline trajectory\\ntempo-syncable\\n+ Bloom (highs lag lows)", shape=box, fillcolor="#F5C878"];
+            entropy_proc [label="Entropy Processor\\nOU jitter bank:\\namp jitter, phase smear,\\npartial death &amp; rebirth", shape=ellipse, fillcolor="#F5C878"];
+
+            morph_states -> morph_engine [style=dashed, color="#C88820"];
+            entropy_proc -> morph_engine [style=dashed, color="#C88820"];
+        }
+
+        // --- Harmonic cloud ---
+        cloud [label="Harmonic Cloud\\n64 additive partials, stereo\\nrichness, inharmonicity, tilt,\\nspectral gravity, stereo spread\\nper-partial attack/decay envelopes\\n+ per-partial pan/mask overrides", shape=box, fillcolor="#6AABEA"];
+
+        cloud_drift [label="Per-Partial Drift\\n64 OU lanes, 0-50 cents\\n+ mutation bank (t=15s)", shape=ellipse, fillcolor="#F5C878"];
+
+        voice_env [label="Voice Envelope\\n(gain on the cloud only —\\nnothing downstream is gated)\\nStandard or Growth\\n(slow logistic swell, 1-60 s)", shape=box, fillcolor="#6AABEA"];
+
+        // --- Continuous body ---
+        subgraph cluster_body {
+            label="Continuous Body";
+            style=dashed;
+            color="#4A90D9";
+            bgcolor="#DDE8F5";
+
+            body_agc [label="Input AGC + Drive\\n(pre-resonator,\\non the excitation)", shape=box, fillcolor="#6AABEA"];
+            body_res [label="Modal Resonator\\nGlass / Strings / Metal Plate /\\nChamber / Ice\\nresonance, damping, key track\\n(bypassable, equal-power)", shape=box, fillcolor="#6AABEA"];
+            body_wash [label="Decay Cloud Wash\\ndelay + diffusion + damping loop\\n0.1-30 s, parallel to the\\nresonator (equal-power blend)", shape=box, fillcolor="#6AABEA"];
+            body_mix [label="Body Mix\\n(dry cloud vs.\\nresonated body)", shape=box, fillcolor="#6AABEA"];
+
+            body_agc -> body_res [penwidth=2, color="#2A5080"];
+            body_res -> body_wash [penwidth=2, color="#2A5080", label="parallel\\ntap"];
+            body_res -> body_mix [penwidth=2, color="#2A5080"];
+            body_wash -> body_mix [penwidth=2, color="#2A5080"];
+        }
+
+        // --- Granular atmosphere (parallel) ---
+        subgraph cluster_atmos {
+            label="Granular Atmosphere (parallel layer, wet only)";
+            style=dashed;
+            color="#4A90D9";
+            bgcolor="#DDE8F5";
+
+            atmos_capture [label="Capture Ring\\n(records the post-body\\nsignal continuously)", shape=box, fillcolor="#6AABEA"];
+            atmos_grains [label="Grain Engine\\n0.1-20 grains/s, 0.05-30 s each\\nposition, pitch (+/-24 st), jitter,\\npan spread, decorrelation, blur,\\n6 window shapes, freeze", shape=box, fillcolor="#6AABEA"];
+            grain_drift [label="Grain Drift Lanes\\nper-grain OU pitch/position\\ndrift, 0-12 st", shape=ellipse, fillcolor="#F5C878"];
+
+            atmos_capture -> atmos_grains [penwidth=2, color="#2A5080"];
+            grain_drift -> atmos_grains [style=dashed, color="#C88820"];
+        }
+
+        voice_sum [label="Voice Bus\\nbody + atmosphere", shape=box, fillcolor="#6AABEA"];
+
+        // --- Spatial stage ---
+        subgraph cluster_spatial {
+            label="Spatial Stage";
+            style=dashed;
+            color="#4A90D9";
+            bgcolor="#DDE8F5";
+
+            orbit [label="Orbit Modulator\\ndepth, rate (0.01-0.5 Hz),\\naxis coupling, growth", shape=ellipse, fillcolor="#F5C878"];
+            spatial [label="Azimuth + Width\\nequal-power balance (orbit x)\\nvoice width 50-150% (orbit y)\\nMid/Side matrix", shape=box, fillcolor="#6AABEA"];
+
+            orbit -> spatial [style=dashed, color="#C88820", label="x = azimuth\\ny = width"];
+        }
+
+        // --- Audio flow within the voice ---
+        morph_engine -> cloud [style=dashed, color="#C88820", penwidth=2, label="target spectrum\\n(ratios + amplitudes)"];
+        cloud_drift -> cloud [style=dashed, color="#C88820"];
+        cloud -> voice_env [penwidth=2, color="#2A5080"];
+        voice_env -> body_agc [penwidth=2, color="#2A5080"];
+        body_mix -> atmos_capture [penwidth=2, color="#2A5080"];
+        body_mix -> voice_sum [penwidth=2, color="#2A5080"];
+        atmos_grains -> voice_sum [penwidth=2, color="#2A5080", label="wet\\ntexture"];
+        voice_sum -> spatial [penwidth=2, color="#2A5080"];
+    }
+
+    voice_alloc -> morph_states [lhead=cluster_voice, penwidth=2, label="note on/off\\nper voice"];
+
+    // =========================================================================
+    // ENGINE SUMMING
+    // =========================================================================
+    engine_sum [label="Voice Summation\\n16 voices → Stereo L/R\\n× 1/√polyphony gain\\n+ per-sample finiteness guard", shape=box, fillcolor="#4A90D9", fontcolor="white"];
+
+    spatial -> engine_sum [penwidth=2, color="#2A5080"];
+
+    // =========================================================================
+    // AETHER — THE SPACE ENGINE (in the path, before the effects)
+    // =========================================================================
+    subgraph cluster_aether {
+        label="Aether  —  The Space Engine (in the signal path)";
+        style=rounded;
+        color="#9B6BBF";
+        bgcolor="#F3ECF9";
+        fontsize=13;
+        fontcolor="#6B3B9F";
+        penwidth=2;
+
+        aether_predelay [label="Pre-Delay\\n0-200 ms", shape=box, fillcolor="#C49EE0"];
+        aether_diffuser [label="Input Diffuser\\n(density)", shape=box, fillcolor="#C49EE0"];
+        aether_fdn [label="FDN Reverb Core\\nN modulated delay lines\\ndecay 0.5-60 s, damping,\\ndimensionality, freeze\\n(latched, energy-conserving)", shape=box, fillcolor="#C49EE0"];
+        aether_shimmer [label="Shimmer Taps\\n+12 st and +7 st returns\\nfed back into the tail", shape=box, fillcolor="#C49EE0"];
+        aether_bloom [label="Harmonic Bloom\\n32-slot sympathetic\\nresonator bank tuned to\\nheld notes", shape=box, fillcolor="#C49EE0"];
+        aether_width [label="M/S Width\\n(wet only)", shape=box, fillcolor="#C49EE0"];
+        aether_specdiff [label="Spectral Diffusion\\nSTFT smear (FFT 1024)\\n— the plugin's constant\\n1024-sample latency", shape=box, fillcolor="#C49EE0"];
+        aether_mix [label="Dry / Wet Mix\\n(equal-power)", shape=box, fillcolor="#C49EE0"];
+
+        // Internal life modulators
+        aether_breath [label="Breathing Modulator\\nsize breath (20 s cycle)", shape=ellipse, fillcolor="#F5C878"];
+        aether_tide [label="Tidal Modulator\\ndimensionality tide (30 s)", shape=ellipse, fillcolor="#F5C878"];
+        aether_drift [label="Brownian Drift\\nper-line delay jitter", shape=ellipse, fillcolor="#F5C878"];
+
+        aether_predelay -> aether_diffuser [penwidth=2, color="#6B3B9F"];
+        aether_diffuser -> aether_fdn [penwidth=2, color="#6B3B9F"];
+        aether_fdn -> aether_shimmer [penwidth=2, color="#6B3B9F", dir=both, label="1 chunk\\nlate"];
+        aether_fdn -> aether_bloom [penwidth=2, color="#6B3B9F", dir=both, label="tap sum /\\nre-injection"];
+        aether_fdn -> aether_width [penwidth=2, color="#6B3B9F", label="output taps\\n(pre-damping)"];
+        aether_width -> aether_specdiff [penwidth=2, color="#6B3B9F"];
+        aether_specdiff -> aether_mix [penwidth=2, color="#6B3B9F"];
+
+        aether_breath -> aether_fdn [style=dashed, color="#C88820", label="size"];
+        aether_tide -> aether_fdn [style=dashed, color="#C88820", label="dimension"];
+        aether_drift -> aether_fdn [style=dashed, color="#C88820", label="line\\nlengths"];
+    }
+
+    engine_sum -> aether_predelay [penwidth=2, color="#2A5080", label="dry (also fed\\nforward to mix)"];
+
+    master_gain [label="Master Gain\\n(0-200%, on the reverb\\nreturn, before the FX)", shape=box, fillcolor="#888888", fontcolor="white"];
+
+    aether_mix -> master_gain [penwidth=2, color="#2A5080"];
+
+    // =========================================================================
+    // EFFECTS STAGE
+    // =========================================================================
+    subgraph cluster_fx {
+        label="Effects Stage";
+        style=rounded;
+        color="#9B6BBF";
+        bgcolor="#F3ECF9";
+        fontsize=13;
+        fontcolor="#6B3B9F";
+        penwidth=2;
+
+        subgraph cluster_delay {
+            label="Spectral Delay (parallel send, per-bin FFT)";
+            style=dashed;
+            color="#9B6BBF";
+            bgcolor="#EAE0F2";
+
+            spec_delay [label="Spectral Delay\\neach frequency bin delayed\\nindependently: time 0-2 s,\\nspread across bins (3 directions),\\ntilt-compensated feedback (≤0.95),\\ndiffusion, width, tempo sync", shape=box, fillcolor="#C49EE0"];
+            spec_freeze [label="Spectral Freeze\\n(lives inside the delay:\\ncaptures and holds the\\ncurrent spectrum)", shape=box, fillcolor="#C49EE0"];
+
+            spec_freeze -> spec_delay [style=dashed, color="#6B3B9F"];
+        }
+
+        fx_return [label="Send Return\\n(delay mix)", shape=box, fillcolor="#C49EE0"];
+
+        subgraph cluster_stereo {
+            label="Stereo Stage";
+            style=dashed;
+            color="#9B6BBF";
+            bgcolor="#EAE0F2";
+
+            stereo_stage [label="Global M/S Width\\n0-200% + equal-power\\nazimuth balance", shape=box, fillcolor="#C49EE0"];
+            width_wander [label="Width Wander\\nBrownian drift", shape=ellipse, fillcolor="#F5C878"];
+            azimuth_wander [label="Azimuth Wander\\nBrownian drift", shape=ellipse, fillcolor="#F5C878"];
+
+            width_wander -> stereo_stage [style=dashed, color="#C88820"];
+            azimuth_wander -> stereo_stage [style=dashed, color="#C88820"];
+        }
+
+        spec_delay -> fx_return [penwidth=2, color="#6B3B9F"];
+    }
+
+    master_gain -> spec_delay [penwidth=2, color="#2A5080", label="send"];
+    master_gain -> fx_return [penwidth=2, color="#2A5080", label="dry"];
+    fx_return -> stereo_stage [penwidth=2, color="#2A5080"];
+
+    // =========================================================================
+    // OUTPUT STAGE
+    // =========================================================================
+    subgraph cluster_output {
+        label="Output Stage (always last)";
+        style=rounded;
+        color="#666666";
+        bgcolor="#F0F0F0";
+
+        saturator [label="Tape Saturator\\n(the Soft Limit switch:\\nON = warm ceiling,\\nOFF = clean)", shape=box, fillcolor="#888888", fontcolor="white"];
+        limiter [label="True-Peak Limiter\\n(ALWAYS on —\\nno bypass path)", shape=box, fillcolor="#888888", fontcolor="white"];
+        output [label="Audio Output\\nL / R", shape=invhouse, fillcolor="#CCDDEE"];
+
+        saturator -> limiter [penwidth=2];
+        limiter -> output [penwidth=2];
+    }
+
+    stereo_stage -> saturator [penwidth=2, color="#2A5080"];
+
+    // =========================================================================
+    // MACRO MATRIX
+    // =========================================================================
+    subgraph cluster_macros {
+        label="Macro Matrix  —  5 Macros x 32 Routes, 3 Target Owners";
+        style=rounded;
+        color="#6BBF6B";
+        bgcolor="#E5F5E5";
+        fontsize=13;
+        fontcolor="#3A8F3A";
+        penwidth=2;
+
+        m_dream [label="DREAM\\npurifies harmonics,\\ndeepens the space", shape=ellipse, fillcolor="#8ED08E"];
+        m_bloom [label="BLOOM\\nopens upper partials,\\nshimmer and width", shape=ellipse, fillcolor="#8ED08E"];
+        m_dissolve [label="DISSOLVE\\nmelts into granular\\nfog, slower envelopes", shape=ellipse, fillcolor="#8ED08E"];
+        m_gravity [label="GRAVITY\\n(bipolar)\\nair ↔ stone", shape=ellipse, fillcolor="#8ED08E"];
+        m_entropy [label="ENTROPY\\ndecays order into\\njitter and detune", shape=ellipse, fillcolor="#8ED08E"];
+
+        macro_matrix [label="SeraphisMacroMatrix\\n\\ndeep parameters set the base,\\nmacros add travel on top\\n(clamped by each target setter)\\n\\n19 voice targets\\n8 Aether targets\\n2 effects targets", shape=diamond, fillcolor="#8ED08E"];
+
+        m_dream -> macro_matrix [style=dashed, color="#3A8F3A"];
+        m_bloom -> macro_matrix [style=dashed, color="#3A8F3A"];
+        m_dissolve -> macro_matrix [style=dashed, color="#3A8F3A"];
+        m_gravity -> macro_matrix [style=dashed, color="#3A8F3A"];
+        m_entropy -> macro_matrix [style=dashed, color="#3A8F3A"];
+    }
+
+    macro_matrix -> cloud [style=bold, color="#3A8F3A", label="→ all voices:\\ncloud, morph, body,\\natmos, orbit, envelope", constraint=false, lhead=cluster_voice];
+    macro_matrix -> aether_fdn [style=bold, color="#3A8F3A", label="mix, size, width,\\nshimmer, bloom,\\nbreath, tide", constraint=false, lhead=cluster_aether];
+    macro_matrix -> spec_delay [style=bold, color="#3A8F3A", label="delay send\\n(Dissolve)", constraint=false];
+    macro_matrix -> stereo_stage [style=bold, color="#3A8F3A", label="wander depth\\n(Entropy)", constraint=false];
+
+    // =========================================================================
+    // CROSS-SYSTEM CONNECTIONS
+    // =========================================================================
+    host_tempo -> morph_engine [style=dashed, color="#888888", label="travel sync\\n(1/16 - 8 bars)"];
+    host_tempo -> spec_delay [style=dashed, color="#888888", label="delay sync\\n(1/64T - 1/8T)"];
+    seed -> cloud_drift [style=dashed, color="#888888"];
+    seed -> aether_drift [style=dashed, color="#888888"];
+    seed -> width_wander [style=dashed, color="#888888"];
+
+    // =========================================================================
+    // PROCESSING NOTES
+    // =========================================================================
+    subgraph cluster_rates {
+        label="Processing Notes";
+        style=rounded;
+        color="#888888";
+        bgcolor="#FAFAFA";
+        node [shape=plaintext, fillcolor="#FAFAFA"];
+
+        rates [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="4">
+            <TR><TD ALIGN="LEFT"><B>Control rate:</B></TD><TD ALIGN="LEFT">64-sample chunks (voice, body, Aether); morph drives the cloud's target spectrum, it processes no audio</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Macro matrix:</B></TD><TD ALIGN="LEFT">applied every slice on the audio thread; neutral macros contribute exactly zero</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Voice envelope:</B></TD><TD ALIGN="LEFT">gates the cloud (excitation) only — body wash, grains and the Aether tail all ring past note-off</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Life modulators:</B></TD><TD ALIGN="LEFT">all OU / Brownian processes; they advance even for silent voices and an idle reverb, so nothing ever resets to a pose</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Latency:</B></TD><TD ALIGN="LEFT">constant 1024 samples — the Aether spectral-diffusion STFT; never re-announced</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Chain order:</B></TD><TD ALIGN="LEFT">voices → Aether → master gain → spectral delay send → stereo stage → saturator → true-peak limiter</TD></TR>
+            <TR><TD ALIGN="LEFT"><B>Seed:</B></TD><TD ALIGN="LEFT">one dropdown reseeds every stochastic process (per-voice salts × cloud/morph/body/atmos/orbit + Aether + FX)</TD></TR>
+            </TABLE>
+        >];
+    }
+}
+`;
+
+        const container = document.getElementById("diagram-container");
+        const diagramEl = document.getElementById("diagram");
+        const loadingEl = document.getElementById("loading");
+        const errorEl = document.getElementById("error");
+        const zoomLevelEl = document.getElementById("zoom-level");
+
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let startX, startY;
+
+        function updateTransform() {
+            diagramEl.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            zoomLevelEl.textContent = Math.round(scale * 100) + "%";
+        }
+
+        function fitToScreen() {
+            const svg = diagramEl.querySelector("svg");
+            if (!svg) return;
+            const svgW = svg.viewBox.baseVal.width || svg.width.baseVal.value;
+            const svgH = svg.viewBox.baseVal.height || svg.height.baseVal.value;
+            const cW = container.clientWidth;
+            const cH = container.clientHeight;
+            scale = Math.min(cW / svgW, cH / svgH, 1) * 0.95;
+            panX = (cW - svgW * scale) / 2;
+            panY = (cH - svgH * scale) / 2;
+            updateTransform();
+        }
+
+        // Zoom controls
+        document.getElementById("zoom-in").addEventListener("click", () => {
+            scale = Math.min(scale * 1.25, 5);
+            updateTransform();
+        });
+        document.getElementById("zoom-out").addEventListener("click", () => {
+            scale = Math.max(scale / 1.25, 0.1);
+            updateTransform();
+        });
+        document.getElementById("zoom-fit").addEventListener("click", fitToScreen);
+        document.getElementById("zoom-reset").addEventListener("click", () => {
+            scale = 1; panX = 0; panY = 0;
+            updateTransform();
+        });
+
+        // Mouse wheel zoom
+        container.addEventListener("wheel", (e) => {
+            e.preventDefault();
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            const newScale = Math.min(Math.max(scale * factor, 0.1), 5);
+            panX = mouseX - (mouseX - panX) * (newScale / scale);
+            panY = mouseY - (mouseY - panY) * (newScale / scale);
+            scale = newScale;
+            updateTransform();
+        }, { passive: false });
+
+        // Pan with mouse drag
+        container.addEventListener("mousedown", (e) => {
+            isDragging = true;
+            startX = e.clientX - panX;
+            startY = e.clientY - panY;
+            container.classList.add("grabbing");
+        });
+        window.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            panX = e.clientX - startX;
+            panY = e.clientY - startY;
+            updateTransform();
+        });
+        window.addEventListener("mouseup", () => {
+            isDragging = false;
+            container.classList.remove("grabbing");
+        });
+
+        // Touch support for pan
+        let lastTouch = null;
+        container.addEventListener("touchstart", (e) => {
+            if (e.touches.length === 1) {
+                lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        });
+        container.addEventListener("touchmove", (e) => {
+            if (e.touches.length === 1 && lastTouch) {
+                e.preventDefault();
+                const dx = e.touches[0].clientX - lastTouch.x;
+                const dy = e.touches[0].clientY - lastTouch.y;
+                panX += dx;
+                panY += dy;
+                lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                updateTransform();
+            }
+        }, { passive: false });
+        container.addEventListener("touchend", () => { lastTouch = null; });
+
+        // Render
+        try {
+            const viz = await instance();
+            const svg = viz.renderSVGElement(dotSource);
+            svg.style.width = "auto";
+            svg.style.height = "auto";
+            loadingEl.style.display = "none";
+            diagramEl.appendChild(svg);
+            fitToScreen();
+        } catch (err) {
+            loadingEl.style.display = "none";
+            errorEl.style.display = "block";
+            errorEl.textContent = "Failed to render diagram: " + err.message;
+        }
+    </script>
+</body>
+</html>
