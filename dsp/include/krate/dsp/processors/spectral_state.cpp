@@ -50,6 +50,24 @@ namespace Krate::DSP {
     case SpectralStateId::Breath:
         label = "Breath";
         break;
+    case SpectralStateId::Hollow:
+        count = 32;
+        label = "Hollow";
+        break;
+    case SpectralStateId::Metal:
+        label = "Metal";
+        break;
+    case SpectralStateId::Organ:
+        count = 9;
+        label = "Organ";
+        break;
+    case SpectralStateId::Vowel:
+        label = "Vowel";
+        break;
+    case SpectralStateId::Shimmer:
+        count = 16;
+        label = "Shimmer";
+        break;
     }
     s.numPartials = count;
 
@@ -64,9 +82,28 @@ namespace Krate::DSP {
         case SpectralStateId::Glass:
             ratio = n * (1.0f + detail::factory::kGlassStretch * n);
             break;
+        case SpectralStateId::Hollow:
+            // 1-based authored index k = i + 1: odd harmonics 1, 3, 5, ... 63.
+            ratio = 2.0f * n - 1.0f;
+            break;
+        case SpectralStateId::Metal:
+            ratio = n * std::sqrt(1.0f + detail::factory::kMetalB * n * n);
+            break;
+        case SpectralStateId::Organ:
+            ratio = detail::factory::kOrganRatios[static_cast<std::size_t>(i)];
+            break;
+        case SpectralStateId::Shimmer:
+            if (i == 0) {
+                ratio = 1.0f; // Faint fundamental anchor.
+            } else {
+                const float m = detail::factory::kShimmerStep * n;
+                ratio = m * (1.0f + detail::factory::kShimmerStretch * m);
+            }
+            break;
         case SpectralStateId::SineStack:
         case SpectralStateId::Choir:
         case SpectralStateId::Breath:
+        case SpectralStateId::Vowel:
             break;
         }
         s.ratios[static_cast<std::size_t>(i)] = ratio;
@@ -74,8 +111,8 @@ namespace Krate::DSP {
 
     // (2) FR-041 geometric continuation over the unauthored slots.
     // The `count < 2` arm is deviation D9's `j + 1` rule and applies for EVERY
-    // j, not only j < 2; no factory state reaches it (the sparsest is Bell at
-    // 24), but the recurrence is kept identical to the engine's on purpose.
+    // j, not only j < 2; no factory state reaches it (the sparsest is Organ at
+    // 9), but the recurrence is kept identical to the engine's on purpose.
     for (auto j = static_cast<std::size_t>(count); j < SpectralState::kStatePartials; ++j) {
         float grown = 0.0f;
         if (count >= 2) {
@@ -124,6 +161,37 @@ namespace Krate::DSP {
                 * (1.0f
                    - detail::factory::kBreathLowDepth
                          * std::exp(-(n - 1.0f) / detail::factory::kBreathLowScale));
+            break;
+        case SpectralStateId::Hollow:
+            // amp_k = (2k - 1)^-kHollowExp -- flat-ish odd spectrum.
+            amplitude = std::pow(2.0f * n - 1.0f, -detail::factory::kHollowExp);
+            break;
+        case SpectralStateId::Metal:
+            // Inverted comb: every THIRD partial dominant, the rest attenuated.
+            amplitude = std::pow(n, -0.5f)
+                        * (((i + 1) % 3 == 0) ? 1.0f : detail::factory::kMetalCombAtten);
+            break;
+        case SpectralStateId::Organ:
+            amplitude = detail::factory::kOrganAmps[static_cast<std::size_t>(i)];
+            break;
+        case SpectralStateId::Vowel: {
+            float shape = detail::factory::kVowelFloor;
+            for (std::size_t k = 0; k < detail::factory::kVowelCentres.size(); ++k) {
+                const float offset = n - detail::factory::kVowelCentres[k];
+                const float sigma = detail::factory::kVowelSigmas[k];
+                shape += detail::factory::kVowelGains[k]
+                         * std::exp(-(offset * offset) / (2.0f * sigma * sigma));
+            }
+            amplitude = std::pow(n, -0.9f) * shape;
+            break;
+        }
+        case SpectralStateId::Shimmer:
+            if (i == 0) {
+                amplitude = detail::factory::kShimmerAnchorAmp;
+            } else {
+                const float m = detail::factory::kShimmerStep * n;
+                amplitude = std::pow(m, -detail::factory::kShimmerExp);
+            }
             break;
         }
         s.amplitudes[static_cast<std::size_t>(i)] = amplitude;

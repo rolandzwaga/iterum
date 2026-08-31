@@ -35,8 +35,11 @@
 #include "seraphis_preset_defs.h"  // ${CMAKE_SOURCE_DIR}/tools is on this target's
                                    // include path (tests/CMakeLists.txt:104).
 #include "seraphis_test_fixture.h"
+#include "ui/edit_message.h"  // the [partials] wire format - regenerateComponentState's
+                              // authored-partials drive (FR-029 twin of the generator)
 
 #include "public.sdk/source/common/memorystream.h"
+#include "public.sdk/source/vst/hosting/hostclasses.h"  // HostMessage for that drive
 
 #include <krate/dsp/core/db_utils.h>              // T011 - detail::isNaN (:54) /
                                                   // isInf (:175), the BIT-PATTERN
@@ -199,10 +202,11 @@ constexpr std::size_t kPerCategoryTarget = 6;
 // value that constant happened to hold.
 constexpr std::size_t kComponentChunkBytes = 2868;
 
-// T009 / FR-006: kCurrentStateVersion (plugin_ids.h:27), again as a literal. The
-// Non-goals of this phase freeze it at 3; reading the shipped constant back would
-// make this clause pass for a version this phase never sanctioned.
-constexpr std::int32_t kExpectedStateVersion = 3;
+// T009 / FR-006: kCurrentStateVersion (plugin_ids.h), again as a literal -
+// reading the shipped constant back would make this clause pass for any value
+// the constant happened to hold. The palette widening moved it 3 -> 4 (layout
+// byte-identical to v3; forward-protection only).
+constexpr std::int32_t kExpectedStateVersion = 4;
 
 // T009 / SC-003: the container magic, read straight off the file.
 //
@@ -337,8 +341,9 @@ constexpr std::size_t kGrainEnvelopeFloor = 3;
 // between a message T014 can author against and one it cannot.
 const std::vector<std::string> kBodyMaterialNames{"Glass", "Strings", "Metal Plate", "Chamber",
                                                   "Ice"};                     // :198-200
-const std::vector<std::string> kSpectralStateNames{"Sine Stack", "Bell", "Choir", "Glass",
-                                                   "Breath"};                 // :178-180
+const std::vector<std::string> kSpectralStateNames{
+    "Sine Stack", "Bell",  "Choir", "Glass", "Breath",
+    "Hollow",     "Metal", "Organ", "Vowel", "Shimmer"};  // :178-185
 const std::vector<std::string> kTravelModeNames{"External", "Spline"};        // :118-119
 const std::vector<std::string> kEnvelopeModeNames{"Standard", "Growth"};      // :190-191
 const std::vector<std::string> kGrainEnvelopeNames{"Hann",     "Trapezoid", "Sine",
@@ -350,7 +355,7 @@ const std::vector<std::string> kGrainEnvelopeNames{"Hann",     "Trapezoid", "Sin
 // them for exactly that reason (tasks.md T021: "Reuse the SAME counters T011
 // case 4 defines - the two must not drift apart"):
 //
-//   * Seraphis_FactoryPresets_PartialsBlockIsInert (T011) reconciles its
+//   * Seraphis_FactoryPresets_PartialsBlockMatchesDefs (T011) reconciles its
 //     finiteness enumeration against it;
 //   * Seraphis_FactoryPresets_TreeMatchesGenerator (T021) reconciles the union of
 //     its integer comparator (clause 4) and its float comparator (clause 5)
@@ -531,10 +536,11 @@ TEST_CASE("Seraphis_PresetSupport_DecodeConsumesWholeStream", "[seraphis][preset
     INFO("decodePresetState: " << why);
     REQUIRE(decoded);
 
-    // kCurrentStateVersion (plugin_ids.h:27). Written as the LITERAL 3 on
+    // kCurrentStateVersion (plugin_ids.h). Written as the LITERAL 4 on
     // purpose - reading the shipped constant back would pass for any value the
-    // constant happened to hold, and this phase's Non-goals freeze it at 3.
-    REQUIRE(st.version == 3);
+    // constant happened to hold. 4 since the palette widening (byte-identical
+    // layout; forward-protection only).
+    REQUIRE(st.version == 4);
 
     // FR-006a. A fresh Processor has never seen an EditMessage, so both
     // bitmasks are zero at the source (processor.cpp:1911-1914). Asserting it
@@ -845,7 +851,7 @@ TEST_CASE("Seraphis_FactoryPresets_StreamIsCurrentVersion", "[seraphis][preset]"
     INFO("component chunks of the wrong length: " << joinPaths(wrongLength));
     REQUIRE(wrongLength.empty());
 
-    INFO("component chunks that are not version 3: " << joinPaths(wrongVersion));
+    INFO("component chunks that are not version 4: " << joinPaths(wrongVersion));
     REQUIRE(wrongVersion.empty());
 }
 
@@ -1240,6 +1246,8 @@ TEST_CASE("Seraphis_FactoryPresets_CoversShippedSurface", "[seraphis][preset]") 
     std::set<bool> delaySync;         // ID 1418
     std::set<bool> resonatorBypass;   // ID 812
     std::set<bool> inputAgc;          // ID 811
+    bool maskAuthored = false;        // [partials] maskBits != 0 in >= 1 preset
+    bool panAuthored = false;         // [partials] panOverrideBits != 0 in >= 1 preset
 
     std::vector<std::string> failures;
     forEachDecodedPreset(
@@ -1267,6 +1275,8 @@ TEST_CASE("Seraphis_FactoryPresets_CoversShippedSurface", "[seraphis][preset]") 
             delaySync.insert(st.effects.delaySync.load(kRlx));
             resonatorBypass.insert(st.body.resonatorBypass.load(kRlx));
             inputAgc.insert(st.body.inputAgc.load(kRlx));
+            maskAuthored = maskAuthored || (st.maskBits != 0u);
+            panAuthored = panAuthored || (st.panOverrideBits != 0u);
         });
 
     INFO("presets that could not be parsed or decoded: " << joinPaths(failures));
@@ -1342,6 +1352,18 @@ TEST_CASE("Seraphis_FactoryPresets_CoversShippedSurface", "[seraphis][preset]") 
     requireBothPolarities("Body resonator bypass", Seraphis::kBodyResonatorBypassId,
                           resonatorBypass);
     requireBothPolarities("Body input AGC", Seraphis::kBodyInputAgcId, inputAgc);
+
+    // The two authored-[partials] rows (C-2, palette-widening amendment
+    // 2026-08-30): >= 1 preset ships an authored mask (owner: Bell Garden) and
+    // >= 1 ships authored pans (owner: Sea Glass). Presets without authoring
+    // keep the all-zero block, so all-zero across the tree means the generator
+    // never drove the notify() surface.
+    if (!maskAuthored) {
+        missing.emplace_back("[partials] maskBits: non-zero (authored) in no preset");
+    }
+    if (!panAuthored) {
+        missing.emplace_back("[partials] panOverrideBits: non-zero (authored) in no preset");
+    }
 
     // The one PARTIAL-coverage row in C-2: >= 3 of the 6 grain windows, not all
     // six. Folded into `missing` rather than asserted separately so a shortfall
@@ -1463,7 +1485,7 @@ TEST_CASE("Seraphis_FactoryPresets_RespectTimingCeiling", "[seraphis][preset]") 
     REQUIRE(releaseBreaches.empty());
 }
 
-TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") {
+TEST_CASE("Seraphis_FactoryPresets_PartialsBlockMatchesDefs", "[seraphis][preset]") {
     const std::vector<std::filesystem::path> files = SeraphisTest::allPresetFiles();
     INFO("presets root: " << SeraphisTest::factoryPresetRoot().string());
     REQUIRE(!files.empty());
@@ -1500,9 +1522,11 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
     // two into one call.
 
     std::vector<std::string> nonFinite;
-    std::vector<std::string> nonZeroPan;
+    std::vector<std::string> missingDefs;
+    std::vector<std::string> badDefIndex;
+    std::vector<std::string> panMismatch;
     std::vector<std::string> panOutOfRange;
-    std::vector<std::string> liveBitmask;
+    std::vector<std::string> bitmaskMismatch;
     std::vector<std::string> badNumPartials;
     std::vector<std::string> fieldCountMismatch;
 
@@ -1670,7 +1694,7 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
                             std::string(entry.block) + ": enumerated " + std::to_string(enumerated)
                             + " fields, the shipped block is " + std::to_string(entry.fields)
                             + " (a field added to this pack must be added to the enumeration in "
-                              "Seraphis_FactoryPresets_PartialsBlockIsInert, not just here)");
+                              "Seraphis_FactoryPresets_PartialsBlockMatchesDefs, not just here)");
                     }
                 }
             }
@@ -1719,8 +1743,42 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
             // --- [partials] 272 B: FR-006a + FR-009's range clause -------------
             // Read RAW by decodePresetState - NOT through loadPartialOverrides,
             // whose NaN scrub and [-1, 1] clamp (processor.cpp:482-485) would
-            // turn both assertions below into tautologies that pass on a corrupt
+            // turn the assertions below into tautologies that pass on a corrupt
             // preset (preset_test_support.h banner rule 3).
+            //
+            // FR-006a (OQ-4 re-ratified YES, 2026-08-30 palette-widening
+            // amendment): the stored block must EQUAL the definition -
+            // panOverrideBits is the OR of the authored pan indices, maskBits is
+            // the definition's partialMaskBits, each authored pan is the
+            // authored float BYTE-EXACT (the value survives clamp/store/
+            // writeFloat bit-exactly - this compares stored bytes, not
+            // arithmetic, the sanctioned bit-exact case), and every unauthored
+            // pan is 0.0f exactly. A definition with no partials field is the
+            // all-zero block, so the pre-amendment inertness property is the
+            // no-authoring special case of this same assertion.
+            const Seraphis::PresetDefs::SeraphisPresetDef* def =
+                Seraphis::PresetDefs::findDef(pf.category, pf.stem);
+            if (def == nullptr) {
+                // findDef MISS POLICY (tools/seraphis_preset_defs.h): null is a
+                // FAILURE, never "assume no partials authoring".
+                missingDefs.push_back(where + ": no definition in PresetDefs::allPresets()");
+                return;
+            }
+
+            std::uint64_t expectedPanBits = 0;
+            std::array<float, 64> expectedPan{};  // value-init: every pan 0.0f
+            bool defIndicesValid = true;
+            for (const auto& p : def->partialPans) {
+                if (p.index >= expectedPan.size()) {
+                    badDefIndex.push_back(joinText(where, ": definition partialPans index ",
+                                                   std::to_string(p.index), " outside [0, 63]"));
+                    defIndicesValid = false;
+                    continue;
+                }
+                expectedPanBits |= (std::uint64_t{1} << p.index);
+                expectedPan[p.index] = p.pan;
+            }
+
             for (std::size_t i = 0; i < st.partialPan.size(); ++i) {
                 const float pan = st.partialPan[i];
                 if (!isFiniteFloat(pan)) {
@@ -1730,9 +1788,10 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
                                // bound, so the two clauses below would add two
                                // more misleading lines for one fault
                 }
-                if (pan != 0.0f) {
-                    nonZeroPan.push_back(where + ": [partials].pan[" + std::to_string(i) + "] = "
-                                         + std::to_string(pan) + ", expected 0.0");
+                if (defIndicesValid && pan != expectedPan[i]) {
+                    panMismatch.push_back(where + ": [partials].pan[" + std::to_string(i) + "] = "
+                                          + std::to_string(pan) + ", definition authors "
+                                          + std::to_string(expectedPan[i]));
                 }
                 if (pan < -1.0f || pan > 1.0f) {
                     panOutOfRange.push_back(where + ": [partials].pan[" + std::to_string(i)
@@ -1740,13 +1799,16 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
                 }
             }
 
-            if (st.panOverrideBits != 0u) {
-                liveBitmask.push_back(where + ": panOverrideBits = "
-                                      + std::to_string(st.panOverrideBits) + ", expected 0");
+            if (st.panOverrideBits != expectedPanBits) {
+                bitmaskMismatch.push_back(where + ": panOverrideBits = "
+                                          + std::to_string(st.panOverrideBits)
+                                          + ", definition ORs to "
+                                          + std::to_string(expectedPanBits));
             }
-            if (st.maskBits != 0u) {
-                liveBitmask.push_back(where + ": maskBits = " + std::to_string(st.maskBits)
-                                      + ", expected 0");
+            if (st.maskBits != def->partialMaskBits) {
+                bitmaskMismatch.push_back(where + ": maskBits = " + std::to_string(st.maskBits)
+                                          + ", definition authors "
+                                          + std::to_string(def->partialMaskBits));
             }
         });
 
@@ -1762,14 +1824,25 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
     INFO("payloads with an out-of-range numPartials: " << joinPaths(badNumPartials));
     REQUIRE(badNumPartials.empty());
 
-    // FR-006a, both clauses, asserted separately from the pans: a live bitmask
-    // with all-zero pans and all-zero pans with a live bitmask are two different
-    // generator faults.
-    INFO("presets with a non-zero [partials] bitmask: " << joinPaths(liveBitmask));
-    REQUIRE(liveBitmask.empty());
+    // FR-006a. Definition problems first: a preset with no definition (or a
+    // definition authoring an impossible index) cannot be reconciled at all,
+    // and the mismatch lists below would only echo the same fault.
+    INFO("presets with no definition: " << joinPaths(missingDefs));
+    REQUIRE(missingDefs.empty());
 
-    INFO("presets with a non-zero [partials] pan: " << joinPaths(nonZeroPan));
-    REQUIRE(nonZeroPan.empty());
+    INFO("definitions authoring an out-of-range partial index: " << joinPaths(badDefIndex));
+    REQUIRE(badDefIndex.empty());
+
+    // The two block halves are asserted separately: a bitmask that differs from
+    // the definition and a pan float that differs are two different generator
+    // faults with two different fixes.
+    INFO("presets whose [partials] bitmasks differ from their definition: "
+         << joinPaths(bitmaskMismatch));
+    REQUIRE(bitmaskMismatch.empty());
+
+    INFO("presets whose [partials] pans differ from their definition: "
+         << joinPaths(panMismatch));
+    REQUIRE(panMismatch.empty());
 
     INFO("presets with a [partials] pan outside [-1, 1]: " << joinPaths(panOutOfRange));
     REQUIRE(panOutOfRange.empty());
@@ -1800,7 +1873,8 @@ TEST_CASE("Seraphis_FactoryPresets_PartialsBlockIsInert", "[seraphis][preset]") 
 //
 // THE REGENERATION IS THE GENERATOR'S DRIVE SEQUENCE, NOT A SECOND ONE (R-2 /
 // OI-5). regenerateComponentState() below is line-for-line
-// tools/seraphis_preset_generator.cpp:120-171's captureComponentState, including
+// tools/seraphis_preset_generator.cpp's captureComponentState, including
+// its authored-[partials] notify() drive (masks first, then pans) and
 // `setEffectsStageInstrumentedForTest(false)` immediately after prepare()
 // (:130-137 - prepare() turns it ON for every Seraphis test,
 // seraphis_test_fixture.h:210, and the shipping/release configuration is OFF,
@@ -1852,7 +1926,7 @@ constexpr double kRegenSampleRate = 44100.0;
 constexpr Steinberg::int32 kRegenBlockSize = 64;
 
 /// The number of `float` members across the nine decoded packs - the SAME set
-/// T011's Seraphis_FactoryPresets_PartialsBlockIsInert bit-pattern-checks, minus
+/// T011's Seraphis_FactoryPresets_PartialsBlockMatchesDefs bit-pattern-checks, minus
 /// its int32/bool fields (which that case only COUNTS):
 ///
 ///   [global] 1 | [macro] 5 | [cloud] 11 | [morph] 5 | [life] 9 | [body] 10 |
@@ -1888,7 +1962,7 @@ constexpr std::array<double, 8> kErrorDecades{1e-9, 1e-8, 1e-7, 1e-6,
 
 /// Regenerate one preset's `Comp` chunk in-process.
 ///
-/// THIS IS THE GENERATOR'S captureComponentState (tools/seraphis_preset_generator.cpp:120-171),
+/// THIS IS THE GENERATOR'S captureComponentState (tools/seraphis_preset_generator.cpp),
 /// step for step. Every line of it is load-bearing; see the section banner.
 [[nodiscard]] bool regenerateComponentState(const Seraphis::PresetDefs::SeraphisPresetDef& def,
                                             std::vector<std::uint8_t>& comp, std::string& why) {
@@ -1913,6 +1987,28 @@ constexpr std::array<double, 8> kErrorDecades{1e-9, 1e-8, 1e-7, 1e-6,
     if (fx.processBlock(kRegenBlockSize) != Steinberg::kResultOk) {
         why = "process() failed";
         return false;
+    }
+
+    // Authored [partials]: drive the SHIPPED notify() surface - BYTE-IDENTICAL
+    // to the generator's drive (tools/seraphis_preset_generator.cpp), masks
+    // first, then pans, or TreeMatchesGenerator fails on every authored preset
+    // (FR-029). Order after the block is irrelevant - getState() reads the
+    // staging atomics directly (processor.cpp:453-460).
+    const auto sendEdit = [&](Seraphis::UI::EditMessage edit) {
+        auto msg = Steinberg::owned(new Steinberg::Vst::HostMessage());
+        msg->setMessageID(Seraphis::UI::kSeraphisEditMessageId);
+        msg->getAttributes()->setBinary(Seraphis::UI::kSeraphisEditAttributeId, &edit,
+                                        static_cast<Steinberg::uint32>(sizeof(edit)));
+        fx.proc->notify(msg);
+    };
+    for (int i = 0; i < 64; ++i) {
+        if ((def.partialMaskBits & (std::uint64_t{1} << i)) != 0u) {
+            sendEdit({.kind = 3, .slot = 0, .index = static_cast<std::uint16_t>(i),
+                      .a = 1.0f, .b = 0.0f});
+        }
+    }
+    for (const Seraphis::PresetDefs::PartialPanOverride& p : def.partialPans) {
+        sendEdit({.kind = 2, .slot = 0, .index = p.index, .a = p.pan, .b = 0.0f});
     }
 
     Steinberg::MemoryStream stream;
@@ -2384,7 +2480,7 @@ TEST_CASE("Seraphis_FactoryPresets_TreeToleranceProbe", "[.measure][seraphis][pr
 // FIELD-COVERAGE TRIPWIRE. The integer comparator (clause 4) and the float
 // comparator (clause 5) increment ONE set of per-block counters, reconciled
 // against the shared kExpectedFieldCounts census this TU also hands to
-// Seraphis_FactoryPresets_PartialsBlockIsInert (T011). Combined with
+// Seraphis_FactoryPresets_PartialsBlockMatchesDefs (T011). Combined with
 // decodePresetState's cumulative offset tripwires (preset_test_support.h:424-437),
 // a field added to a pack in a later phase fails BOTH checks rather than silently
 // escaping comparison.
@@ -2879,9 +2975,10 @@ TEST_CASE("Seraphis_FactoryPresets_TreeMatchesGenerator", "[seraphis][preset]") 
 
         // --- the [partials] block, 272 B, counted on its own ------------------
         // Outside the pack census (which covers the ten scalar blocks only), and
-        // compared here rather than left to FR-006a's all-zero gate: that gate
-        // reads the committed side alone, so without this the last 272 bytes of
-        // every preset would never be compared against the generator at all.
+        // compared here rather than left to FR-006a's block-matches-defs gate:
+        // that gate reconciles the committed side against the DEFINITION, so
+        // without this the last 272 bytes of every preset would never be
+        // compared against the generator at all.
         std::size_t partialFieldsCompared = 0;
         for (std::size_t i = 0; i < committed.partialPan.size(); ++i) {
             ++partialFieldsCompared;

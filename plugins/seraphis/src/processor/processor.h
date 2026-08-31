@@ -1254,7 +1254,7 @@ private:
     bool fxWanderWasActive_ = false;
 
     // --- FR-041b: the ONLY readable source of the four spectral states --------
-    // The five factory states are built ONCE IN THE CONSTRUCTOR - not in
+    // The ten factory states are built ONCE IN THE CONSTRUCTOR - not in
     // setupProcessing() - and are IMMUTABLE thereafter, so both threads may read
     // them without synchronisation. makeFactoryState() is documented
     // "CONFIGURATION-TIME, not audio-thread: ... ~200 std::pow/std::exp calls"
@@ -1262,7 +1262,7 @@ private:
     // processParameterChanges(); and it needs no sample rate, so deferring the
     // table to prepare() buys nothing and costs the before-prepare window in
     // which getState() would write four VALID, EMPTY payloads.
-    std::array<Krate::DSP::SpectralState, 5> factoryStates_{};
+    std::array<Krate::DSP::SpectralState, Krate::DSP::kSpectralStateCount> factoryStates_{};
 
     std::array<Krate::DSP::SpectralState, 4> spectralSlots_{};  // audio-thread-owned
     // THREE staging buffers, not one: two would let a second setState() write the

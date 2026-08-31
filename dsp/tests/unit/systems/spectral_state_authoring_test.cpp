@@ -521,12 +521,14 @@ struct BlendPair {
 [[nodiscard]] std::vector<AuthoredRow> buildAuthoredRows() {
     std::vector<AuthoredRow> rows;
 
-    constexpr std::array<SpectralStateId, 5> kIds{SpectralStateId::SineStack, SpectralStateId::Bell,
-                                                  SpectralStateId::Choir, SpectralStateId::Glass,
-                                                  SpectralStateId::Breath};
+    constexpr std::array<SpectralStateId, 10> kIds{
+        SpectralStateId::SineStack, SpectralStateId::Bell,   SpectralStateId::Choir,
+        SpectralStateId::Glass,     SpectralStateId::Breath, SpectralStateId::Hollow,
+        SpectralStateId::Metal,     SpectralStateId::Organ,  SpectralStateId::Vowel,
+        SpectralStateId::Shimmer};
 
     // --- setPartial ---------------------------------------------------------
-    constexpr std::array<PartialEdit, 16> kEdits{
+    constexpr std::array<PartialEdit, 21> kEdits{
         {{.id = SpectralStateId::SineStack,
           .index = 0,
           .ratio = 1.5f,
@@ -606,7 +608,32 @@ struct BlendPair {
           .index = 0,
           .ratio = 1.0f,
           .amplitude = 0.25f,
-          .why = "amplitude only; ratio unchanged"}}};
+          .why = "amplitude only; ratio unchanged"},
+         {.id = SpectralStateId::Hollow,
+          .index = 31,
+          .ratio = 62.0f,
+          .amplitude = 0.4f,
+          .why = "Hollow's last AUTHORED slot (numPartials == 32)"},
+         {.id = SpectralStateId::Metal,
+          .index = 63,
+          .ratio = 126.0f,
+          .amplitude = 0.5f,
+          .why = "Metal's top authored slot, near kMaxStateRatio"},
+         {.id = SpectralStateId::Organ,
+          .index = 0,
+          .ratio = 0.5f,
+          .amplitude = 0.6f,
+          .why = "Organ's 16' drawbar at exactly kMinStateRatio"},
+         {.id = SpectralStateId::Vowel,
+          .index = 1,
+          .ratio = 2.1f,
+          .amplitude = 0.9f,
+          .why = "Vowel's F1 formant peak slot"},
+         {.id = SpectralStateId::Shimmer,
+          .index = 1,
+          .ratio = 7.5f,
+          .amplitude = 0.7f,
+          .why = "Shimmer's first cluster partial (wide window above the anchor)"}}};
 
     for (const PartialEdit& edit : kEdits) {
         SpectralState s = makeFactoryState(edit.id);
@@ -663,13 +690,20 @@ struct BlendPair {
     }
 
     // --- blendStates --------------------------------------------------------
-    constexpr std::array<BlendPair, 6> kPairs{
+    constexpr std::array<BlendPair, 11> kPairs{
         {{.a = SpectralStateId::SineStack, .b = SpectralStateId::Bell},
          {.a = SpectralStateId::SineStack, .b = SpectralStateId::Breath},
          {.a = SpectralStateId::Bell, .b = SpectralStateId::Glass},
          {.a = SpectralStateId::Choir, .b = SpectralStateId::Breath},
          {.a = SpectralStateId::Glass, .b = SpectralStateId::Choir},
-         {.a = SpectralStateId::Breath, .b = SpectralStateId::SineStack}}};
+         {.a = SpectralStateId::Breath, .b = SpectralStateId::SineStack},
+         // Palette widening: every new archetype blends at least once, with
+         // Organ<->Shimmer as the sparse-vs-sparse extreme (9 vs 16 partials).
+         {.a = SpectralStateId::Hollow, .b = SpectralStateId::SineStack},
+         {.a = SpectralStateId::Metal, .b = SpectralStateId::Bell},
+         {.a = SpectralStateId::Organ, .b = SpectralStateId::Shimmer},
+         {.a = SpectralStateId::Vowel, .b = SpectralStateId::Choir},
+         {.a = SpectralStateId::Shimmer, .b = SpectralStateId::Glass}}};
     constexpr std::array<float, 7> kBlendPositions{-1.0f, 0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 2.0f};
     for (const BlendPair& pair : kPairs) {
         const SpectralState a = makeFactoryState(pair.a);

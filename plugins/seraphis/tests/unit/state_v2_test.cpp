@@ -227,10 +227,10 @@ constexpr SurfaceRow kSurface[] = {
     {.id = Seraphis::kMorphSyncNoteId, .kind = Kind::L, .entries = 8},
     {.id = Seraphis::kMorphWaypointIntervalId, .kind = Kind::R, .entries = 0},
     {.id = Seraphis::kMorphStateCountId, .kind = Kind::L, .entries = 3},
-    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 5},
-    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 5},
+    {.id = Seraphis::kMorphState0Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState1Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState2Id, .kind = Kind::L, .entries = 10},
+    {.id = Seraphis::kMorphState3Id, .kind = Kind::L, .entries = 10},
 
     // --- Life Modulators (600-699) + Voice Envelope (700-799) ---------------
     {.id = Seraphis::kLifeSpatialDepthId, .kind = Kind::R, .entries = 0},
@@ -846,25 +846,25 @@ TEST_CASE("Seraphis_StateVersion_MigratesAndRefuses", "[seraphis][state][v2]") {
         CHECK(maxAbsDiff(migrated.capturedR, control.capturedR) <= 1.0e-5);
     }
 
-    // Phase 10 FR-031 moved kCurrentStateVersion 2 -> 3, so the first FUTURE
-    // version is now 4. v3 is a version this binary writes and accepts.
-    SECTION("A version-4 stream is refused with no state mutated") {
+    // The palette widening moved kCurrentStateVersion 3 -> 4, so the first
+    // FUTURE version is now 5. v4 is a version this binary writes and accepts.
+    SECTION("A version-5 stream is refused with no state mutated") {
         Seraphis::Processor proc;
         StreamPtr before = captureState(proc);
         std::vector<char> beforeBytes(static_cast<std::size_t>(before->getSize()));
         std::memcpy(beforeBytes.data(), before->getData(), beforeBytes.size());
 
-        StreamPtr v4 = makeV1Stream(Seraphis::kCurrentStateVersion + 1, 1.5f, 12, 0, 0.1f,
+        StreamPtr v5 = makeV1Stream(Seraphis::kCurrentStateVersion + 1, 1.5f, 12, 0, 0.1f,
                                     0.2f, 0.3f, 0.8f, 0.4f);
-        REQUIRE(Seraphis::kCurrentStateVersion + 1 == 4);
-        CHECK(proc.setState(v4.get()) == kResultFalse);
+        REQUIRE(Seraphis::kCurrentStateVersion + 1 == 5);
+        CHECK(proc.setState(v5.get()) == kResultFalse);
 
         StreamPtr after = captureState(proc);
         REQUIRE(after->getSize() == static_cast<int64>(beforeBytes.size()));
         CHECK(std::memcmp(after->getData(), beforeBytes.data(), beforeBytes.size()) == 0);
 
-        rewindStream(*v4);
-        CHECK(controller.setComponentState(v4.get()) == kResultFalse);
+        rewindStream(*v5);
+        CHECK(controller.setComponentState(v5.get()) == kResultFalse);
     }
 
     // Phase 10: the stream captured below is now a v3 one (v2 plus the

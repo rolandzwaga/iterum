@@ -345,13 +345,14 @@ enum class Route : std::uint8_t { VP, MB, AE, CFG, ENG, FX, Local };
 inline constexpr float kSyncedRateEpsilon =
     Krate::DSP::SpectralMorphEngine::kMinTravelRate * 1.0e-3f;
 
-/// FR-041b. The five factory states, evaluated ONCE (in the constructor).
+/// FR-041b. The ten factory states, evaluated ONCE (in the constructor).
 /// makeFactoryState() is documented "Deterministic and stateless"
 /// (spectral_state.h:349-351), so this table is exactly what a per-change call
 /// would have produced - at ~200 std::pow/std::exp per entry, paid once.
-static_assert(Krate::DSP::kSpectralStateCount == 5,
-              "FR-041b: factoryStates_ is sized 5 in processor.h; a sixth factory state "
-              "must widen BOTH, or the table silently drops it");
+static_assert(Krate::DSP::kSpectralStateCount == 10,
+              "FR-041b: factoryStates_ is sized by kSpectralStateCount in processor.h; "
+              "an eleventh factory state must widen BOTH tables together, or the table "
+              "silently drops it");
 
 // SC-023 clause 6 / clause 7(d) NEGATIVE-CONTROL SEAM (see processor.h's
 // setSurfacePushDisabledForTest banner for why this is a runtime pair rather
@@ -367,8 +368,9 @@ std::atomic<bool> gDisablePresetLoadPush{false};
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::atomic<bool> gDisableRepreparePush{false};
 
-[[nodiscard]] std::array<Krate::DSP::SpectralState, 5> makeFactoryStateTable() {
-    std::array<Krate::DSP::SpectralState, 5> table{};
+[[nodiscard]] std::array<Krate::DSP::SpectralState, Krate::DSP::kSpectralStateCount>
+makeFactoryStateTable() {
+    std::array<Krate::DSP::SpectralState, Krate::DSP::kSpectralStateCount> table{};
     for (std::size_t i = 0; i < table.size(); ++i) {
         table[i] = Krate::DSP::makeFactoryState(static_cast<Krate::DSP::SpectralStateId>(i));
     }

@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using Krate::DSP::blendStates;
@@ -123,12 +124,22 @@ struct FactoryPin {
 
 /// Plan §3.4 / tasks T008. Bell's 240.32 lives entirely in the fill region --
 /// see deviation D6. The spacings are D7-corrected (1200*log2(64/63) = 27.264).
-constexpr std::array<FactoryPin, 5> kFactoryPins{
+/// The five palette-widening rows (2026-08-30) are MEASURED-then-pinned per the
+/// design doc's section 1.7 loop: Hollow/Organ/Shimmer's maxima live in their
+/// FR-041 fill regions (like Bell's), Metal's 125.86 is the authored
+/// n*sqrt(1 + 0.0007 n^2) top slot, and the 28.000 spacings are the fill
+/// floor's 28-cent step.
+constexpr std::array<FactoryPin, 10> kFactoryPins{
     FactoryPin{SpectralStateId::SineStack, "SineStack", 64, 64.00, 27.264},
     FactoryPin{SpectralStateId::Bell, "Bell", 24, 240.32, 28.000},
     FactoryPin{SpectralStateId::Choir, "Choir", 64, 64.00, 27.264},
     FactoryPin{SpectralStateId::Glass, "Glass", 64, 80.38, 32.79},
-    FactoryPin{SpectralStateId::Breath, "Breath", 64, 64.00, 27.264}};
+    FactoryPin{SpectralStateId::Breath, "Breath", 64, 64.00, 27.264},
+    FactoryPin{SpectralStateId::Hollow, "Hollow", 32, 150.47, 28.000},
+    FactoryPin{SpectralStateId::Metal, "Metal", 64, 125.86, 47.395},
+    FactoryPin{SpectralStateId::Organ, "Organ", 9, 265.03, 28.000},
+    FactoryPin{SpectralStateId::Vowel, "Vowel", 64, 64.00, 27.264},
+    FactoryPin{SpectralStateId::Shimmer, "Shimmer", 16, 244.44, 28.000}};
 
 /// SC-008 clause 2's spectral distance, verbatim: the AMPLITUDE term runs over
 /// all kStatePartials slots (unused amplitudes are exactly 0), the RATIO term
@@ -697,10 +708,10 @@ TEST_CASE("SpectralState_ValidityAndNormalisation", "[spectral_state][seraphis]"
 }
 
 TEST_CASE("SpectralState_FactoryStatesAreDistinct", "[spectral_state][seraphis]") {
-    STATIC_REQUIRE(Krate::DSP::kSpectralStateCount == 5);
+    STATIC_REQUIRE(Krate::DSP::kSpectralStateCount == 10);
     STATIC_REQUIRE(kFactoryPins.size() == Krate::DSP::kSpectralStateCount);
 
-    std::array<SpectralState, 5> states{};
+    std::array<SpectralState, kFactoryPins.size()> states{};
     for (std::size_t k = 0; k < kFactoryPins.size(); ++k) {
         states[k] = makeFactoryState(kFactoryPins[k].id);
     }
@@ -778,7 +789,7 @@ TEST_CASE("SpectralState_FactoryStatesAreDistinct", "[spectral_state][seraphis]"
         }
     }
 
-    SECTION("All 10 pairs clear the a-priori distance threshold (SC-008 cl.2)") {
+    SECTION("All 45 pairs clear the a-priori distance threshold (SC-008 cl.2)") {
         constexpr float kMinFactoryStateDistance = 0.4f;
 
         struct PairPin {
@@ -786,13 +797,30 @@ TEST_CASE("SpectralState_FactoryStatesAreDistinct", "[spectral_state][seraphis]"
             std::size_t b;
             double distance;
         };
-        // Plan §3.4, recomputed this session in double and in float32-emulated
-        // arithmetic (identical to 4 decimals in both).
-        constexpr std::array<PairPin, 10> kPairPins{
+        // Rows 0-9 are plan §3.4 (recomputed in double and float32-emulated
+        // arithmetic, identical to 4 decimals). The 35 palette-widening rows
+        // are MEASURED values from the design-doc §1.7 measure-then-pin loop
+        // (g++ 13 -O2 -fno-fast-math, double accumulation), 2026-08-30.
+        constexpr std::array<PairPin, 45> kPairPins{
             PairPin{0, 1, 1.5723}, PairPin{0, 2, 0.5258}, PairPin{0, 3, 0.7406},
             PairPin{0, 4, 1.0932}, PairPin{1, 2, 2.0245}, PairPin{1, 3, 1.9742},
             PairPin{1, 4, 2.5841}, PairPin{2, 3, 0.8824}, PairPin{2, 4, 1.0538},
-            PairPin{3, 4, 0.9517}};
+            PairPin{3, 4, 0.9517},
+            // -- palette widening (Hollow 5, Metal 6, Organ 7, Vowel 8, Shimmer 9)
+            PairPin{0, 5, 1.3973}, PairPin{0, 6, 1.2351}, PairPin{0, 7, 1.3312},
+            PairPin{0, 8, 0.4838}, PairPin{0, 9, 2.7194}, PairPin{1, 5, 1.3273},
+            PairPin{1, 6, 2.2155}, PairPin{1, 7, 1.9793}, PairPin{1, 8, 1.8936},
+            PairPin{1, 9, 1.9771}, PairPin{2, 5, 1.4251}, PairPin{2, 6, 1.1490},
+            PairPin{2, 7, 1.1184}, PairPin{2, 8, 0.4864}, PairPin{2, 9, 2.4653},
+            PairPin{3, 5, 1.3405}, PairPin{3, 6, 0.8770}, PairPin{3, 7, 1.6173},
+            PairPin{3, 8, 1.0151}, PairPin{3, 9, 2.7108}, PairPin{4, 5, 1.7519},
+            PairPin{4, 6, 1.0848}, PairPin{4, 7, 1.8713}, PairPin{4, 8, 1.2061},
+            PairPin{4, 9, 2.9399}, PairPin{5, 6, 1.3912}, PairPin{5, 7, 2.1316},
+            PairPin{5, 8, 1.5837}, PairPin{5, 9, 1.7141}, PairPin{6, 7, 1.5958},
+            PairPin{6, 8, 1.3670}, PairPin{6, 9, 2.6778}, PairPin{7, 8, 1.1968},
+            PairPin{7, 9, 3.1642}, PairPin{8, 9, 2.7007}};
+        STATIC_REQUIRE(kPairPins.size()
+                       == kFactoryPins.size() * (kFactoryPins.size() - 1) / 2);
 
         for (const PairPin& pair : kPairPins) {
             INFO(kFactoryPins[pair.a].label << " / " << kFactoryPins[pair.b].label);
@@ -806,15 +834,22 @@ TEST_CASE("SpectralState_FactoryStatesAreDistinct", "[spectral_state][seraphis]"
         // A SEPARATELY LABELLED regression pin, not the pass/fail threshold:
         // it catches a later FR-022 constant change that silently converges two
         // states even though the pair still clears kMinFactoryStateDistance.
-        constexpr float kMeasuredClosestPairDistance = 0.5258f;
-        const double closest = factoryDistance(states[0], states[2]); // SineStack / Choir
+        // Since the palette widening the closest pair is SineStack / Vowel
+        // (measured 0.4838; the old closest, SineStack / Choir at 0.5258, is
+        // now second).
+        constexpr float kMeasuredClosestPairDistance = 0.4838f;
+        const double closest = factoryDistance(states[0], states[8]); // SineStack / Vowel
         REQUIRE(closest
                 == Catch::Approx(static_cast<double>(kMeasuredClosestPairDistance)).epsilon(0.10));
     }
 
-    SECTION("Cosine similarity of the three ratio_n = n states (FR-022)") {
-        // For SineStack / Choir / Breath the ratio term is exactly 0, so
-        // d = sqrt(2*(1 - rho)) and d >= 0.4 is exactly rho <= 0.92.
+    SECTION("Cosine similarity of the ratio_n = n states (FR-022)") {
+        // For the four harmonic-ratio states (SineStack, Choir, Breath, Vowel)
+        // the ratio term is exactly 0, so d = sqrt(2*(1 - rho)) and d >= 0.4 is
+        // exactly rho <= 0.92. (Pairs with DIFFERENT ratio laws are covered by
+        // the 45-pair distance clause above -- their nonzero ratio term is what
+        // carries the distinctness, e.g. SineStack / Bell at rho 0.9654 yet
+        // d = 1.5723.)
         constexpr double kMaxCosineSimilarity = 0.92;
 
         struct CosinePin {
@@ -822,16 +857,154 @@ TEST_CASE("SpectralState_FactoryStatesAreDistinct", "[spectral_state][seraphis]"
             std::size_t b;
             double rho;
         };
-        constexpr std::array<CosinePin, 3> kCosinePins{
+        // Vowel rows measured 2026-08-30 with the final section-1.7 constants
+        // (kVowelFloor 0.05, centres {2, 5, 14}, sigmas {0.7, 1.0, 2.5}).
+        constexpr std::array<CosinePin, 6> kCosinePins{
             CosinePin{0, 2, 0.8618},  // SineStack / Choir
             CosinePin{0, 4, 0.4025},  // SineStack / Breath
-            CosinePin{2, 4, 0.4447}}; // Choir / Breath
+            CosinePin{2, 4, 0.4447},  // Choir / Breath
+            CosinePin{0, 8, 0.8830},  // SineStack / Vowel
+            CosinePin{2, 8, 0.8817},  // Choir / Vowel
+            CosinePin{4, 8, 0.2727}}; // Breath / Vowel
 
         for (const CosinePin& pin : kCosinePins) {
             INFO(kFactoryPins[pin.a].label << " / " << kFactoryPins[pin.b].label);
             const double rho = amplitudeCosine(states[pin.a], states[pin.b]);
             REQUIRE(rho <= kMaxCosineSimilarity);
             REQUIRE(rho == Catch::Approx(pin.rho).epsilon(0.02));
+        }
+    }
+
+    SECTION("New-archetype ratio and amplitude laws, spot-checked (FR-021, FR-022)") {
+        const SpectralState& hollow = states[5];
+        const SpectralState& metal = states[6];
+        const SpectralState& organ = states[7];
+        const SpectralState& vowel = states[8];
+        const SpectralState& shimmer = states[9];
+
+        SECTION("Hollow: odd harmonics 2k-1, monotonically decaying amplitudes") {
+            // 2k-1 over small integers is EXACT in binary32 -- no tolerance
+            // needed on the ratio law itself.
+            for (int k = 1; k <= hollow.numPartials; ++k) {
+                const auto i = static_cast<std::size_t>(k - 1);
+                INFO("authored slot " << i);
+                REQUIRE(hollow.ratios[i] == static_cast<float>(2 * k - 1));
+            }
+            for (std::size_t i = 1; std::cmp_less(i, hollow.numPartials); ++i) {
+                INFO("amplitude slot " << i);
+                REQUIRE(hollow.amplitudes[i] < hollow.amplitudes[i - 1]);
+            }
+        }
+
+        SECTION("Metal: stretched ladder with every THIRD partial dominant") {
+            // ratio_n = n * sqrt(1 + 0.0007 n^2): top authored slot ~125.86,
+            // still under kMaxStateRatio, and always sharp of harmonic.
+            REQUIRE(static_cast<double>(metal.ratios[63])
+                    == Catch::Approx(125.857).epsilon(0.001));
+            for (int n = 1; n <= metal.numPartials; ++n) {
+                const auto i = static_cast<std::size_t>(n - 1);
+                INFO("authored slot " << i);
+                REQUIRE(metal.ratios[i] >= static_cast<float>(n));
+            }
+            // Inverted comb: n = 3 is the GLOBAL amplitude peak (the design's
+            // "fundamental attenuated to 0.35, peak at n = 3"), and every
+            // multiple of 3 dominates its immediate neighbours.
+            for (std::size_t i = 0; std::cmp_less(i, metal.numPartials); ++i) {
+                if (i == 2) {
+                    continue;
+                }
+                INFO("slot " << i << " vs the n = 3 peak");
+                REQUIRE(metal.amplitudes[2] > metal.amplitudes[i]);
+            }
+            for (int n = 3; n <= metal.numPartials - 1; n += 3) {
+                const auto i = static_cast<std::size_t>(n - 1);
+                INFO("comb tooth at n = " << n);
+                REQUIRE(metal.amplitudes[i] > metal.amplitudes[i - 1]);
+                REQUIRE(metal.amplitudes[i] > metal.amplitudes[i + 1]);
+            }
+        }
+
+        SECTION("Organ: the authored drawbar tables, verbatim ratios") {
+            namespace factory = Krate::DSP::detail::factory;
+            REQUIRE(std::cmp_equal(organ.numPartials, factory::kOrganRatios.size()));
+            for (std::size_t i = 0; i < factory::kOrganRatios.size(); ++i) {
+                INFO("drawbar " << i);
+                // Stored VERBATIM from the constant table -- no arithmetic, so
+                // exact equality is portable.
+                REQUIRE(organ.ratios[i] == factory::kOrganRatios[i]);
+            }
+            // 16' drawbar sits at the inclusive FR-012 lower ratio bound.
+            REQUIRE(organ.ratios[0] == SpectralState::kMinStateRatio);
+            // Amplitude PROPORTIONS survive the FR-014 normalisation: 8' is
+            // the loudest rank and every ratio-to-8' matches the table.
+            for (std::size_t i = 0; i < factory::kOrganAmps.size(); ++i) {
+                if (i == 1) {
+                    continue;
+                }
+                INFO("rank " << i << " vs the 8' rank");
+                REQUIRE(organ.amplitudes[i] < organ.amplitudes[1]);
+                REQUIRE(static_cast<double>(organ.amplitudes[i] / organ.amplitudes[1])
+                        == Catch::Approx(static_cast<double>(factory::kOrganAmps[i]
+                                                             / factory::kOrganAmps[1]))
+                               .margin(1e-5));
+            }
+        }
+
+        SECTION("Vowel: harmonic ratios, formant humps at the authored centres") {
+            for (int n = 1; n <= vowel.numPartials; ++n) {
+                INFO("authored slot " << (n - 1));
+                REQUIRE(vowel.ratios[static_cast<std::size_t>(n - 1)]
+                        == static_cast<float>(n));
+            }
+            // F1 (centre 2) carries the global peak; the inter-formant valley
+            // at n = 4 sits below BOTH neighbouring formants (F2 centre 5).
+            for (std::size_t i = 0; std::cmp_less(i, vowel.numPartials); ++i) {
+                if (i == 1) {
+                    continue;
+                }
+                INFO("slot " << i << " vs the F1 peak at n = 2");
+                REQUIRE(vowel.amplitudes[1] > vowel.amplitudes[i]);
+            }
+            REQUIRE(vowel.amplitudes[4] > vowel.amplitudes[3]); // n = 5 > n = 4
+        }
+
+        SECTION("Shimmer: faint anchor plus a stretched sparse-high cluster") {
+            REQUIRE(shimmer.ratios[0] == 1.0f);
+            // Cluster ratios m*(1 + 0.002 m), m = 4k: measured ends 8.128 and
+            // 72.192 (both exact expressions of the law, pinned with margin).
+            REQUIRE(static_cast<double>(shimmer.ratios[1])
+                    == Catch::Approx(8.128).epsilon(0.001));
+            REQUIRE(static_cast<double>(shimmer.ratios[15])
+                    == Catch::Approx(72.192).epsilon(0.001));
+            // The anchor is FAINTER than the first cluster partial, and the
+            // cluster decays monotonically ((4k)^-0.35).
+            REQUIRE(shimmer.amplitudes[0] < shimmer.amplitudes[1]);
+            for (std::size_t i = 2; std::cmp_less(i, shimmer.numPartials); ++i) {
+                INFO("cluster slot " << i);
+                REQUIRE(shimmer.amplitudes[i] < shimmer.amplitudes[i - 1]);
+            }
+        }
+
+        SECTION("FR-041 geometric fill continues every sparse new state") {
+            // The unauthored slots must follow the same recurrence the engine
+            // uses: grown = min(prev * clamp(prev/prevprev, 1, 2), 128), then
+            // floored at prev * kFillSpacingFactor. Recomputed here in float,
+            // compared with a relative tolerance (the state's own value went
+            // through identical float ops, but from a different TU).
+            namespace factory = Krate::DSP::detail::factory;
+            for (const SpectralState* s : {&hollow, &organ, &shimmer}) {
+                const auto count = static_cast<std::size_t>(s->numPartials);
+                for (std::size_t j = count; j < SpectralState::kStatePartials; ++j) {
+                    const float lastSpacing = s->ratios[j - 1] / s->ratios[j - 2];
+                    const float g = std::clamp(lastSpacing, 1.0f, factory::kFillMaxGrowth);
+                    const float grown = std::min(s->ratios[j - 1] * g, factory::kFillMaxRatio);
+                    const float floorValue = s->ratios[j - 1] * factory::kFillSpacingFactor;
+                    const float expected = std::max(grown, floorValue);
+                    INFO(s->name.data() << " fill slot " << j);
+                    REQUIRE(static_cast<double>(s->ratios[j])
+                            == Catch::Approx(static_cast<double>(expected)).epsilon(1e-5));
+                }
+            }
         }
     }
 }
@@ -857,7 +1030,7 @@ TEST_CASE("SpectralState_FactoryConsumesNoRng", "[spectral_state][seraphis]") {
     }
 
     SECTION("Calls separated by 10^6 RNG draws are bitwise identical (SC-008 cl.4)") {
-        std::array<SpectralState, 5> first{};
+        std::array<SpectralState, kFactoryPins.size()> first{};
         for (std::size_t k = 0; k < kFactoryPins.size(); ++k) {
             first[k] = makeFactoryState(kFactoryPins[k].id);
         }
@@ -895,13 +1068,18 @@ TEST_CASE("SpectralState_SerializationRoundTrips", "[spectral_state][seraphis]")
         SpectralState state;
     };
 
-    // SC-007's corpus: the 5 factory states plus 3 edge states.
-    const std::array<CorpusEntry, 8> corpus{
+    // SC-007's corpus: the 10 factory states plus 3 edge states.
+    const std::array<CorpusEntry, 13> corpus{
         CorpusEntry{"factory: SineStack", makeFactoryState(SpectralStateId::SineStack)},
         CorpusEntry{"factory: Bell", makeFactoryState(SpectralStateId::Bell)},
         CorpusEntry{"factory: Choir", makeFactoryState(SpectralStateId::Choir)},
         CorpusEntry{"factory: Glass", makeFactoryState(SpectralStateId::Glass)},
         CorpusEntry{"factory: Breath", makeFactoryState(SpectralStateId::Breath)},
+        CorpusEntry{"factory: Hollow", makeFactoryState(SpectralStateId::Hollow)},
+        CorpusEntry{"factory: Metal", makeFactoryState(SpectralStateId::Metal)},
+        CorpusEntry{"factory: Organ", makeFactoryState(SpectralStateId::Organ)},
+        CorpusEntry{"factory: Vowel", makeFactoryState(SpectralStateId::Vowel)},
+        CorpusEntry{"factory: Shimmer", makeFactoryState(SpectralStateId::Shimmer)},
         CorpusEntry{"edge: numPartials = 0 (default state)", SpectralState{}},
         CorpusEntry{"edge: numPartials = 1 at kMinStateRatio", makeSinglePartialEdgeState()},
         CorpusEntry{"edge: numPartials = 64, extremal metadata, 15-char name",
@@ -1018,12 +1196,21 @@ TEST_CASE("SpectralState_SerializationRoundTrips", "[spectral_state][seraphis]")
             const char* label;
             std::uint64_t digest;
         };
-        const std::array<HeaderPin, 5> headerPins{
+        // The five palette-widening rows were computed independently the same
+        // way (Node.js: [version 1][int32 count][2 zero floats][NUL-padded
+        // name] -> 64-bit FNV-1a), 2026-08-30, and cross-checked against the
+        // implementation's serialized bytes.
+        const std::array<HeaderPin, 10> headerPins{
             HeaderPin{SpectralStateId::SineStack, "SineStack", 0xA7631DF3A83E0401ULL},
             HeaderPin{SpectralStateId::Bell, "Bell", 0x52DB0DA2DC293495ULL},
             HeaderPin{SpectralStateId::Choir, "Choir", 0x517EB7970084F4E9ULL},
             HeaderPin{SpectralStateId::Glass, "Glass", 0x4E10D4B9D466A9C0ULL},
-            HeaderPin{SpectralStateId::Breath, "Breath", 0xACB307A3367314EEULL}};
+            HeaderPin{SpectralStateId::Breath, "Breath", 0xACB307A3367314EEULL},
+            HeaderPin{SpectralStateId::Hollow, "Hollow", 0xEB20453503F01F47ULL},
+            HeaderPin{SpectralStateId::Metal, "Metal", 0xA1862DCD67F63D85ULL},
+            HeaderPin{SpectralStateId::Organ, "Organ", 0xD8CB78D5DD3D1096ULL},
+            HeaderPin{SpectralStateId::Vowel, "Vowel", 0xD50356A068262BF7ULL},
+            HeaderPin{SpectralStateId::Shimmer, "Shimmer", 0xD0BFDCA57439EB75ULL}};
         STATIC_REQUIRE(headerPins.size() == Krate::DSP::kSpectralStateCount);
 
         constexpr std::size_t kHeaderBytes = 13;                          // [0, 13)
@@ -1056,8 +1243,8 @@ TEST_CASE("SpectralState_SerializationRoundTrips", "[spectral_state][seraphis]")
             REQUIRE(seen[k] == headerPins[k].digest);
         }
 
-        // Non-vacuity: five identical digests would satisfy five equalities
-        // against five identical constants without pinning anything.
+        // Non-vacuity: ten identical digests would satisfy ten equalities
+        // against ten identical constants without pinning anything.
         for (std::size_t a = 0; a < seen.size(); ++a) {
             for (std::size_t b = a + 1; b < seen.size(); ++b) {
                 INFO(headerPins[a].label << " / " << headerPins[b].label);
@@ -1088,11 +1275,11 @@ TEST_CASE("SpectralState_SerializationRoundTrips", "[spectral_state][seraphis]")
         // and the per-factory pin lives on the 29 header/name bytes in the
         // section above. What the ARRAY bytes are pinned on here is everything
         // that IS toolchain-independent: the same state serializes identically
-        // every time, all five streams differ from one another, and each one
+        // every time, all ten streams differ from one another, and each one
         // round-trips bitwise (asserted in the first section). Their VALUES are
-        // pinned separately and portably by SC-008 -- ten pairwise spectral
-        // distances within 2%, plus per-state max-ratio and ratio-sum pins
-        // (kFactoryPins, :121-126).
+        // pinned separately and portably by SC-008 -- forty-five pairwise
+        // spectral distances within 2%, plus per-state max-ratio and
+        // min-spacing pins (kFactoryPins above).
         // ------------------------------------------------------------------
         STATIC_REQUIRE(kFactoryPins.size() == Krate::DSP::kSpectralStateCount);
         std::array<std::uint64_t, kFactoryPins.size()> digests{};

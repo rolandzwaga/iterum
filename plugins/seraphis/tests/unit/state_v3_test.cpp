@@ -697,6 +697,84 @@ TEST_CASE("Seraphis_StateVersion3_RoundTripsAndMigrates", "[seraphis][state][v3]
     }
 
     // -------------------------------------------------------------------------
+    // (e) Palette-widening migration (v3 -> v4). The v4 layout is BYTE-IDENTICAL
+    // to v3 and the four slot selections are stored as RAW int32 indices, so the
+    // v<=3 "migration" is the IDENTITY on stored data: a v3 stream must load to
+    // the SAME archetypes it meant, and re-saving must reproduce the whole
+    // stream byte-for-byte with only the leading int32 restamped to 4. Any
+    // round(v*4)-style rescale sneaking into a loader corrupts a raw index
+    // (stored 3 -> 12 -> clamp 9 = wrong archetype) and fails here.
+    // The two index sets cover every pre-widening index 0..4 across the four
+    // slots.
+    // -------------------------------------------------------------------------
+    SECTION("(e) A v3-stamped stream loads to the same archetypes, identity-migrated") {
+        constexpr std::array<std::array<int, 4>, 2> kOldIndexSets = {
+            {{0, 1, 2, 3},    // SineStack, Bell, Choir, Glass
+             {4, 3, 2, 1}}};  // Breath, Glass, Choir, Bell
+
+        for (const auto& oldIndices : kOldIndexSets) {
+            INFO("index set { " << oldIndices[0] << ", " << oldIndices[1] << ", "
+                                << oldIndices[2] << ", " << oldIndices[3] << " }");
+
+            // Drive the four slot dropdowns, then capture a current stream.
+            SeraphisTest::ProcessorFixture fx;
+            REQUIRE(fx.prepare(kSampleRate, kBlock) == kResultOk);
+            for (int s = 0; s < 4; ++s) {
+                fx.setParam(static_cast<Vst::ParamID>(Seraphis::kMorphState0Id + s),
+                            slotDropdownNorm(oldIndices[static_cast<std::size_t>(s)]));
+            }
+            REQUIRE(fx.processBlock(kBlock) == kResultOk);
+            StreamPtr current = captureState(*fx.proc);
+            REQUIRE(current->getSize() == kV3StateBytes);  // v4 layout == v3 layout
+
+            // Restamp the leading int32 to 3. Byte-wise this IS a pre-widening
+            // stream - every committed factory .vstpreset carries version 3 and
+            // raw slot indices in [0, 4], exactly as built here.
+            StreamPtr v3 = cloneStream(*current);
+            const int32 three = Seraphis::kStateVersion3;
+            std::memcpy(v3->getData(), &three, sizeof(int32));
+
+            Seraphis::Processor migrated;
+            rewindStream(*v3);
+            REQUIRE(migrated.setState(v3.get()) == kResultOk);
+
+            // The four slots decode to the SAME archetypes the v3 stream meant.
+            for (int s = 0; s < 4; ++s) {
+                INFO("slot " << s);
+                CHECK(statesEqual(migrated.spectralAuthoringSlotForTest(s),
+                                  Krate::DSP::makeFactoryState(
+                                      static_cast<Krate::DSP::SpectralStateId>(
+                                          oldIndices[static_cast<std::size_t>(s)]))));
+            }
+
+            // Re-saving reproduces the original v4 stream byte-for-byte: the
+            // migration is the identity on every stored byte, and the version
+            // restamp (3 -> 4) is the ONLY difference from the input.
+            StreamPtr out = captureState(migrated);
+            REQUIRE(out->getSize() == kV3StateBytes);
+            CHECK(std::memcmp(out->getData(), current->getData(),
+                              static_cast<std::size_t>(kV3StateBytes)) == 0);
+            CHECK(std::memcmp(out->getData(), v3->getData(), 4) != 0);
+            CHECK(std::memcmp(out->getData() + 4, v3->getData() + 4,
+                              static_cast<std::size_t>(kV3StateBytes - 4)) == 0);
+
+            // Controller half: the same v3 stream replays each 409-412 dropdown
+            // at index / 9 - the identity re-encode over the widened list.
+            Seraphis::Controller controller;
+            REQUIRE(controller.initialize(nullptr) == kResultOk);
+            rewindStream(*v3);
+            REQUIRE(controller.setComponentState(v3.get()) == kResultOk);
+            for (int s = 0; s < 4; ++s) {
+                INFO("slot " << s);
+                CHECK(controller.getParamNormalized(
+                          static_cast<Vst::ParamID>(Seraphis::kMorphState0Id + s))
+                      == slotDropdownNorm(oldIndices[static_cast<std::size_t>(s)]));
+            }
+            REQUIRE(controller.terminate() == kResultOk);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // FR-034, as far as T008 ships (construction choice 3). A setState() that
     // arrives AFTER setupProcessing() must reach the DSP, not merely the atomics:
     // pushAllSurfaces() invalidates the composed-saturation tracker, so the next
@@ -899,10 +977,14 @@ TEST_CASE("Seraphis_StateVersion3_RoundTripsAndMigrates", "[seraphis][state][v3]
 //                             not move (spec Overview fact 5).
 //   * a pan override       -> the new [partials] block.
 //   * a mask              -> the new [partials] block.
-//   * kCurrentStateVersion -> STAYS 3. The block is an APPEND, read back by an
-//                             EOF-safe loader with NO version-aware branch, so
-//                             an older stream runs out before it and an older
-//                             binary ignores the tail.
+//   * kCurrentStateVersion -> stayed 3 through Phase 11: the block is an
+//                             APPEND, read back by an EOF-safe loader with NO
+//                             version-aware branch, so an older stream runs out
+//                             before it and an older binary ignores the tail.
+//                             (The palette widening later moved it to 4 for
+//                             forward-protection only - the LAYOUT is still
+//                             byte-identical to v3, which is what this case
+//                             continues to assert.)
 //
 // Everything is driven through the REAL C-5 message path (Processor::notify),
 // never by writing the processor's tables directly: a round trip that only
@@ -956,11 +1038,13 @@ TEST_CASE("Seraphis_EditedState_RoundTripsAtV3", "[seraphis][state][phase11]") {
     StreamPtr a = captureState(source);
     REQUIRE(a->getSize() == kV3StateBytes);
 
-    SECTION("The format version does not move, and the block is appended LAST") {
+    SECTION("The format version is the current one, and the block is appended LAST") {
         int32 encodedVersion = 0;
         std::memcpy(&encodedVersion, a->getData(), sizeof(int32));
         CHECK(encodedVersion == Seraphis::kCurrentStateVersion);
-        CHECK(encodedVersion == 3);
+        // The independent literal copy: 4 since the palette widening
+        // (plugin_ids.h - layout unchanged, 2868 B, forward-protection only).
+        CHECK(encodedVersion == 4);
 
         // The [effects] block is still where Phase 10 put it - i.e. [partials]
         // went AFTER it, not into the middle of the chain. Nothing drove an
@@ -1007,9 +1091,10 @@ TEST_CASE("Seraphis_EditedState_RoundTripsAtV3", "[seraphis][state][phase11]") {
     }
 
     SECTION("A stream truncated immediately before the block still loads, overrides absent") {
-        // Exactly the bytes a Phase 10 binary would have written: the strict
-        // prefix through [effects]. No version re-stamp - the leading int32 is
-        // ALREADY 3, which is the whole point of FR-034a.
+        // The strict prefix through [effects] - byte-wise what a Phase 10
+        // binary wrote, except the leading int32 now reads 4 (palette
+        // widening). The loader has no version-aware branch, so the overrides
+        // are absent by running out of stream - the whole point of FR-034a.
         StreamPtr truncated = makeStream();
         int32 written = 0;
         truncated->write(a->getData(), kEffectsEndBytes, &written);
@@ -1133,6 +1218,33 @@ TEST_CASE("Seraphis_SlotDropdown_DiscardsOnlyThatSlot", "[seraphis][state][phase
     CHECK(statesEqual(controller.slotMirror(0), breath));
     // Only that slot: the other three are untouched by the move.
     CHECK(statesEqual(controller.slotMirror(1), glass));
+
+    SECTION("a dropdown moved to a NEW index (>= 5) re-seeds from the new archetype") {
+        // Palette widening: indices 5-9 are the appended factory states. The
+        // same makeFactoryState path must serve them on BOTH halves - a clamp
+        // left at the old bound of 4 would silently re-seed Breath instead.
+        constexpr int kNewArchetypeIndex = 7;  // Organ
+        static_assert(kNewArchetypeIndex >= 5,
+                      "this arm exists to cover the widened index range");
+        const Krate::DSP::SpectralState organ =
+            Krate::DSP::makeFactoryState(Krate::DSP::SpectralStateId::Organ);
+
+        // Processor half: move ID 410 (slot 1, currently carrying an edit).
+        fx.setParam(Seraphis::kMorphState1Id, slotDropdownNorm(kNewArchetypeIndex));
+        REQUIRE(fx.processBlock(kBlock) == kResultOk);
+        StreamPtr saved2 = captureState(*fx.proc);
+        CHECK(statesEqual(fx.proc->spectralAuthoringSlotForTest(1), organ));
+        CHECK(statesEqual(slotPayloadOf(*saved2, 1), organ));
+        // ...and slot 0 (re-seeded to Breath by the main body's move) is not
+        // walked by this one.
+        CHECK(statesEqual(fx.proc->spectralAuthoringSlotForTest(0), breath));
+
+        // Controller half: the mirror re-seeds from the SAME factory function.
+        controller.setParamNormalized(Seraphis::kMorphState1Id,
+                                      slotDropdownNorm(kNewArchetypeIndex));
+        CHECK(statesEqual(controller.slotMirror(1), organ));
+        CHECK(statesEqual(controller.slotMirror(0), breath));
+    }
 
     SECTION("re-sending the SAME dropdown value does not discard an edit") {
         // FR-035 is about MOVING the dropdown. A host that re-sends the value it

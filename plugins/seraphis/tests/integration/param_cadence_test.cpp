@@ -139,8 +139,8 @@ static_assert(Seraphis::kSeedLabels.size() == 16, "dropdownNorm(i, 16) for kSeed
 static_assert(Seraphis::kSyncNoteLabels.size() == 8, "dropdownNorm(i, 8) for kMorphSyncNoteId");
 static_assert(Seraphis::kStateCountLabels.size() == 3,
               "dropdownNorm(i, 3) for kMorphStateCountId");
-static_assert(Seraphis::kSpectralStateLabels.size() == 5,
-              "dropdownNorm(i, 5) for the four morph slot IDs");
+static_assert(Seraphis::kSpectralStateLabels.size() == 10,
+              "dropdownNorm(i, 10) for the four morph slot IDs");
 static_assert(Seraphis::kMorphStateCountMin + 2 == 4,
               "index 2 of kStateCountLabels selects state count 4");
 
@@ -681,7 +681,7 @@ TEST_CASE("Seraphis_ParameterPush_IsOnChangeOnly", "[seraphis][params][cadence]"
         auto fx = makeSettledRig();
         const Counters before = snapshot(*fx->proc);
 
-        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(4, 5)}});  // Breath
+        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(4, 10)}});  // Breath
         renderQuiet(*fx, 1);
 
         const Counters after = snapshot(*fx->proc);
@@ -1021,7 +1021,7 @@ TEST_CASE("Seraphis_SpectralStateAssignment_ReachesSoundingVoice",
                     }
                     if (b == 10 && arm == 1) {
                         pc.addQueue(Seraphis::kMorphState0Id)
-                            .addTestPoint(0, dropdownNorm(4, 5));  // Breath
+                            .addTestPoint(0, dropdownNorm(4, 10));  // Breath
                         pc.addQueue(Seraphis::kMorphStateCountId)
                             .addTestPoint(0, dropdownNorm(2, 3));  // count 4
                     }
@@ -1074,7 +1074,7 @@ TEST_CASE("Seraphis_SpectralStateAssignment_ReachesSoundingVoice",
 
         constexpr int kSlotIndex = 4;   // Breath
         constexpr int kStateCount = 4;  // dropdown index 2 of three entries
-        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(kSlotIndex, 5)},
+        pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(kSlotIndex, 10)},
                          {.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(2, 3)}});
         renderQuiet(*fx, 1);
 
@@ -1146,7 +1146,7 @@ TEST_CASE("Seraphis_SpectralStateAssignment_ReachesSoundingVoice",
             renderQuiet(*fx, 8);
 
             // The CFG push lands while the voice is sounding, and is taken (FR-033a).
-            pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(slotIndex, 5)},
+            pushParams(*fx, {{.id = Seraphis::kMorphState0Id, .normalized = dropdownNorm(slotIndex, 10)},
                              {.id = Seraphis::kMorphStateCountId, .normalized = dropdownNorm(countIndex, 3)}});
             renderQuiet(*fx, 1);
 

@@ -31,10 +31,10 @@
 // 3. THE `[partials]` BLOCK IS THE ONE HAND-READ STEP, AND IT IS READ RAW.
 //    loadPartialOverrides (processor.cpp:468-500) scrubs non-finites to 0.0f and
 //    clamps into [-1, 1] before storing. The harness must see the bytes AS
-//    STORED to be able to assert FR-009's range clause and FR-006a's all-zero
-//    rule at all - through the shipped loader those two assertions would be
-//    tautologies that pass on a corrupt preset. Hence plain, non-atomic,
-//    unclamped fields here.
+//    STORED to be able to assert FR-009's range clause and FR-006a's
+//    block-matches-defs rule at all - through the shipped loader those two
+//    assertions would be tautologies that pass on a corrupt preset. Hence
+//    plain, non-atomic, unclamped fields here.
 //
 // 4. NEVER std::isnan / std::isinf. The macOS leg builds with -ffast-math, under
 //    which both are optimised away. bufferIsFinite() uses

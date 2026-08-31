@@ -39,18 +39,29 @@
 //   include is `ui/edit_message.h`, a POD plus three `constexpr` strings that
 //   names no VSTGUI type (processor.cpp:18, :21).
 //
-// NO EDIT CHANNEL (FR-006a / FR-016 / OQ-4 = NO)
-//   This tool has no `IMessage` / `notify()` surface at all. The `[partials]`
-//   block is written from members that are zero on a fresh `Processor`
-//   (processor.cpp:1911-1914), so all 64 pans and both bitmasks are zero BY
-//   CONSTRUCTION - the harness asserts that rather than assuming it.
+// AUTHORED [partials] VIA THE SHIPPED EDIT CHANNEL (FR-006a / FR-016 / OQ-4
+// RE-RATIFIED YES, 2026-08-30 palette-widening amendment)
+//   A definition MAY author the `[partials]` block (sparse pan list + 64-bit
+//   mask, tools/seraphis_preset_defs.h). The drive is the SHIPPED
+//   `Processor::notify()` surface - one "SeraphisEdit" HostMessage per edit,
+//   kind 3 per set mask bit first, then kind 2 per authored pan, exactly the
+//   wire shape plugins/seraphis/tests/integration/preset_load_test.cpp:205-221
+//   sends - so the Comp chunk stays whatever `Processor::getState()` writes and
+//   no second serializer exists. A fresh `Processor` starts all-zero
+//   (processor.cpp:1911-1914), so only SET operations are needed and a
+//   definition with no partials field ships the all-zero block. FR-029's twin,
+//   `regenerateComponentState()` in factory_preset_test.cpp, performs the
+//   byte-identical drive in the same order.
 // ==============================================================================
 
 #include "plugin_ids.h"              // ${CMAKE_SOURCE_DIR}/plugins/seraphis/src
 #include "seraphis_preset_defs.h"    // ${CMAKE_SOURCE_DIR}/tools
 #include "seraphis_test_fixture.h"   // ${CMAKE_SOURCE_DIR}/plugins/seraphis/tests
+#include "ui/edit_message.h"         // the [partials] wire format (POD, no VSTGUI)
 
 #include "public.sdk/source/common/memorystream.h"
+#include "public.sdk/source/vst/hosting/hostclasses.h"  // HostMessage (already a
+                                                        // source of this target)
 
 #include <cstddef>
 #include <cstdint>
@@ -146,6 +157,29 @@ void writeLE64(std::ofstream& f, std::int64_t v) {
     if (fx.processBlock(kBlockSize) != Steinberg::kResultOk) {
         why = "process() failed";
         return false;
+    }
+
+    // Authored [partials]: drive the SHIPPED notify() surface, exactly like
+    // plugins/seraphis/tests/integration/preset_load_test.cpp:205-221. Order
+    // after the block is irrelevant - getState() reads the staging atomics
+    // directly (processor.cpp:453-460). Masks first, then pans; FR-029's twin
+    // (regenerateComponentState in factory_preset_test.cpp) MUST stay
+    // line-for-line with this drive.
+    const auto sendEdit = [&](Seraphis::UI::EditMessage edit) {
+        auto msg = Steinberg::owned(new Steinberg::Vst::HostMessage());
+        msg->setMessageID(Seraphis::UI::kSeraphisEditMessageId);
+        msg->getAttributes()->setBinary(Seraphis::UI::kSeraphisEditAttributeId, &edit,
+                                        static_cast<Steinberg::uint32>(sizeof(edit)));
+        fx.proc->notify(msg);
+    };
+    for (int i = 0; i < 64; ++i) {
+        if ((def.partialMaskBits & (std::uint64_t{1} << i)) != 0u) {
+            sendEdit({.kind = 3, .slot = 0, .index = static_cast<std::uint16_t>(i),
+                      .a = 1.0f, .b = 0.0f});
+        }
+    }
+    for (const Seraphis::PresetDefs::PartialPanOverride& p : def.partialPans) {
+        sendEdit({.kind = 2, .slot = 0, .index = p.index, .a = p.pan, .b = 0.0f});
     }
 
     // The four SpectralState payloads need no extra drive: getState() calls

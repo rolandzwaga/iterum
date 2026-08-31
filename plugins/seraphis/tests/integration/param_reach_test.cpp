@@ -1000,7 +1000,7 @@ TEST_CASE("Seraphis_EveryParameter_ReachesDsp") {
                 auto fx = makeRig();
 
                 std::vector<ParamPoint> points = row.preconditions;
-                points.push_back({.id = row.id, .normalized = dropdownNorm(stateIndex, 5)});
+                points.push_back({.id = row.id, .normalized = dropdownNorm(stateIndex, 10)});
 
                 // Step 1-2: quiescent push, one block, acceptance.
                 render(*fx, points, -1, 1);
