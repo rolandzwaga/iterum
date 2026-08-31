@@ -5,6 +5,53 @@ All notable changes to Seraphis will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-31
+
+First general release. The engine, the interface and the library have been complete since 0.5.0; what held
+the sound back was that the presets shared too much — most sat on the same default spectral pair and were
+heard almost entirely through the resonator. This release widens the palette at both ends: twice the
+factory spectra, and a library re-authored to actually use them.
+
+### Added
+
+- **Five new factory spectra — the palette doubles to ten** — Hollow (odd harmonics only, the
+  clarinet/square family), Metal (a densely stretched ladder with every third partial dominant), Organ
+  (nine drawbar footages, authored ratio and amplitude tables), Vowel (a second, darker formant set than
+  Choir), and Shimmer (a faint fundamental anchor under a sparse stretched high cluster). Every spectrum
+  is measured against every other: all 45 pairs clear the same distance floor the original five were
+  pinned to, with the closest pair (Sine Stack / Vowel) at 0.48 against the 0.4 floor. The five original
+  spectra are bit-for-bit unchanged.
+- **Factory presets can now author individual partials** — The Phase 11 per-partial override block,
+  shipped un-edited by every 0.5.0 preset as a matter of policy, is now an authoring surface for the
+  factory library too (the decision is re-ratified on record, not quietly reversed). The generator drives
+  authored masks and pans through the same edit channel the editor uses, so the stored block is still
+  whatever the shipped processor writes. Six presets use it: Vellum (even harmonics masked — a hollow
+  variant of its spectrum), Bell Garden and Event Horizon (patterned and upper-half masks), and Sea
+  Glass, Quiet Machine and Spiral Arms (three different per-partial pan scatters). Every preset's stored
+  block must equal its definition bit-for-bit, and that is a test, not a convention.
+
+### Changed
+
+- **All 42 presets re-authored around the wider palette** — Every preset now chooses its morph pair
+  explicitly across the ten spectra; previously most sat on the default Sine Stack → Glass pair. The body
+  mix spread now runs 0.15–0.85 with no preset left at the 1.0 default, so the cloud's own character —
+  tilt, richness, inharmonicity — reaches the output instead of being replaced by the resonator.
+  Distinctness is re-measured over all 861 preset pairs: minimum 0.024 against the 0.02 floor, median
+  0.56.
+- **Project state is version 4, and the layout did not move** — The stream is byte-identical to version 3
+  at 2868 bytes, and morph slots are stored as raw indices, so **every earlier project and preset loads
+  to exactly the spectra it saved** — proven by tests that load version-3 streams covering every old
+  index. The version bump exists for the other direction: a pre-1.0 build refuses a 1.0 stream instead of
+  silently clamping the five new spectra to Breath.
+
+### Known limitations
+
+- The 25 %-of-one-core performance target that 0.5.0 deferred its verdict on remains outstanding; the
+  whole-`process()` optimisation pass is scheduled work.
+- No MPE or per-note expression. It ships in Phase 13.
+- The drawer opens and closes instantly; there is no slide animation.
+- The window is a fixed 1000 × 700.
+
 ## [0.5.0] - 2026-08-05
 
 Phase 12 — the library. Every release so far shipped an empty preset browser: one seeded category,
