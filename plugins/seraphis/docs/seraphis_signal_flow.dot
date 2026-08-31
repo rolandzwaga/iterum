@@ -72,7 +72,7 @@ digraph SeraphisSignalFlow {
             color="#E8A838";
             bgcolor="#FDF3E0";
 
-            morph_states [label="Spectral States\n4 slots (A-D)\nfactory: Sine Stack, Bell,\nChoir, Glass, Breath\nor hand-authored spectra", shape=box, fillcolor="#F5C878"];
+            morph_states [label="Spectral States\n4 slots (A-D)\nfactory: Sine Stack, Bell, Choir,\nGlass, Breath, Hollow, Metal,\nOrgan, Vowel, Shimmer\nor hand-authored spectra", shape=box, fillcolor="#F5C878"];
             morph_engine [label="Morph Travel\nExternal position or\nautonomous spline trajectory\ntempo-syncable\n+ Bloom (highs lag lows)", shape=box, fillcolor="#F5C878"];
             entropy_proc [label="Entropy Processor\nOU jitter bank:\namp jitter, phase smear,\npartial death &amp; rebirth", shape=ellipse, fillcolor="#F5C878"];
 
