@@ -225,12 +225,15 @@ into slots A–D, or your own states authored in Edit mode.
 | **Sync Note** | 1/16 … 8 Bars | 1 Bar | Length of one journey when Sync is on |
 | **Waypoint** | 0.5 – 30 s (log) | 2 s | Seconds between spline trajectory waypoints |
 | **States** | 2 / 3 / 4 | 2 | How many slots the morph travels between |
-| **Slot A–D** | Sine Stack / Bell / Choir / Glass / Breath | A: Sine Stack, B: Glass | Factory spectrum loaded into each slot |
+| **Slot A–D** | Sine Stack / Bell / Choir / Glass / Breath / Hollow / Metal / Organ / Vowel / Shimmer | A: Sine Stack, B: Glass | Factory spectrum loaded into each slot |
 | **Edit slot** | A / B / C / D | A | Which slot the cloud-view editing gestures write to |
 
-**Position always spans 0–3** regardless of the States count. The five factory spectra are starting
-material — any slot can be overwritten by hand in Edit mode, and authored slots survive saving and
-preset load exactly.
+**Position always spans 0–3** regardless of the States count. The ten factory spectra are starting
+material — beside the original five, **Hollow** is odd harmonics only (clarinet/square family),
+**Metal** a densely stretched ladder with every third partial dominant, **Organ** nine drawbar
+footages, **Vowel** a second, darker formant set than Choir, and **Shimmer** a faint fundamental
+under a sparse stretched high cluster. Any slot can be overwritten by hand in Edit mode, and
+authored slots survive saving and preset load exactly.
 
 ## The Drawer: Body Tab
 
