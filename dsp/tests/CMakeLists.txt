@@ -284,6 +284,13 @@ add_executable(dsp_processors_tests
     # Seraphis Phase 4 (specs/seraphis-phase4-continuous-body): shared Layer 2 amendments
     unit/processors/waveguide_string_retune_test.cpp
     unit/processors/diffusion_network_zeromod_test.cpp
+    # Vorago Phase 1 (specs/vorago-phase1-events-modulation)
+    unit/processors/perlin_noise_source_test.cpp
+    unit/processors/chaos_mod_source_aizawa_test.cpp
+    unit/processors/slow_event_scheduler_test.cpp
+    unit/processors/vorago_p1_perf_test.cpp
+    unit/processors/vorago_p1_longrun_test.cpp
+    unit/processors/vorago_p1_harness.cpp
 )
 
 target_link_libraries(dsp_processors_tests
@@ -459,6 +466,12 @@ target_compile_definitions(dsp_processors_tests
     PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(dsp_systems_tests
     PRIVATE KRATE_DSP_TESTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Vorago Phase 1 FR-081: the [.harness] trajectory writer resolves its output
+# directory from this macro, so CSVs land in the build tree regardless of the
+# launch working directory (same rationale as KRATE_DSP_TESTS_DIR above).
+target_compile_definitions(dsp_processors_tests
+    PRIVATE VORAGO_P1_HARNESS_DIR="${CMAKE_BINARY_DIR}/vorago_p1/")
 
 
 # ==============================================================================

@@ -53,7 +53,11 @@ enum class ChaosModel : uint8_t {
     Lorenz = 0,   ///< Lorenz system (sigma=10, rho=28, beta=8/3)
     Rossler = 1,  ///< Rossler system (a=0.2, b=0.2, c=5.7)
     Chua = 2,     ///< Chua circuit (alpha=15.6, beta=28, m0=-1.143, m1=-0.714)
-    Henon = 3     ///< Henon map (a=1.4, b=0.3)
+    Henon = 3,    ///< Henon map (a=1.4, b=0.3)
+    /// Aizawa system (a=0.95, b=0.7, c=0.6, d=3.5, e=0.25, f=0.1).
+    /// Implemented by ChaosModSource (Layer 2) ONLY. ChaosWaveshaper's validator
+    /// (setModel() below) still rejects it and substitutes Lorenz.
+    Aizawa = 4
 };
 
 // =============================================================================
@@ -638,6 +642,11 @@ inline void ChaosWaveshaper::processBlock(float* buffer, size_t numSamples) noex
 
 inline void ChaosWaveshaper::updateAttractor() noexcept {
     switch (model_) {
+        // Unreachable by construction: setModel() substitutes Lorenz for anything
+        // above Henon, so model_ is never Aizawa here. Present solely for -Wswitch
+        // exhaustiveness on the shared ChaosModel enum. Aizawa is a
+        // ChaosModSource-only model (FR-034). Grouped label, not fallthrough.
+        case ChaosModel::Aizawa:
         case ChaosModel::Lorenz:
             updateLorenz();
             break;
@@ -683,6 +692,11 @@ inline void ChaosWaveshaper::checkAndResetIfDiverged() noexcept {
 
 inline void ChaosWaveshaper::resetModelState() noexcept {
     switch (model_) {
+        // Unreachable by construction: setModel() substitutes Lorenz for anything
+        // above Henon, so model_ is never Aizawa here. Present solely for -Wswitch
+        // exhaustiveness on the shared ChaosModel enum. Aizawa is a
+        // ChaosModSource-only model (FR-034). Grouped label, not fallthrough.
+        case ChaosModel::Aizawa:
         case ChaosModel::Lorenz:
             // Lorenz: sigma=10, rho=28, beta=8/3
             state_ = {1.0f, 1.0f, 1.0f};  // Near attractor

@@ -153,6 +153,8 @@ dependency and can start at any time, in parallel.
 
 ### Phase 1: Modulation Gap-Fill + Slow Event Engine
 
+**Status: ✅ COMPLETE (2026-08-31)** — see specs/vorago-phase1-events-modulation/compliance.md
+
 **Spec:** `vorago-phase1-events-modulation`
 **Goal:** Complete the modulation vocabulary and build the first identity component.
 

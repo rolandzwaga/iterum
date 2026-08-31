@@ -79,6 +79,16 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // anyway. Without these entries the gate is vacuous for Phase 6: the header's
 // ITERUM_NOINLINE isFinite() (composing detail::isNaN / detail::isInf) could be
 // swapped for std::isnan and nothing would go red.
+//
+// Vorago Phase 1 (specs/vorago-phase1-events-modulation, SC-016) adds the two
+// new Layer 2 sources, the ChaosModSource header THIS PHASE MODIFIES (it was
+// not on the list before), and the five fast-math-built test TUs that carry the
+// phase's finiteness assertions. vorago_p1_longrun_test.cpp and
+// vorago_p1_perf_test.cpp hold the longest-running of those assertions, so a
+// std::isnan there would fold to `false` on the macOS -ffast-math leg with
+// nothing going red. vorago_p1_harness.cpp is deliberately ABSENT: it asserts
+// PARSEABILITY of the harness output, not finiteness, so it carries no
+// non-finite guard for this gate to protect.
 const GUARDED = [
   'dsp/include/krate/dsp/systems/atmosphere_engine.h',
   'dsp/tests/unit/systems/atmosphere_engine_test.cpp',
@@ -89,6 +99,15 @@ const GUARDED = [
   'dsp/tests/unit/effects/aether_reverb_matrix_test.cpp',
   'dsp/tests/unit/effects/aether_reverb_spectral_test.cpp',
   'dsp/tests/unit/effects/aether_reverb_perf_test.cpp',
+  // Vorago Phase 1 (SC-016)
+  'dsp/include/krate/dsp/processors/perlin_noise_source.h',
+  'dsp/include/krate/dsp/processors/slow_event_scheduler.h',
+  'dsp/include/krate/dsp/processors/chaos_mod_source.h',
+  'dsp/tests/unit/processors/perlin_noise_source_test.cpp',
+  'dsp/tests/unit/processors/slow_event_scheduler_test.cpp',
+  'dsp/tests/unit/processors/chaos_mod_source_aizawa_test.cpp',
+  'dsp/tests/unit/processors/vorago_p1_longrun_test.cpp',
+  'dsp/tests/unit/processors/vorago_p1_perf_test.cpp',
 ];
 
 const SCAN_DIRS = ['dsp', 'plugins', 'tests'];

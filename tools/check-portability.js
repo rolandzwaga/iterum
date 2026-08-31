@@ -93,6 +93,14 @@ function pluginFlagsFor(file) {
         if (file.startsWith('dsp/tests/unit/effects/')) {
             flags.push('-DKRATE_DSP_AETHER_TEST_HOOKS');
         }
+        // dsp_processors_tests sets this TARGET-WIDE (dsp/tests/CMakeLists.txt:473-474)
+        // so the Vorago Phase 1 [.harness] trajectory writer knows where to put its
+        // CSVs. Without it, vorago_p1_harness.cpp hits its own #error guard and this
+        // script reports a portability failure that does not exist -- same class as
+        // the aether hook above. Trailing slash matches the CMake value's shape.
+        if (file.startsWith('dsp/tests/unit/processors/')) {
+            flags.push('-DVORAGO_P1_HARNESS_DIR=\\"/tmp/\\"');
+        }
         return flags;
     }
     const m = file.match(/plugins\/([a-z0-9-]+)\//);

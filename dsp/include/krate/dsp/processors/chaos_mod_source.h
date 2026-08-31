@@ -1,7 +1,9 @@
 // ==============================================================================
 // Layer 2: DSP Processor - Chaos Modulation Source
 // ==============================================================================
-// Chaotic attractor modulation source using Lorenz, Rossler, Chua, Henon models.
+// Chaotic attractor modulation source using Lorenz, Rossler, Chua, Henon and
+// Aizawa models. Aizawa is a ChaosModSource-only model: ChaosWaveshaper's
+// validator rejects it and substitutes Lorenz (FR-034).
 //
 // Constitution Compliance:
 // - Principle II: Real-Time Safety (noexcept, no allocations in process)
@@ -47,14 +49,21 @@ public:
     static constexpr float kRosslerScale = 10.0f;
     static constexpr float kChuaScale = 2.0f;
     static constexpr float kHenonScale = 1.5f;
+    static constexpr float kAizawaScale = 1.5f;  ///< attractor x-extent ~ +/-1.5
 
     ChaosModSource() noexcept = default;
 
     void prepare(double sampleRate) noexcept {
-        sampleRate_ = sampleRate;
+        // FR-002: floor the sample rate at 1 Hz so a host handing us 0 or a
+        // negative rate cannot poison derived state. Behaviourally inert today --
+        // sampleRate_ is stored but never read by the attractor math, whose step
+        // is baseDt_ * effectiveSpeed in updateAttractor() -- but the floor is a
+        // shared precondition across every Vorago Phase 1 source.
+        sampleRate_ = sampleRate > 1.0 ? sampleRate : 1.0;
         updateModelParams();
         resetModelState();
         samplesUntilUpdate_ = 0;
+        divergenceResetCount_ = 0;
     }
 
     void reset() noexcept {
@@ -62,6 +71,7 @@ public:
         normalizedOutput_ = 0.0f;
         inputLevel_ = 0.0f;
         samplesUntilUpdate_ = 0;
+        divergenceResetCount_ = 0;
     }
 
     /// @brief Process one sample (call at audio rate).
@@ -148,6 +158,17 @@ public:
     [[nodiscard]] NoteValue getNoteValue() const noexcept { return noteValue_; }
     [[nodiscard]] NoteModifier getNoteModifier() const noexcept { return noteModifier_; }
 
+    /// @brief FR-036: number of times the divergence guard has re-seeded the
+    /// attractor state since the last prepare()/reset().
+    ///
+    /// Model-agnostic: the increment lives in the shared guard, not in any
+    /// per-model branch. Zeroed by prepare() and reset() ONLY -- deliberately NOT
+    /// by resetModelState(), which the guard itself calls (and which setModel()
+    /// also calls), so a guard firing cannot erase its own evidence.
+    [[nodiscard]] std::uint32_t getDivergenceResetCount() const noexcept {
+        return divergenceResetCount_;
+    }
+
 private:
     struct AttractorState {
         float x = 0.0f;
@@ -177,6 +198,25 @@ private:
                 normalizationScale_ = kHenonScale;
                 safeBound_ = 3.0f;
                 break;
+            case ChaosModel::Aizawa:
+                // dt = baseDt_ * effectiveSpeed in updateAttractor() and
+                // kMaxSpeed = 20, so baseDt_ * 20 <= 0.01 is required.
+                // Forward-Euler Aizawa was simulated over dt in [5e-4, 0.2] from
+                // four initial states: chaotic (x-extent +/-1.5..1.6) for
+                // dt <= 0.015, and for dt >= 0.02 it COLLAPSES onto the
+                // x = y = 0 fixed point (z ~= -1.105) where the output is
+                // identically 0 -- silently, with no divergence and no guard
+                // reset. 5.0e-4 puts dt in [2.5e-5, 1.0e-2], entirely inside the
+                // verified-chaotic region.
+                baseDt_ = 5.0e-4f;
+                normalizationScale_ = kAizawaScale;
+                // Guard threshold is safeBound_ * 10 in checkAndResetIfDiverged().
+                // The coupling path in updateAttractor() (setInputLevel is
+                // unclamped) legitimately drives |state| to ~112 at kMinSpeed
+                // with a full-scale DC input, so 25 -> 250 never fires. The Chua
+                // value (5 -> 50) would fire ~2000x per 600 s render.
+                safeBound_ = 25.0f;
+                break;
         }
     }
 
@@ -192,6 +232,9 @@ private:
                 state_ = {0.7f, 0.0f, 0.0f};
                 break;
             case ChaosModel::Henon:
+                state_ = {0.1f, 0.0f, 0.0f};
+                break;
+            case ChaosModel::Aizawa:
                 state_ = {0.1f, 0.0f, 0.0f};
                 break;
         }
@@ -228,6 +271,9 @@ private:
             case ChaosModel::Henon:
                 updateHenon();
                 break;
+            case ChaosModel::Aizawa:
+                updateAizawa(dt);
+                break;
         }
 
         checkAndResetIfDiverged();
@@ -244,6 +290,35 @@ private:
         float dx = sigma * (state_.y - state_.x);
         float dy = state_.x * (rho - state_.z) - state_.y;
         float dz = state_.x * state_.y - beta * state_.z;
+
+        state_.x += dx * dt;
+        state_.y += dy * dt;
+        state_.z += dz * dt;
+    }
+
+    /// @brief Aizawa system, forward Euler (FR-031).
+    /// dx/dt = (z - b) x - d y
+    /// dy/dt = d x + (z - b) y
+    /// dz/dt = c + a z - z^3/3 - (x^2 + y^2)(1 + e z) + f z x^3
+    void updateAizawa(float dt) noexcept {
+        constexpr float a = 0.95f;
+        constexpr float b = 0.7f;
+        constexpr float c = 0.6f;
+        constexpr float d = 3.5f;
+        constexpr float e = 0.25f;
+        constexpr float f = 0.1f;
+
+        // All three derivatives are evaluated from the SAME state: updating
+        // state_ in place mid-expression would silently make this a
+        // Gauss-Seidel step and change the attractor.
+        const float x = state_.x;
+        const float y = state_.y;
+        const float z = state_.z;
+
+        const float dx = (z - b) * x - d * y;
+        const float dy = d * x + (z - b) * y;
+        const float dz = c + a * z - (z * z * z) / 3.0f - (x * x + y * y) * (1.0f + e * z) +
+                         f * z * (x * x * x);
 
         state_.x += dx * dt;
         state_.y += dy * dt;
@@ -307,6 +382,9 @@ private:
         if (std::abs(state_.x) > safeBound_ * 10.0f ||
             std::abs(state_.y) > safeBound_ * 10.0f ||
             std::abs(state_.z) > safeBound_ * 10.0f) {
+            // FR-036: count the reset BEFORE re-seeding, so the observation
+            // survives resetModelState() (which never touches the counter).
+            ++divergenceResetCount_;
             resetModelState();
         }
     }
@@ -316,6 +394,7 @@ private:
     float normalizedOutput_ = 0.0f;
     float inputLevel_ = 0.0f;
     int samplesUntilUpdate_ = 0;
+    std::uint32_t divergenceResetCount_ = 0;  ///< FR-036, zeroed by prepare()/reset() only
 
     // Henon interpolation
     float prevHenonX_ = 0.0f;

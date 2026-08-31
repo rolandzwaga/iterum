@@ -118,6 +118,7 @@
 #include <krate/dsp/processors/noise_generator.h>
 #include <krate/dsp/processors/note_selective_filter.h>
 #include <krate/dsp/processors/pattern_scheduler.h>
+#include <krate/dsp/processors/perlin_noise_source.h>
 #include <krate/dsp/processors/phaser.h>
 #include <krate/dsp/processors/pitch_follower_source.h>
 #include <krate/dsp/processors/pitch_shift_processor.h>
@@ -130,6 +131,7 @@
 #include <krate/dsp/processors/saturation_processor.h>
 #include <krate/dsp/processors/self_oscillating_filter.h>
 #include <krate/dsp/processors/sidechain_filter.h>
+#include <krate/dsp/processors/slow_event_scheduler.h>
 #include <krate/dsp/processors/spectral_distortion.h>
 #include <krate/dsp/processors/spectral_gate.h>
 #include <krate/dsp/processors/spectral_morph_filter.h>
