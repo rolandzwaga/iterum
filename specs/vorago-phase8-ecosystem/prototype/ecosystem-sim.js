@@ -219,6 +219,14 @@ class Ecosystem {
     const fx = new Float64Array(n);
     const fy = new Float64Array(n);
     const dPhase = new Float64Array(n);
+    // Deferred exchange flows (see RULE 1) plus each agent's total desired
+    // outflow, used to scale transfers down to what the source actually holds.
+    const maxPairs = (n * (n - 1)) / 2;
+    const pairI = new Int32Array(maxPairs);
+    const pairJ = new Int32Array(maxPairs);
+    const pairFlow = new Float64Array(maxPairs);
+    const outflow = new Float64Array(n);
+    let pairCount = 0;
 
     // --- sense neighbours: one pass over unordered pairs -------------------
     for (let i = 0; i < n; i++) {
@@ -230,13 +238,19 @@ class Ecosystem {
         if (w < 1e-6) continue;
         this.pairOps++;
 
-        // RULE 1 — EXCHANGE. Antisymmetric by construction, so the pairwise
-        // flows sum to exactly zero: agent-to-agent transfer cannot create or
-        // destroy energy regardless of exchangeRate or predation.
+        // RULE 1 — EXCHANGE. Antisymmetric, so the pairwise flows sum to zero.
+        // Recorded here and APPLIED IN A SECOND PASS below, scaled so that no
+        // agent can transfer away more energy than it holds. Antisymmetry alone
+        // is NOT enough for conservation: an agent driven negative was being
+        // clamped to zero with the overdraw charged to the pool, an uncapped
+        // withdrawal that drove the pool negative in 468/1000 fuzzed configs.
         // (1 - 2*predation) flips the sign: +1 diffusive, -1 predatory.
         const flow = c.exchangeRate * w * (this.e[j] - this.e[i]) * (1 - 2 * c.predation);
-        dE[i] += flow;
-        dE[j] -= flow;
+        pairI[pairCount] = i;
+        pairJ[pairCount] = j;
+        pairFlow[pairCount] = flow;
+        pairCount++;
+        if (flow > 0) outflow[j] += flow; else outflow[i] -= flow;
 
         // RULE 2 — ATTRACT / REPEL. Force is scaled by the NEIGHBOUR's energy,
         // so a spent agent stops pulling and the topology tracks where the
@@ -256,6 +270,25 @@ class Ecosystem {
         dPhase[i] += c.syncRate * w * s;
         dPhase[j] -= c.syncRate * w * s;
       }
+    }
+
+    // --- EXCHANGE, SECOND PASS. Scale every agent's outgoing transfers so the
+    // total cannot exceed the energy it actually holds this step. Each pair is
+    // scaled by min(scaleI, scaleJ), which keeps the flow antisymmetric — both
+    // sides of a transfer move by the same amount, so the sum stays exactly
+    // zero and conservation survives however hostile the rule settings are.
+    // A solvent agent is never throttled: its scale is 1.
+    const scale = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const want = outflow[i] * dt;
+      scale[i] = (want > this.e[i] && want > 0) ? this.e[i] / want : 1.0;
+    }
+    for (let p = 0; p < pairCount; p++) {
+      const i = pairI[p], j = pairJ[p];
+      const s = scale[i] < scale[j] ? scale[i] : scale[j];
+      const f = pairFlow[p] * s;
+      dE[i] += f;
+      dE[j] -= f;
     }
 
     // --- RULE 4 — METABOLISM. Closed pool: this is what makes boundedness
@@ -278,14 +311,24 @@ class Ecosystem {
     // grazeRate / maxSpeed measurably did nothing (identical sweep rows).
     // Independent regrowth is what lets a grazed patch STAY depleted while an
     // ungrazed one fills — the spatial structure agents can then exploit.
-    if (this.pool > 0) {
+    // SINGLE WITHDRAWAL BUDGET. Every draw on the pool this step — cell
+    // regrowth AND the global feed below — is capped against one running
+    // balance. Without this the two withdrawals each cap against a pool that
+    // does not yet know about the other, and the pool goes negative: 591 of
+    // 1000 fuzzed configurations did exactly that, at every predation level,
+    // which falsified the claim that conservation was structural. The drift
+    // was small (1.1e-11) but it is a violation of the exact invariant the
+    // whole boundedness argument rests on.
+    let avail = this.pool;
+    if (avail > 0) {
       for (let k = 0; k < c.resourceCells; k++) {
         const room = c.cellCapacity - this.res[k];
         if (room <= 0) continue;
-        const give = Math.min(c.regenRate * room * dt, this.pool + poolDelta);
+        const give = Math.min(c.regenRate * room * dt, avail);
         if (give <= 0) continue;
         this.res[k] += give;
         poolDelta -= give;
+        avail -= give;
       }
     }
 
@@ -314,9 +357,14 @@ class Ecosystem {
     }
 
     for (let i = 0; i < n; i++) {
-      const influx = graze[i] + (appetiteSum > 0
-        ? c.feedRate * this.pool * (appetite[i] / appetiteSum) * dt
-        : 0);
+      // Global feed draws on what regrowth left, never on the start-of-step
+      // pool (see the withdrawal-budget note above).
+      let globalFeed = appetiteSum > 0
+        ? c.feedRate * avail * (appetite[i] / appetiteSum) * dt
+        : 0;
+      if (globalFeed > avail) globalFeed = avail;
+      avail -= globalFeed;
+      const influx = graze[i] + globalFeed;
       // Nonlinear leak: with leakExponent > 1 a hoarding agent bleeds
       // disproportionately, which is what turns predation's rich-get-richer
       // into a boom/bust cycle instead of one permanent winner.
@@ -325,7 +373,7 @@ class Ecosystem {
       // Only the GLOBAL feed is debited from the pool here: the grazed part was
       // already taken out of the resource cells above. Debiting it twice would
       // destroy energy and quietly break the conservation invariant.
-      poolDelta += leak - (influx - graze[i]);
+      poolDelta += leak - globalFeed;
     }
 
     // --- integrate --------------------------------------------------------

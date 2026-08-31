@@ -1,6 +1,7 @@
 # Vorago Phase 8 — Ecosystem prototype findings
 
-**Status: preliminary. Not yet sufficient to write the spec from.** Read the Open Problems
+**Status: preliminary. Not yet sufficient to write the spec from.** Boundedness is settled (§1);
+the rule set and its success metrics are not (§5). Read the Open Problems
 section before treating any number here as settled.
 
 The roadmap mandates this prototype before the Phase 8 spec: *"an offline Node.js prototype
@@ -14,18 +15,38 @@ The RNG is a bit-exact port of `dsp/include/krate/dsp/core/random.h` (`Xorshift3
 
 ---
 
-## 1. What held up
+## 1. Boundedness — and the two guards it actually requires
 
-**Boundedness is structural, and that is the single most valuable confirmed result.**
-Energy lives in a closed system — a reservoir pool, a field of resource cells, and the agents —
-and every transfer is antisymmetric or explicitly debited from its source. Total energy is
-therefore invariant by construction rather than by tuning. Measured drift over a 30-minute run:
-**2.4e-15 to 1.9e-13 relative**, i.e. floating-point noise.
+**Final state: 1000 randomised configurations, 0 non-finite, 0 pool-negative, 0 unbounded.**
+Energy lives in a closed system (reservoir pool + resource cells + agents) and total energy is
+invariant. Measured drift over a 30-minute run: **2.4e-15 to 1.9e-13 relative** — float noise.
 
-This is worth carrying into the C++ spec as the central design commitment: no rule configuration,
-however hostile, can make the system run away, because there is nowhere for extra energy to come
-from. It makes the roadmap's "conservation constraint... guarantees global boundedness regardless
-of rule configuration" true by construction instead of by testing.
+**But this was NOT true of the first design, and the correction is the finding.** An earlier
+version of this document claimed boundedness was structural "by construction". Fuzzing disproved
+it twice. Closure requires two guards that are not obvious, and both belong in the C++ spec as
+requirements rather than as implementation detail:
+
+**Guard 1 — one withdrawal budget per step.** Cell regrowth and the global feed each capped their
+draw against a pool that did not yet know about the other, so together they could overdraw.
+**591/1000 configs** drove the pool negative this way. Both draws must decrement a single running
+balance.
+
+**Guard 2 — a transfer is limited by what the source holds, enforced in two passes.**
+This is the subtle one. The exchange rule was *antisymmetric* — every transfer added to one agent
+exactly what it removed from another, so the pairwise sum was provably zero. That looks like
+conservation is structural, and it is why the original claim was made. It is not sufficient: an
+agent can be asked to give away more than it has, and clamping it at zero charges the shortfall to
+the pool — an uncapped withdrawal. After Guard 1, **468/1000 configs** still failed this way.
+
+The fix is to defer the flows, accumulate each agent's desired outflow, compute
+`scale_i = min(1, e_i / desired_i)`, then apply each pair scaled by `min(scale_i, scale_j)`.
+Scaling *both sides of a pair by the same factor* is what preserves antisymmetry while making
+solvency structural; a solvent agent is never throttled. This also raised the alive fraction from
+6.4% to **14.6%**, since agents that stay solvent stay lively.
+
+**The lesson worth carrying:** antisymmetry gives conservation only among participants who can
+actually pay. In C++ this class of defect would have surfaced as a slow, configuration-dependent
+energy leak, months later, under an audio-thread debugger.
 
 **Determinism under seed** holds — same seed reproduces a bit-identical trajectory.
 
@@ -75,7 +96,9 @@ ungrazed one fills. After the change those parameters visibly matter.
 `predation` blends the exchange rule between diffusive (strong feeds weak) and predatory (weak
 feeds strong).
 
-| predation | activity | frozen agents | bounded |
+Measured **before** Guard 2 (§1) existed:
+
+| predation | activity | frozen agents | bounded (pre-Guard-2) |
 |---|---|---|---|
 | 0.0 | 0.222 | 0 | yes |
 | 0.25 | 0.222 | 0 | yes |
@@ -83,9 +106,14 @@ feeds strong).
 | 0.75 | 0.081 | 22 | **no** |
 | 1.0 | 0.057 | 23 | **no** |
 
-Predatory settings drive the pool negative (explicit-Euler anti-diffusion is unstable), and the
-safe settings are indistinguishable from each other. **The agent-to-agent exchange rule does not
-earn its place.** Spatial grazing competition already does that job.
+The unboundedness in the last two rows is **fixed** — it was the uncapped-overdraw defect Guard 2
+closes, and predation 0.75–1.0 at `exchangeRate` 3.0 now holds conservation to ~5e-14. Do not read
+this table as "predation is unsafe"; read it as how the defect was first observed.
+
+What survives the fix is the other half: **the safe settings are indistinguishable from each
+other** (activity 0.215–0.222 across predation 0–0.5). The agent-to-agent exchange rule does not
+earn its place on the evidence so far — spatial grazing competition already does that job. Whether
+predation becomes useful now that it is solvent is untested and belongs with open problem 1.
 
 This was caught by an ablation run in which *"no exchange" came out bit-identical to baseline, to
 every printed digit* — because the default `predation: 0.5` makes the `(1 - 2·predation)` factor
@@ -184,8 +212,20 @@ below the noise floor.
 5. **1D vs 2D habitat undecided.** 2D scored alive with markedly lower entropy (2.93 vs 4.07) and
    higher variability. Not enough evidence to choose.
 
-6. **Fuzz result not yet in.** The 1000-config boundedness sweep was still running when this was
-   written; §1's boundedness claim currently rests on targeted runs, not the full fuzz.
+6. **The alive regime is a narrow island.** With every knob randomised, only **14.6%** of 1000
+   configurations stay lively; 85.4% freeze. Boundedness is universal, liveness is rare. That is a
+   real risk for Phase 10: concept macros (Darkness, Life, Entropy) will move these parameters, and
+   most of the space is dead. Either the macros must be constrained to the live region, or the rule
+   set needs a mechanism that resists freezing. Unresolved, and it interacts with open problem 2 —
+   the frozen count is measured with the duration-unstable criterion, so treat 85.4% as indicative
+   rather than exact.
+
+7. **The fuzzer only proves things about parameters it varies.** Its first version silently omitted
+   `predation`, `capacity`, `leakExponent` and the entire resource field, leaving predation at the
+   0.5 default — the one value that zeroes the exchange rule. It reported a clean
+   "0 unbounded / 1000" while never visiting a regime already known to break conservation. The
+   C++ fuzz test must assert that every configuration field is actually randomised, or it will rot
+   into the same false green.
 
 ## 6. Recommendation
 

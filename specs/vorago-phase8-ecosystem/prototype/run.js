@@ -82,14 +82,27 @@ function randomConfig(rng) {
   for (let i = 0; i < sim.KIND_COUNT; i++)
     for (let j = i + 1; j < sim.KIND_COUNT; j++) A[j][i] = A[i][j];
 
+  // EVERY knob must be randomised. The first version of this function silently
+  // omitted predation, capacity, leakExponent and the whole resource field, so
+  // predation sat at its 0.5 default — the exact value that zeroes the exchange
+  // rule — and the sweep reported "0 unbounded / 1000" while never visiting the
+  // regime already known to break conservation. A fuzzer that does not vary a
+  // parameter proves nothing about it.
   return {
     agentCount: Math.round(rng.range(24, 48)),
     dimensions: rng.nextUnipolar() < 0.5 ? 1 : 2,
-    kernelSigma: rng.range(0.03, 0.35),
+    kernelSigma: rng.range(0.01, 0.35),
     exchangeRate: rng.range(0.0, 3.0),
-    moveRate: rng.range(0.0, 0.2),
+    predation: rng.range(0.0, 1.0),
+    capacity: rng.range(0.01, 1.0),
+    leakExponent: rng.range(1.0, 2.5),
+    moveRate: rng.range(0.0, 0.5),
     maxSpeed: rng.range(0.001, 0.05),
     syncRate: rng.range(0.0, 0.5),
+    resourceCells: Math.round(rng.range(8, 96)),
+    cellCapacity: rng.range(0.005, 0.2),
+    regenRate: rng.range(0.0, 1.0),
+    grazeRate: rng.range(0.0, 3.0),
     feedRate: rng.range(0.0, 1.0),
     leakRate: rng.range(0.0, 1.0),
     freqLo: rng.range(0.0005, 0.005),
@@ -106,9 +119,9 @@ function cmdFuzz() {
   console.log(`# fuzz: ${count} random rule configs x ${seconds}s`);
   const meta = new sim.Xorshift32(0xf0f0f0);
 
-  let unbounded = 0, nonFinite = 0, frozen = 0, cyclic = 0, alive = 0;
-  const worst = { drift: 0, seed: 0 };
-  const rows = ['config,seed,bounded,drift,entropy_mean,entropy_std,late_std,worst_ac,ac_lag_s'];
+  let unbounded = 0, nonFinite = 0, frozen = 0, cyclic = 0, alive = 0, poolNeg = 0;
+  const worst = { drift: 0, seed: 0, predation: 0 };
+  const rows = ['config,seed,bounded,pool_negative,predation,drift,entropy_mean,entropy_std,late_std,worst_ac,ac_lag_s'];
 
   for (let k = 0; k < count; k++) {
     const cfgSeed = meta.next();
@@ -117,15 +130,18 @@ function cmdFuzz() {
     const r = sim.run(cfg, cfgSeed, seconds, { sampleEvery: 188 }); // ~0.5 Hz
 
     if (r.nonFinite) nonFinite++;
+    if (r.poolWentNegative) poolNeg++;
     if (!r.bounded) {
       unbounded++;
-      if (r.energyDrift > worst.drift) { worst.drift = r.energyDrift; worst.seed = cfgSeed; }
+      if (r.energyDrift > worst.drift) {
+        worst.drift = r.energyDrift; worst.seed = cfgSeed; worst.predation = cfg.predation;
+      }
     }
     if (r.entropyLateStd <= 0.02) frozen++;
     else if (r.worstAutocorr > 0.8) cyclic++;
     else alive++;
 
-    rows.push([k, cfgSeed, r.bounded ? 1 : 0, r.energyDrift.toExponential(3),
+    rows.push([k, cfgSeed, r.bounded ? 1 : 0, r.poolWentNegative ? 1 : 0, fmt(cfg.predation, 3), r.energyDrift.toExponential(3),
                fmt(r.entropyMean), fmt(r.entropyStd), fmt(r.entropyLateStd),
                fmt(r.worstAutocorr, 3), fmt(r.worstAutocorrLagSeconds, 1)].join(','));
 
@@ -135,8 +151,9 @@ function cmdFuzz() {
 
   console.log(`\n  configs               : ${count}`);
   console.log(`  non-finite            : ${nonFinite}   ${nonFinite === 0 ? '[OK]' : '[FAIL]'}`);
+  console.log(`  pool went negative    : ${poolNeg}`);
   console.log(`  unbounded             : ${unbounded}   ${unbounded === 0 ? '[OK]' : '[FAIL]'}`);
-  if (unbounded) console.log(`    worst drift ${worst.drift.toExponential(3)} at seed ${worst.seed}`);
+  if (unbounded) console.log(`    worst drift ${worst.drift.toExponential(3)} at seed ${worst.seed} (predation ${fmt(worst.predation,3)})`);
   console.log(`  --- liveness split (informational, not a gate) ---`);
   console.log(`  alive                 : ${alive}  (${(100 * alive / count).toFixed(1)}%)`);
   console.log(`  frozen (late std<=.02): ${frozen}  (${(100 * frozen / count).toFixed(1)}%)`);
