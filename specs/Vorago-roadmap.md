@@ -114,7 +114,7 @@ Legend: ✅ = exists and is largely sufficient · 🔶 = exists, needs extension
 | L6 Granular Ghosts | `systems/atmosphere_engine.h` (Seraphis Phase 5: self-granulating capture, 50 ms–30 s grains, spectral blur, per-grain pitch drift), `rolling_capture_buffer`, `reverse_buffer`, `grain_pool/scheduler/processor`, `slice_pool` | ✅ **~90% built.** 🔶 Add ghost-flavoured config: reverse playback per grain, event-triggered (not continuous-density) scheduling, darker blur defaults. |
 | L7 Harmonic Bloom | `harmonic_snapshot`, `spectral_coring_estimator`, `fft_autocorrelation`, `sympathetic_resonance_simd`; Seraphis Phase 6 plans in-loop shimmer/bloom | 🆕 `BloomEngine` (L3): analyze strongest current peaks → spawn child partials into the cloud → 45 s fade-in / 3 min fade-out lifecycle. Peak analysis and partial banks exist; the lifecycle manager is new. |
 | L8 Dark Modulation | **Seraphis Phase 1 suite ✅**: `brownian_drift` (Ornstein–Uhlenbeck), `tidal_modulator` (30 s–10 min never-repeating = "seasonal cycles"), `spline_trajectory`, `orbit_modulator`, `breathing_modulator`, `growth_envelope`; `chaos_mod_source` (Lorenz/Rossler/Chua/Henon), `random_source`, `sample_hold_source`, `modulation_engine`, `voice_mod_router` | ✅ **Almost entirely built.** 🆕 Only gaps: `PerlinNoiseSource` (L2, small) and optionally the Aizawa attractor added to `ChaosModSource`. |
-| L9 Space Engine | `fdn_reverb`, `reverb`, `diffusion_network`, `pitch_shift_processor`; **Seraphis Phase 6 `AetherReverb`** (ER→diffusion→FDN→spectral damping, freeze, life-modulated internals) is the same topology | 🔶 **Strategic reuse point:** build `AetherReverb` (Seraphis Phase 6) as the shared L4 space core; Vorago's "cavern" is a dark configuration + `MovingDampers` extension (per-line damping filters that wander). Avoid building two big FDNs. |
+| L9 Space Engine | `fdn_reverb`, `reverb`, `diffusion_network`, `pitch_shift_processor`; **Seraphis Phase 6 `AetherReverb`** (ER→diffusion→FDN→spectral damping, freeze, life-modulated internals) is the same topology | 🔶 **Strategic reuse point:** `AetherReverb` is **already built** (`effects/aether_reverb.h`) and is the shared L4 space core; Vorago's "cavern" is a dark configuration + `MovingDampers` extension (per-line damping filters that wander). Avoid building two big FDNs. |
 | L10 Subharmonic Engine | `sub_oscillator`, `pitch_tracker`/`pitch_detector` (not needed — pitch is known from the note), `one_pole`, `saturation_processor`, `tape_saturator`, `dc_blocker` | 🆕 `SubharmonicEngine` (L3): synchronous dividers (÷2, ÷4) + fifth-below tracked oscillator + LP + saturation. Small: composes existing pieces, driven by known voice pitch (no detection needed). |
 | L11 Slow Event Engine | `pattern_scheduler` (rhythmic, wrong time scale), `multi_stage_envelope` | 🆕 `SlowEventScheduler` (L2): seeded stochastic scheduler, one event per 20–90 s, event = {target, envelope (rise/hold/fall over seconds–minutes), depth}. RT-safe, no allocation, deterministic under seed. **Identity component.** |
 | L12 Entropy | `processors/entropy_processor.h` ✅ (Seraphis Phase 3: amp jitter → phase decoherence → ratio scatter → partial death/rebirth), `modulation_engine` macro routing | ✅ Reuse directly; Vorago's global Entropy knob = EntropyProcessor + scaled drift/event depths via macro system. |
@@ -128,20 +128,24 @@ ODR note: before creating any class below, run `grep -r "class Name" dsp/ plugin
 hazard list here is long (`ResonatorBank`, `FeedbackNetwork`, `NoiseGenerator`, `GranularEngine`,
 `PatternScheduler`).
 
-## Relationship to Seraphis (sequencing constraint)
+## Relationship to Seraphis (sequencing constraint — RESOLVED 2026-08-31)
 
-Vorago's substrate is ~60% Seraphis components, four of which are **already complete** (life
-modulators, harmonic cloud, entropy, continuous body, atmosphere engine). Two Seraphis phases are
-still pending and matter here:
+Vorago's substrate is ~60% Seraphis components. **Seraphis shipped 1.0 on 2026-08-31; all twelve of
+its roadmap phases are complete**, so every Seraphis dependency this roadmap once deferred is now
+satisfied and **no Vorago phase is blocked**:
 
-- **Seraphis Phase 6 (AetherReverb)** — build it once as the shared space-engine core; Vorago's
-  Cavern engine extends it rather than duplicating an FDN. Vorago Phase 9 depends on it.
-- **Seraphis Phase 7 (voice/engine)** — establishes the voice-composition, macro-system, and
-  determinism-harness patterns Vorago Phase 10 copies.
+- **`AetherReverb`** (Seraphis Phase 6) ships at `dsp/include/krate/dsp/effects/aether_reverb.h` —
+  the shared space-engine core. Vorago Phase 9's Cavern engine extends/configures it rather than
+  duplicating an FDN.
+- **Voice/engine pattern** (Seraphis Phase 7) ships at `dsp/include/krate/dsp/systems/seraphis_voice.h`,
+  `seraphis_engine.h`, and `seraphis_macro_matrix.h` — the voice-composition, macro-system, and
+  determinism-harness template Vorago Phase 10 copies.
+- Also complete and consumed as-is: life modulators, harmonic cloud, entropy processor, continuous
+  body, atmosphere engine.
 
-**Recommendation:** start Vorago Part A phases 1–8 any time (they are independent of Seraphis's
-remaining work), but schedule Vorago phases 9–10 after Seraphis 6–7 land so the shared patterns are
-proven once, in one place.
+**Recommendation:** build Part A in dependency order — Phase 1 first (it unblocks 2–8), then phases
+2–8 in any order interleaved with listening checkpoints. Phase 8's offline prototype has no DSP
+dependency and can start at any time, in parallel.
 
 ---
 
@@ -334,7 +338,8 @@ fixed points, no limit cycles shorter than N minutes), determinism harness, CPU 
 ### Phase 9: Cavern Space Engine
 
 **Spec:** `vorago-phase9-cavern-space`
-**Depends on:** Seraphis Phase 6 (`AetherReverb`) — build that first as the shared core.
+**Depends on:** `AetherReverb` — **already built** (`dsp/include/krate/dsp/effects/aether_reverb.h`,
+Seraphis Phase 6); reuse it as the shared core.
 **Goal:** An enormous underground bunker: ER → diffusion → FDN feedback matrix → moving dampers →
 late field → spectral damping.
 
@@ -357,7 +362,8 @@ metallic ringing via echo-density metric) + damper-motion smoothness test, CPU �
 ### Phase 10: Vorago Voice & Engine
 
 **Spec:** `vorago-phase10-voice-engine`
-**Depends on:** all above; pattern-template from Seraphis Phase 7.
+**Depends on:** all above; pattern-template from the shipped `seraphis_voice.h` / `seraphis_engine.h`
+/ `seraphis_macro_matrix.h` (Seraphis Phase 7).
 **Goal:** Compose everything into the playable instrument core.
 
 - `VoragoVoice` (L3) — cloud + noise organism → resonance drift network → feedback ecology tap →
@@ -448,8 +454,8 @@ Phase 1           ├─→ Phase 4 (spectral smear) ──┤
                   ├─→ Phase 7 (bloom) ───────────┤            │                        ▼
                   └─→ Phase 8 (ecosystem) ───────┘            │           Phase 12 → 13 → 14
                                                               │
-Seraphis Phase 6 (AetherReverb) ──→ Phase 9 (cavern space) ───┘
-Seraphis Phase 7 (voice pattern) ─────────────────────────────┘  (pattern template, not code dep)
+AetherReverb ✅ (shipped) ─────────→ Phase 9 (cavern space) ───┘
+seraphis_voice/engine ✅ (shipped) ───────────────────────────┘  (pattern template, not code dep)
 ```
 
 Phases 2–8 are mutually independent once Phase 1 lands — build in any order, interleaved with
