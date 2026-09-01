@@ -312,3 +312,110 @@ TEST_CASE("Pink noise filter output has lower high-frequency energy than white n
     INFO("Pink HF energy: " << pinkHFEnergy);
     REQUIRE(pinkHFEnergy < whiteHFEnergy * 0.5f); // At least 3dB less
 }
+
+// =============================================================================
+// Vorago Phase 2 — FR-093 / SC-008: the 44.1 kHz anchor
+// =============================================================================
+// prepare() maps Kellet's poles to the running sample rate. The whole
+// zero-regression argument for that change rests on ONE claim: at 44.1 kHz the
+// mapping is the identity, so every existing consumer's output is untouched.
+// That claim was previously asserted nowhere -- this file never called
+// prepare() at all -- so a mapping that was subtly wrong at the reference rate
+// would have shipped behind a green suite.
+TEST_CASE("PinkNoiseFilter_RateAnchor", "[pink_noise_filter][vorago-phase2]") {
+    constexpr std::size_t kNumSamples = 4096;
+
+    // One shared white sequence, so the three filters differ only in coefficients.
+    Krate::DSP::Xorshift32 rng(0xA11CEu);
+    std::vector<float>     white(kNumSamples);
+    for (float& w : white) {
+        w = rng.nextFloat();
+    }
+
+    const auto render = [&white](Krate::DSP::PinkNoiseFilter& f) {
+        std::vector<float> out;
+        out.reserve(white.size());
+        for (const float w : white) {
+            out.push_back(f.process(w));
+        }
+        return out;
+    };
+
+    SECTION("prepare(44100) is EXACTLY the identity") {
+        Krate::DSP::PinkNoiseFilter unprepared;
+        Krate::DSP::PinkNoiseFilter anchored;
+        anchored.prepare(44100.0f);
+
+        const std::vector<float> a = render(unprepared);
+        const std::vector<float> b = render(anchored);
+
+        REQUIRE(a.size() == b.size());
+        float worst = 0.0f;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            worst = std::max(worst, std::fabs(a[i] - b[i]));
+        }
+        CAPTURE(worst);
+        // BIT-exact, not approximately equal: pow(|a|, 1.0) returns a unchanged
+        // and g * (1 - a) / (1 - a) is g, so the mapped coefficients are the
+        // published ones. Any tolerance here would hide the defect this guards.
+        REQUIRE(worst == 0.0f);
+
+        // Not vacuous: the filter really did produce a signal.
+        float peak = 0.0f;
+        for (const float v : a) {
+            peak = std::max(peak, std::fabs(v));
+        }
+        REQUIRE(peak > 1.0e-3f);
+    }
+
+    SECTION("a different rate really does move the coefficients") {
+        // The anti-vacuity half. If prepare() were a no-op at EVERY rate the
+        // section above would pass while the rate fix did nothing at all --
+        // which is precisely the bug it exists to catch.
+        Krate::DSP::PinkNoiseFilter anchored;
+        anchored.prepare(44100.0f);
+        Krate::DSP::PinkNoiseFilter resampled;
+        resampled.prepare(96000.0f);
+
+        const std::vector<float> a = render(anchored);
+        const std::vector<float> b = render(resampled);
+
+        float worst = 0.0f;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            worst = std::max(worst, std::fabs(a[i] - b[i]));
+        }
+        CAPTURE(worst);
+        REQUIRE(worst > 1.0e-4f);
+    }
+
+    SECTION("the mapping is stable and idempotent") {
+        // prepare() must be callable repeatedly (consumers call it from their own
+        // prepare()) without drifting the coefficients.
+        Krate::DSP::PinkNoiseFilter once;
+        once.prepare(96000.0f);
+        Krate::DSP::PinkNoiseFilter thrice;
+        thrice.prepare(96000.0f);
+        thrice.prepare(96000.0f);
+        thrice.prepare(96000.0f);
+
+        const std::vector<float> a = render(once);
+        const std::vector<float> b = render(thrice);
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            REQUIRE(a[i] == b[i]);
+        }
+    }
+
+    SECTION("a degenerate rate is floored, not divided by") {
+        Krate::DSP::PinkNoiseFilter zero;
+        zero.prepare(0.0f);
+        Krate::DSP::PinkNoiseFilter negative;
+        negative.prepare(-48000.0f);
+
+        for (const float v : render(zero)) {
+            REQUIRE(std::isfinite(v));
+        }
+        for (const float v : render(negative)) {
+            REQUIRE(std::isfinite(v));
+        }
+    }
+}

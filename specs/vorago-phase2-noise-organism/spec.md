@@ -963,7 +963,7 @@ ODR sweep run this session over `dsp/`, `plugins/` and `tools/` with
   configurations a Vorago voice may actually instantiate, and that envelope is named here rather than
   left implicit: **at most 4 slots × 3 resonators × 2 combs, at most one `GranularDust` slot, dust
   concurrency at most 50 % of the FR-035 ceiling.** SC-004 (a), (b) and (c) sit inside it and are
-  gated against 106 666 ns. SC-004 (d) — every cap maxed — is deliberately **outside** it and exists
+  gated against 186 666 ns (FR-095, raised from 106 666 on 2026-09-01). SC-004 (d) — every cap maxed — is deliberately **outside** it and exists
   only as a regression tripwire against its own baseline, the
   `atmosphere_engine_perf_test.cpp:44-50` convention. Phase 10 (`VoragoVoice`) is bound by this
   envelope: if it needs to go outside it, the miss-handling policy above applies — stop and surface,
@@ -1021,7 +1021,7 @@ consumer's behaviour may move silently — see SC-011, broadened below).
   and the compile-only `dsp/lint_all_headers.cpp`. Membrum's body files and `continuous_body.h`
   (Seraphis's dependency) all use `ModalResonatorBank`, a different class declared in the same header,
   and are structurally unaffected. **No change to FR-052's own call sequence is possible or needed**:
-  `ResonatorBank` exposes no `getQ`/Q-reading accessor, so the organism still computes
+  the organism computes
   `rt60ToQ(driftedHz, decaySeconds)` itself to derive the FR-064 wander-adjusted target it writes via
   `setQ` — `setFrequency` now *also* computing a nominal Q internally is immediately superseded by that
   `setQ` call and is invisible to the organism's own behaviour. The substantive effect is that every

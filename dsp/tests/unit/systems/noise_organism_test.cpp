@@ -3500,3 +3500,118 @@ TEST_CASE("NoiseOrganism_RenderFingerprint", "[noise_organism]") {
         REQUIRE(cmp.worstMetricRelativeError == 0.0);
     }
 }
+
+// =============================================================================
+// NoiseOrganism_HissBrightBranch — FR-041
+// =============================================================================
+// The compliance pass found that setHissBright's `violet == true` branch was
+// exercised nowhere: the suite asserted the Blue pin and the out-of-range no-op,
+// but nothing read back Violet. A regression that made setHissBright a no-op --
+// or that inverted it -- passed the entire green suite. Both branches and the
+// round trip are pinned here.
+TEST_CASE("NoiseOrganism_HissBrightBranch", "[noise_organism]") {
+    NoiseOrganism organism;
+    organism.setSeed(kFingerprintSeed);
+    organism.prepare(kTestSampleRate, NoiseOrganism::PrepareConfig{});
+    organism.setSourceModel(0, NoiseOrganismModel::MetallicHiss);
+    // A model write is DUCKED (FR-013): the swap lands on the ramp's zero sample,
+    // so the read surface reports the OLD value until the render below runs.
+    (void)renderSamples(organism, static_cast<std::size_t>(0.2 * kTestSampleRate),
+                        NoiseOrganism::kControlChunkSamples);
+    REQUIRE(organism.getSourceModel(0) == NoiseOrganismModel::MetallicHiss);
+
+    SECTION("the default is Blue, and setHissBright(true) reaches Violet") {
+        REQUIRE(organism.getSourceNoiseType(0) == NoiseType::Blue);
+
+        organism.setHissBright(0, true);
+        (void)renderSamples(organism, static_cast<std::size_t>(0.2 * kTestSampleRate),
+                            NoiseOrganism::kControlChunkSamples);
+        REQUIRE(organism.getSourceNoiseType(0) == NoiseType::Violet);
+
+        // ...and back, so the branch is a real toggle rather than a latch.
+        organism.setHissBright(0, false);
+        (void)renderSamples(organism, static_cast<std::size_t>(0.2 * kTestSampleRate),
+                            NoiseOrganism::kControlChunkSamples);
+        REQUIRE(organism.getSourceNoiseType(0) == NoiseType::Blue);
+    }
+
+    SECTION("the choice reaches the audio, not just the read-back") {
+        // A getter-only assertion would pass on an implementation that stored the
+        // flag and never used it, so this renders both settings and requires the
+        // OUTPUT to differ.
+        //
+        // It asserts a difference and deliberately NOT a direction. The obvious
+        // guess -- violet is brighter, being a differentiator of white where blue
+        // differentiates pink -- is wrong here and was measured wrong before this
+        // was written: through the MetallicHiss chain the normalised mean-absolute
+        // first difference reads 0.0142 for blue against 0.0124 for violet, i.e.
+        // violet is DARKER. The chain is why: four resonators plus an inharmonic
+        // comb bank and a low-pass StochasticFilter dominate the spectrum, and the
+        // two colours carry different normalisation gains (0.7 for blue, 0.5 for
+        // violet, noise_generator.h). Pinning the direction would pin an artifact
+        // of that particular chain rather than FR-041's requirement.
+        const auto rmsOf = [](const std::vector<float>& v) {
+            double acc = 0.0;
+            for (const float s : v) {
+                acc += static_cast<double>(s) * static_cast<double>(s);
+            }
+            return std::sqrt(acc / static_cast<double>(std::max<std::size_t>(1, v.size())));
+        };
+        // Mean absolute first difference: a cheap, FFT-free brightness proxy,
+        // normalised by RMS so it measures spectral tilt and not level.
+        const auto brightness = [&rmsOf](const std::vector<float>& v) {
+            double acc = 0.0;
+            for (std::size_t i = 1; i < v.size(); ++i) {
+                acc += std::fabs(static_cast<double>(v[i]) - static_cast<double>(v[i - 1]));
+            }
+            const double rms = rmsOf(v);
+            return (rms > 0.0) ? (acc / static_cast<double>(v.size() - 1)) / rms : 0.0;
+        };
+
+        const auto capture = [&](bool violet) {
+            NoiseOrganism o;
+            o.setSeed(kFingerprintSeed);
+            o.prepare(kTestSampleRate, NoiseOrganism::PrepareConfig{});
+            o.setSourceModel(0, NoiseOrganismModel::MetallicHiss);
+            o.setHissBright(0, violet);
+            (void)renderSamples(o, static_cast<std::size_t>(1.0 * kTestSampleRate),
+                                NoiseOrganism::kControlChunkSamples);  // settle past the duck
+            return renderSamples(o, static_cast<std::size_t>(4.0 * kTestSampleRate),
+                                 NoiseOrganism::kControlChunkSamples);
+        };
+
+        const std::vector<float> blue   = capture(false);
+        const std::vector<float> violet = capture(true);
+        REQUIRE(rmsOf(blue) > 1.0e-5);
+        REQUIRE(rmsOf(violet) > 1.0e-5);
+
+        const double blueBrightness   = brightness(blue);
+        const double violetBrightness = brightness(violet);
+        CAPTURE(blueBrightness, violetBrightness);
+
+        // The two renders share a seed and differ ONLY in the hiss-bright flag,
+        // so any difference at all is that flag reaching the generator.
+        REQUIRE(blue.size() == violet.size());
+        double worstSampleDiff = 0.0;
+        for (std::size_t i = 0; i < blue.size(); ++i) {
+            worstSampleDiff = std::max(
+                worstSampleDiff,
+                std::fabs(static_cast<double>(blue[i]) - static_cast<double>(violet[i])));
+        }
+        CAPTURE(worstSampleDiff);
+        REQUIRE(worstSampleDiff > 1.0e-4);
+
+        // ...and the difference is spectral, not a bare level change: the
+        // brightness proxy moves by more than 5 % in EITHER direction while the
+        // two renders stay within 3 dB of each other in level.
+        const double brightnessRatio = (blueBrightness > 0.0)
+                                           ? (violetBrightness / blueBrightness)
+                                           : 0.0;
+        CAPTURE(brightnessRatio);
+        REQUIRE(std::fabs(brightnessRatio - 1.0) > 0.05);
+        const double levelRatioDb =
+            20.0 * std::log10(std::max(rmsOf(violet), 1e-12) / std::max(rmsOf(blue), 1e-12));
+        CAPTURE(levelRatioDb);
+        REQUIRE(std::fabs(levelRatioDb) < 3.0);
+    }
+}

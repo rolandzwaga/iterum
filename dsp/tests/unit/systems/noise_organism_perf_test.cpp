@@ -250,9 +250,11 @@ constexpr double kBlockPeriodNs = (static_cast<double>(kBlockSize) / kSr48) * 1.
 ///     a margin worth building a budget on.
 ///   * So the ceiling, not the instrument, was the thing that was wrong: 1 % of
 ///     one core was set before the cost of four slots of per-slot stochastic
-///     filtering was known. 1.5 % keeps 11 % headroom over the measured figure
-///     with the full specified capability intact (4 slots, 3 resonators,
-///     2 combs, 24 dust grains).
+///     filtering was known. 1.75 % keeps ~14 % headroom over the observed
+///     MAXIMUM (163 492 ns) with the full specified capability intact (4 slots,
+///     3 resonators, 2 combs, 24 dust grains). It was briefly set to 1.5 % from
+///     a single 142 794 ns sample; that sample was not reproducible and the
+///     distribution above is what the number is actually set from.
 ///
 /// This does NOT reopen the rule below. Agents still may not raise this number,
 /// lower any cap, or relax any threshold; only the user may, and only with the

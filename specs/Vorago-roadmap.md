@@ -177,6 +177,16 @@ clicks); 60 s CSV renders inspected for organic character (Phase 1 Seraphis eval
 
 ### Phase 2: Noise Organism
 
+**Status: ✅ COMPLETE (2026-09-01)** — see specs/vorago-phase2-noise-organism/compliance.md
+(86 of 89 items pass, 3 partial, 0 fail). Three gaps are recorded there rather than closed,
+and one of them needs a decision before Phase 10 consumes this component: **FR-073** — spec
+and implementation disagree on whether a slot at `wake == 0` with `dormant == false` still
+runs its chain. **FR-067** and **FR-056** are implemented but unassertable without new public
+accessors on `StochasticFilter`. Five success criteria were rewritten during the build after
+measurement showed the originals could not discriminate (details in compliance.md), and
+FR-095's CPU ceiling moved 1 % → 1.75 % by explicit user decision under the spec's own
+stop-and-surface rule.
+
 **Spec:** `vorago-phase2-noise-organism`
 **Goal:** Living noise — the second sound source beside the harmonic cloud.
 
