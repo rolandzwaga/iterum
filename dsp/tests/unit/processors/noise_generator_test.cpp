@@ -25,8 +25,10 @@
 
 #include <signal_metrics.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 #include <numeric>
 
@@ -2629,4 +2631,160 @@ TEST_CASE("NoiseGenerator SignalMetrics: vinyl crackle has high kurtosis (impuls
     // Vinyl crackle should have high excess kurtosis (> 3)
     // due to sparse impulsive clicks
     REQUIRE(kurtosis > 3.0f);
+}
+
+// ==============================================================================
+// Vorago Phase 2 (specs/vorago-phase2-noise-organism): NoiseGenerator::setSeed
+// FR-080 .. FR-083, SC-011 (i)-(iv).
+//
+// Sections (i) and (ii) pin behaviour that must NOT move: two default-constructed
+// instances share the construction seed (Xorshift32 rng_{12345},
+// noise_generator.h:593) and are therefore bit-identical, and an un-seeded
+// instance keeps the historical reset() scramble
+// (rng_.seed(rng_.next() ^ 0xDEADBEEF), noise_generator.h:189). They pass before
+// and after the amendment.
+//
+// Sections (iii) and (iv) exercise the new opt-in API and do not compile before
+// it ("no member named 'setSeed'").
+// ==============================================================================
+
+namespace {
+
+constexpr float kVoragoSampleRate = 48000.0f;
+constexpr size_t kVoragoBlockSize = 512;
+constexpr size_t kVoragoRenderSamples = 4096; // 8 blocks of kVoragoBlockSize
+
+// White-only fixture at 48 kHz, -20 dB, per the T003 fixture description.
+inline void configureWhiteAt48k(NoiseGenerator& gen) {
+    gen.prepare(kVoragoSampleRate, kVoragoBlockSize);
+    gen.setNoiseEnabled(NoiseType::White, true);
+    gen.setNoiseLevel(NoiseType::White, -20.0f);
+}
+
+// Render kVoragoRenderSamples in kVoragoBlockSize-sample calls.
+inline std::vector<float> renderWhite(NoiseGenerator& gen) {
+    std::vector<float> out(kVoragoRenderSamples, 0.0f);
+    for (size_t i = 0; i < kVoragoRenderSamples; i += kVoragoBlockSize) {
+        gen.process(out.data() + i, kVoragoBlockSize);
+    }
+    return out;
+}
+
+// Run one throwaway block so the 5 ms level smoothers reach their target and
+// snap exactly (smoother.h:199-201). reset() does NOT touch the level smoothers
+// (noise_generator.h:186-226), so without this the RNG would not be the only
+// difference between two renders separated by a reset().
+inline void settleLevelSmoothers(NoiseGenerator& gen) {
+    std::array<float, kVoragoBlockSize> scratch{};
+    gen.process(scratch.data(), scratch.size());
+}
+
+inline float maxAbsDifference(const std::vector<float>& a, const std::vector<float>& b) {
+    const size_t n = std::min(a.size(), b.size());
+    float worst = 0.0f;
+    for (size_t i = 0; i < n; ++i) {
+        worst = std::max(worst, std::abs(a[i] - b[i]));
+    }
+    return worst;
+}
+
+inline float pearsonCorrelation(const std::vector<float>& a, const std::vector<float>& b) {
+    const size_t n = std::min(a.size(), b.size());
+    if (n == 0) return 0.0f;
+
+    double meanA = 0.0;
+    double meanB = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        meanA += static_cast<double>(a[i]);
+        meanB += static_cast<double>(b[i]);
+    }
+    meanA /= static_cast<double>(n);
+    meanB /= static_cast<double>(n);
+
+    double covariance = 0.0;
+    double varianceA = 0.0;
+    double varianceB = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double da = static_cast<double>(a[i]) - meanA;
+        const double db = static_cast<double>(b[i]) - meanB;
+        covariance += da * db;
+        varianceA += da * da;
+        varianceB += db * db;
+    }
+    if (varianceA <= 0.0 || varianceB <= 0.0) return 0.0f;
+
+    return static_cast<float>(covariance / std::sqrt(varianceA * varianceB));
+}
+
+} // anonymous namespace
+
+TEST_CASE("NoiseGenerator_SetSeedIsOptInAndReproducible", "[noise_generator][vorago-phase2]") {
+
+    SECTION("(i) un-seeded instances are identical (FR-082's premise)") {
+        NoiseGenerator first;
+        NoiseGenerator second;
+        configureWhiteAt48k(first);
+        configureWhiteAt48k(second);
+
+        const std::vector<float> renderA = renderWhite(first);
+        const std::vector<float> renderB = renderWhite(second);
+
+        // Guard against a vacuous pass on two silent renders.
+        REQUIRE(findPeak(renderA.data(), renderA.size()) > 0.0f);
+        REQUIRE(maxAbsDifference(renderA, renderB) == 0.0f);
+    }
+
+    SECTION("(ii) the historical reset() scramble is intact when un-seeded (FR-081)") {
+        NoiseGenerator gen;
+        configureWhiteAt48k(gen);
+
+        const std::vector<float> initial = renderWhite(gen);
+        REQUIRE(findPeak(initial.data(), initial.size()) > 0.0f);
+
+        gen.reset();
+        const std::vector<float> afterFirstReset = renderWhite(gen);
+        gen.reset();
+        const std::vector<float> afterSecondReset = renderWhite(gen);
+
+        REQUIRE(findPeak(afterFirstReset.data(), afterFirstReset.size()) > 0.0f);
+        REQUIRE(maxAbsDifference(afterFirstReset, afterSecondReset) > 1e-3f);
+    }
+
+    SECTION("(iii) setSeed makes reset() reproducible (FR-080, FR-081)") {
+        NoiseGenerator gen;
+        configureWhiteAt48k(gen);
+        settleLevelSmoothers(gen);
+
+        gen.setSeed(0xC0FFEEu);
+        REQUIRE(gen.getSeed() == 0xC0FFEEu);
+
+        const std::vector<float> renderA = renderWhite(gen);
+        gen.reset();
+        const std::vector<float> renderB = renderWhite(gen);
+
+        REQUIRE(findPeak(renderA.data(), renderA.size()) > 0.0f);
+        REQUIRE(maxAbsDifference(renderA, renderB) == 0.0f);
+    }
+
+    SECTION("(iv) different seeds decorrelate (FR-082)") {
+        NoiseGenerator one;
+        NoiseGenerator two;
+        configureWhiteAt48k(one);
+        configureWhiteAt48k(two);
+        settleLevelSmoothers(one);
+        settleLevelSmoothers(two);
+
+        one.setSeed(1u);
+        two.setSeed(2u);
+
+        const std::vector<float> renderOne = renderWhite(one);
+        const std::vector<float> renderTwo = renderWhite(two);
+
+        REQUIRE(findPeak(renderOne.data(), renderOne.size()) > 0.0f);
+        REQUIRE(findPeak(renderTwo.data(), renderTwo.size()) > 0.0f);
+        REQUIRE(maxAbsDifference(renderOne, renderTwo) > 1e-3f);
+
+        const float correlation = pearsonCorrelation(renderOne, renderTwo);
+        REQUIRE(std::abs(correlation) <= 0.05f);
+    }
 }

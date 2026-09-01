@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
-#include <vector>
 
 namespace Krate {
 namespace DSP {
@@ -83,7 +82,6 @@ public:
     /// @brief Prepare the LFO for processing.
     void prepare(double sampleRate) noexcept {
         sampleRate_ = sampleRate;
-        generateWavetables();
         updatePhaseIncrement();
         updateCrossfadeIncrement();
         // Rate-derived like the increments above, and only otherwise recomputed
@@ -368,18 +366,24 @@ private:
     // Wavetable Generation
     // =========================================================================
 
-    void generateWavetables() noexcept {
-        // Resize wavetables
-        for (auto& table : wavetables_) {
-            table.resize(kTableSize);
-        }
+    /// @brief The four wavetables, shared by every LFO instance.
+    ///
+    /// The tables are a pure function of kTableSize -- no sample rate, no
+    /// per-instance parameter -- so every LFO used to hold a byte-identical
+    /// private copy. Sharing one immutable set makes prepare() allocation-free
+    /// (each instance previously heap-allocated four 2048-float vectors, i.e.
+    /// 32 KiB and four allocations per LFO) without changing a single sample.
+    using WavetableSet = std::array<std::array<float, kTableSize>, 4>;
+
+    [[nodiscard]] static WavetableSet generateWavetables() noexcept {
+        WavetableSet wavetables{};
 
         constexpr double twoPi = 2.0 * std::numbers::pi;
 
         // Generate Sine wavetable
         for (size_t i = 0; i < kTableSize; ++i) {
             double phase = static_cast<double>(i) / static_cast<double>(kTableSize);
-            wavetables_[static_cast<size_t>(Waveform::Sine)][i] =
+            wavetables[static_cast<size_t>(Waveform::Sine)][i] =
                 static_cast<float>(std::sin(twoPi * phase));
         }
 
@@ -398,22 +402,32 @@ private:
                 // -1 to 0
                 value = static_cast<float>(phase * 4.0 - 4.0);
             }
-            wavetables_[static_cast<size_t>(Waveform::Triangle)][i] = value;
+            wavetables[static_cast<size_t>(Waveform::Triangle)][i] = value;
         }
 
         // Generate Sawtooth wavetable (-1 to +1)
         for (size_t i = 0; i < kTableSize; ++i) {
             double phase = static_cast<double>(i) / static_cast<double>(kTableSize);
-            wavetables_[static_cast<size_t>(Waveform::Sawtooth)][i] =
+            wavetables[static_cast<size_t>(Waveform::Sawtooth)][i] =
                 static_cast<float>(2.0 * phase - 1.0);
         }
 
         // Generate Square wavetable (+1 for first half, -1 for second half)
         for (size_t i = 0; i < kTableSize; ++i) {
             double phase = static_cast<double>(i) / static_cast<double>(kTableSize);
-            wavetables_[static_cast<size_t>(Waveform::Square)][i] =
+            wavetables[static_cast<size_t>(Waveform::Square)][i] =
                 (phase < 0.5) ? 1.0f : -1.0f;
         }
+
+        return wavetables;
+    }
+
+    /// @brief One lazily-built, immutable table set for the whole process.
+    /// Built on the first LFO construction (never on the audio thread: an LFO
+    /// is a prepare-time object), then read-only forever after.
+    [[nodiscard]] static const WavetableSet& sharedWavetables() noexcept {
+        static const WavetableSet kTables = generateWavetables();
+        return kTables;
     }
 
     // =========================================================================
@@ -421,7 +435,7 @@ private:
     // =========================================================================
 
     [[nodiscard]] float readWavetable(size_t tableIndex, double phase) const noexcept {
-        const auto& table = wavetables_[tableIndex];
+        const auto& table = (*wavetables_)[tableIndex];
 
         // Scale phase to table index
         double scaledPhase = phase * static_cast<double>(kTableSize);
@@ -550,8 +564,12 @@ private:
     float previousRandom_ = 0.0f;  // SmoothRandom: previous target
     float targetRandom_ = 0.0f;    // SmoothRandom: current target
 
-    // Wavetables (Sine, Triangle, Sawtooth, Square)
-    std::array<std::vector<float>, 4> wavetables_;
+    // Wavetables (Sine, Triangle, Sawtooth, Square) -- shared, never owned.
+    // Cached as a pointer rather than fetched through sharedWavetables() in
+    // readWavetable() so the per-sample read costs no magic-static guard check.
+    // It points at a function-local static, so it can never dangle, and the
+    // defaulted move operations copy it correctly.
+    const WavetableSet* wavetables_ = &sharedWavetables();
 
     // Crossfade state (for smooth waveform transitions)
     Waveform previousWaveform_ = Waveform::Sine;  // Waveform we were crossfading from (for reference)

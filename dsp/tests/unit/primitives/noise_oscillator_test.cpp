@@ -695,3 +695,102 @@ TEST_CASE("High sample rates (192kHz) produce valid output", "[noise_oscillator]
     REQUIRE(std::abs(mean) < 0.1f);
     REQUIRE(variance > 0.01f);
 }
+
+// ==============================================================================
+// Vorago Phase 2 (specs/vorago-phase2-noise-organism): FR-098 / SC-011 (v)
+// ==============================================================================
+// NoiseColor::Velvet and NoiseColor::RadioStatic exist in the enum
+// (core/pattern_freeze_types.h:124-135) but have no `case` in the colour switch
+// of NoiseOscillator::process() (noise_oscillator.h:241-267) - both fall through
+// `default:` and render plain White. This case pins the defect and the fix:
+//   - neither colour may be bit-identical to White any more;
+//   - Velvet must be the sparse +/-1 impulse train of noise_generator.h:521-534;
+//   - RadioStatic must be audible but band-limited (less sample-to-sample motion
+//     than White).
+// Expected to FAIL until T007 adds the two cases.
+// ==============================================================================
+TEST_CASE("NoiseOscillator_VelvetRadioStaticFixed", "[noise_oscillator][vorago-phase2]") {
+    constexpr double kSr = 48000.0;
+    constexpr size_t kNumSamples = 8192;
+    constexpr std::uint32_t kSeed = 4242u;
+
+    auto render = [&](NoiseColor color, std::vector<float>& out) {
+        NoiseOscillator osc;
+        osc.prepare(kSr);
+        osc.setColor(color);
+        osc.setSeed(kSeed);
+        osc.processBlock(out.data(), out.size());
+    };
+
+    auto maxAbsDiff = [](const std::vector<float>& a, const std::vector<float>& b) {
+        float worst = 0.0f;
+        for (size_t i = 0; i < a.size(); ++i) {
+            const float d = std::abs(a[i] - b[i]);
+            if (d > worst) worst = d;
+        }
+        return worst;
+    };
+
+    auto rmsDb = [](const std::vector<float>& v) {
+        double sum = 0.0;
+        for (float s : v) {
+            sum += static_cast<double>(s) * static_cast<double>(s);
+        }
+        const double rms = std::sqrt(sum / static_cast<double>(v.size()));
+        return 20.0 * std::log10(rms > 1e-12 ? rms : 1e-12);
+    };
+
+    // Mean absolute first difference: a coarse, allocation-free proxy for
+    // high-frequency content. A low-passed colour moves less per sample.
+    auto meanAbsFirstDiff = [](const std::vector<float>& v) {
+        double sum = 0.0;
+        for (size_t i = 1; i < v.size(); ++i) {
+            sum += std::abs(static_cast<double>(v[i]) - static_cast<double>(v[i - 1]));
+        }
+        return sum / static_cast<double>(v.size() - 1);
+    };
+
+    // Reference White render, same seed, same sample rate.
+    std::vector<float> white(kNumSamples, 0.0f);
+    render(NoiseColor::White, white);
+
+    SECTION("Velvet renders a sparse +/-1 impulse train, not White") {
+        std::vector<float> velvet(kNumSamples, 0.0f);
+        render(NoiseColor::Velvet, velvet);
+
+        // FAILS today: with no `case NoiseColor::Velvet`, this render is
+        // bit-identical to the White render above.
+        REQUIRE(maxAbsDiff(velvet, white) > 1e-3f);
+
+        // Sparse: the impulse density is a small fraction of the sample rate,
+        // so the overwhelming majority of samples are exactly zero.
+        size_t zeroCount = 0;
+        bool everyImpulseIsUnitMagnitude = true;
+        for (float s : velvet) {
+            if (s == 0.0f) {
+                ++zeroCount;
+            } else if (std::abs(std::abs(s) - 1.0f) > 1e-6f) {
+                everyImpulseIsUnitMagnitude = false;
+            }
+        }
+        const double zeroFraction =
+            static_cast<double>(zeroCount) / static_cast<double>(kNumSamples);
+
+        REQUIRE(zeroFraction >= 0.60);
+        REQUIRE(everyImpulseIsUnitMagnitude);
+    }
+
+    SECTION("RadioStatic renders a band-limited colour, not White") {
+        std::vector<float> radio(kNumSamples, 0.0f);
+        render(NoiseColor::RadioStatic, radio);
+
+        // FAILS today for the same reason as Velvet.
+        REQUIRE(maxAbsDiff(radio, white) > 1e-3f);
+
+        // Audible, not a silent stub.
+        REQUIRE(rmsDb(radio) > -60.0);
+
+        // Band-limited: measurably less sample-to-sample motion than White.
+        REQUIRE(meanAbsFirstDiff(radio) <= 0.7 * meanAbsFirstDiff(white));
+    }
+}

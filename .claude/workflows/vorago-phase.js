@@ -477,10 +477,30 @@ const dispatch = await run(
 if (!dispatch || !dispatch.groups || dispatch.groups.length === 0) throw new Error(`Dispatcher produced no task groups — check ${TASKS} exists (run stages "specify" then "plan" first)`)
 log(`${dispatch.groups.length} groups, ${dispatch.groups.reduce((n, g) => n + g.tasks.length, 0)} tasks, targets: ${dispatch.test_targets.join(', ')}`)
 
+// Suite runs inside this workflow are NEVER guaranteed to be alone: comply agents
+// run under parallel(), and the fixer loop runs suites while iterating. CPU-budget
+// tests measure wall-clock against audio time, so a competing agent inflates the
+// number and produces a false red on code nobody touched (observed: "Rungler CPU
+// usage is within budget" read 0.637% vs a 0.5% budget inside this workflow, and
+// passed 3/3 when run alone). The filter below is CI's own exclusion string
+// (.github/workflows/ci.yml:366) reused verbatim so there is ONE convention, not two.
+const PERF_FILTER = "'~[performance]~[perf]~[benchmark]~[!benchmark]~[long]'"
+
 const BUILD_CMDS = (targets) => `
 Build: "C:/Program Files/CMake/bin/cmake.exe" --build build/windows-x64-release --config Release --target ${targets.join(' ')}
-Then run each: build/windows-x64-release/bin/Release/<target>.exe 2>&1 | tail -5
-Capture output to a file on the FIRST run if long; never re-run a suite just to re-read output.`
+Then run each: build/windows-x64-release/bin/Release/<target>.exe ${PERF_FILTER} 2>&1 | tail -5
+Capture output to a file on the FIRST run if long; never re-run a suite just to re-read output.
+
+TIMING-SENSITIVE TESTS ARE EXCLUDED ON PURPOSE — do not remove the filter:
+- ${PERF_FILTER} drops CPU-budget, benchmark and [long] cases. They measure wall-clock,
+  and NOTHING in this workflow is guaranteed to run alone, so their numbers here would be
+  measurements of the machine's load, not of the code.
+- A CPU/perf case is therefore NEVER a gate failure and NEVER something to "fix". If you
+  somehow see one fail, it is an artifact: report it as excluded, do not touch the code,
+  and NEVER relax a budget or lower a workload to make it pass.
+- These cases are not being skipped forever: they are run once, sequentially and alone,
+  outside this workflow before the phase is committed, via  node tools/run-cpu-tests.js
+  That isolated run is the real gate for them.`
 
 const implResults = []
 let buildLog = null

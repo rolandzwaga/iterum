@@ -1,7 +1,7 @@
 // ==============================================================================
 // Layer 1: DSP Primitive - Noise Oscillator
 // ==============================================================================
-// Lightweight noise oscillator primitive providing six noise algorithms
+// Lightweight noise oscillator primitive providing eight noise algorithms
 // for oscillator-level composition.
 //
 // Constitution Compliance:
@@ -26,7 +26,7 @@
 namespace Krate {
 namespace DSP {
 
-/// @brief Lightweight noise oscillator providing six noise colors.
+/// @brief Lightweight noise oscillator providing eight noise colors.
 ///
 /// Layer 1 primitive for oscillator-level composition. Distinct from
 /// Layer 2 NoiseGenerator which provides effects-oriented noise types.
@@ -38,6 +38,8 @@ namespace DSP {
 /// - Blue: +3 dB/octave (differentiated pink)
 /// - Violet: +6 dB/octave (differentiated white)
 /// - Grey: Inverse A-weighting (perceptually flat loudness)
+/// - Velvet: Sparse random +/-1 impulse train (smooth, textural)
+/// - RadioStatic: White band-limited to ~5 kHz (AM radio character)
 ///
 /// @par Thread Safety
 /// Single-threaded model. All methods called from audio thread.
@@ -172,6 +174,14 @@ private:
     Biquad greyLowShelf_;
     Biquad greyHighShelf_;
 
+    // Velvet impulse density in impulses/second. Fixed by design: this class
+    // deliberately exposes no density setter (the Layer 2 NoiseGenerator owns
+    // the tunable variant via setVelvetDensity) and adding one is out of scope.
+    static constexpr float kVelvetDensityHz = 2000.0f;
+
+    // Radio static band-limiting filter (~5kHz AM radio bandwidth)
+    Biquad radioLowPass_;
+
     // =========================================================================
     // Internal Processing
     // =========================================================================
@@ -194,6 +204,12 @@ private:
     /// @brief Generate grey noise via inverse A-weighting.
     [[nodiscard]] float processGrey(float white) noexcept;
 
+    /// @brief Generate velvet noise as a sparse +/-1 impulse train.
+    [[nodiscard]] float processVelvet(float white) noexcept;
+
+    /// @brief Generate radio static via band-limited white noise.
+    [[nodiscard]] float processRadioStatic(float white) noexcept;
+
     /// @brief Reset filter state (called on color change).
     void resetFilterState() noexcept;
 };
@@ -212,6 +228,10 @@ inline void NoiseOscillator::prepare(double sampleRate) noexcept {
                             static_cast<float>(sampleRate));
     greyHighShelf_.configure(FilterType::HighShelf, 6000.0f, 0.707f, 4.0f,
                              static_cast<float>(sampleRate));
+
+    // Configure radio static low-pass filter (~5kHz cutoff for AM radio bandwidth)
+    radioLowPass_.configure(FilterType::Lowpass, 5000.0f, 0.707f, 0.0f,
+                            static_cast<float>(sampleRate));
 }
 
 inline void NoiseOscillator::reset() noexcept {
@@ -259,6 +279,12 @@ inline float NoiseOscillator::process() noexcept {
 
         case NoiseColor::Grey:
             return processGrey(white);
+
+        case NoiseColor::Velvet:
+            return processVelvet(white);
+
+        case NoiseColor::RadioStatic:
+            return processRadioStatic(white);
 
         default:
             // Unknown color - return white noise as fallback
@@ -335,6 +361,37 @@ inline float NoiseOscillator::processGrey(float white) noexcept {
     return grey;
 }
 
+inline float NoiseOscillator::processVelvet(float white) noexcept {
+    // FR-098: Sparse random impulse train. Mirrors the Layer 2 NoiseGenerator
+    // velvet law (processors/noise_generator.h:521-534): an impulse fires with
+    // probability density/sampleRate, otherwise the output is exactly zero.
+    //
+    // Reuse the draw already made: processWhite() returns rng_.nextFloat(),
+    // i.e. next() * kToFloat * 2 - 1, so (white + 1) * 0.5 reproduces that same
+    // unipolar [0, 1] draw without consuming a second RNG value.
+    const float impulseProb = kVelvetDensityHz / static_cast<float>(sampleRate_);
+    const float randVal = (white + 1.0f) * 0.5f;
+
+    if (randVal < impulseProb) {
+        // Impulse with random polarity (+1 or -1); the extra draw is consumed
+        // only on impulse samples, exactly as in noise_generator.h.
+        return (rng_.nextUnipolar() < 0.5f) ? 1.0f : -1.0f;
+    }
+    return 0.0f;
+}
+
+inline float NoiseOscillator::processRadioStatic(float white) noexcept {
+    // FR-098: White noise band-limited to ~5kHz (AM radio bandwidth), using the
+    // same filter configuration as the Layer 2 NoiseGenerator
+    // (processors/noise_generator.h:180).
+    float radio = radioLowPass_.process(white);
+
+    // Clamp to [-1, 1]
+    if (radio > 1.0f) radio = 1.0f;
+    if (radio < -1.0f) radio = -1.0f;
+    return radio;
+}
+
 inline void NoiseOscillator::resetFilterState() noexcept {
     // Reset pink noise filter
     pinkFilter_.reset();
@@ -349,6 +406,9 @@ inline void NoiseOscillator::resetFilterState() noexcept {
     // Reset grey noise filters
     greyLowShelf_.reset();
     greyHighShelf_.reset();
+
+    // Reset radio static band-limiting filter
+    radioLowPass_.reset();
 }
 
 } // namespace DSP

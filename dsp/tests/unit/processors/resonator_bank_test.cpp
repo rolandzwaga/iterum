@@ -1028,3 +1028,170 @@ TEST_CASE("ResonatorBank setEnabled controls resonator activity", "[resonator_ba
         REQUIRE(bank.isEnabled(100) == false);
     }
 }
+
+// ==============================================================================
+// Vorago Phase 2 (specs/vorago-phase2-noise-organism) - T005 / FR-099 / SC-011 (vi)
+// ==============================================================================
+// setFrequency() must re-derive Q from the CONFIGURED decay, exactly the way
+// setDecay() already does. Today it does not (resonator_bank.h:328-332 sets
+// frequencies_[] + updateFilterCoefficients() only, while setDecay at :345-352
+// also writes qValues_[index] = rt60ToQ(...)), so a resonator whose frequency is
+// wandered - which is precisely what the NoiseOrganism control step does - has
+// its effective RT60 silently scaled by the frequency ratio.
+
+namespace {
+
+// Least-squares RT60 fit. Deliberately distinct from measureRT60() above, which is a
+// threshold-crossing estimator: this one fits dB-vs-time across the -6 dB .. -40 dB
+// region of the 20 ms RMS envelope and extrapolates the slope to -60 dB, so it is
+// insensitive to where the tail meets the noise floor and to the constant log-domain
+// offset that window-averaging an exponential decay introduces.
+// Returns 0.0f if no usable decaying region is present.
+inline float fitRT60LeastSquares(const float* buffer, size_t size, float sampleRate) {
+    constexpr double kEnvelopeWindowSeconds = 0.020;
+    if (!(sampleRate > 0.0f)) return 0.0f;
+    // Rounded, not truncated: 0.020f * 48000.0f evaluates to 959.99998 in float, which
+    // would truncate to 959 and lose the exact one-period-per-window alignment at 50 Hz.
+    const size_t windowSize = static_cast<size_t>(
+        std::lround(kEnvelopeWindowSeconds * static_cast<double>(sampleRate)));
+    if (windowSize == 0 || size < windowSize * 4) return 0.0f;
+
+    const size_t numWindows = size / windowSize;
+    std::vector<float> envelopeDb(numWindows, -144.0f);
+    float peakDb = -144.0f;
+    size_t peakWindow = 0;
+    for (size_t w = 0; w < numWindows; ++w) {
+        envelopeDb[w] = linearToDb(calculateRMS(buffer + w * windowSize, windowSize));
+        if (envelopeDb[w] > peakDb) {
+            peakDb = envelopeDb[w];
+            peakWindow = w;
+        }
+    }
+    if (peakDb <= -143.0f) return 0.0f;
+
+    // Fit region starts at the first window at or below -6 dB, searched forward from
+    // the peak window so a pre-peak ramp can never be mistaken for the decay.
+    size_t firstWindow = numWindows;
+    for (size_t w = peakWindow; w < numWindows; ++w) {
+        if (envelopeDb[w] - peakDb <= -6.0f) {
+            firstWindow = w;
+            break;
+        }
+    }
+    if (firstWindow >= numWindows) return 0.0f;
+
+    double sumT = 0.0, sumY = 0.0, sumTT = 0.0, sumTY = 0.0;
+    size_t count = 0;
+    for (size_t w = firstWindow; w < numWindows; ++w) {
+        const double relDb = static_cast<double>(envelopeDb[w] - peakDb);
+        if (relDb < -40.0) break;
+        const double t = (static_cast<double>(w) + 0.5) * static_cast<double>(windowSize)
+                       / static_cast<double>(sampleRate);
+        sumT += t;
+        sumY += relDb;
+        sumTT += t * t;
+        sumTY += t * relDb;
+        ++count;
+    }
+    if (count < 3) return 0.0f;
+
+    const double n = static_cast<double>(count);
+    const double denominator = n * sumTT - sumT * sumT;
+    if (denominator <= 0.0) return 0.0f;
+    const double slopeDbPerSecond = (n * sumTY - sumT * sumY) / denominator;
+    if (slopeDbPerSecond >= 0.0) return 0.0f;  // not decaying - caller treats as a failure
+    return static_cast<float>(-60.0 / slopeDbPerSecond);
+}
+
+} // anonymous namespace
+
+TEST_CASE("ResonatorBank_SetFrequencyRederivesQ", "[resonator_bank][vorago-phase2]") {
+    // --------------------------------------------------------------------------
+    // Fixture note - DELIBERATE DEVIATION from the 200 Hz -> 800 Hz numbers in
+    // tasks.md T005, because those two are arithmetically incompatible with the
+    // shipped kMaxResonatorQ = 100 clamp (resonator_bank.h:50) inside rt60ToQ (:89):
+    //     rt60ToQ(800, 1.0) = pi*800/ln(1000) = 363.8 -> CLAMPED to 100
+    //     => the best achievable RT60 at 800 Hz is ln(1000)*100/(pi*800) = 0.275 s,
+    //        so "within +/-25 % of 1.0 s" at 800 Hz cannot hold even AFTER the fix.
+    // The constraint is f <= 100*ln(1000)/pi = 219.8 Hz at a 1.0 s decay, so the
+    // fixture keeps BOTH the 1.0 s decay and the 4x frequency step by anchoring at
+    // 50 Hz and moving to 200 Hz:
+    //     rt60ToQ(50,  1.0) =  22.74  (unclamped)
+    //     rt60ToQ(200, 1.0) =  90.96  (unclamped)
+    // The pre-fix failure mode is unchanged and is exactly the one T005 describes:
+    // the Q held from 50 Hz gives RT60 = 22.74*ln(1000)/(pi*200) = 0.25 s at 200 Hz,
+    // i.e. ~1/4 of the configured decay - a SHORT fit, not a NaN.
+    // A 1.0 s RT60 also keeps the fit statistically sound: the -6 dB .. -40 dB region
+    // spans ~28 envelope windows, against ~7 for the 0.25 s decay that keeping the
+    // 800 Hz endpoint would have forced.
+    // --------------------------------------------------------------------------
+    constexpr double kSampleRate = 48000.0;
+    constexpr float kSampleRateF = 48000.0f;
+    constexpr float kDecaySeconds = 1.0f;
+    constexpr float kAnchorHz = 50.0f;
+    constexpr float kMovedHz = 200.0f;  // 4x the anchor
+    constexpr size_t kRenderSamples = 144000;  // 3 s @ 48 kHz
+    constexpr float kRt60LowerBound = kDecaySeconds * 0.75f;   // -25 %
+    constexpr float kRt60UpperBound = kDecaySeconds * 1.25f;   // +25 %
+
+    ResonatorBank bank;
+    bank.prepare(kSampleRate);
+    bank.setEnabled(0, true);
+    bank.setFrequency(0, kAnchorHz);
+    bank.setDecay(0, kDecaySeconds);
+
+    std::vector<float> render(kRenderSamples, 0.0f);
+
+    // Single unit impulse, then free decay. Global defaults keep the measurement clean:
+    // exciterMix_ = 0 (wet only), damping_ = 0, spectralTilt_ = 0, gains_[0] = 1.0.
+    auto exciteAndRender = [&bank, &render]() {
+        render[0] = bank.process(1.0f);
+        for (size_t i = 1; i < render.size(); ++i) {
+            render[i] = bank.process(0.0f);
+        }
+    };
+
+    // --- Baseline at the anchor frequency: passes BEFORE and AFTER the fix. --------
+    exciteAndRender();
+    REQUIRE_FALSE(hasInvalidSamples(render.data(), render.size()));
+    const float baselineRt60 = fitRT60LeastSquares(render.data(), render.size(), kSampleRateF);
+    INFO("baseline RT60 at " << kAnchorHz << " Hz = " << baselineRt60 << " s (configured "
+         << kDecaySeconds << " s, Q = " << bank.getQ(0) << ")");
+    REQUIRE(baselineRt60 > 0.0f);
+    REQUIRE(baselineRt60 > kRt60LowerBound);
+    REQUIRE(baselineRt60 < kRt60UpperBound);
+
+    // --- Move the frequency WITHOUT touching setDecay. ----------------------------
+    bank.setFrequency(0, kMovedHz);
+    REQUIRE(bank.getFrequency(0) == Approx(kMovedHz).margin(0.5f));
+    // setFrequency must not disturb the configured decay itself.
+    REQUIRE(bank.getDecay(0) == Approx(kDecaySeconds).margin(1e-6f));
+
+    // Clear the residual ring by rendering silence - NOT by calling bank.reset().
+    // reset() is a CONFIGURATION wipe (resonator_bank.h:212-232: 440 Hz, default decay,
+    // default Q, enabled_[i] = false, documented at :211-212), so it would destroy the
+    // very state under test. After 3 s at a 1 s RT60 the previous ring is ~-180 dB;
+    // 0.5 s more silence puts it far below the next impulse own -60 dB point, and
+    // also flushes the transient caused by re-tuning the biquad under a live state.
+    for (size_t i = 0; i < 24000; ++i) {
+        static_cast<void>(bank.process(0.0f));
+    }
+
+    // --- Re-fit at the moved frequency. -------------------------------------------
+    exciteAndRender();
+    REQUIRE_FALSE(hasInvalidSamples(render.data(), render.size()));
+    const float movedRt60 = fitRT60LeastSquares(render.data(), render.size(), kSampleRateF);
+    INFO("post-setFrequency RT60 at " << kMovedHz << " Hz = " << movedRt60 << " s (configured "
+         << kDecaySeconds << " s, Q = " << bank.getQ(0) << ")");
+
+    // Right-reason guard: before the FR-099 fix this must be a real, finite, SHORT fit
+    // (~0.25 s), never 0.0f / NaN / a failed fit.
+    REQUIRE(movedRt60 > 0.0f);
+
+    // The requirement itself: the effective RT60 still tracks the configured decay.
+    REQUIRE(movedRt60 > kRt60LowerBound);
+    REQUIRE(movedRt60 < kRt60UpperBound);
+
+    // And the re-derived Q is the one rt60ToQ would produce for the NEW frequency.
+    REQUIRE(bank.getQ(0) == Approx(rt60ToQ(kMovedHz, kDecaySeconds)).margin(1e-3f));
+}

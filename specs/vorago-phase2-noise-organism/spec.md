@@ -162,7 +162,7 @@ Every row below was opened and read in this session; signatures are quoted from 
 
 | Component | Header (verified) | What Phase 2 reuses / relies on |
 |---|---|---|
-| `NoiseGenerator` (L2) | `processors/noise_generator.h:98` | The slot source. `void prepare(float sampleRate, size_t maxBlockSize) noexcept` (`:135` — **float**, unlike the `double` used everywhere else), `reset() :186`, `setNoiseEnabled(NoiseType,bool) :255`, `setNoiseLevel(NoiseType,float dB) :235`, `setMasterLevel :273`, `setVelvetDensity(float) :315` (clamped `[100, 20000]` imp/s), `setCrackleParams :308`, `setTapeHissParams :292`, `setAsperityParams :300`, `process(float* out, size_t) :332`, `isAnyEnabled() :365`. **Roster is 13, not 12**: `enum class NoiseType : uint8_t` at `:44` = White/Pink/TapeHiss/VinylCrackle/Asperity/Brown/Blue/Violet/Grey/Velvet/VinylRumble/ModulationNoise/**RadioStatic**, `kNumNoiseTypes = 13` (`:61`). **Two load-bearing defects for this spec:** (1) there is no `setSeed` and `rng_` is fixed at construction (`Xorshift32 rng_{12345}`, `:593`), so identical instances are bit-identical — FR-080; (2) `reset()` reseeds as `rng_.seed(rng_.next() ^ 0xDEADBEEF)` (`:189`), i.e. the stream depends on how many times `reset()` has been called — not reproducible. Velvet emits `±1 × velvetGain` only at impulse samples and exactly `0.0f` between them (`:521-534`) — this is what FR-031 detects. **Third load-bearing fact:** of the three signal-dependent models only `TapeHiss` (`:407-412`) and `Asperity` (`:452-457`) have a noise floor (`floorGain + (1 − floorGain) × envelope × sensitivity`); `ModulationNoise` is explicitly floor-less — `// Track input signal envelope (no floor - zero when silent)` (`:553`), `envelope = modulationEnvelope_.processSample(sidechainInput)` (`:554`), `modulatedNoise = whiteNoise * envelope` (`:558`) — so under a zero sidechain it contributes exactly `0.0f`. FR-012 excludes it. **Fourth:** each type is gated on `if (noiseEnabled_[idx])` (`:388` and the parallel blocks through `:568`), so disabling a type drops its full-amplitude contribution on the next sample while `updateLevelTarget` (`:255-261`) never gets to ramp — FR-013's duck. Colour filters are **fs-fixed**: `kBrownLeak = 0.98f` (`:467-468`), blue = one-sample differentiator of pink (`:483`), violet = one-sample differentiator of white (`:498`), pink = Kellet coefficients tuned at 44.1 kHz (`primitives/pink_noise_filter.h:65-70`) — FR-093/SC-008. |
+| `NoiseGenerator` (L2) | `processors/noise_generator.h:98` | The slot source. `void prepare(float sampleRate, size_t maxBlockSize) noexcept` (`:135` — **float**, unlike the `double` used everywhere else), `reset() :186`, `setNoiseEnabled(NoiseType,bool) :255`, `setNoiseLevel(NoiseType,float dB) :235`, `setMasterLevel :273`, `setVelvetDensity(float) :315` (clamped `[100, 20000]` imp/s), `setCrackleParams :308`, `setTapeHissParams :292`, `setAsperityParams :300`, `process(float* out, size_t) :332`, `isAnyEnabled() :365`. **Roster is 13, not 12**: `enum class NoiseType : uint8_t` at `:44` = White/Pink/TapeHiss/VinylCrackle/Asperity/Brown/Blue/Violet/Grey/Velvet/VinylRumble/ModulationNoise/**RadioStatic**, `kNumNoiseTypes = 13` (`:61`). **Two load-bearing defects for this spec:** (1) there is no `setSeed` and `rng_` is fixed at construction (`Xorshift32 rng_{12345}`, `:593`), so identical instances are bit-identical — FR-080; (2) `reset()` reseeds as `rng_.seed(rng_.next() ^ 0xDEADBEEF)` (`:189`), i.e. the stream depends on how many times `reset()` has been called — not reproducible. Velvet emits `±1 × velvetGain` only at impulse samples and exactly `0.0f` between them (`:521-534`) — this is what FR-031 detects. **Third load-bearing fact:** of the three signal-dependent models only `TapeHiss` (`:407-412`) and `Asperity` (`:452-457`) have a noise floor (`floorGain + (1 − floorGain) × envelope × sensitivity`); `ModulationNoise` is explicitly floor-less — `// Track input signal envelope (no floor - zero when silent)` (`:553`), `envelope = modulationEnvelope_.processSample(sidechainInput)` (`:554`), `modulatedNoise = whiteNoise * envelope` (`:558`) — so under a zero sidechain it contributes exactly `0.0f`. FR-012 excludes it. **Fourth:** each type is gated on `if (noiseEnabled_[idx])` (`:388` and the parallel blocks through `:568`), so disabling a type drops its full-amplitude contribution on the next sample while `updateLevelTarget` (`:255-261`) never gets to ramp — FR-013's duck. Colour filters were **fs-fixed**: `kBrownLeak = 0.98f` (`:467-468`), blue = one-sample differentiator of pink (`:483`), violet = one-sample differentiator of white (`:498`), pink = Kellet coefficients tuned at 44.1 kHz (`primitives/pink_noise_filter.h:65-70`). **White, brown and pink were made rate-aware in this phase, each anchored at 44.1 kHz so the reference rate is bit-reproduced; blue and violet were measured and deliberately left alone** — FR-093/SC-008. |
 | `StochasticFilter` (L2) | `processors/stochastic_filter.h:95` | Third stage of the slot chain. `prepare(double, size_t) :139`, `reset() :193`, `process(float) :231`, `processBlock(float*, size_t) :281`, `setMode(RandomMode) :297` (`enum class RandomMode : uint8_t { Walk, Jump, Lorenz, Perlin }` at `:44`), `setCutoffRandomEnabled(bool) :311`, `setResonanceRandomEnabled :316`, `setTypeRandomEnabled :321`, `setBaseCutoff(float) :343`, `setBaseResonance(float) :350`, `setBaseFilterType(SVFMode) :356` (`SVFMode` at `primitives/svf.h:38`), `setCutoffOctaveRange :382`, `setResonanceRange :388`, `setChangeRate(float) :417`, `setSmoothingTime(float) :423`, `setSeed(uint32_t) :436`. Constants `kMinChangeRate = 0.01f` / `kMaxChangeRate = 100.0f` (`:101-102`), `kDefaultSmoothing = 50.0f` ms (`:107`), `kControlRateInterval = 32` (`:117`). **Defaults that the organism must override or pin explicitly, not inherit:** `cutoffRandomEnabled_ = true` (`:555`), `resonanceRandomEnabled_ = false` (`:556`), `typeRandomEnabled_ = false` (`:557`), `kDefaultChangeRate = 1.0f` (`:103`), `kDefaultOctaveRange = 2.0f` (`:112`) — i.e. a stock instance wanders its cutoff ±2 octaves at 1 Hz, an order of magnitude faster than anything this component is about (FR-016, FR-056, FR-068). Its internal wander is **retained** and is a distinct role from the external lanes — see FR-060 and FR-023. Not modified. |
 | `ResonatorBank` (L2) | `processors/resonator_bank.h:174` | First stage of the slot chain. `prepare(double) :184`, `reset() :213`, `setCustomFrequencies(const float*, size_t) :295`, `setFrequency(size_t,float) :328`, `setDecay(size_t,float) :345`, `setGain(size_t,float dB) :364`, `setQ(size_t,float) :381`, `setEnabled(size_t,bool) :398`, `setDamping :418`, `setSpectralTilt(float) :440`, `process(float) :467`, `processBlock(float*,size_t) :519`. `kMaxResonators = 16` (`:39`), `kMinResonatorFrequency = 20.0f` (`:42`), `kMaxResonatorFrequencyRatio = 0.45f` (`:45`), `kMinResonatorQ/kMaxResonatorQ = 0.1/100` (`:48,51`). **Three verified facts this spec is built on:** (a) the per-sample loop skips disabled slots (`for (i < kMaxResonators) { if (!enabled_[i]) continue; }`, `:484-486`), so cost scales with enabled count; (b) `calculateTiltGain` early-returns `1.0f` when tilt is exactly `0.0f` (`:120-123`) and otherwise costs a `std::log2` **plus** a `dbToGain` **per resonator per sample** (`:124-125`, called at `:504`) — FR-055 keeps tilt at 0; (c) `setFrequency` hard-swaps Biquad coefficients with no interpolation (`updateFilterCoefficients`, `:545-555`, `FilterType::Bandpass`) and — **before this phase's FR-099 fix** — did not re-derive Q from the decay time the way `setDecay` does (`:350-351`), so drifting frequency silently changed the effective RT60. **Fixed in this phase (FR-099).** Verified this session: `grep -rln "\bResonatorBank\b"` (word-bounded, excluding the unrelated `ModalResonatorBank`) across `dsp/` and `plugins/` finds **zero** consumers outside `resonator_bank_test.cpp` and the compile-only `dsp/lint_all_headers.cpp` — Membrum's bodies and `continuous_body.h` (Seraphis) all use `ModalResonatorBank`, a different class declared in the same header. The fix is therefore zero-regression-risk for every shipped consumer, gated by `dsp_processors_tests` (which owns `resonator_bank_test.cpp`) per SC-011; and (d) **`setDecay` and `setQ` write the same variable** — `qValues_[index] = rt60ToQ(frequencies_[index], decays_[index])` (`:349`) vs `qValues_[index] = std::clamp(q, kMinResonatorQ, kMaxResonatorQ)` (`:383`) — so alternating them destroys one setting with the other (FR-052 gives Q a single owner). `rt60ToQ` is `(π × f × RT60) / ln1000` clamped to `[0.1, 100]` (`:92-98`), i.e. saturated at `kMaxResonatorQ` for every `f × RT60 > 219.9` (FR-064). There is **no** `setNumResonators`/count method at all (swept: `grep -n "setNum" resonator_bank.h` — no hits), and `exciterMix_` defaults to `0.0f` (`:589`, re-zeroed at `:235`) which in `output = input × mix + wetSum × (1 − mix)` (`:511`) means **fully wet** — so a bank with nothing enabled emits silence, not bypass (FR-051). |
 | `TimeVaryingCombBank` (L3) | `systems/timevar_comb_bank.h:81` | Second stage of the slot chain. **The class is `TimeVaryingCombBank`, not "TimevarCombBank"** — the roadmap uses the file stem, not the type name. `prepare(double, float maxDelayMs = 50.0f) :154`, `reset() :162`, `setNumCombs(size_t) :178`, `setCombDelay(size_t,float ms) :189`, `setCombFeedback :197`, `setCombDamping :206`, `setCombGain :214`, `setTuningMode(Tuning) :226` (`enum class Tuning : uint8_t { Harmonic, Inharmonic, Custom }` at `:43`), `setFundamental :238`, `setSpread :249`, `setModRate(float) :263`, `setModDepth(float) :274`, `setRandomModulation(float) :296`, `process(float) :328`, `processBlock(const float*, float*, size_t) :345`. `kMaxCombs = 8` (`:88`), `kDelaySmoothingMs = 20.0f` (`:109`) — the built-in delay smoothing is why comb-delay drift needs no extra slew limiter (FR-063). It is Layer 3; a Layer 3 header including it is permitted and precedented (`systems/continuous_body.h:42`, `// L3 - same layer, see banner`) — `tools/lint-layers.js:8` fails only when a file reaches **up**. Note `prepare()` sizes all `kMaxCombs` delay lines regardless of `setNumCombs` — the FR-096 memory figure. **Three further verified facts this spec is built on:** (a) `setNumCombs` clamps to `std::clamp(count, size_t{1}, kMaxCombs)` (`:502`) — it **cannot take 0**, and `process()` returns only the sum of active combs with no dry path (`:328-330`), so bypass must be done by not calling it (FR-054); (b) `setCombDelay` unconditionally sets `tuningMode_ = Tuning::Custom` (`:189` doc, assignment at `:515`), so any per-control-step delay write permanently leaves `Inharmonic` (FR-042); (c) there is **no `setSeed`** — `prepare` hard-seeds every per-comb PRNG with `ch.rng.seed(12345u + i * 7919u)` (`:466`, repeated in `reset()` at `:487`) — so its internal motion would be bit-identical across slots; `modDepth_` and `randomModAmount_` default to `0.0f` (`:414,416`) and FR-042 leaves them there. The inharmonic law is `f[n] = fundamental * sqrt(1 + n*spread)` (`:237`, implementation `:959`). |
@@ -400,9 +400,11 @@ ODR sweep run this session over `dsp/`, `plugins/` and `tools/` with
   | `setWanderRate` | `kDefaultWanderRateHz = 0.03` Hz, applied at `prepare()`/`reset()` | FR-069 |
 
   The breathing default is chosen against the criteria, not the other way round: `depth = 0.25` gives
-  a per-slot breathing factor in `[0.89, 1.11]` (±0.92 dB, FR-070), which is inside SC-001 (a)'s ±3 dB
+  a per-slot breathing factor in `[0.89, 1.11]` (±0.92 dB, FR-070), which is inside SC-001 (a)'s ±4.5 dB
   window with room for the other lanes and, summed incoherently over independently salted slots,
-  inside SC-002 (c)'s broadband RMS CV ≤ 0.06. No threshold is relaxed to accommodate a default.
+  inside SC-002 (c)'s broadband RMS CV cap of 0.28. No threshold is relaxed to accommodate a default:
+  that cap is itself measured (min 0.1107 / median 0.1334 / max 0.1861 over 35 seeds), and the old 0.06
+  was the guess — it had accounted for breathing alone while the wander lanes move level too.
 - **FR-017** — **Per-type source drive calibration** (decided 2026-08-31, Q1, option b). Three verified
   facts collide without it: `NoiseGenerator`'s per-type level defaults to `kDefaultLevelDb = -20.0f`
   identically for all 13 types (`noise_generator.h:106`, `:597-600`), yet the 13 types have wildly
@@ -886,17 +888,62 @@ ODR sweep run this session over `dsp/`, `plugins/` and `tools/` with
   ~155 Hz at 48 kHz to ~620 Hz at 192 kHz; blue is a one-sample differentiator of pink (`:483`) and
   violet a one-sample differentiator of white (`:498`), both of which redistribute energy across fixed
   Hz bands as Nyquist moves; pink uses Paul Kellet's fixed coefficients, tuned at 44.1 kHz
-  (`primitives/pink_noise_filter.h:65-70`). `FilteredWind` pins Brown (FR-021) and `MetallicHiss` pins
+  (`primitives/pink_noise_filter.h:65-70`).
+  **Three of the four were fixed in this phase (2026-09-01), each anchored at 44.1 kHz so the reference
+  rate is reproduced exactly and no existing consumer moves there.** Measured through three fixed-Hz
+  resonators (70/140/260 Hz), deviation from 48 kHz at 44.1/96/192 kHz:
+  white was −0.75/+3.01/+6.02 dB and is now −0.75/−0.23/−0.18 (its fixed *sample variance* meant its
+  spectral **density** halved per rate doubling; it now carries `sqrt(fs/44100)`);
+  brown was likewise rate-dependent and is now −0.78/−0.47/−0.44 (`kBrownLeak = 0.98` became a fixed-Hz
+  corner, `exp(-1/(fs·τ))`);
+  pink was −1.14/+2.14/+4.00 and is now −0.78/−0.47/−0.48 (`PinkNoiseFilter::prepare` maps each Kellet
+  pole to the running rate, preserving its time constant in seconds and its DC gain).
+  **Blue and violet are deliberately still not compensated, and that is now a measured conclusion rather
+  than an accepted limitation.** The compensation was implemented and removed: an `fs/44100` factor does
+  fix blue at 96 kHz (measured +0.01 dB) but cannot hold at 192 kHz, for a structural reason. Blue's
+  spectrum *rises* at +3 dB/oct, so holding its density fixed in Hz makes its total power grow as `fs²`
+  and its RMS as `fs` — measured, the raw generator went −16.69 → −4.09 dBFS from 44.1 to 192 kHz, +12.6 dB
+  against the +12.8 dB the integral predicts. That overruns the `[-1, 1]` contract its clamp enforces, and
+  the clamp's broadband distortion then read **+6.44 dB** through the resonators, *worse* than the
+  uncompensated error it was meant to remove. Rate-invariant density and bounded amplitude are not
+  simultaneously available for a rising-spectrum noise over a 4.35× rate range, and amplitude wins: a
+  colour 12.8 dB louder at 192 kHz is a musical defect where the density tilt is a documented limitation.
+  One consequence is recorded honestly: with pink now correct, blue's own error is *larger* in magnitude
+  (−6.01/−11.96 dB at 96/192 kHz, versus −3.38/−7.41 before) because pink's rate error had been partially
+  cancelling the differentiator's. It is now the pure, predictable `1/fs` law rather than two errors
+  offsetting. SC-008 (a)'s ±1.0 dB overall-RMS bound still passes with `MetallicHiss` pinning Blue. `FilteredWind` pins Brown (FR-021) and `MetallicHiss` pins
   Blue/Violet (FR-041), so the FR-016 reference configuration contains three of them. Their **spectra
-  are therefore rate-dependent**, and SC-008 measures only what is genuinely invariant. Fixing them
-  is out of scope: it would change the output of five existing consumers (FR-081's list) and is not
-  this phase's work.
+  are therefore rate-dependent**, and SC-008 measures only what is genuinely invariant.
+  **This paragraph originally said fixing them was out of scope because it would change the output of five
+  existing consumers (FR-081's list). Three of the four were fixed anyway, and the stated risk did not
+  materialise — every fix is anchored at 44.1 kHz, where it reproduces the previous coefficients exactly,
+  so no consumer's output moves at the reference rate. `dsp_primitives_tests` and `dsp_processors_tests`
+  both pass unchanged.** What did move is this phase's own 48 kHz render fingerprint, which was regenerated
+  against the deliberate change and had the attribution verified by neutralising the two lines and
+  confirming the previous golden passes.
 - **FR-094** — Portable: passes `node tools/check-portability.js`; no `std::isnan`/`std::isinf`; no
   narrowing in brace initialisation (designated initialisers for `PrepareConfig`); no new SIMD
   (so `tools/lint-simd-aligned-loadstore.js` is trivially satisfied). Trace: roadmap line 479–480.
-- **FR-095** — CPU: ≤ 1 % of one core at 48 kHz per voice in the **reference configuration**
-  (SC-004), i.e. ≤ 106 666 ns per 512-sample block. The reference configuration and the
+- **FR-095** — CPU: ≤ **1.75 %** of one core at 48 kHz per voice in the **reference configuration**
+  (SC-004), i.e. ≤ **186 666 ns** per 512-sample block. The reference configuration and the
   out-of-region configuration are named in SC-004.
+  **Raised from 1 % (106 666 ns) on 2026-09-01 by explicit user decision**, which is the one route this
+  FR's stop-and-surface rule leaves open (option C below). It was taken with the measured per-stage table
+  in hand, and the alternatives were priced first: only **one** cap reduction actually fits —
+  `kMaxSources` 4 → 2 (~86 477 ns) — while every smaller one still misses (slots 4 → 3 ≈ 114 640 ns,
+  dust pool 24 → 12 ≈ 128 510 ns, resonators 3 → 2 ≈ 133 426 ns), and halving the slot count would have
+  redefined the SC-004 (c) reference configuration itself. Option A (hoisting `StochasticFilter`, the
+  largest slot cost at 10 074 ns × 4 = 30 % of the total) projected ~30 700 ns of saving by analogy with
+  the comb bank's own hoisted path (15 251 → 3 665 ns, a 4.16× cut), landing at ~104 600 ns — inside 1 %
+  by only ~2 %, which is not a margin worth building a budget on. So the **ceiling**, not the instrument,
+  was what was wrong: 1 % was set before the cost of four slots of per-slot stochastic filtering was known.
+  **The number is set from a distribution, not one sample.** The first figure surfaced was 142 794 ns and it
+  was not reproducible: five isolated runs gave 159 023.6 / 153 616.8 / 158 896.0 / 154 703.6 / 163 491.8 ns
+  — centre ~158 000 (1.48 % of a core), run-to-run spread 6.4 % — because the session's absolute timings
+  drifted ~14 % upward under sustained benchmarking and 142 794 was taken at the cool end. 1.75 % covers the
+  observed **maximum** (163 492) with ~14 % margin. Read that spread before trusting any absolute ns figure
+  here: it is why every perf test in this repo is excluded from CI, and why a number measured once is not
+  evidence.
   **On a miss, no direction is pre-committed (decided 2026-08-31, OQ-CPU-POLICY) — this overrides and
   replaces this FR's prior "the caps come down, never the budget" commitment, and deliberately departs
   from the general project convention at `atmosphere_engine_perf_test.cpp:65`
@@ -992,7 +1039,12 @@ and `atmosphere_engine_perf_test.cpp:22-44`. One 512-block period is 10 666 667 
   Metric: RMS of consecutive 10 s windows over a **10 minute** mono render at 48 kHz, in SC-004
   reference configuration (c), **every setting exactly as the FR-016 defaults table states it** —
   nothing inherited implicitly from a library default.
-  Thresholds: (a) every window is within **±3.0 dB** of the median window; (b) the least-squares slope
+  Thresholds: (a) every window is within **±4.5 dB** of the median window — bound set from
+  measurement, not assumption (corrected 2026-09-01): across 24 seeds at this exact configuration
+  the worst window deviation ran min 1.703 / median 2.371 / p90 2.717 / **max 3.247** dB, so the
+  originally specified ±3.0 dB sat *inside* the criterion's own natural spread and passed or failed
+  on seed luck. ±4.5 dB is the observed max plus 1.0 dB of margin. Clause (c) below, not this one,
+  is what fails when the drone dies or runs away; (b) the least-squares slope
   of window RMS (dB) against time is within **±0.5 dB per 10 minutes** — no creep in either
   direction; (c) no window is below −60 dBFS (the drone did not die) and none above −3 dBFS — this is
   the criterion FR-017's per-type drive table and FR-018's per-resonator Q make-up gain exist to keep
@@ -1006,7 +1058,9 @@ and `atmosphere_engine_perf_test.cpp:22-44`. One 512-block period is 10 666 667 
 - **SC-002 — Spectral-motion metric (roadmap line 196).**
   Metric: per-band energy trajectory. Every 100 ms extract the five band-energy fractions
   (`AudioFeatures::band`, `audio_features.h:28-29`); for each band compute the normalised
-  autocorrelation of the (mean-removed) trajectory and take the lag of its first zero crossing, `L`.
+  autocorrelation of the (mean-removed) trajectory. `L`, the lag of its first zero crossing, is still
+  **reported** for continuity, but no threshold rests on it any more — see (a) for the measurement that
+  retired it as an estimator.
   `T = 1/r` where `r` is the FR-069 organism-level wander-rate scalar (decided 2026-08-31, Q7 — before
   FR-069, `r` was only the comb lane's own `PerlinNoiseSource` rate; FR-069 unifies every lane onto
   this one number, and its default `kDefaultWanderRateHz = 0.03` is chosen to leave `T` at the same
@@ -1015,11 +1069,32 @@ and `atmosphere_engine_perf_test.cpp:22-44`. One 512-block period is 10 666 667 
   **failure**, not a coin flip. The wander-on arm renders `≥ 10·T` (350 s at the default rate) so the
   acceptance window in (a) is statistically resolvable.
   Thresholds:
-  (a) **wander on, FR-016 defaults** — at least three of the five bands have `L ∈ [0.4·T, 3.0·T]`:
-  motion exists *at the configured rate*, not faster and not slower;
+  (a) **wander on, FR-016 defaults** — the normalised autocorrelation of the strongest-moving band's
+  trajectory, at a lag of `T/8` in **seconds**, is **≥ 0.20**: motion exists *at the configured rate*.
+  **Rewritten 2026-09-01 after measurement.** It required "at least three of the five bands have
+  `L ∈ [0.4·T, 3.0·T]`", which rests on the first-zero-crossing lag — the estimator SC-008 (c) had to
+  abandon after it measured 67–163 % spread across seeds with the rate held constant. Over 24 seeds the
+  count came out 0:1, 3:17, 4:1, 5:5 — one seed scored **zero**, and not marginally: its five band lags
+  were 11.2, 11.2, 114.7, 101.6 and 100.6 s, straddling *both* window edges at once, so the clause fell
+  off a cliff rather than degrading. Widening the window does not repair it either: `[8, 120]` passes all
+  24 seeds but then contains 93 % of all observed band lags (against 66.7 % for the original), so
+  "3 of 5 inside" becomes nearly free. The fixed-lag autocorrelation needs no zero crossing, is bounded
+  in `[-1, 1]`, and uses every sample pair; measured min 0.298 / median 0.470 / max 0.645 across 24 seeds,
+  so the 0.20 bound clears the minimum by 1.5×. **Verified by injection:** running the lanes at 10× the
+  default rate drives it through the bound. The symmetric "too slow" bound is deliberately **not**
+  asserted — `setWanderRate` clamps at 0.01 Hz, so the slowest expressible organism is 3× slower than
+  default, and at that rate `r(2T)` reads −0.052 against the default's −0.010, i.e. no reachable
+  configuration can violate it. It is reported instead;
   (b) **control arm, `setWanderEnabled(false)` (FR-068)** — every band has `L < 0.4·T`, i.e. no band's
-  `L` falls inside (a)'s acceptance window, **and** the broadband RMS CV of this arm is at least 3×
-  below the CV measured in the wander-on arm. This is the correct direction: with no wander the
+  `L` falls inside (a)'s acceptance window, **and** the strongest band-fraction CV of this arm is at
+  least **1.8×** below the one measured in the wander-on arm. **The multiplier was 3.0× and is measured,
+  not assumed (corrected 2026-09-01):** across 35 seeds in two sweeps the ratio ran min 2.290, median
+  ~3.0, max 5.44, so 3.0 sat squarely *inside* the criterion's own spread and failed 7 of 12 seeds —
+  `kTestSeed` happened to sit at 3.35 and made it look green. 3.0 is not reachable because the
+  denominator is the wander-off control arm, whose band CV is ~0.75 and is substantially the *estimator
+  floor* rather than organism motion. 1.8 keeps 27 % margin under the observed minimum and still asserts
+  a real effect: wander must raise band motion 80 % over the control arm, and an organism with wander
+  disabled scores exactly 1.0 by construction. This is the correct direction: with no wander the
   band-fraction estimates are stationary plus estimator noise, so the mean-removed ACF crosses zero
   after roughly one 100 ms frame — `L ≈ 0.1 s`, far *below* `T`, not above it. (An earlier draft
   required `L > 6·T = 200 s`, which no correct implementation can produce and which a 300 s record
@@ -1027,8 +1102,21 @@ and `atmosphere_engine_perf_test.cpp:22-44`. One 512-block period is 10 666 667 
   FR-023 keeps the `StochasticFilter`'s internal cutoff wander on by default
   (`cutoffRandomEnabled_ = true`, `stochastic_filter.h:555`), so zeroed depths alone still move
   spectrally, and faster than the lanes being isolated.
-  (c) broadband RMS coefficient of variation across the wander-on windows is ≤ 0.06 while at least one
-  band's energy-fraction CV is ≥ 0.10 — the motion is **spectral**, not level.
+  (c) the strongest band's energy-fraction CV is **≥ 0.10** (the motion is real) **and ≥ 5× the
+  broadband RMS CV** (it is **spectral**, not level), **and** the broadband RMS CV is **≤ 0.28**.
+  **Both numbers are measured over 35 seeds and the pair is deliberate (corrected 2026-09-01).** The
+  clause read "broadband CV ≤ 0.06", which measured **0.141** — and that is not the measurement-floor
+  case the helper's caveat anticipated (the estimator floor is ~0.04, so 0.141 sits 3.5× above it): the
+  organism's broadband level really does move that much. 0.141 linear is ±1.15 dB over 10 s windows,
+  agreeing with what SC-001 independently measures on the same configuration, and it follows from the
+  *specified* feature set rather than a defect — FR-070 breathing is ±0.92 dB per slot by construction,
+  and the wander lanes move resonator frequency and cutoff, which moves level too. The old 0.06 (~0.5 dB)
+  accounted for breathing alone. **Why both a ratio and a cap:** injection settled it. A pure broadband
+  AM (multiplying the render by 1 + 0.8·sin(2π·0.05·t)) left every band CV *exactly* unchanged at 2.596,
+  as a broadband gain must, and drove the level CV 0.141 → 0.395 — but the ratio only fell 18.42 → 6.57,
+  so a ratio alone is an insensitive pump detector. The cap moves decisively on the same defect. Measured
+  ranges: ratio min 11.32 / median 18.02 / max 30.53 → bound 5.0 (2.5× clear); level CV min 0.1107 /
+  median 0.1334 / max 0.1861 → cap 0.28 (1.5× clear), with the injected pump at 0.395 caught by 1.4×.
   Measured by: `NoiseOrganism_SpectralMotion`, tagged `[long]`.
 - **SC-003 — Zero allocation after prepare (roadmap line 196).**
   Metric: allocation count inside an `AllocationScope` (`allocation_detector.h:111`).
@@ -1115,10 +1203,28 @@ and `atmosphere_engine_perf_test.cpp:22-44`. One 512-block period is 10 666 667 
   Thresholds — restricted to what FR-093 establishes is genuinely invariant:
   (a) overall RMS within **±1.0 dB** across rates;
   (b) every sample finite (exponent-field test) and no 1 s window below −60 dBFS at any rate;
-  (c) the organism's **own** time constants are invariant *in seconds*: the SC-002 first-zero-crossing
-  lag `L` of the strongest-moving band agrees across the four rates within **±15 %**, and the measured
+  (c) the organism's **own** time constants are invariant *in seconds*: the comb lane's normalised
+  autocorrelation **at a fixed 0.5 s lag**, sampled from `getCombCurrentDelayMs` on a 0.1 s wall-clock
+  grid, agrees across the four rates to within **0.005 absolute**, and the measured
   10–90 % duration of a `setSourceWake(0 → 1)` ramp read from `getSourceGain` is **50 ms ± 5 ms** at
   every rate;
+  **(c) was rewritten on 2026-09-01 after measurement showed the original could not work.** It used the
+  SC-002 first-zero-crossing lag of the strongest-moving band, within ±15 %. Two faults compounded: the
+  lanes it observed include `BrownianDrift`, which draws RNG **once per control step**, so at 96 kHz the
+  same seed walks a *different sample path* (its statistics are rate-invariant; its realisation is not);
+  and first-zero-crossing is a very high variance estimator on a record holding only ~20 correlation
+  times. Holding the **rate constant** and varying only the seed, the lag moved by **67.5 % / 163.2 %**
+  (resonator frequency at 48 / 96 kHz) and **80.7 %** (cutoff) — 4× to 11× the budget it was measured
+  against. Fitting τ by regression was worse (136.8–421.6 %), though the *median* fitted τ agreed across
+  rates to **0.8 %**, confirming the population parameter is rate-invariant and the estimator was the
+  fault. Band energy could not carry it either: even at a 240 s record the paired `|r₉₆ₖ − r₄₈ₖ|`
+  reached 0.105, above the ~0.074 a **doubled** τ would produce. The comb lane is a `PerlinNoiseSource`,
+  a deterministic function of lattice position advancing at exactly `rate` cells per **second** at any
+  sample rate, so it carries no realisation noise: measured paired deviation **≤ 0.0001** across 8 seeds
+  and all four rates on the same 60 s render, against a 0.005 bound. It is **sharper**, not weaker —
+  deriving the increment against a hardcoded `44100.0` instead of `sampleRate_` (the canonical form of
+  this defect, which hits every lane) moves the statistic to **0.0239 / 0.3187 / 0.9349** at 44.1 / 96 /
+  192 kHz, i.e. 5× to 190× over the bound where the clean tree sits 50× under it;
   (d) a mid-render `prepare()` at a new rate produces silence-free, finite output.
   **Spectral shape is deliberately not asserted, and that is a correction, not a relaxation.** Centroid
   and band-energy fractions cannot be rate-invariant for this signal, so asserting them would be a

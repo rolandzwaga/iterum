@@ -387,6 +387,19 @@ add_executable(dsp_systems_tests
     # there. SC-030 needs NO new TU - it is a re-run of the existing
     # spectral_morph_* cases in this same executable.
     unit/systems/spectral_state_authoring_test.cpp
+    # Vorago Phase 2 (specs/vorago-phase2-noise-organism): NoiseOrganism.
+    # This list is ENUMERATED, not globbed - an unregistered TU silently drops
+    # out of the build and its cases never run.
+    #   noise_organism_test.cpp          SC-003, SC-005(a), SC-006, SC-007, SC-010,
+    #                                    SC-013, SC-014, SC-016, SC-017, SC-018, SC-021
+    #   noise_organism_spectral_test.cpp SC-001, SC-002, SC-005(b), SC-008, SC-009,
+    #                                    SC-019, SC-020   (the [long] set)
+    #   noise_organism_perf_test.cpp     SC-004(a)-(e) + the T002 stage probe   [.perf]
+    #   noise_organism_nonfinite_test.cpp SC-015 only
+    unit/systems/noise_organism_test.cpp
+    unit/systems/noise_organism_spectral_test.cpp
+    unit/systems/noise_organism_perf_test.cpp
+    unit/systems/noise_organism_nonfinite_test.cpp
 )
 
 target_link_libraries(dsp_systems_tests
@@ -774,6 +787,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         # -ffast-math mode the headers actually ship in. The perf TU must stay out
         # too: -fno-fast-math would change the figures its baselines are pinned to.
         unit/systems/seraphis_nonfinite_test.cpp
+        # Vorago Phase 2: SC-015 injects NaN/Inf via bit patterns in this TU and
+        # needs IEEE semantics to assert on them. ONLY this one of the four Phase 2
+        # TUs is listed; the other three must NOT be. noise_organism_test.cpp and
+        # noise_organism_spectral_test.cpp stay out so the FR-008 guards are proved
+        # in the /fp:fast + -ffast-math mode the header actually ships in. The perf
+        # TU must stay out too: -fno-fast-math would change the figures its
+        # baselines are pinned to.
+        unit/systems/noise_organism_nonfinite_test.cpp
         PROPERTIES COMPILE_FLAGS "-fno-fast-math -fno-finite-math-only"
     )
 

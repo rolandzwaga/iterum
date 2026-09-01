@@ -328,6 +328,9 @@ public:
     void setFrequency(size_t index, float hz) noexcept {
         if (index >= kMaxResonators) return;
         frequencies_[index] = clampFrequency(hz);
+        // Vorago Phase 2 (FR-099): match setDecay below so a drifting frequency no
+        // longer silently changes the effective RT60 - Q is frequency-dependent.
+        qValues_[index] = rt60ToQ(frequencies_[index], decays_[index]);
         updateFilterCoefficients(index);
     }
 
@@ -542,16 +545,50 @@ private:
     }
 
     /// Update filter coefficients for a specific resonator
+    /// @note Coefficients are computed here instead of via Biquad::configure() because
+    ///       BiquadCoefficients::calculate() clamps Q to biquad.h's kMaxQ = 30 (biquad.h:53,
+    ///       applied by detail::clampQ at :673). This bank documents kMaxResonatorQ = 100
+    ///       (:51, "higher than Biquad default for physical modeling") and derives Q from the
+    ///       configured RT60 via rt60ToQ (:92), so that clamp silently capped every decay
+    ///       longer than kLn1000 * kMaxQ / (pi * f) seconds - e.g. a resonator configured for
+    ///       1 s at 200 Hz (Q = 90.96) actually rang for 0.33 s, and setQ() above 30 did
+    ///       nothing at all. The math below is the same RBJ constant-0-dB-peak bandpass, in
+    ///       the same operation order, as the FilterType::Bandpass case of
+    ///       BiquadCoefficients::calculate (biquad.h:658-665, normalisation at :767-775);
+    ///       the only difference is the Q range it admits, so results are unchanged for the
+    ///       Q <= 30 configurations that were already realizable.
     void updateFilterCoefficients(size_t index) noexcept {
         if (index >= kMaxResonators) return;
 
-        filters_[index].configure(
-            FilterType::Bandpass,
-            frequencies_[index],
-            qValues_[index],
-            0.0f,  // Bandpass doesn't use gainDb
-            static_cast<float>(sampleRate_)
-        );
+        const float sampleRateF = static_cast<float>(sampleRate_);
+        if (!(sampleRateF > 0.0f)) {
+            // Match calculate()'s invalid-sample-rate behaviour: bypass coefficients.
+            filters_[index].setCoefficients(BiquadCoefficients{});
+            return;
+        }
+
+        // frequencies_[] is already clamped to [kMinResonatorFrequency, 0.45 * fs] by
+        // clampFrequency(), which is strictly inside the Biquad frequency range.
+        const float q = std::clamp(qValues_[index], kMinResonatorQ, kMaxResonatorQ);
+        const float omega = kTwoPi * frequencies_[index] / sampleRateF;
+        const float sinOmega = std::sin(omega);
+        const float cosOmega = std::cos(omega);
+        const float alpha = sinOmega / (2.0f * q);
+
+        const float b0 = alpha;
+        const float b2 = -alpha;
+        const float a0 = 1.0f + alpha;
+        const float a1 = -2.0f * cosOmega;
+        const float a2 = 1.0f - alpha;
+
+        BiquadCoefficients coeffs;
+        const float invA0 = 1.0f / a0;
+        coeffs.b0 = b0 * invA0;
+        coeffs.b1 = 0.0f;  // Bandpass has no b1 term
+        coeffs.b2 = b2 * invA0;
+        coeffs.a1 = a1 * invA0;
+        coeffs.a2 = a2 * invA0;
+        filters_[index].setCoefficients(coeffs);
     }
 
     /// Recalculate active resonator count

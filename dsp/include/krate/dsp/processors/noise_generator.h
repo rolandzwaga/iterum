@@ -135,6 +135,41 @@ public:
     void prepare(float sampleRate, size_t maxBlockSize) noexcept {
         sampleRate_ = sampleRate;
         maxBlockSize_ = maxBlockSize;
+        // See the note at the white source in process(): keeps spectral density,
+        // not sample variance, invariant across sample rates. Exactly 1.0 at the
+        // 44.1 kHz reference so behaviour there is bit-identical to before.
+        densityCompensation_ = std::sqrt(sampleRate / kDensityReferenceRate);
+        // Pin the brown integrator's time constant so its corner stays fixed in Hz.
+        // exp(-1/(fs * kBrownTau)) is exactly 0.98 at the 44.1 kHz reference.
+        brownLeak_ = std::exp(-1.0f / (sampleRate * kBrownTauSeconds));
+        // Kellet's pink coefficients are 44.1 kHz values whose corners are fixed
+        // in NORMALISED frequency; without this they migrate upward in Hz and
+        // pink measured +2.14 dB at 96 kHz / +4.00 dB at 192 kHz through
+        // fixed-Hz resonators. prepare(44100) is a no-op (SC-008, FR-093).
+        pinkFilter_.prepare(sampleRate);
+        // BLUE AND VIOLET ARE DELIBERATELY NOT RATE-COMPENSATED. Measured, not
+        // assumed (2026-09-01) -- the compensation was implemented, measured, and
+        // removed:
+        //
+        // Both are one-sample differences, whose fixed-Hz gain is
+        // 2*sin(pi*f/fs) ~= 2*pi*f/fs and therefore falls as 1/fs (blue measured
+        // -3.38 dB at 96 kHz and -7.41 dB at 192 kHz through fixed-Hz resonators).
+        // An fs/44100 factor does fix that at 96 kHz -- measured +0.01 dB -- but it
+        // cannot hold at 192 kHz, and the reason is structural rather than a tuning
+        // miss. Blue's spectrum RISES at +3 dB/oct, so holding its density fixed in
+        // Hz makes its TOTAL power grow as fs^2 and its RMS as fs: measured, the raw
+        // generator went from -16.69 dBFS at 44.1 kHz to -4.09 dBFS at 192 kHz,
+        // +12.6 dB, against the +12.8 dB the integral predicts. That overruns the
+        // [-1, 1] contract the clamp below enforces, and the clamp's distortion is
+        // broadband -- it read +6.44 dB through the resonators, WORSE than the
+        // uncompensated error it was meant to remove.
+        //
+        // So rate-invariant density and bounded amplitude are not simultaneously
+        // available for a rising-spectrum noise over a 4.35x rate range. Amplitude
+        // wins: a colour that is 12.8 dB louder at 192 kHz is a musical defect,
+        // where the density tilt is the documented FR-093 limitation. White, pink
+        // and brown are all compensated above because for them the two goals do not
+        // conflict.
 
         // Initialize smoothers for all noise levels
         const float smoothTimeMs = 5.0f; // 5ms smoothing for click-free level changes
@@ -184,9 +219,14 @@ public:
     /// @brief Clear all internal state and reseed random generator
     /// @post All noise channels produce fresh sequences
     void reset() noexcept {
-        // Reseed RNG with new seed based on current state
-        // This ensures different instances have uncorrelated sequences
-        rng_.seed(rng_.next() ^ 0xDEADBEEF);
+        // Vorago Phase 2 (FR-081): callers that opted in via setSeed() get a
+        // reproducible reseed; every other instance keeps the historical
+        // scramble unchanged, so all existing consumers stay byte-identical.
+        if (seedLatched_) {
+            rng_.seed(configuredSeed_);        // reproducible for opt-in callers
+        } else {
+            rng_.seed(rng_.next() ^ 0xDEADBEEF); // UNCHANGED historical scramble
+        }
 
         // Reset pink noise filter
         pinkFilter_.reset();
@@ -224,6 +264,25 @@ public:
         // Reset radio static low-pass filter
         radioLowPass_.reset();
     }
+
+    // =========================================================================
+    // Configuration - Determinism (Vorago Phase 2)
+    // =========================================================================
+
+    /// @brief Seed the PRNG for deterministic, decorrelated instances (Vorago Phase 2, FR-080).
+    /// Opt-in: an instance that never calls this keeps the historical reset() scramble, so every
+    /// existing consumer is byte-identical (FR-081).
+    /// @param seed Seed value (0 is replaced by the Xorshift32 default seed)
+    /// @note Real-time safe
+    void setSeed(std::uint32_t seed) noexcept {
+        seedLatched_    = true;
+        configuredSeed_ = seed;
+        rng_.seed(seed);
+    }
+
+    /// @brief Get the seed most recently passed to setSeed()
+    /// @return The configured seed (12345, the construction seed, if setSeed() was never called)
+    [[nodiscard]] std::uint32_t getSeed() const noexcept { return configuredSeed_; }
 
     // =========================================================================
     // Configuration - Level Control
@@ -381,7 +440,26 @@ private:
         float sample = 0.0f;
 
         // Generate base white noise sample (used by white, pink, tape hiss, asperity)
-        float whiteNoise = rng_.nextFloat();
+        // Spectral-density compensation. rng_.nextFloat() has a FIXED sample
+        // variance, so its power spectral density is sigma^2/(fs/2) -- it HALVES
+        // for every doubling of the sample rate. Anything downstream that is
+        // narrowband and tuned in Hz (a resonator, a comb, a fixed-frequency
+        // filter) samples that density, so its output fell 3 dB per octave of
+        // sample rate. Measured through three resonators at 70/140/260 Hz:
+        // White -3.24 dB at 96 kHz and -6.20 dB at 192 kHz; Blue, being a
+        // differentiator, doubled it to -6.01/-11.92.
+        //
+        // Scaling by sqrt(fs/fsRef) makes the DENSITY rate-invariant instead of
+        // the sample variance, which is the correct invariant for a noise
+        // generator: "brown noise" names a spectrum, not an RMS. The factor is
+        // exactly 1.0 at the 44.1 kHz reference, so behaviour there is unchanged.
+        // Broadband RMS now grows as sqrt(fs), which is what a fixed PSD over a
+        // widening band actually implies.
+        //
+        // This is applied to the single shared white source, so every derived
+        // type (Pink, Brown, Blue, Violet, crackle surface, asperity) inherits
+        // the correction rather than each needing its own.
+        float whiteNoise = rng_.nextFloat() * densityCompensation_;
 
         // White noise (US1)
         float whiteGain = levelSmoothers_[static_cast<size_t>(NoiseType::White)].process();
@@ -463,9 +541,20 @@ private:
         float brownGain = levelSmoothers_[static_cast<size_t>(NoiseType::Brown)].process();
         if (noiseEnabled_[static_cast<size_t>(NoiseType::Brown)]) {
             // Leaky integrator: brown[n] = leak * brown[n-1] + (1-leak) * white[n]
-            // Leak coefficient ~0.98-0.99 for -6dB/octave slope
-            constexpr float kBrownLeak = 0.98f;
-            brownPrevious_ = kBrownLeak * brownPrevious_ + (1.0f - kBrownLeak) * whiteNoise;
+            //
+            // The leak is derived from the SAMPLE RATE, not fixed. A fixed 0.98
+            // puts the integrator's corner at fs*(1-a)/2pi -- 153 Hz at 48 kHz
+            // but 306 Hz at 96 kHz -- so the spectrum moved with the rate. The
+            // time constant is pinned instead (tau = -1/(fs_ref * ln 0.98)), so
+            // brownLeak_ is exactly 0.98 at the 44.1 kHz reference and the corner
+            // stays fixed in Hz everywhere else.
+            //
+            // This is the SECOND of two rate terms. The first (the white source's
+            // density, see process()) dominates; before it was corrected this
+            // leak's drift partially OFFSET it, which is why brown measured only
+            // -1.52 dB at 96 kHz where white measured -3.24 dB. Fixing this one
+            // alone would have removed the offset and roughly doubled the error.
+            brownPrevious_ = brownLeak_ * brownPrevious_ + (1.0f - brownLeak_) * whiteNoise;
 
             // Normalize and clamp output to [-1, 1] range
             // The integrator has lower variance, so boost slightly for reasonable level
@@ -484,7 +573,9 @@ private:
             bluePrevious_ = pinkNoise;
 
             // Scale and clamp to [-1, 1] range
-            // Differentiator increases high frequencies, so apply normalization
+            // Differentiator increases high frequencies, so apply normalization.
+            // NOT rate-compensated -- see the note in prepare() for the measurement
+            // that ruled it out (FR-093).
             blueNoise *= 0.7f;
             blueNoise = std::clamp(blueNoise, -1.0f, 1.0f);
 
@@ -499,7 +590,8 @@ private:
             violetPrevious_ = whiteNoise;
 
             // Scale and clamp to [-1, 1] range
-            // Differentiation emphasizes high frequencies, normalize to maintain levels
+            // Differentiation emphasizes high frequencies, normalize to maintain
+            // levels. NOT rate-compensated -- see the note in prepare() (FR-093).
             violetNoise *= 0.5f;
             violetNoise = std::clamp(violetNoise, -1.0f, 1.0f);
 
@@ -589,8 +681,32 @@ private:
 
     // Core state
     float sampleRate_ = 44100.0f;
+
+    /// Reference rate at which densityCompensation_ is exactly 1.0. Anchored at
+    /// 44.1 kHz because that is where this generator was historically calibrated
+    /// (sampleRate_ defaults to it, and noise_generator_test.cpp runs at it), so
+    /// every existing consumer and test keeps its exact historical level and any
+    /// movement in the suite is a real regression rather than a re-anchoring.
+    static constexpr float kDensityReferenceRate = 44100.0f;
+
+    /// sqrt(sampleRate_ / kDensityReferenceRate). See the white source in
+    /// process(). Defaulted for the pre-prepare state; prepare() recomputes it.
+    float densityCompensation_ = 1.0f;  // 44.1 kHz default == reference
+
+    /// Brown leaky-integrator time constant, chosen so brownLeak_ == 0.98f at the
+    /// 44.1 kHz reference: tau = -1 / (44100 * ln(0.98)).
+    static constexpr float kBrownTauSeconds = 1.1225841e-3f;
+
+    /// exp(-1/(fs * kBrownTauSeconds)); recomputed in prepare().
+    float brownLeak_ = 0.98f;  // 44.1 kHz default == reference
     size_t maxBlockSize_ = 512;
     Xorshift32 rng_{12345};
+
+    // Vorago Phase 2 (FR-080/FR-081): opt-in deterministic seeding. seedLatched_
+    // stays false unless setSeed() is called, which is what keeps reset() on the
+    // historical scramble path for every pre-existing consumer.
+    bool seedLatched_ = false;
+    std::uint32_t configuredSeed_ = 12345;
 
     // Per-noise-type configuration
     std::array<float, kNumNoiseTypes> noiseLevels_ = {

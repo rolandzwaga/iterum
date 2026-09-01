@@ -401,6 +401,23 @@ ctest --test-dir build/windows-x64-release -C Release --output-on-failure
 # NaN/Inf-guard, bounded-grid, or state-format tests (those are the cross-
 # platform sentinels and must stay in the per-push lane).
 
+# Timing-sensitive tests (CPU budgets, benchmarks, [long] renders) run SEPARATELY.
+# CI and the phase workflows exclude them (~[performance]~[perf]~[benchmark]~[!benchmark]~[long])
+# because they assert wall-clock against audio time: any competing load -- another
+# suite, a build, clang-tidy, parallel agents -- inflates the number and produces a
+# false red on untouched code. Run them ONCE, alone, nothing else executing:
+node tools/run-cpu-tests.js              # all suites, strictly one at a time
+node tools/run-cpu-tests.js dsp_systems_tests   # or just the ones you touched
+# Isolation has a SECOND clause: not concurrently, and not back-to-back either.
+# Sustained benchmarking heats the CPU and boost clocks drop -- measured here, the
+# same code drifted +14% across one session and five unrelated perf tests went red
+# then green again with no code change. The runner settles 20 s between suites
+# (SETTLE_MS to change it).
+# If one fails: confirm nothing else was running, re-run that suite alone after the
+# machine has idled, and only then treat it as a defect. A test that flips verdicts
+# between runs is measuring the machine, not the code.
+# NEVER relax a budget or shrink a workload to make it pass.
+
 # Debug build (same pattern)
 "$CMAKE" --preset windows-x64-debug
 "$CMAKE" --build build/windows-x64-debug --config Debug

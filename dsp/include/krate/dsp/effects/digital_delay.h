@@ -41,6 +41,7 @@
 #include <cstddef>
 
 #include <cstdint>
+#include <vector>
 
 // Debug logging
 #if defined(_DEBUG)
