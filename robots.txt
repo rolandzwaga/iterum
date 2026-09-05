@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://rolandzwaga.github.io/krate-audio/sitemap.xml
+Sitemap: https://krateaudio.com/sitemap.xml
