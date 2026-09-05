@@ -627,8 +627,6 @@ jobs:
           PYEOF
 
       - name: Generate Update Checker Endpoint
-        env:
-          REPO: ${{ github.repository }}
         run: |
           # Generate versions.json for the in-plugin update checker
           # Version comes exclusively from git tags — plugins without a release tag are skipped
@@ -643,7 +641,6 @@ jobs:
           for (const vj of glob) {
             const data = JSON.parse(fs.readFileSync(vj, "utf8"));
             const dir = path.basename(path.dirname(vj));
-            const repo = process.env.REPO;
 
             // Get version from latest git tag (e.g. "ruinae/v0.9.9" -> "0.9.9")
             const pluginLower = data.name.toLowerCase();
@@ -660,7 +657,7 @@ jobs:
 
             plugins[data.name] = {
               version,
-              download_url: `https://${repo.split("/")[0]}.github.io/${repo.split("/")[1]}/${dir}/`,
+              download_url: data.url,
               release_notes: ""
             };
           }

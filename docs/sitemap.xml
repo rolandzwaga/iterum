@@ -1,71 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/</loc>
+    <loc>https://krateaudio.com/</loc>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/iterum/</loc>
+    <loc>https://krateaudio.com/iterum/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/disrumpo/</loc>
+    <loc>https://krateaudio.com/disrumpo/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/ruinae/</loc>
+    <loc>https://krateaudio.com/ruinae/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/innexus/</loc>
+    <loc>https://krateaudio.com/innexus/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/gradus/</loc>
+    <loc>https://krateaudio.com/gradus/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/membrum/</loc>
+    <loc>https://krateaudio.com/membrum/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/seraphis/</loc>
+    <loc>https://krateaudio.com/seraphis/</loc>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/ruinae/manual.html</loc>
+    <loc>https://krateaudio.com/ruinae/manual.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/innexus/manual.html</loc>
+    <loc>https://krateaudio.com/innexus/manual.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/gradus/manual.html</loc>
+    <loc>https://krateaudio.com/gradus/manual.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/membrum/manual.html</loc>
+    <loc>https://krateaudio.com/membrum/manual.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/seraphis/manual.html</loc>
+    <loc>https://krateaudio.com/seraphis/manual.html</loc>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/ruinae/signal-flow.html</loc>
+    <loc>https://krateaudio.com/ruinae/signal-flow.html</loc>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/innexus/signal-flow.html</loc>
+    <loc>https://krateaudio.com/innexus/signal-flow.html</loc>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/membrum/signal-flow.html</loc>
+    <loc>https://krateaudio.com/membrum/signal-flow.html</loc>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://rolandzwaga.github.io/krate-audio/seraphis/signal-flow.html</loc>
+    <loc>https://krateaudio.com/seraphis/signal-flow.html</loc>
     <priority>0.5</priority>
   </url>
 </urlset>

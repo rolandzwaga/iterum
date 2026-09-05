@@ -237,3 +237,4 @@ jobs:
           github_token: ${{ github.token }}
           publish_dir: ./_site
           keep_files: true
+          cname: krateaudio.com
